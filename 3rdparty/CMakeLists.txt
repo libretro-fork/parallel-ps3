@@ -240,9 +240,6 @@ endif()
 # LLVM
 add_subdirectory(llvm EXCLUDE_FROM_ALL)
 
-# WOLFSSL
-add_subdirectory(wolfssl EXCLUDE_FROM_ALL)
-
 # RTMIDI
 add_subdirectory(rtmidi EXCLUDE_FROM_ALL)
 
@@ -266,7 +263,6 @@ add_library(3rdparty::stblib ALIAS 3rdparty_stblib)
 add_library(3rdparty::vulkan ALIAS ${VULKAN_TARGET})
 add_library(3rdparty::ffmpeg ALIAS 3rdparty_ffmpeg)
 add_library(3rdparty::glew ALIAS 3rdparty_glew)
-add_library(3rdparty::wolfssl ALIAS wolfssl)
 add_library(3rdparty::rtmidi ALIAS rtmidi)
 add_library(3rdparty::opencv ALIAS ${OPENCV_TARGET})
 add_library(3rdparty::fusion ALIAS Fusion)

@@ -683,7 +683,6 @@ target_link_libraries(rpcs3_emu
         3rdparty::vulkan
         3rdparty::glew
         3rdparty::libusb
-        3rdparty::wolfssl
         3rdparty::protobuf
         3rdparty::vulkanmemoryallocator
         libretro_common

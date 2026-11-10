@@ -338,7 +338,7 @@ jobs:
     # Apple clang does not take fmt::throw_exception's [[noreturn]] constructor
     # as the end of a function, and -Werror=return-type fails all over. Clang,
     # the LLVM the core links and GLEW from Homebrew, the prebuilt ffmpeg,
-    # wolfSSL from its submodule, and Vulkan through Homebrew's MoltenVK.
+    # and Vulkan through Homebrew's MoltenVK.
     # Each architecture on its own runner, so Homebrew's libraries are its own.
     name: libretro core macos-${{ matrix.arch }} (experimental)
     runs-on: ${{ matrix.runner }}

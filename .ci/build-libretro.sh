@@ -12,11 +12,11 @@
 # this build could not load it for that reason. A core should carry what is
 # not part of a normal system.
 #
-# wolfSSL comes from its submodule and is linked in, as on Windows and
-# Android. HTTP (UPnP, the clans server) is libretro-common's net_http with
-# its own TLS client: no libcurl, whose system copy on the images is Debian's
-# libcurl-gnutls.so.4, which Fedora, Arch, the flatpak runtimes RetroArch is
-# built on and most handheld distributions do not have.
+# TLS (RPCN, the clans server) is libretro-common's own client, and HTTP
+# (UPnP, the clans server) its net_http: no wolfSSL and no libcurl, whose
+# system copy on the images is Debian's libcurl-gnutls.so.4, which Fedora,
+# Arch, the flatpak runtimes RetroArch is built on and most handheld
+# distributions do not have.
 #
 # Wayland is disabled deliberately. With it found, rpcs3/Emu links OpenGL::EGL,
 # an imported target created by a find_package down in 3rdparty/ and therefore

@@ -8,10 +8,8 @@
 # distribution, with no CMake package and no static libraries, so
 # find_package(LLVM) finds nothing. clang64 has all of it as packages: LLVM
 # with its CMake config, and ffmpeg, OpenCV and GLEW besides, which is why
-# this asks for the system copies of those. Not wolfSSL: RPCN went into the
-# emulator itself, and clang64's is a DLL, so it comes from the submodule and
-# is linked in. protobuf, for RPCN, would take clang64's abseil, DLLs again;
-# it fetches and builds its own.
+# this asks for the system copies of those. protobuf, for RPCN, would take
+# clang64's abseil, DLLs again; it fetches and builds its own.
 
 git config --global --add safe.directory '*'
 

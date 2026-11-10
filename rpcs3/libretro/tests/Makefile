@@ -16,7 +16,7 @@ LRC_STD  := -std=gnu99
 # as libretro_common.cmake builds it: net_http over its own TLS client
 LRC_DEFS := -DHAVE_SSL -DHAVE_RETROSSL -DHAVE_CRYPTO
 
-TESTS := test_zstd test_deflate test_rxml test_png_rows test_images test_http test_bcn
+TESTS := test_zstd test_deflate test_rxml test_png_rows test_images test_http test_bcn test_tls_duplex
 
 test_zstd_LRC := \
 	$(LRC)/encodings/encoding_rzstd.c \
@@ -164,6 +164,13 @@ obj/bcdec_impl.o: bcdec_impl.c $(BCDEC)/bcdec.h
 	@mkdir -p $(@D)
 	$(CC) -O2 -w $(LRC_STD) -I$(BCDEC) -c -o $@ $<
 
+obj/test_tls_duplex.o: test_tls_duplex.c
+	@mkdir -p $(@D)
+	$(CC) $(CFLAGS) $(TEST_STD) -D_GNU_SOURCE $(SANITIZE) -c -o $@ $<
+
+test_tls_duplex: obj/test_tls_duplex.o $(call lrc_objs,$(sort $(test_http_LRC)))
+	$(CC) $(SANITIZE) -o $@ $^ $(LDFLAGS) $(LDLIBS) -lpthread
+
 test_bcn: obj/test_bcn.o obj/bcdec_impl.o $(call lrc_objs,$(test_bcn_LRC))
 	$(CC) $(SANITIZE) -o $@ $^ $(LDFLAGS) $(LDLIBS)
 
@@ -179,6 +186,7 @@ check: all
 	./test_images
 	./test_http
 	./test_bcn
+	./tls_duplex_test.sh ./test_tls_duplex
 
 clean:
 	rm -rf obj $(TESTS) *_out.*

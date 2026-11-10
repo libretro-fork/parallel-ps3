@@ -27,16 +27,6 @@
 #include "Emu/Cell/Modules/sceNp2.h"
 #include "Emu/Cell/Modules/sceNpTus.h"
 
-#ifdef __clang__
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wold-style-cast"
-#pragma clang diagnostic ignored "-Wextern-c-compat"
-#endif
-#include <wolfssl/ssl.h>
-#ifdef __clang__
-#pragma clang diagnostic pop
-#endif
-
 #include "rpcn_types.h"
 
 // COMID is sent as 9 chars - + '_' + 2 digits
@@ -406,12 +396,10 @@ namespace rpcn
 		bool error_and_disconnect(std::string_view error_mgs);
 		bool error_and_disconnect_notice(std::string_view error_msg);
 
-		std::string get_wolfssl_error(WOLFSSL* wssl, int error) const;
-
 	private:
-		WOLFSSL_CTX* wssl_ctx = nullptr;
-		WOLFSSL* read_wssl    = nullptr;
-		WOLFSSL* write_wssl   = nullptr;
+		// libretro-common's TLS client, in duplex mode: the reader thread
+		// receives while the writer thread sends, with no lock
+		void* tls = nullptr;
 
 		atomic_t<bool> server_info_received = false;
 		u32 received_version                = 0;

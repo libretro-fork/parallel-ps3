@@ -6,6 +6,7 @@
 #include <thread>
 #include <chrono>
 #include "rpcn_client.h"
+#include <net/net_socket_ssl.h>
 #include "Utilities/StrUtil.h"
 #include "Utilities/StrFmt.h"
 #include "Utilities/Thread.h"
@@ -215,7 +216,7 @@ namespace rpcn
 		{
 		case rpcn::rpcn_state::failure_no_failure: return localized_string_id::RPCN_NO_ERROR;
 		case rpcn::rpcn_state::failure_input: return localized_string_id::RPCN_ERROR_INVALID_INPUT;
-		case rpcn::rpcn_state::failure_wolfssl: return localized_string_id::RPCN_ERROR_WOLFSSL;
+		case rpcn::rpcn_state::failure_tls: return localized_string_id::RPCN_ERROR_TLS;
 		case rpcn::rpcn_state::failure_resolve: return localized_string_id::RPCN_ERROR_RESOLVE;
 		case rpcn::rpcn_state::failure_binding: return localized_string_id::RPCN_ERROR_BINDING;
 		case rpcn::rpcn_state::failure_connect: return localized_string_id::RPCN_ERROR_CONNECT;
@@ -769,15 +770,7 @@ namespace rpcn
 		return true;
 	}
 
-	// WolfSSL operations
-
-	std::string rpcn_client::get_wolfssl_error(WOLFSSL* wssl, int error) const
-	{
-		char error_string[WOLFSSL_MAX_ERROR_SZ]{};
-		const auto wssl_err = wolfSSL_get_error(wssl, error);
-		wolfSSL_ERR_error_string(wssl_err, &error_string[0]);
-		return std::string(error_string);
-	}
+	// TLS operations
 
 	rpcn_client::recvn_result rpcn_client::recvn(u8* buf, usz n)
 	{
@@ -792,11 +785,18 @@ namespace rpcn
 			if (terminate)
 				return recvn_result::recvn_terminate;
 
-			int res = wolfSSL_read(read_wssl, reinterpret_cast<char*>(buf) + n_recv, ::narrow<s32>(n - n_recv));
+			bool error = false;
+			const ssize_t res = ssl_socket_receive_all_nonblocking(tls, &error, buf + n_recv, n - n_recv);
 			if (res <= 0)
 			{
-				if (wolfSSL_want_read(read_wssl))
+				if (res == 0 && !error)
 				{
+					// A record that held no data for us yet (a session ticket,
+					// a KeyUpdate), with more already buffered: no wait
+					bool write = false;
+					if (ssl_socket_retro_pending(tls, &write))
+						continue;
+
 					pollfd poll_fd{};
 
 					while ((poll_fd.revents & POLLIN) != POLLIN && (poll_fd.revents & POLLRDNORM) != POLLRDNORM)
@@ -836,14 +836,15 @@ namespace rpcn
 				}
 				else
 				{
-					if (res == 0)
+					const int tls_error = ssl_socket_last_error(tls);
+					if (tls_error == 0)
 					{
-						// Remote closed connection
+						// Remote closed connection (close_notify)
 						rpcn_log.notice("recv failed: connection reset by server");
 						return recvn_result::recvn_noconn;
 					}
 
-					rpcn_log.error("recvn failed with error: %d:%s(native: %d)", res, get_wolfssl_error(read_wssl, res), get_native_error());
+					rpcn_log.error("recvn failed with TLS error: %d(native: %d)", tls_error, get_native_error());
 					return recvn_result::recvn_fatal;
 				}
 			}
@@ -851,7 +852,7 @@ namespace rpcn
 			{
 				// Reset timeout each time something is received
 				num_timeouts = 0;
-				n_recv += res;
+				n_recv += static_cast<usz>(res);
 			}
 		}
 
@@ -862,7 +863,7 @@ namespace rpcn
 	{
 		u32 num_timeouts = 0;
 		usz n_sent = 0;
-		while (n_sent != packet.size())
+		while (true)
 		{
 			if (terminate)
 				return error_and_disconnect("send_packet was forcefully aborted");
@@ -870,52 +871,60 @@ namespace rpcn
 			if (!connected)
 				return false;
 
-			int res = wolfSSL_write(write_wssl, reinterpret_cast<const char*>(packet.data() + n_sent), ::narrow<s32>(packet.size() - n_sent));
-			if (res <= 0)
+			// As much as the socket takes now; the rest, and a KeyUpdate the
+			// server asked the reader for, once it has room again
+			if (n_sent != packet.size())
 			{
-				if (wolfSSL_want_write(write_wssl))
+				const ssize_t res = ssl_socket_send_all_nonblocking(tls, packet.data() + n_sent, packet.size() - n_sent, true);
+				if (res < 0)
 				{
-					pollfd poll_fd{};
-
-					while ((poll_fd.revents & POLLOUT) != POLLOUT)
-					{
-						if (terminate)
-							return error_and_disconnect("send_packet was forcefully aborted");
-
-						poll_fd.fd = sockfd;
-						poll_fd.events = POLLOUT;
-						poll_fd.revents = 0;
-#ifdef _WIN32
-						int res_poll = WSAPoll(&poll_fd, 1, RPCN_TIMEOUT_INTERVAL);
-#else
-						int res_poll = poll(&poll_fd, 1, RPCN_TIMEOUT_INTERVAL);
-#endif
-						if (res_poll < 0)
-						{
-							rpcn_log.error("send_packet failed with native error: %d)", get_native_error());
-							return error_and_disconnect("send_packet failed on poll");
-						}
-
-						num_timeouts++;
-						if (num_timeouts > (RPCN_TIMEOUT / RPCN_TIMEOUT_INTERVAL))
-						{
-							rpcn_log.error("send_packet timeout with %d bytes sent", n_sent);
-							return error_and_disconnect("Failed to send all the bytes");
-						}
-					}
-				}
-				else
-				{
-					rpcn_log.error("send_packet failed with error: %s", get_wolfssl_error(write_wssl, res));
+					rpcn_log.error("send_packet failed with TLS error: %d(native: %d)", ssl_socket_last_error(tls), get_native_error());
 					return error_and_disconnect("Failed to send all the bytes");
 				}
-
-				continue;
+				n_sent += static_cast<usz>(res);
 			}
-			n_sent += res;
-		}
 
-		return true;
+			if (n_sent == packet.size())
+			{
+				const int flushed = ssl_socket_flush_nonblocking(tls);
+				if (flushed < 0)
+				{
+					rpcn_log.error("send_packet failed with TLS error: %d(native: %d)", ssl_socket_last_error(tls), get_native_error());
+					return error_and_disconnect("Failed to send all the bytes");
+				}
+				if (flushed > 0)
+					return true;
+			}
+
+			pollfd poll_fd{};
+
+			while ((poll_fd.revents & POLLOUT) != POLLOUT)
+			{
+				if (terminate)
+					return error_and_disconnect("send_packet was forcefully aborted");
+
+				poll_fd.fd = sockfd;
+				poll_fd.events = POLLOUT;
+				poll_fd.revents = 0;
+#ifdef _WIN32
+				int res_poll = WSAPoll(&poll_fd, 1, RPCN_TIMEOUT_INTERVAL);
+#else
+				int res_poll = poll(&poll_fd, 1, RPCN_TIMEOUT_INTERVAL);
+#endif
+				if (res_poll < 0)
+				{
+					rpcn_log.error("send_packet failed with native error: %d)", get_native_error());
+					return error_and_disconnect("send_packet failed on poll");
+				}
+
+				num_timeouts++;
+				if (num_timeouts > (RPCN_TIMEOUT / RPCN_TIMEOUT_INTERVAL))
+				{
+					rpcn_log.error("send_packet timeout with %d bytes sent", n_sent);
+					return error_and_disconnect("Failed to send all the bytes");
+				}
+			}
+		}
 	}
 
 	// Helper functions
@@ -944,25 +953,15 @@ namespace rpcn
 
 	void rpcn_client::disconnect()
 	{
-		if (read_wssl)
+		if (tls)
 		{
-			wolfSSL_free(read_wssl);
-			read_wssl = nullptr;
+			// Says close_notify if it can without waiting, and closes the
+			// socket, which is the TLS client's from here
+			ssl_socket_close(tls);
+			ssl_socket_free(tls);
+			tls = nullptr;
+			sockfd = 0;
 		}
-
-		if (write_wssl)
-		{
-			wolfSSL_free(write_wssl);
-			write_wssl = nullptr;
-		}
-
-		if (wssl_ctx)
-		{
-			wolfSSL_CTX_free(wssl_ctx);
-			wssl_ctx = nullptr;
-		}
-
-		wolfSSL_Cleanup();
 
 		if (sockfd)
 		{
@@ -1003,31 +1002,6 @@ namespace rpcn
 
 			// Cleans previous data if any
 			disconnect();
-
-			if (wolfSSL_Init() != WOLFSSL_SUCCESS)
-			{
-				rpcn_log.error("connect: Failed to initialize wolfssl");
-				state = rpcn_state::failure_wolfssl;
-				return false;
-			}
-
-			if ((wssl_ctx = wolfSSL_CTX_new(wolfTLSv1_2_client_method())) == nullptr)
-			{
-				rpcn_log.error("connect: Failed to create wolfssl context");
-				state = rpcn_state::failure_wolfssl;
-				return false;
-			}
-
-			wolfSSL_CTX_set_verify(wssl_ctx, SSL_VERIFY_NONE, nullptr);
-
-			if ((read_wssl = wolfSSL_new(wssl_ctx)) == nullptr)
-			{
-				rpcn_log.error("connect: Failed to create wolfssl object");
-				state = rpcn_state::failure_wolfssl;
-				return false;
-			}
-
-			wolfSSL_set_using_nonblock(read_wssl, 1);
 
 			memset(&addr_rpcn, 0, sizeof(addr_rpcn));
 
@@ -1129,32 +1103,55 @@ namespace rpcn
 			update_local_addr(client_addr.sin_addr.s_addr);
 			// rpcn_log.notice("Updated local address to %s", np::ip_to_string(std::bit_cast<u32, be_t<u32>>(local_addr_sig.load())));
 
-			if (wolfSSL_set_fd(read_wssl, ::narrow<int>(sockfd)) != WOLFSSL_SUCCESS)
+			// The server's certificate is not checked, as before. Duplex: the
+			// reader thread receives while the writer thread sends
+			if ((tls = ssl_socket_init(::narrow<int>(sockfd), hostname.c_str())) == nullptr)
 			{
-				rpcn_log.error("connect: Failed to associate wolfssl to the socket");
-				state = rpcn_state::failure_wolfssl;
+				rpcn_log.error("connect: Failed to create the TLS connection");
+				state = rpcn_state::failure_tls;
 				return false;
 			}
 
-			int ret_connect;
-			while ((ret_connect = wolfSSL_connect(read_wssl)) != SSL_SUCCESS)
+			ssl_socket_retro_config tls_config{};
+			tls_config.flags = SSL_RETRO_NO_VERIFY | SSL_RETRO_DUPLEX;
+			if (ssl_socket_retro_configure(tls, &tls_config) != 0)
 			{
-				if (wolfSSL_want_read(read_wssl) || wolfSSL_want_write(read_wssl))
-					continue;
-
-				state = rpcn_state::failure_wolfssl;
-				rpcn_log.error("connect: Handshake failed with RPCN Server: %s", get_wolfssl_error(read_wssl, ret_connect));
+				rpcn_log.error("connect: Failed to configure the TLS connection");
+				state = rpcn_state::failure_tls;
 				return false;
+			}
+
+			// The handshake, waiting on the socket for what it needs next
+			// rather than spinning, for RPCN_TIMEOUT at most
+			const auto handshake_deadline = steady_clock::now() + std::chrono::milliseconds(RPCN_TIMEOUT);
+			while (true)
+			{
+				bool want_read = false, want_write = false;
+				const int ret_connect = ssl_socket_handshake_step(tls, &want_read, &want_write);
+				if (ret_connect > 0)
+					break;
+
+				if (ret_connect < 0 || terminate || steady_clock::now() >= handshake_deadline)
+				{
+					state = rpcn_state::failure_tls;
+					rpcn_log.error("connect: Handshake failed with RPCN Server: %s (TLS error %d)", ret_connect < 0 ? "error" : "timeout", ssl_socket_last_error(tls));
+					return false;
+				}
+
+				if (want_read || want_write)
+				{
+					pollfd poll_fd{};
+					poll_fd.fd = sockfd;
+					poll_fd.events = static_cast<s16>((want_read ? POLLIN : 0) | (want_write ? POLLOUT : 0));
+#ifdef _WIN32
+					WSAPoll(&poll_fd, 1, RPCN_TIMEOUT_INTERVAL);
+#else
+					poll(&poll_fd, 1, RPCN_TIMEOUT_INTERVAL);
+#endif
+				}
 			}
 
 			rpcn_log.notice("connect: Handshake successful");
-
-			if ((write_wssl = wolfSSL_write_dup(read_wssl)) == NULL)
-			{
-				rpcn_log.error("connect: Failed to create write dup for SSL");
-				state = rpcn_state::failure_wolfssl;
-				return false;
-			}
 		}
 
 		connected = true;

@@ -163,7 +163,7 @@ inline const char* libretro_localized_template(localized_string_id id)
 	case localized_string_id::RECORDING_ABORTED: return "Recording aborted!";
 	case localized_string_id::RPCN_NO_ERROR: return "RPCN: No Error";
 	case localized_string_id::RPCN_ERROR_INVALID_INPUT: return "RPCN: Invalid Input (Wrong Host/Port)";
-	case localized_string_id::RPCN_ERROR_WOLFSSL: return "RPCN Connection Error: WolfSSL Error";
+	case localized_string_id::RPCN_ERROR_TLS: return "RPCN Connection Error: TLS Error";
 	case localized_string_id::RPCN_ERROR_RESOLVE: return "RPCN Connection Error: Resolve Error";
 	case localized_string_id::RPCN_ERROR_BINDING: return "RPCN Connection Error: Failed to bind to given binding IP";
 	case localized_string_id::RPCN_ERROR_CONNECT: return "RPCN Connection Error";

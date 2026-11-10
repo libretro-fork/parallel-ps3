@@ -101,7 +101,7 @@ namespace rpcn
 	{
 		failure_no_failure,
 		failure_input,
-		failure_wolfssl,
+		failure_tls,
 		failure_resolve,
 		failure_binding,
 		failure_connect,

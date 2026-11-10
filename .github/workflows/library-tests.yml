@@ -40,3 +40,12 @@ jobs:
 
       - name: Run
         run: make -C rpcs3/libretro/tests -j"$(nproc)" check
+
+      # The RPCN client's TLS connection, read and written from two threads
+      # at once, again under ThreadSanitizer
+      - name: TLS duplex under ThreadSanitizer
+        run: |
+          make -C rpcs3/libretro/tests clean
+          make -C rpcs3/libretro/tests -j"$(nproc)" SANITIZE='-fsanitize=thread -fno-omit-frame-pointer' test_tls_duplex
+          cd rpcs3/libretro/tests
+          TSAN_OPTIONS=halt_on_error=1 setarch "$(uname -m)" -R ./tls_duplex_test.sh ./test_tls_duplex
