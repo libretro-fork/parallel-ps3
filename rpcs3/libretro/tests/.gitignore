@@ -4,3 +4,4 @@ test_*
 *_out.*
 obj/
 !Makefile
+libpng-*/

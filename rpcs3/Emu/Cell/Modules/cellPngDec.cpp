@@ -160,7 +160,8 @@ static int pngDecStep(PngStream* stream, rpng_rows_row* row)
 // 16:30 - reserved
 static be_t<u32> pngDecGetChunkInformation(PngStream* stream, bool IDAT = false)
 {
-	const u32 chunks = rpng_rows_info(stream->host->rows)->chunks;
+	// the sixteen bits above; rpng_rows reports cICP and mDCV past them
+	const u32 chunks = rpng_rows_info(stream->host->rows)->chunks & 0xffffu;
 	return IDAT ? chunks : (chunks & ~u32{RPNG_ROWS_IDAT});
 }
 

@@ -4,7 +4,12 @@
  * alpha, RGB to gray, strip 16 bits to 8, add a filler, swap alpha. And
  * the two ways a row of an interlaced image is put into the picture:
  * only its own pixels, or the "blocky" display that also fills the
- * pixels later passes will draw (png_progressive_combine_row). C89. */
+ * pixels later passes will draw (png_progressive_combine_row).
+ *
+ * RGB to gray weighs the channels by the file's chromaticities (mDCV,
+ * else cHRM unless sRGB) and, when the file has a gamma (gAMA, sRGB),
+ * mixes in linear light through libpng's tables, built once at setup;
+ * a file with neither takes the plain path it always took. C89. */
 
 #ifndef CELLPNGDEC_ROWS_H
 #define CELLPNGDEC_ROWS_H
@@ -23,7 +28,8 @@ enum
    PDR_EXPAND        = 1 << 0, /* png_set_palette_to_rgb, png_set_expand_gray_1_2_4_to_8 */
    PDR_EXPAND_TRNS   = 1 << 1, /* png_set_palette_to_rgb, png_set_tRNS_to_alpha */
    PDR_STRIP_ALPHA   = 1 << 2, /* png_set_strip_alpha */
-   PDR_RGB_TO_GRAY   = 1 << 3, /* png_set_rgb_to_gray, default coefficients */
+   PDR_RGB_TO_GRAY   = 1 << 3, /* png_set_rgb_to_gray, default coefficients
+                                  (so the file's chromaticities, if any) */
    PDR_STRIP_16      = 1 << 4, /* png_set_strip_16 */
    PDR_ADD_ALPHA     = 1 << 5, /* png_set_add_alpha */
    PDR_FILLER_BEFORE = 1 << 6, /* ... with PNG_FILLER_BEFORE */
@@ -75,18 +81,31 @@ struct pdr
    int               valid;      /* 0: libpng would have failed on this set */
    uint8_t          *work;       /* two rows at 8 bytes a pixel, and one more */
    size_t            work_cap;
+
+   /* RGB to gray, as png_init_read_transformations leaves it */
+   uint32_t          gray_red;   /* coefficients, /32768 */
+   uint32_t          gray_green;
+   int               gray_gamma; /* through the gamma tables */
+   unsigned          gamma_shift;/* 16 bits: low bits the tables drop */
+   uint8_t           gamma_8[3][256];  /* 8 bits: file to screen, to linear,
+                                          from linear */
+   uint16_t         *gamma_16;   /* 16 bits: the same, each 256 entries
+                                    for each of the 256 >> shift low bits */
+   size_t            gamma_16_cap;
 };
 
 /* Settles the output format for @flags, as png_read_update_info, and
- * takes the work rows. Called once the header is read; the memory stays
- * for the next image that fits. Returns 0 when out of memory. */
+ * takes the work rows (and gamma tables, for RGB to gray on a 16-bit file
+ * with a gamma). Called once the header is read; the memory stays for the
+ * next image that fits. Returns 0 when out of memory. */
 int pdr_setup(struct pdr *p, const struct rpng_rows_info *info,
       unsigned flags, unsigned filler);
 
 void pdr_free(struct pdr *p);
 
 /* The row's pixels converted, @width of them, in p->out's format, in
- * the work memory until the next call */
+ * the work memory until the next call; @row itself, lent back, when no
+ * conversion applies */
 const uint8_t *pdr_convert(struct pdr *p, const uint8_t *row, uint32_t width);
 
 /* A converted pass row stretched to the whole width, each pixel across

@@ -5,14 +5,21 @@
  * rpng_rows with cellPngDec_rows.c's conversions - and compared byte for
  * byte: the row size, the pixels read row by row (cellPngDecDecodeData),
  * and the progressive reader's row callbacks, row numbers and blocky
- * display (cellPngDecExtDecodeData with a display callback). libpng is
- * the oracle here only; the core does not link it.
+ * display (cellPngDecExtDecodeData with a display callback). Then RGB
+ * turned gray in files with colour chunks (gAMA, sRGB, cHRM, mDCV, cICP,
+ * sBIT, in the orders that decide which counts), where libpng weighs the
+ * channels by the chromaticities and mixes in linear light.
+ *
+ * libpng is the oracle here only; the core does not link it. It is
+ * libpng 1.6.59, the version RPCS3 built with, from source: the Makefile
+ * fetches it (the colour rules changed in 1.6.4x and 1.6.5x).
  *
  * Usage: test_png_rows */
 
 #include <setjmp.h>
 #include <png.h>
 
+#include <encodings/crc32.h>
 #include <formats/rpng_rows.h>
 #include "../../Emu/Cell/Modules/cellPngDec_rows.h"
 
@@ -82,6 +89,16 @@ static int make_png(struct mem *m, uint32_t w, uint32_t h, int depth, int ct,
    if (rb * h > 8)
       for (i = 0; i < rb * h / 3; i += 7)
          img[i] = 0;
+   /* and some gray pixels of any value in RGB, every fifth */
+   if ((ct == 2 || ct == 6) && depth >= 8)
+   {
+      size_t bps = (size_t)depth / 8, px = bps * ch, k;
+      for (k = 0; k + px <= rb * h; k += px * 5)
+      {
+         memcpy(img + k + bps, img + k, bps);
+         memcpy(img + k + bps * 2, img + k, bps);
+      }
+   }
    for (i = 0; i < h; i++)
       rows[i] = img + i * rb;
    if (setjmp(png_jmpbuf(png)))
@@ -317,20 +334,269 @@ static size_t ours(const struct mem *m, int out_space, int alpha_select,
    return ev == RPNG_ROWS_END ? rb : 0;
 }
 
+static struct prog lp, op;
+static uint8_t    *img_a, *img_b;
+static unsigned    cases, unsupported;
+
+static const int all_spaces[] = { PDR_CS_GRAYSCALE, PDR_CS_RGB, PDR_CS_PALETTE,
+   PDR_CS_GRAYSCALE_ALPHA, PDR_CS_RGBA, PDR_CS_ARGB };
+static const int gray_spaces[] = { PDR_CS_GRAYSCALE, PDR_CS_GRAYSCALE_ALPHA };
+
+/* The outputs in @spaces, with either alpha and depth, libpng against ours */
+static void compare(const struct mem *m, const char *name, const int *spaces,
+      unsigned n_spaces)
+{
+   unsigned sp, as, od;
+
+   for (sp = 0; sp < n_spaces; sp++)
+   for (as = 0; as < 2; as++)
+   for (od = 8; od <= 16; od += 8)
+   {
+      uint32_t h = 0;
+      size_t   rb_lib = libpng_rows(m, spaces[sp], (int)as, 0x80, od, img_a, &h);
+      size_t   rb_lp  = libpng_progressive(m, spaces[sp], (int)as, 0x80, od, &lp);
+      size_t   rb_us  = ours(m, spaces[sp], (int)as, 0x80, od, img_b, &op);
+      char     what[200];
+
+      sprintf(what, "%s -> space %d alpha %u depth %u", name, spaces[sp], as, od);
+      cases++;
+      if (!rb_lib)
+      {
+         /* libpng failed: so must we */
+         if (rb_us)
+            fprintf(stderr, "%s: libpng failed, ours did not\n", what);
+         TEST_CHECK(!rb_us);
+         unsupported++;
+         continue;
+      }
+      if (rb_us != rb_lib || memcmp(img_a, img_b, rb_lib * h))
+         fprintf(stderr, "%s: rows differ (row size %u vs %u)\n", what,
+               (unsigned)rb_lib, (unsigned)rb_us);
+      TEST_CHECK(rb_us == rb_lib && !memcmp(img_a, img_b, rb_lib * h));
+
+      TEST_CHECK(rb_lp == rb_lib);
+      if (lp.n != op.n || memcmp(lp.log, op.log, sizeof(lp.log[0]) * lp.n)
+            || memcmp(lp.img, op.img, rb_lib * h))
+         fprintf(stderr, "%s: progressive differs (%u vs %u callbacks)\n",
+               what, lp.n, op.n);
+      TEST_CHECK(lp.n == op.n && !memcmp(lp.log, op.log, sizeof(lp.log[0]) * lp.n));
+      TEST_CHECK(!memcmp(lp.img, op.img, rb_lib * h));
+   }
+}
+
+/* ---- colour chunks, written by hand after IHDR so their order is ours */
+
+struct chunks
+{
+   uint8_t d[512];
+   size_t  n;
+};
+
+static void put_chunk(struct chunks *c, const char *type, const uint8_t *d,
+      uint32_t n)
+{
+   uint8_t  *o = c->d + c->n;
+   uint32_t  crc;
+   o[0] = (uint8_t)(n >> 24); o[1] = (uint8_t)(n >> 16);
+   o[2] = (uint8_t)(n >> 8);  o[3] = (uint8_t)n;
+   memcpy(o + 4, type, 4);
+   memcpy(o + 8, d, n);
+   crc = encoding_crc32(0, o + 4, 4 + n);
+   o[8 + n] = (uint8_t)(crc >> 24); o[9 + n] = (uint8_t)(crc >> 16);
+   o[10 + n] = (uint8_t)(crc >> 8); o[11 + n] = (uint8_t)crc;
+   c->n += 12 + n;
+}
+
+static void put_be32(uint8_t *p, uint32_t v)
+{
+   p[0] = (uint8_t)(v >> 24); p[1] = (uint8_t)(v >> 16);
+   p[2] = (uint8_t)(v >> 8);  p[3] = (uint8_t)v;
+}
+
+static void gama(struct chunks *c, uint32_t g)
+{
+   uint8_t b[4];
+   put_be32(b, g);
+   put_chunk(c, "gAMA", b, 4);
+}
+
+/* white, red, green, blue x and y, times 100000 */
+static void chrm(struct chunks *c, const uint32_t v[8])
+{
+   uint8_t  b[32];
+   unsigned i;
+   for (i = 0; i < 8; i++)
+      put_be32(b + i * 4, v[i]);
+   put_chunk(c, "cHRM", b, 32);
+}
+
+/* red, green, blue and white x and y, times 50000 */
+static void mdcv(struct chunks *c, const uint16_t v[8])
+{
+   uint8_t  b[24];
+   unsigned i;
+   for (i = 0; i < 8; i++)
+   {
+      b[i * 2]     = (uint8_t)(v[i] >> 8);
+      b[i * 2 + 1] = (uint8_t)v[i];
+   }
+   put_be32(b + 16, 10000000);
+   put_be32(b + 20, 50);
+   put_chunk(c, "mDCV", b, 24);
+}
+
+static const uint32_t chrm_srgb[8] = { 31270, 32900, 64000, 33000, 30000, 60000, 15000, 6000 };
+static const uint32_t chrm_adobe[8] = { 31270, 32900, 64000, 33000, 21000, 71000, 15000, 6000 };
+static const uint32_t chrm_prophoto[8] = { 34570, 35850, 73470, 26530, 15960, 84040, 3660, 100 };
+/* white outside the primaries: no colour space */
+static const uint32_t chrm_bad[8] = { 90000, 9000, 64000, 33000, 30000, 60000, 15000, 6000 };
+/* a white too near y 0 to use */
+static const uint32_t chrm_tiny[8] = { 31270, 4, 64000, 33000, 30000, 60000, 15000, 6000 };
+static const uint16_t mdcv_p3[8] = { 34000, 16000, 13250, 34500, 7500, 3000, 15635, 16450 };
+
+/* The colour chunk sets; @depth picks sBIT values that fit */
+static unsigned colour_set(unsigned k, struct chunks *c, int depth, const char **name)
+{
+   c->n = 0;
+   switch (k)
+   {
+      case 0:  *name = "gAMA 1/2.2"; gama(c, 45455); break;
+      case 1:  *name = "gAMA 2.2"; gama(c, 220000); break;
+      case 2:  *name = "gAMA 1.0"; gama(c, 100000); break;
+      case 3:  *name = "gAMA 0.97, not significant"; gama(c, 97000); break;
+      case 4:  *name = "gAMA 0.0001"; gama(c, 10); break;
+      case 5:  *name = "gAMA 0.00001, its inverse overflows"; gama(c, 1); break;
+      case 6:  *name = "gAMA 0"; gama(c, 0); break;
+      case 7:  *name = "sRGB"; put_chunk(c, "sRGB", (const uint8_t*)"\0", 1); break;
+      case 8:  *name = "cHRM sRGB"; chrm(c, chrm_srgb); break;
+      case 9:  *name = "cHRM Adobe, gAMA"; chrm(c, chrm_adobe); gama(c, 45455); break;
+      case 10: *name = "cHRM ProPhoto, gAMA 1.8"; gama(c, 55556); chrm(c, chrm_prophoto); break;
+      case 11: *name = "cHRM unusable, gAMA"; chrm(c, chrm_bad); gama(c, 45455); break;
+      case 12: *name = "cHRM white y 0, gAMA"; chrm(c, chrm_tiny); gama(c, 45455); break;
+      case 13: *name = "cHRM and sRGB: sRGB's"; chrm(c, chrm_prophoto);
+               put_chunk(c, "sRGB", (const uint8_t*)"\1", 1); break;
+      case 14: *name = "mDCV over sRGB"; put_chunk(c, "sRGB", (const uint8_t*)"\0", 1);
+               mdcv(c, mdcv_p3); break;
+      case 15: *name = "mDCV over cHRM"; chrm(c, chrm_adobe); mdcv(c, mdcv_p3);
+               gama(c, 45455); break;
+      case 16: *name = "sRGB then gAMA"; put_chunk(c, "sRGB", (const uint8_t*)"\0", 1);
+               gama(c, 30000); break;
+      case 17: *name = "gAMA then sRGB"; gama(c, 30000);
+               put_chunk(c, "sRGB", (const uint8_t*)"\0", 1); break;
+      case 18: *name = "cICP, gAMA, sRGB: gAMA's";
+               put_chunk(c, "cICP", (const uint8_t*)"\1\15\0\1", 4); gama(c, 30000);
+               put_chunk(c, "sRGB", (const uint8_t*)"\0", 1); break;
+      case 19: *name = "gAMA, sRGB, cICP: sRGB's"; gama(c, 30000);
+               put_chunk(c, "sRGB", (const uint8_t*)"\0", 1);
+               put_chunk(c, "cICP", (const uint8_t*)"\1\15\0\1", 4); break;
+      case 20: *name = "cICP, sRGB, gAMA: sRGB's";
+               put_chunk(c, "cICP", (const uint8_t*)"\1\15\0\1", 4);
+               put_chunk(c, "sRGB", (const uint8_t*)"\0", 1); gama(c, 30000); break;
+      case 21: *name = "sBIT, gAMA";
+               put_chunk(c, "sBIT", depth == 16 ? (const uint8_t*)"\12\14\13\7"
+                     : (const uint8_t*)"\5\6\5\3", 4);
+               gama(c, 45455); break;
+      case 22: *name = "sBIT 3, gAMA";
+               put_chunk(c, "sBIT", (const uint8_t*)"\3\2\3\1", 4);
+               gama(c, 45455); break;
+      case 23: *name = "sBIT 16, gAMA 2.2";
+               put_chunk(c, "sBIT", depth == 16 ? (const uint8_t*)"\20\20\20\20"
+                     : (const uint8_t*)"\10\10\10\10", 4);
+               gama(c, 220000); break;
+      case 24: *name = "a second gAMA, a broken sRGB";
+               gama(c, 45455); gama(c, 220000);
+               put_chunk(c, "sRGB", (const uint8_t*)"\4", 1); break;
+      default: return 0;
+   }
+   return 1;
+}
+
+/* sBIT is one byte a channel: RGB files take three of the four */
+static void fix_sbit(struct chunks *c, int ct)
+{
+   size_t at = 0;
+   if (ct != 2)
+      return;
+   while (at < c->n)
+   {
+      uint32_t n = ((uint32_t)c->d[at] << 24) | ((uint32_t)c->d[at + 1] << 16)
+         | ((uint32_t)c->d[at + 2] << 8) | c->d[at + 3];
+      if (!memcmp(c->d + at + 4, "sBIT", 4) && n == 4)
+      {
+         uint8_t v[3];
+         size_t  rest = c->n - (at + 16);
+         struct chunks t;
+         memcpy(v, c->d + at + 8, 3);
+         memcpy(t.d, c->d + at + 16, rest);
+         c->n = at;
+         put_chunk(c, "sBIT", v, 3);
+         memcpy(c->d + c->n, t.d, rest);
+         c->n += rest;
+         return;
+      }
+      at += 12 + n;
+   }
+}
+
+static void colour_cases(struct mem *m)
+{
+   static const int types[][2] = { { 2, 8 }, { 2, 16 }, { 6, 8 }, { 6, 16 } };
+   static const uint32_t sizes[][2] = { { 13, 9 }, { 64, 16 } };
+   unsigned t, s, il, k;
+
+   for (t = 0; t < sizeof(types) / sizeof(types[0]); t++)
+   for (s = 0; s < sizeof(sizes) / sizeof(sizes[0]); s++)
+   for (il = 0; il < 2; il++)
+   for (k = 0; ; k++)
+   {
+      int           ct = types[t][0], depth = types[t][1];
+      struct chunks c;
+      const char   *set;
+      char          name[160];
+
+      if (!colour_set(k, &c, depth, &set))
+         break;
+      fix_sbit(&c, ct);
+      if (!make_png(m, sizes[s][0], sizes[s][1], depth, ct, (int)il, 0,
+               t * 131 + s * 17 + il * 7 + k))
+      {
+         TEST_CHECK(!"libpng could not write the image");
+         continue;
+      }
+      /* after the signature and IHDR */
+      if (m->n + c.n > m->cap)
+      {
+         m->cap = m->n + c.n;
+         m->p   = (uint8_t*)realloc(m->p, m->cap);
+      }
+      memmove(m->p + 33 + c.n, m->p + 33, m->n - 33);
+      memcpy(m->p + 33, c.d, c.n);
+      m->n += c.n;
+      sprintf(name, "type %d depth %d %ux%u %s, %s", ct, depth,
+            (unsigned)sizes[s][0], (unsigned)sizes[s][1],
+            il ? "Adam7" : "plain", set);
+      /* only RGB to gray reads the colour chunks */
+      compare(m, name, gray_spaces, 2);
+   }
+}
+
 int main(void)
 {
    static const int types[][2] = {
       { 0, 1 }, { 0, 2 }, { 0, 4 }, { 0, 8 }, { 0, 16 }, { 2, 8 }, { 2, 16 },
       { 3, 1 }, { 3, 2 }, { 3, 4 }, { 3, 8 }, { 4, 8 }, { 4, 16 }, { 6, 8 }, { 6, 16 } };
    static const uint32_t sizes[][2] = { { 1, 1 }, { 3, 2 }, { 5, 3 }, { 13, 9 }, { 20, 17 } };
-   static const int spaces[] = { PDR_CS_GRAYSCALE, PDR_CS_RGB, PDR_CS_PALETTE,
-      PDR_CS_GRAYSCALE_ALPHA, PDR_CS_RGBA, PDR_CS_ARGB };
-   static struct prog lp, op;
    struct mem m;
-   uint8_t *a = (uint8_t*)malloc(1 << 20);
-   uint8_t *b = (uint8_t*)malloc(1 << 20);
-   unsigned t, s, il, tr, sp, as, od, cases = 0, unsupported = 0;
+   unsigned t, s, il, tr;
 
+   if (png_access_version_number() != 10659)
+   {
+      fprintf(stderr, "test_png_rows: the oracle is libpng %s, it must be 1.6.59\n",
+            png_get_libpng_ver(NULL));
+      return 1;
+   }
+   img_a  = (uint8_t*)malloc(1 << 20);
+   img_b  = (uint8_t*)malloc(1 << 20);
    lp.img = (uint8_t*)malloc(1 << 20);
    op.img = (uint8_t*)malloc(1 << 20);
    memset(&m, 0, sizeof(m));
@@ -340,7 +606,8 @@ int main(void)
    for (il = 0; il < 2; il++)
    for (tr = 0; tr < 2; tr++)
    {
-      int ct = types[t][0], depth = types[t][1];
+      int  ct = types[t][0], depth = types[t][1];
+      char name[96];
       if (tr && (ct & 4))
          continue;
       if (!make_png(&m, sizes[s][0], sizes[s][1], depth, ct, (int)il, (int)tr, t * 977 + s * 31 + il))
@@ -349,46 +616,16 @@ int main(void)
          TEST_CHECK(!"libpng could not write the image");
          continue;
       }
-      for (sp = 0; sp < sizeof(spaces) / sizeof(spaces[0]); sp++)
-      for (as = 0; as < 2; as++)
-      for (od = 8; od <= 16; od += 8)
-      {
-         uint32_t h = 0;
-         size_t   rb_lib = libpng_rows(&m, spaces[sp], (int)as, 0x80, od, a, &h);
-         size_t   rb_lp  = libpng_progressive(&m, spaces[sp], (int)as, 0x80, od, &lp);
-         size_t   rb_us  = ours(&m, spaces[sp], (int)as, 0x80, od, b, &op);
-         char     what[160];
-
-         sprintf(what, "type %d depth %d %ux%u %s%s -> space %d alpha %u depth %u",
-               ct, depth, (unsigned)sizes[s][0], (unsigned)sizes[s][1],
-               il ? "Adam7" : "plain", tr ? " tRNS" : "", spaces[sp], as, od);
-         cases++;
-         if (!rb_lib)
-         {
-            /* libpng failed: so must we */
-            if (rb_us)
-               fprintf(stderr, "%s: libpng failed, ours did not\n", what);
-            TEST_CHECK(!rb_us);
-            unsupported++;
-            continue;
-         }
-         if (rb_us != rb_lib || memcmp(a, b, rb_lib * h))
-            fprintf(stderr, "%s: rows differ (row size %u vs %u)\n", what,
-                  (unsigned)rb_lib, (unsigned)rb_us);
-         TEST_CHECK(rb_us == rb_lib && !memcmp(a, b, rb_lib * h));
-
-         TEST_CHECK(rb_lp == rb_lib);
-         if (lp.n != op.n || memcmp(lp.log, op.log, sizeof(lp.log[0]) * lp.n)
-               || memcmp(lp.img, op.img, rb_lib * h))
-            fprintf(stderr, "%s: progressive differs (%u vs %u callbacks)\n",
-                  what, lp.n, op.n);
-         TEST_CHECK(lp.n == op.n && !memcmp(lp.log, op.log, sizeof(lp.log[0]) * lp.n));
-         TEST_CHECK(!memcmp(lp.img, op.img, rb_lib * h));
-      }
+      sprintf(name, "type %d depth %d %ux%u %s%s", ct, depth,
+            (unsigned)sizes[s][0], (unsigned)sizes[s][1],
+            il ? "Adam7" : "plain", tr ? " tRNS" : "");
+      compare(&m, name, all_spaces, 6);
    }
 
-   free(a);
-   free(b);
+   colour_cases(&m);
+
+   free(img_a);
+   free(img_b);
    free(lp.img);
    free(op.img);
    free(m.p);
