@@ -286,19 +286,30 @@ static void ours_prog_row(void *ud, const uint8_t *row, uint32_t num, unsigned p
             g->p->info->interlace ? (int)pass : -1, 1);
 }
 
+/* One decoder and one set of conversion rows for every case, reset in
+ * between, as cellPngDec keeps them in its pool from one stream to the
+ * next: an image after a larger or smaller one, of another type, decodes
+ * as on a fresh decoder */
+static rpng_rows_t *shared_z;
+static struct pdr   shared_p;
+
 /* ours: both readers at once; returns the row size, 0 if not supported */
 static size_t ours(const struct mem *m, int out_space, int alpha_select,
       unsigned alpha, unsigned out_depth, uint8_t *img, struct prog *g)
 {
-   rpng_rows_t *z = rpng_rows_new();
-   struct pdr   p;
+   rpng_rows_t *z;
+   struct pdr  *pp = &shared_p;
    struct pdr_push push;
    size_t at = 0, rb = 0;
    int    ev;
 
-   memset(&p, 0, sizeof(p));
+   if (!shared_z)
+      shared_z = rpng_rows_new();
+   else
+      rpng_rows_reset(shared_z);
+   z = shared_z;
    g->n = 0;
-   g->p = &p;
+   g->p = pp;
    for (;;)
    {
       struct rpng_rows_row row;
@@ -312,9 +323,9 @@ static size_t ours(const struct mem *m, int out_space, int alpha_select,
          int      unsupported;
          unsigned flags = pdr_flags_for(info, out_space, alpha_select, alpha,
                out_depth, &filler, &unsupported);
-         if (!pdr_setup(&p, info, flags, filler) || !p.valid)
+         if (!pdr_setup(pp, info, flags, filler) || !pp->valid)
             break;
-         rb = p.out_rowbytes;
+         rb = pp->out_rowbytes;
          g->rb = rb;
          memset(img, 0, rb * info->height);
          memset(g->img, 0, rb * info->height);
@@ -322,15 +333,13 @@ static size_t ours(const struct mem *m, int out_space, int alpha_select,
       }
       else if (ev == RPNG_ROWS_ROW)
       {
-         const uint8_t *c = pdr_convert(&p, row.data, row.width);
-         pdr_scatter(&p, img + (size_t)row.y * rb, c, &row);
-         pdr_push_row(&p, &push, c, row.width, ours_prog_row, g);
+         const uint8_t *c = pdr_convert(pp, row.data, row.width);
+         pdr_scatter(pp, img + (size_t)row.y * rb, c, &row);
+         pdr_push_row(pp, &push, c, row.width, ours_prog_row, g);
       }
       else
          break;
    }
-   rpng_rows_free(z);
-   pdr_free(&p);
    return ev == RPNG_ROWS_END ? rb : 0;
 }
 
@@ -624,6 +633,8 @@ int main(void)
 
    colour_cases(&m);
 
+   rpng_rows_free(shared_z);
+   pdr_free(&shared_p);
    free(img_a);
    free(img_b);
    free(lp.img);

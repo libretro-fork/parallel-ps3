@@ -84,6 +84,73 @@ struct PngDecHost
 		rpng_rows_free(rows);
 		pdr_free(&conv);
 	}
+
+	// As made, for the next stream; the decoder, the conversion rows and
+	// the file buffer keep their memory
+	void reset()
+	{
+		rpng_rows_reset(rows);
+		push = {};
+		params_set = false;
+		done = false;
+		sig_at = 0;
+		file_at = 0;
+		file_have = 0;
+	}
+};
+
+// Decoders a closed stream gave back, for the next open: games open and
+// close PNGs as they load, and a decoder taken from here needs no memory
+// of its own once its first image has been decoded. Lock-free: a slot is
+// taken by exchange and filled by compare-and-swap; a decoder that finds
+// no free slot is freed. Made at boot and emptied at the emulation's end.
+struct png_dec_host_pool
+{
+	static constexpr usz size = 8;
+	atomic_t<PngDecHost*> slots[size]{};
+
+	png_dec_host_pool() = default;
+	png_dec_host_pool(const png_dec_host_pool&) = delete;
+	png_dec_host_pool& operator=(const png_dec_host_pool&) = delete;
+
+	~png_dec_host_pool()
+	{
+		for (auto& slot : slots)
+			delete slot.exchange(nullptr);
+	}
+
+	PngDecHost* take()
+	{
+		for (auto& slot : slots)
+		{
+			if (PngDecHost* host = slot.exchange(nullptr))
+				return host;
+		}
+
+		PngDecHost* host = new PngDecHost;
+		if (!(host->rows = rpng_rows_new()))
+		{
+			delete host;
+			return nullptr;
+		}
+		return host;
+	}
+
+	void give(PngDecHost* host)
+	{
+		if (!host)
+			return;
+
+		host->reset();
+
+		for (auto& slot : slots)
+		{
+			if (slot.compare_and_swap_test(nullptr, host))
+				return;
+		}
+
+		delete host;
+	}
 };
 
 // The next event of the decoder, the input taken from the stream's source.
@@ -306,12 +373,12 @@ error_code pngDecOpen(ppu_thread& ppu, PHandle handle, PPStream png_stream, PSrc
 		return CELL_PNGDEC_ERROR_HEADER;
 	}
 
-	// The decoder; the file source reads a block at a time into a buffer
-	// made here, a buffer source is read where it is
-	auto host = std::make_unique<PngDecHost>();
-	host->rows = rpng_rows_new();
+	// The decoder, one a closed stream gave back when there is one; the
+	// file source reads a block at a time into its buffer, a buffer source
+	// is read where it is
+	PngDecHost* host = g_fxo->get<png_dec_host_pool>().take();
 
-	if (!host->rows)
+	if (!host)
 	{
 		cellPngDec.error("PNG decoder creation failed.");
 		return CELL_PNGDEC_ERROR_FATAL;
@@ -320,10 +387,11 @@ error_code pngDecOpen(ppu_thread& ppu, PHandle handle, PPStream png_stream, PSrc
 	if (buffer->file)
 	{
 		std::memcpy(host->sig, header, 8);
-		host->file_buf.resize(0x10000);
+		if (host->file_buf.size() < 0x10000)
+			host->file_buf.resize(0x10000);
 	}
 
-	stream->host = host.release();
+	stream->host = host;
 
 	// We must indicate, that we allocated more memory
 	open_info->initSpaceAllocated += u32{sizeof(PngBuffer)};
@@ -366,8 +434,8 @@ error_code pngDecClose(ppu_thread& ppu, PHandle handle, PStream stream)
 		}
 	}
 
-	// Free the decoder
-	delete stream->host;
+	// The decoder back to the pool, for the next stream
+	g_fxo->get<png_dec_host_pool>().give(stream->host);
 	stream->host = nullptr;
 
 	// Deallocate the stream memory
