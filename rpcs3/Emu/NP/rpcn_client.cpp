@@ -396,20 +396,26 @@ namespace rpcn
 		while (true)
 		{
 			sem_reader.acquire();
-			{
-				std::lock_guard lock(mutex_read);
-				while (true)
-				{
-					if (terminate)
-					{
-						return;
-					}
 
-					if (!handle_input())
-					{
-						break;
-					}
+			// Busy before connected is looked at: disconnect() clears
+			// connected before it looks at busy, so one of the two sees the
+			// other (both sequentially consistent)
+			reader_busy = 1;
+
+			while (!terminate && connected)
+			{
+				if (!handle_input())
+				{
+					break;
 				}
+			}
+
+			reader_busy = 0;
+			reader_busy.notify_all();
+
+			if (terminate)
+			{
+				return;
 			}
 		}
 	}
@@ -422,18 +428,21 @@ namespace rpcn
 		{
 			sem_writer.acquire();
 
+			writer_busy = 1;
+
+			// A failed send ends the connection (connected cleared); the
+			// thread waits for the next one instead of ending
+			if (!terminate && connected)
 			{
-				std::lock_guard lock(mutex_write);
+				handle_output();
+			}
 
-				if (terminate)
-				{
-					return;
-				}
+			writer_busy = 0;
+			writer_busy.notify_all();
 
-				if (!handle_output())
-				{
-					break;
-				}
+			if (terminate)
+			{
+				return;
 			}
 		}
 	}
@@ -745,21 +754,13 @@ namespace rpcn
 
 	void rpcn_client::add_packet(std::vector<u8> packet)
 	{
-		std::lock_guard lock(mutex_packets_to_send);
-		packets_to_send.push_back(std::move(packet));
+		packets_to_send.push(std::move(packet));
 		sem_writer.release();
 	}
 
 	bool rpcn_client::handle_output()
 	{
-		std::vector<std::vector<u8>> packets;
-		{
-			std::lock_guard lock(mutex_packets_to_send);
-			packets = std::move(packets_to_send);
-			packets_to_send.clear();
-		}
-
-		for (const auto& packet : packets)
+		for (auto&& packet : packets_to_send.pop_all())
 		{
 			if (!send_packet(packet))
 			{
@@ -953,6 +954,12 @@ namespace rpcn
 
 	void rpcn_client::disconnect()
 	{
+		// The reader and the writer thread out of the connection first: they
+		// look at connected at least every RPCN_TIMEOUT_INTERVAL
+		connected = false;
+		reader_busy.wait(1);
+		writer_busy.wait(1);
+
 		if (tls)
 		{
 			// Says close_notify if it can without waiting, and closes the
@@ -997,10 +1004,8 @@ namespace rpcn
 		const auto [hostname, port] = *hostname_and_port;
 
 		{
-			// Ensures both read & write threads are in waiting state
-			std::lock_guard lock_read(mutex_read), lock_write(mutex_write);
-
-			// Cleans previous data if any
+			// Cleans previous data if any, with the reader and the writer
+			// thread out of it
 			disconnect();
 
 			memset(&addr_rpcn, 0, sizeof(addr_rpcn));

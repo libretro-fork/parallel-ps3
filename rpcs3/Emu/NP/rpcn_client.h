@@ -5,6 +5,7 @@
 #include <thread>
 #include <semaphore>
 #include "Utilities/mutex.h"
+#include "Utilities/lockless.h"
 #include "Emu/localized_string_id.h"
 
 #ifdef _WIN32
@@ -219,7 +220,10 @@ namespace rpcn
 		std::mutex mutex_connected, mutex_authentified;
 
 		std::binary_semaphore sem_reader, sem_writer, sem_rpcn;
-		std::mutex mutex_read, mutex_write;
+		// Set while the reader or the writer thread uses the connection:
+		// disconnect() clears connected, then waits for both to be clear
+		// before it frees the connection. No lock.
+		atomic_t<u32> reader_busy = 0, writer_busy = 0;
 
 		std::thread thread_rpcn, thread_rpcn_reader, thread_rpcn_writer;
 
@@ -228,8 +232,9 @@ namespace rpcn
 		atomic_t<u32> num_failures = 0;
 		atomic_t<rpcn_state> state = rpcn_state::failure_no_failure;
 
-		std::vector<std::vector<u8>> packets_to_send;
-		std::mutex mutex_packets_to_send;
+		// Packets for the writer thread: pushed by any thread, taken all at
+		// once by the writer, in order
+		lf_queue<std::vector<u8>> packets_to_send;
 
 		// Friends related
 		mutable shared_mutex mutex_friends;
