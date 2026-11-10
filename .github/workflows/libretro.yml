@@ -175,7 +175,6 @@ jobs:
             mingw-w64-clang-x86_64-vulkan-headers
             mingw-w64-clang-x86_64-vulkan-loader
             base-devel
-            curl
             git
             p7zip
 
