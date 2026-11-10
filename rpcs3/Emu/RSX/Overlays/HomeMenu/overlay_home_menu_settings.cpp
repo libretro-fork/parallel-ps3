@@ -143,9 +143,6 @@ namespace rsx
 			add_checkbox(&g_cfg.audio.enable_buffering, localized_string_id::HOME_MENU_SETTINGS_AUDIO_BUFFERING);
 			add_signed_slider(&g_cfg.audio.desired_buffer_duration, localized_string_id::HOME_MENU_SETTINGS_AUDIO_BUFFER_DURATION, " ms", 1);
 
-			add_checkbox(&g_cfg.audio.enable_time_stretching, localized_string_id::HOME_MENU_SETTINGS_AUDIO_TIME_STRETCHING);
-			add_signed_slider(&g_cfg.audio.time_stretching_threshold, localized_string_id::HOME_MENU_SETTINGS_AUDIO_TIME_STRETCHING_THRESHOLD, " %", 1);
-
 			apply_layout();
 		}
 

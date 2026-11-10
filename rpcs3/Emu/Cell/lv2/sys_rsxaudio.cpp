@@ -1384,10 +1384,8 @@ rsxaudio_backend_thread::emu_audio_cfg rsxaudio_backend_thread::get_emu_cfg()
 	{
 		.audio_device = g_cfg.audio.audio_device,
 		.desired_buffer_duration = g_cfg.audio.desired_buffer_duration,
-		.time_stretching_threshold = g_cfg.audio.time_stretching_threshold / 100.0,
 		.buffering_enabled = static_cast<bool>(g_cfg.audio.enable_buffering),
 		.convert_to_s16 = static_cast<bool>(g_cfg.audio.convert_to_s16),
-		.enable_time_stretching = static_cast<bool>(g_cfg.audio.enable_time_stretching),
 		.dump_to_file = static_cast<bool>(g_cfg.audio.dump_to_file),
 		.channels = out_ch_cnt,
 		.channel_layout = g_cfg.audio.channel_layout,
@@ -1397,7 +1395,6 @@ rsxaudio_backend_thread::emu_audio_cfg rsxaudio_backend_thread::get_emu_cfg()
 	};
 
 	cfg.buffering_enabled = cfg.buffering_enabled && cfg.renderer != audio_renderer::null;
-	cfg.enable_time_stretching = cfg.buffering_enabled && cfg.enable_time_stretching && cfg.time_stretching_threshold > 0.0;
 
 	return cfg;
 }
@@ -1528,12 +1525,6 @@ void rsxaudio_backend_thread::operator()()
 		{
 			backend_init(ra_state, emu_cfg, reset_backend);
 
-			if (emu_cfg.enable_time_stretching)
-			{
-				resampler.set_params(backend_current_cfg.cfg.ch_cnt, backend_current_cfg.cfg.freq);
-				resampler.set_tempo(RESAMPLER_MAX_FREQ_VAL);
-			}
-
 			if (emu_cfg.dump_to_file)
 			{
 				dumper.Open(backend_current_cfg.cfg.ch_cnt, backend_current_cfg.cfg.freq, AudioSampleSize::FLOAT);
@@ -1578,35 +1569,6 @@ void rsxaudio_backend_thread::operator()()
 				const u64 bytes_req = ringbuf.get_free_size();
 				const u64 bytes_read = aux_ringbuf.pop(crnt_buf, bytes_req, true);
 				u64 crnt_buf_size = bytes_read;
-
-				if (emu_cfg.enable_time_stretching)
-				{
-					const u64 input_ch_cnt = static_cast<u64>(ra_state.port[static_cast<u8>(emu_cfg.avport)].ch_cnt);
-					const u64 bytes_per_sample = static_cast<u32>(AudioSampleSize::FLOAT) * input_ch_cnt;
-					const u64 samples_req = bytes_req / bytes_per_sample;
-					const u64 samples_avail = crnt_buf_size / bytes_per_sample;
-					const f64 resampler_ratio = resampler.get_resample_ratio();
-					f64 fullness_ratio = static_cast<f64>(samples_avail + resampler.samples_available()) / samples_req;
-
-					if (fullness_ratio < emu_cfg.time_stretching_threshold)
-					{
-						fullness_ratio /= emu_cfg.time_stretching_threshold;
-						const f64 new_resampler_ratio = (resampler_ratio + fullness_ratio) / 2.0;
-						if (std::abs(new_resampler_ratio - resampler_ratio) >= TIME_STRETCHING_STEP)
-						{
-							resampler.set_tempo(new_resampler_ratio);
-						}
-					}
-					else if (resampler_ratio != RESAMPLER_MAX_FREQ_VAL)
-					{
-						resampler.set_tempo(RESAMPLER_MAX_FREQ_VAL);
-					}
-
-					resampler.put_samples(static_cast<f32*>(crnt_buf), static_cast<u32>(samples_avail));
-					const auto [resampled_data, sample_cnt] = resampler.get_samples(static_cast<u32>(samples_req));
-					crnt_buf = resampled_data;
-					crnt_buf_size = sample_cnt * bytes_per_sample;
-				}
 
 				// Dump audio if enabled
 				if (emu_cfg.dump_to_file)
@@ -1780,7 +1742,7 @@ void rsxaudio_backend_thread::backend_init(const rsxaudio_state& ra_state, const
 
 	{
 		std::lock_guard lock(ringbuf_mutex);
-		use_aux_ringbuf = emu_cfg.enable_time_stretching || emu_cfg.dump_to_file;
+		use_aux_ringbuf = emu_cfg.dump_to_file;
 
 		if (use_aux_ringbuf)
 		{
@@ -1822,8 +1784,6 @@ void rsxaudio_backend_thread::backend_start()
 
 	if (use_aux_ringbuf)
 	{
-		resampler.set_tempo(RESAMPLER_MAX_FREQ_VAL);
-		resampler.flush();
 		aux_ringbuf.reader_flush();
 	}
 

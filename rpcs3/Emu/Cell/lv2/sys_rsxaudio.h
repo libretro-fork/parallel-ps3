@@ -10,7 +10,6 @@
 #include "Emu/Cell/ErrorCodes.h"
 #include "Emu/Audio/AudioDumper.h"
 #include "Emu/Audio/AudioBackend.h"
-#include "Emu/Audio/audio_resampler.h"
 
 #if defined(unix) || defined(__unix) || defined(__unix__)
 // For BSD detection
@@ -471,10 +470,8 @@ private:
 	{
 		std::string audio_device{};
 		s64 desired_buffer_duration = 0;
-		f64 time_stretching_threshold = 0;
 		bool buffering_enabled = false;
 		bool convert_to_s16 = false;
-		bool enable_time_stretching = false;
 		bool dump_to_file = false;
 		AudioChannelCnt channels = AudioChannelCnt::STEREO;
 		audio_channel_layout channel_layout = audio_channel_layout::automatic;
@@ -526,8 +523,6 @@ private:
 	static constexpr f64 SERVICE_PERIOD_SEC = SERVICE_PERIOD / 1'000'000.0;
 	static constexpr u64 SERVICE_THRESHOLD = 1'500;
 
-	static constexpr f64 TIME_STRETCHING_STEP = 0.1f;
-
 	u64 start_time = get_system_time();
 	u64 time_period_idx = 1;
 
@@ -554,7 +549,6 @@ private:
 	bool backend_device_changed = false;
 
 	AudioDumper dumper{};
-	audio_resampler resampler{};
 
 	// Backend
 	void backend_init(const rsxaudio_state& ra_state, const emu_audio_cfg& emu_cfg, bool reset_backend = true);

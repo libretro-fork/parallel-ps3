@@ -994,12 +994,12 @@ static void libretro_apply_core_options()
     g_cfg.video.driver_wakeup_delay.set(std::stoi(driver_delay));
 
     // ==================== AUDIO ====================
-    // cellAudio's own buffer and time stretching are off and not options:
-    // RetroArch keeps the buffer, and cellAudio's on top of it is only latency
-    // the pictures do not have (NNshi, Project Diva); time stretching works
-    // only with that buffer on.
+    // cellAudio's own buffer is off and not an option: RetroArch keeps the
+    // buffer, and cellAudio's on top of it is only latency the pictures do
+    // not have (NNshi, Project Diva). RetroArch's dynamic rate control keeps
+    // the stream in step with what it plays, so the core has no time
+    // stretching of its own.
     g_cfg.audio.enable_buffering.set(false);
-    g_cfg.audio.enable_time_stretching.set(false);
 
     // Audio Format: the speakers the PS3 reports, which decides the mix a game
     // makes. A core cannot ask RetroArch for its Output Layout, and offering
@@ -2899,7 +2899,6 @@ bool retro_load_game(const struct retro_game_info* game)
     // Audio optimizations
     g_cfg.audio.enable_buffering.set(false);  // RetroArch buffers; see rpcs3_audio_buffering
     g_cfg.audio.desired_buffer_duration.set(100);  // 100ms buffer for smoother audio in libretro
-    g_cfg.audio.enable_time_stretching.set(false);  // Disable time stretching (RetroArch handles sync)
 
 
     // Configure audio - set explicit stereo layout to avoid "Unsupported layout 0" error

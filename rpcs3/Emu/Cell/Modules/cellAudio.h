@@ -7,7 +7,6 @@
 #include "Emu/Memory/vm.h"
 #include "Emu/Audio/AudioBackend.h"
 #include "Emu/Audio/AudioDumper.h"
-#include "Emu/Audio/audio_resampler.h"
 #include "Emu/system_config_types.h"
 
 struct lv2_event_queue;
@@ -232,8 +231,6 @@ struct cell_audio_config
 		std::string audio_device{};
 		bool buffering_enabled = false;
 		s64 desired_buffer_duration = 0;
-		bool enable_time_stretching = false;
-		s64 time_stretching_threshold = 0;
 		bool convert_to_s16 = false;
 		bool dump_to_file = false;
 		audio_channel_layout channel_layout = audio_channel_layout::automatic;
@@ -286,16 +283,6 @@ struct cell_audio_config
 	u64 partially_untouched_timeout = 0; // timeout if the game has not touched all audio buffers yet
 
 	/*
-	 * Time Stretching
-	 */
-
-	// We need to be able to set a dynamic frequency ratio to be able to do time stretching
-	bool time_stretching_enabled = false;
-
-	f32 time_stretching_threshold = 0.0f; // we only apply time stretching below this buffer fill rate (adjusted for average period)
-	static constexpr f32 time_stretching_step = 0.1f; // will only reduce/increase the frequency ratio in steps of at least this value
-
-	/*
 	 * Constructor
 	 */
 	cell_audio_config();
@@ -320,7 +307,6 @@ private:
 	std::unique_ptr<float[]> buffer[MAX_AUDIO_BUFFERS]{};
 
 	simple_ringbuf cb_ringbuf{};
-	audio_resampler resampler{};
 
 	atomic_t<bool> backend_active = false;
 	atomic_t<bool> backend_device_changed = false;
@@ -330,8 +316,6 @@ private:
 	u64 play_timestamp = 0;
 
 	u64 last_remainder = 0;
-
-	f32 frequency_ratio = RESAMPLER_MAX_FREQ_VAL;
 
 	u32 cur_pos = 0;
 
@@ -353,8 +337,6 @@ public:
 	u64 update(bool emu_is_paused);
 	void enqueue(bool enqueue_silence = false, bool force = false);
 	void enqueue_silence(u32 buf_count = 1, bool force = false);
-	void process_resampled_data();
-	f32 set_frequency_ratio(f32 new_ratio);
 
 	float* get_buffer(u32 num) const;
 	static u64 get_timestamp();
@@ -366,11 +348,6 @@ public:
 	bool is_playing() const
 	{
 		return playing;
-	}
-
-	f32 get_frequency_ratio() const
-	{
-		return frequency_ratio;
 	}
 
 	bool get_operational_status() const

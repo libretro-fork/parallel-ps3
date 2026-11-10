@@ -105,9 +105,6 @@ endif()
 # stblib
 add_subdirectory(stblib)
 
-# SoundTouch
-add_subdirectory(SoundTouch EXCLUDE_FROM_ALL)
-
 # Vulkan
 set(VULKAN_TARGET 3rdparty_dummy_lib)
 if(USE_VULKAN)
@@ -270,7 +267,6 @@ add_library(3rdparty::vulkan ALIAS ${VULKAN_TARGET})
 add_library(3rdparty::ffmpeg ALIAS 3rdparty_ffmpeg)
 add_library(3rdparty::glew ALIAS 3rdparty_glew)
 add_library(3rdparty::wolfssl ALIAS wolfssl)
-add_library(3rdparty::soundtouch ALIAS soundtouch)
 add_library(3rdparty::rtmidi ALIAS rtmidi)
 add_library(3rdparty::opencv ALIAS ${OPENCV_TARGET})
 add_library(3rdparty::fusion ALIAS Fusion)

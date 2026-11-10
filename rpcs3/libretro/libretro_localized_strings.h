@@ -215,8 +215,6 @@ inline const char* libretro_localized_template(localized_string_id id)
 	case localized_string_id::HOME_MENU_SETTINGS_AUDIO_BACKEND: return "Audio Backend";
 	case localized_string_id::HOME_MENU_SETTINGS_AUDIO_BUFFERING: return "Enable Buffering";
 	case localized_string_id::HOME_MENU_SETTINGS_AUDIO_BUFFER_DURATION: return "Desired Audio Buffer Duration";
-	case localized_string_id::HOME_MENU_SETTINGS_AUDIO_TIME_STRETCHING: return "Enable Time Stretching";
-	case localized_string_id::HOME_MENU_SETTINGS_AUDIO_TIME_STRETCHING_THRESHOLD: return "Time Stretching Threshold";
 	case localized_string_id::HOME_MENU_SETTINGS_VIDEO: return "Video";
 	case localized_string_id::HOME_MENU_SETTINGS_VIDEO_VSYNC: return "VSync";
 	case localized_string_id::HOME_MENU_SETTINGS_VIDEO_FRAME_LIMIT: return "Frame Limit";

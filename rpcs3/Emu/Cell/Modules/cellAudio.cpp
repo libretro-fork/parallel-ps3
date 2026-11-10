@@ -112,20 +112,10 @@ void cell_audio_config::reset(bool backend_changed)
 	fully_untouched_timeout = static_cast<u64>(audio_block_period) * 2;
 	partially_untouched_timeout = static_cast<u64>(audio_block_period) * 4;
 
-	const bool raw_time_stretching_enabled = buffering_enabled && raw.enable_time_stretching && (raw.time_stretching_threshold > 0);
-
-	time_stretching_enabled = raw_time_stretching_enabled;
-	time_stretching_threshold = raw.time_stretching_threshold / 100.0f;
-
 	// Warn if audio backend does not support all requested features
 	if (raw.buffering_enabled && !buffering_enabled)
 	{
 		cellAudio.error("Audio backend %s does not support buffering, this option will be ignored.", backend->GetName());
-
-		if (raw.enable_time_stretching)
-		{
-			cellAudio.error("Audio backend %s does not support time stretching, this option will be ignored.", backend->GetName());
-		}
 	}
 }
 
@@ -151,10 +141,6 @@ audio_ringbuffer::audio_ringbuffer(cell_audio_config& _cfg)
 		m_dump.Open(static_cast<AudioChannelCnt>(cfg.audio_channels), static_cast<AudioFreq>(cfg.audio_sampling_rate), AudioSampleSize::FLOAT);
 	}
 
-	// Configure resampler
-	resampler.set_params(static_cast<AudioChannelCnt>(cfg.audio_channels), static_cast<AudioFreq>(cfg.audio_sampling_rate));
-	resampler.set_tempo(RESAMPLER_MAX_FREQ_VAL);
-
 	const f64 buffer_dur_mult = [&]()
 	{
 		if (cfg.buffering_enabled)
@@ -178,13 +164,6 @@ audio_ringbuffer::~audio_ringbuffer()
 	}
 
 	backend->Close();
-}
-
-f32 audio_ringbuffer::set_frequency_ratio(f32 new_ratio)
-{
-	frequency_ratio = static_cast<f32>(resampler.set_tempo(new_ratio));
-
-	return frequency_ratio;
 }
 
 float* audio_ringbuffer::get_buffer(u32 num) const
@@ -222,14 +201,7 @@ float* audio_ringbuffer::get_current_buffer() const
 u64 audio_ringbuffer::get_enqueued_samples() const
 {
 	AUDIT(cfg.buffering_enabled);
-	const u64 ringbuf_samples = cb_ringbuf.get_used_size() / (cfg.audio_sample_size * cfg.backend_ch_cnt);
-
-	if (cfg.time_stretching_enabled)
-	{
-		return ringbuf_samples + resampler.samples_available();
-	}
-
-	return ringbuf_samples;
+	return cb_ringbuf.get_used_size() / (cfg.audio_sample_size * cfg.backend_ch_cnt);
 }
 
 u64 audio_ringbuffer::get_enqueued_playtime() const
@@ -259,16 +231,9 @@ void audio_ringbuffer::enqueue(bool enqueue_silence, bool force)
 		return;
 	}
 
-	// Enqueue audio
-	if (cfg.time_stretching_enabled)
-	{
-		resampler.put_samples(buf, AUDIO_BUFFER_SAMPLES);
-	}
-	else
-	{
-		// Since time stretching step is skipped, we can commit to buffer directly
-		commit_data(buf, AUDIO_BUFFER_SAMPLES);
-	}
+	// Enqueue audio: straight into the backend's buffer. The frontend keeps
+	// the stream in step with what it plays (RetroArch's dynamic rate control).
+	commit_data(buf, AUDIO_BUFFER_SAMPLES);
 }
 
 void audio_ringbuffer::enqueue_silence(u32 buf_count, bool force)
@@ -277,14 +242,6 @@ void audio_ringbuffer::enqueue_silence(u32 buf_count, bool force)
 	{
 		enqueue(true, force);
 	}
-}
-
-void audio_ringbuffer::process_resampled_data()
-{
-	if (!cfg.time_stretching_enabled) return;
-
-	const auto& [buffer, samples] = resampler.get_samples(static_cast<u32>(cb_ringbuf.get_free_size() / (cfg.audio_sample_size * cfg.backend_ch_cnt)));
-	commit_data(buffer, samples);
 }
 
 void audio_ringbuffer::commit_data(f32* buf, u32 sample_cnt)
@@ -329,14 +286,8 @@ void audio_ringbuffer::flush()
 {
 	backend->Pause();
 	cb_ringbuf.writer_flush();
-	resampler.flush();
 	backend_active = false;
 	playing = false;
-
-	if (frequency_ratio != RESAMPLER_MAX_FREQ_VAL)
-	{
-		frequency_ratio = set_frequency_ratio(RESAMPLER_MAX_FREQ_VAL);
-	}
 }
 
 u64 audio_ringbuffer::update(bool emu_is_paused)
@@ -705,8 +656,6 @@ void cell_audio_thread::reset_ports(s32 offset)
 
 void cell_audio_thread::advance(u64 timestamp)
 {
-	ringbuffer->process_resampled_data();
-
 	std::unique_lock lock(mutex);
 
 	// update ports
@@ -801,8 +750,6 @@ namespace audio
 			.audio_device = g_cfg.audio.audio_device,
 			.buffering_enabled = static_cast<bool>(g_cfg.audio.enable_buffering),
 			.desired_buffer_duration = g_cfg.audio.desired_buffer_duration,
-			.enable_time_stretching = static_cast<bool>(g_cfg.audio.enable_time_stretching),
-			.time_stretching_threshold = g_cfg.audio.time_stretching_threshold,
 			.convert_to_s16 = static_cast<bool>(g_cfg.audio.convert_to_s16),
 			.dump_to_file = static_cast<bool>(g_cfg.audio.dump_to_file),
 			.channel_layout = g_cfg.audio.channel_layout,
@@ -828,8 +775,6 @@ namespace audio
 				raw.audio_device != new_raw.audio_device ||
 				raw.desired_buffer_duration != new_raw.desired_buffer_duration ||
 				raw.buffering_enabled != new_raw.buffering_enabled ||
-				raw.time_stretching_threshold != new_raw.time_stretching_threshold ||
-				raw.enable_time_stretching != new_raw.enable_time_stretching ||
 				raw.convert_to_s16 != new_raw.convert_to_s16 ||
 				raw.renderer != new_raw.renderer ||
 				raw.dump_to_file != new_raw.dump_to_file)
@@ -1031,7 +976,6 @@ void cell_audio_thread::operator()()
 		else
 		{
 			const u64 enqueued_samples = ringbuffer->get_enqueued_samples();
-			const f32 frequency_ratio = ringbuffer->get_frequency_ratio();
 			const u64 enqueued_playtime = ringbuffer->get_enqueued_playtime();
 			const u64 enqueued_buffers = enqueued_samples / AUDIO_BUFFER_SAMPLES;
 
@@ -1049,31 +993,6 @@ void cell_audio_thread::operator()()
 			if (average_playtime_ratio < 1.0f)
 			{
 				desired_duration_adjusted /= std::max(average_playtime_ratio, 0.25f);
-			}
-
-			if (cfg.time_stretching_enabled)
-			{
-				//  1.0 means exactly as desired
-				// <1.0 means not as full as desired
-				// >1.0 means more full than desired
-				const f32 desired_duration_rate = enqueued_playtime / desired_duration_adjusted;
-
-				// update frequency ratio if necessary
-				if (desired_duration_rate < cfg.time_stretching_threshold)
-				{
-					const f32 normalized_desired_duration_rate = desired_duration_rate / cfg.time_stretching_threshold;
-
-					// change frequency ratio in steps
-					const f32 req_time_stretching_step = (normalized_desired_duration_rate + frequency_ratio) / 2.0f;
-					if (std::abs(req_time_stretching_step - frequency_ratio) > cfg.time_stretching_step)
-					{
-						ringbuffer->set_frequency_ratio(req_time_stretching_step);
-					}
-				}
-				else if (frequency_ratio != RESAMPLER_MAX_FREQ_VAL)
-				{
-					ringbuffer->set_frequency_ratio(RESAMPLER_MAX_FREQ_VAL);
-				}
 			}
 
 			//  1.0 means exactly as desired
