@@ -43,7 +43,6 @@ option(USE_SYSTEM_RTMIDI "Prefer system RtMidi instead of the builtin one" OFF)
 option(USE_SYSTEM_VULKAN_MEMORY_ALLOCATOR "Prefer system Vulkan Memory Allocator instead of the builtin one" OFF)
 option(USE_SYSTEM_WOLFSSL "Prefer system wolfSSL instead of the builtin one" OFF)
 option(USE_SYSTEM_ZLIB "Prefer system ZLIB instead of the builtin one" ON)
-option(USE_SYSTEM_ZSTD "Prefer system zstd instead of the builtin one" OFF)
 option(HAS_MEMORY_BREAKPOINTS "Add support for memory breakpoints to the interpreter" OFF)
 option(USE_LTO "Use LTO for building" ON)
 
@@ -113,6 +112,10 @@ set(CMAKE_RUNTIME_OUTPUT_DIRECTORY_RELWITHDEBINFO "${PROJECT_BINARY_DIR}/bin")
 if(BUILD_RPCS3_TESTS)
     enable_testing()
 endif()
+
+# Before rpcs3/, whose compiler options are for its own C++
+include(rpcs3/libretro/libretro_common.cmake)
+
 add_subdirectory(rpcs3)
 
 set_directory_properties(PROPERTIES VS_STARTUP_PROJECT rpcs3)

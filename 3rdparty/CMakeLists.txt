@@ -19,9 +19,6 @@ add_library(3rdparty_dummy_lib INTERFACE)
 # ZLib
 add_subdirectory(zlib EXCLUDE_FROM_ALL)
 
-# ZSTD
-add_subdirectory(zstd EXCLUDE_FROM_ALL)
-
 # Protobuf
 add_subdirectory(protobuf EXCLUDE_FROM_ALL)
 
@@ -285,7 +282,6 @@ else()
 	add_library(3rdparty::libusb ALIAS usb-1.0-static)
 endif()
 add_library(3rdparty::zlib ALIAS 3rdparty_zlib)
-add_library(3rdparty::zstd ALIAS 3rdparty_zstd)
 add_library(3rdparty::protobuf ALIAS 3rdparty_protobuf)
 add_library(3rdparty::pugixml ALIAS pugixml)
 add_library(3rdparty::glslang ALIAS 3rdparty_glslang)

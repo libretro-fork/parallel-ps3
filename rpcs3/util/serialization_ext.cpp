@@ -9,7 +9,7 @@
 #include "serialization_ext.hpp"
 
 #include <zlib.h>
-#include <zstd.h>
+#include <encodings/rzstd.h>
 
 LOG_CHANNEL(sys_log, "SYS");
 
@@ -781,10 +781,21 @@ usz compressed_serialization_file_handler::get_size(const utils::serial& ar, usz
 
 struct compressed_zstd_stream_data
 {
-	ZSTD_DCtx* m_zd{};
-	ZSTD_DStream* m_zs{};
+	// The frame being read, a block at a time; null between frames
+	rzstd_blocks_t* m_frame{};
+
+	// What the last block decoded that the reader has not taken yet, where
+	// the frame decoded it
+	const u8* m_pending{};
+	usz m_pending_size = 0;
+
 	lf_queue<std::vector<u8>> m_queued_data_to_process;
 	lf_queue<std::vector<u8>> m_queued_data_to_write;
+
+	~compressed_zstd_stream_data()
+	{
+		rzstd_blocks_free(m_frame);
+	}
 };
 
 void compressed_zstd_serialization_file_handler::initialize(utils::serial& ar)
@@ -801,7 +812,7 @@ void compressed_zstd_serialization_file_handler::initialize(utils::serial& ar)
 			return;
 		}
 
-		if (m_read_inited && m_stream->m_zd)
+		if (m_read_inited)
 		{
 			finalize(ar);
 		}
@@ -835,9 +846,7 @@ void compressed_zstd_serialization_file_handler::initialize(utils::serial& ar)
 			finalize(ar);
 		}
 
-		auto& m_zd = m_stream->m_zd;
-		m_zd = ZSTD_createDCtx();
-		m_stream->m_zs = ZSTD_createDStream();
+		// Each frame opens when the reader reaches it
 		m_read_inited = true;
 		m_errored = false;
 	}
@@ -1012,75 +1021,89 @@ usz compressed_zstd_serialization_file_handler::read_at(utils::serial& ar, usz r
 
 	initialize(ar);
 
-	auto& m_zd = m_stream->m_zd;
+	compressed_zstd_stream_data& stream = *m_stream;
 
 	const usz total_to_read = size;
 	usz read_size = 0;
-	u8* out_data = static_cast<u8*>(data);
+	u8* const out_data = static_cast<u8*>(data);
 
-	for (; read_size < total_to_read;)
+	// The file is a run of frames, one per chunk the writer was handed. Each is
+	// decoded a block at a time, every block from exactly the bytes the frame
+	// asks for next, read straight out of the file buffer
+	while (read_size < total_to_read)
 	{
-		// Drain extracted memory stash (also before first file read)
-		out_data = static_cast<u8*>(data) + read_size;
-
-		auto avail_in = m_stream_data.size() - m_stream_data_index;
-		auto next_in = reinterpret_cast<const u8*>(m_stream_data.data() + m_stream_data_index);
-		auto next_out = out_data;
-		auto avail_out = size - read_size;
-
-		for (bool is_first = true; read_size < total_to_read && avail_in; is_first = false)
+		// Hand over what the last block decoded first
+		if (stream.m_pending_size)
 		{
-			bool need_more_file_memory = false;
+			const usz n = std::min<usz>(stream.m_pending_size, total_to_read - read_size);
+			std::memcpy(out_data + read_size, stream.m_pending, n);
+			read_size += n;
+			stream.m_pending += n;
+			stream.m_pending_size -= n;
+			continue;
+		}
 
-			ZSTD_outBuffer outs{next_out, avail_out, 0};
+		const usz avail_in = m_stream_data.size() - m_stream_data_index;
+		usz want = 1;
 
-			// Try to extract previously held data first
-			ZSTD_inBuffer ins{next_in, is_first ? 0 : avail_in, 0};
+		if (stream.m_frame)
+		{
+			want = rzstd_blocks_want(stream.m_frame);
 
-			const usz res = ZSTD_decompressStream(m_zd, &outs, &ins);
-
-			if (ZSTD_isError(res))
+			if (!want)
 			{
-				need_more_file_memory = true;
-				// finalize(ar);
-				// m_errored = true;
-				// sys_log.error("Failure of compressed data reading. (res=%d, read_size=0x%x, avail_in=0x%x, avail_out=0x%x, ar=%s)", res, read_size, avail_in, avail_out, ar);
-				// return read_size;
+				// The frame is all out, the next one starts here
+				rzstd_blocks_free(stream.m_frame);
+				stream.m_frame = nullptr;
+				continue;
 			}
+		}
 
-			read_size += outs.pos;
-			next_out += outs.pos;
-			avail_out -= outs.pos;
-			next_in += ins.pos;
-			avail_in -= ins.pos;
+		if (avail_in < want)
+		{
+			const usz add_size = std::max<usz>(want - avail_in, ar.expect_little_data() ? 0x1'0000 : 0x10'0000);
+			const usz old_file_buf_size = m_stream_data.size();
 
-			m_stream_data_index = next_in - m_stream_data.data();
+			m_stream_data.resize(old_file_buf_size + add_size);
+			m_stream_data.resize(old_file_buf_size + m_file->read_at(m_file_read_index, m_stream_data.data() + old_file_buf_size, add_size));
 
-			if (need_more_file_memory)
+			if (m_stream_data.size() == old_file_buf_size)
 			{
+				// EOF
 				break;
 			}
+
+			m_file_read_index += m_stream_data.size() - old_file_buf_size;
+			continue;
 		}
 
-		if (read_size >= total_to_read)
+		if (!stream.m_frame && !(stream.m_frame = rzstd_blocks_open()))
 		{
-			break;
+			m_errored = true;
+			sys_log.error("Failure of compressed data reading: out of memory. (read_size=0x%x, ar=%s)", read_size, ar);
+			return read_size;
 		}
 
-		const usz add_size = ar.expect_little_data() ? 0x1'0000 : 0x10'0000;
-		const usz old_file_buf_size = m_stream_data.size();
+		want = rzstd_blocks_want(stream.m_frame);
 
-		m_stream_data.resize(old_file_buf_size + add_size);
-		m_stream_data.resize(old_file_buf_size + m_file->read_at(m_file_read_index, m_stream_data.data() + old_file_buf_size, add_size));
-
-		if (m_stream_data.size() == old_file_buf_size)
+		if (avail_in < want)
 		{
-			// EOF
-			//ensure(read_size == total_to_read);
-			break;
+			continue;
 		}
 
-		m_file_read_index += m_stream_data.size() - old_file_buf_size;
+		const u8* block = nullptr;
+		size_t block_size = 0;
+
+		if (rzstd_blocks_give(stream.m_frame, m_stream_data.data() + m_stream_data_index, want, &block, &block_size) != RZSTD_PROCESS_NEXT)
+		{
+			m_errored = true;
+			sys_log.error("Failure of compressed data reading. (read_size=0x%x, avail_in=0x%x, ar=%s)", read_size, avail_in, ar);
+			return read_size;
+		}
+
+		m_stream_data_index += want;
+		stream.m_pending = block;
+		stream.m_pending_size = block_size;
 	}
 
 	if (m_stream_data.size() - m_stream_data_index <= m_stream_data_index / 5)
@@ -1119,12 +1142,12 @@ void compressed_zstd_serialization_file_handler::finalize(utils::serial& ar)
 		return;
 	}
 
-	auto& m_zd = m_stream->m_zd;
-
 	if (m_read_inited)
 	{
-		//ZSTD_decompressEnd(m_stream->m_zd);
-		ensure(ZSTD_freeDCtx(m_zd));
+		rzstd_blocks_free(m_stream->m_frame);
+		m_stream->m_frame = nullptr;
+		m_stream->m_pending = nullptr;
+		m_stream->m_pending_size = 0;
 		m_read_inited = false;
 		return;
 	}
@@ -1211,8 +1234,6 @@ void compressed_zstd_serialization_file_handler::finalize(utils::serial& ar)
 
 void compressed_zstd_serialization_file_handler::stream_data_prepare_thread_op()
 {
-	ZSTD_CCtx* m_zc = ZSTD_createCCtx();
-
 	std::vector<u8> stream_data;
 
 	const stx::shared_ptr<std::vector<u8>> null_ptr = stx::null_ptr;
@@ -1237,10 +1258,13 @@ void compressed_zstd_serialization_file_handler::stream_data_prepare_thread_op()
 			break;
 		}
 
-		stream_data.resize(::ZSTD_compressBound(data->size()));
-		const usz out_size = ZSTD_compressCCtx(m_zc, stream_data.data(), stream_data.size(), data->data(), data->size(), ZSTD_btultra);
+		// One frame per chunk. Level 5 compresses within a fraction of a
+		// percent of rzstd's top levels, at the speed the old library's
+		// level 8 had
+		stream_data.resize(::rzstd_compress_bound(data->size()));
 
-		ensure(!ZSTD_isError(out_size) && out_size);
+		size_t out_size = 0;
+		ensure(::rzstd_encode(stream_data.data(), stream_data.size(), data->data(), data->size(), 5, &out_size) == RZSTD_PROCESS_END && out_size);
 
 		if (m_errored)
 		{
@@ -1261,8 +1285,6 @@ void compressed_zstd_serialization_file_handler::stream_data_prepare_thread_op()
 			output.notify_all();
 		}
 	}
-
-	ZSTD_freeCCtx(m_zc);
 }
 
 void compressed_zstd_serialization_file_handler::file_writer_thread_op()
@@ -1304,7 +1326,6 @@ usz compressed_zstd_serialization_file_handler::get_size(const utils::serial& ar
 	}
 
 	return recommended;
-	//return std::max<usz>(utils::mul_saturate<usz>(ZSTD_decompressBound(m_file->size()), 2), memory_available);
 }
 
 bool null_serialization_file_handler::handle_file_op(utils::serial&, usz, usz, const void*)

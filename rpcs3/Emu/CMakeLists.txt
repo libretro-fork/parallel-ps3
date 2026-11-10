@@ -695,7 +695,7 @@ target_link_libraries(rpcs3_emu
         3rdparty::rtmidi
         3rdparty::yaml-cpp
         3rdparty::zlib
-        3rdparty::zstd
+        libretro_common
         3rdparty::libcurl
 )
 
