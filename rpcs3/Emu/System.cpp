@@ -3719,6 +3719,12 @@ void Emulator::Kill(bool allow_autoexit, bool savestate, savestate_stage* save_s
 	*join_thread = make_ptr(new named_thread("Emulation Join Thread"sv, [join_thread, reset_emu_state, savestate, allow_autoexit, save_stage = save_stage ? *save_stage : savestate_stage{}, return_to_big_picture_mode, this]() mutable
 	{
 		fs::pending_file file;
+#ifdef LIBRETRO_CORE
+		// The savestate into the core's buffer instead of a file, when it
+		// asked for that
+		fs::file memory_file;
+		std::vector<u8>* const memory_state = g_memory_savestate;
+#endif
 
 		auto verbose_message = std::make_shared<atomic_ptr<std::string>>();
 		auto init_mtx = std::make_shared<stx::init_mutex>();
@@ -3825,7 +3831,24 @@ void Emulator::Kill(bool allow_autoexit, bool savestate, savestate_stage* save_s
 			*verbose_message = stx::make_single<std::string>(text);
 		};
 
+#ifdef LIBRETRO_CORE
+		if (savestate && memory_state)
+		{
+			path = memory_savestate_path;
+			memory_state->clear(); // its memory stays for this one
+			memory_file = fs::make_stream<std::vector<u8>&>(*memory_state);
+
+			auto serial_ptr = stx::make_single<utils::serial>();
+			serial_ptr->m_file_handler = make_compressed_zstd_serialization_file_handler(memory_file);
+			*to_ar = std::move(serial_ptr);
+
+			signal_system_cache_can_stay();
+		}
+
+		while (savestate && !memory_state)
+#else
 		while (savestate)
+#endif
 		{
 			set_progress_message("Creating File");
 
@@ -4056,6 +4079,16 @@ void Emulator::Kill(bool allow_autoexit, bool savestate, savestate_stage* save_s
 				reset.set_init();
 			}
 
+#ifdef LIBRETRO_CORE
+			if (memory_state)
+			{
+				sys_log.success("Saved savestate in memory (size=0x%x (%d MiB), time_to_save=%gs)", memory_state->size(), utils::aligned_div<u64>(memory_state->size(), 1u << 20), (get_system_time() - start_time) / 1000000.);
+
+				// Where the core boots it from
+				m_path = path;
+			}
+			else
+#endif
 			if (!file.commit() || !fs::get_stat(path, file_stat))
 			{
 				sys_log.error("Failed to write savestate to file! (path='%s', %s)", path, fs::g_tls_error);

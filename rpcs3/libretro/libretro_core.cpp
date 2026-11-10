@@ -14,6 +14,7 @@
 #include <cstdlib>
 
 #include "Emu/System.h"
+#include "Emu/savestate_utils.hpp"
 #include "Emu/system_config.h"
 #include "Emu/Cell/Modules/cellMsgDialog.h"
 #include "Emu/Cell/Modules/cellSysutil.h"
@@ -3443,22 +3444,24 @@ void retro_reset(void)
 }
 
 // Save states. RPCS3 makes a savestate in one way only: it stops the
-// emulation, writes the whole machine to a zstd-compressed .SAVESTAT.zst file
-// and boots back into it, which takes seconds and is hundreds of MB. So the
-// size RetroArch asks for before a save is that of a state made right then,
-// and the save that follows reads the file straight into RetroArch's buffer,
-// with no copy in between. Loading one boots it. The size changes from one
-// state to the next (RETRO_SERIALIZATION_QUIRK_CORE_VARIABLE_SIZE), and the
-// .info file gives RetroArch basic save states only, never rewind, run-ahead
-// or netplay, which would make one every frame.
-static std::string s_state_path; // the state made for the save to come
-static u64 s_state_size = 0;
-static u64 s_state_run = 0;      // made while this frame was the latest
+// emulation, writes the whole machine out zstd-compressed and boots back into
+// it, which takes seconds and is hundreds of MB. Here it writes into one
+// buffer the core keeps (g_memory_savestate), not a file: the size RetroArch
+// asks for before a save is that of a state made right then, the save copies
+// it into RetroArch's buffer, and the game is booted back from the core's
+// buffer where it lies. A load copies RetroArch's data into that buffer and
+// boots it. No disk either way. The buffer keeps its memory from one state to
+// the next. The size changes from one state to the next
+// (RETRO_SERIALIZATION_QUIRK_CORE_VARIABLE_SIZE), and the .info file gives
+// RetroArch basic save states only, never rewind, run-ahead or netplay, which
+// would make one every frame.
+static std::vector<u8> s_state;   // the last state made or loaded, compressed
+static bool s_state_ready = false; // made for the save to come
+static u64 s_state_run = 0;       // made while this frame was the latest
 
 static void forget_state()
 {
-    s_state_path.clear();
-    s_state_size = 0;
+    s_state_ready = false;
 }
 
 // Ends the session when the game cannot be booted again
@@ -3473,6 +3476,15 @@ static void lost_the_game(const char* what)
     environ_cb(RETRO_ENVIRONMENT_SHUTDOWN, nullptr);
 }
 
+// The game booted from the state in s_state, read where it lies
+static bool boot_memory_state()
+{
+    g_memory_savestate = &s_state;
+    const bool booted = do_boot_game(memory_savestate_path);
+    g_memory_savestate = nullptr;
+    return booted;
+}
+
 static bool make_state()
 {
     forget_state();
@@ -3484,16 +3496,18 @@ static bool make_state()
     if (Emu.IsPaused())
         Emu.Resume();
 
+    // The state into s_state
+    g_memory_savestate = &s_state;
     Emu.Kill(false, true);
 
     // Until the emulation has stopped (the state written, or not), or the
     // preparation gave up on it and the game runs on: SPU threads that cannot
     // be paused where a state can be taken, a video decoder or a game save in
     // progress. RPCS3 says which on screen.
-    // Writing a large state takes a while; one that has not stopped after two
-    // minutes is not going to
-    for (int waited = 0; !Emu.IsStopped(true) && (Emu.IsClosePending() || Emu.IsStopped()) && waited < 120000; waited++)
+    while (!Emu.IsStopped(true) && (Emu.IsClosePending() || Emu.IsStopped()))
         std::this_thread::sleep_for(std::chrono::milliseconds(1));
+
+    g_memory_savestate = nullptr;
 
     if (!Emu.IsStopped(true))
     {
@@ -3503,16 +3517,14 @@ static bool make_state()
         return false;
     }
 
-    // Where the stop wrote it, if it did
-    const std::string path = Emu.GetBoot();
-    fs::stat_t st{};
-    const bool written = path.ends_with(".SAVESTAT.zst") && fs::get_stat(path, st) && st.size;
+    // Written if the stop says so
+    const bool written = Emu.GetBoot() == memory_savestate_path && !s_state.empty();
 
     // Back into the game: from the state, or as it was booted if there is none
     if (!written && !s_iso_path.empty())
         load_iso(s_iso_path);
 
-    if (!do_boot_game(written ? path : game_path))
+    if (!(written ? boot_memory_state() : do_boot_game(game_path)))
     {
         lost_the_game("saving a state");
         return false;
@@ -3525,8 +3537,7 @@ static bool make_state()
         return false;
     }
 
-    s_state_path = path;
-    s_state_size = st.size;
+    s_state_ready = true;
     s_state_run = s_run_count;
     return true;
 }
@@ -3535,35 +3546,27 @@ size_t retro_serialize_size(void)
 {
     // One state for one save: RetroArch asks for the size and saves within
     // the same frame
-    if (!s_state_path.empty() && s_state_run == s_run_count)
-        return static_cast<size_t>(s_state_size);
+    if (s_state_ready && s_state_run == s_run_count)
+        return s_state.size();
 
-    return make_state() ? static_cast<size_t>(s_state_size) : 0;
+    return make_state() ? s_state.size() : 0;
 }
 
 bool retro_serialize(void* data, size_t size)
 {
-    if ((s_state_path.empty() || s_state_run != s_run_count) && !make_state())
+    if ((!s_state_ready || s_state_run != s_run_count) && !make_state())
         return false;
 
-    const std::string path = std::move(s_state_path);
-    const u64 state_size = s_state_size;
     forget_state();
 
-    if (!data || size < state_size)
+    if (!data || size < s_state.size())
         return false;
 
-    // The file into RetroArch's buffer, as RPCS3 wrote it
-    fs::file file(path, fs::read + fs::isfile);
-    if (!file || file.read(data, state_size) != state_size)
-    {
-        if (log_cb)
-            log_cb(RETRO_LOG_ERROR, "RPCS3: reading the state back failed (%s)\n", path.c_str());
-        return false;
-    }
+    // The state into RetroArch's buffer, as RPCS3 wrote it
+    std::memcpy(data, s_state.data(), s_state.size());
 
-    if (size > state_size)
-        std::memset(static_cast<u8*>(data) + state_size, 0, size - state_size);
+    if (size > s_state.size())
+        std::memset(static_cast<u8*>(data) + s_state.size(), 0, size - s_state.size());
 
     return true;
 }
@@ -3577,31 +3580,22 @@ bool retro_unserialize(const void* data, size_t size)
     if (!game_loaded || pending_game_boot || !data || size < 4 || std::memcmp(data, zstd_magic, 4))
         return false;
 
-    // Next to the states RPCS3 makes for the game, under one name the core
-    // reuses, and booted from there: RPCS3 reads a state from its file as it
-    // boots
-    std::string title = Emu.GetTitleID();
-    if (title.empty())
-        title = "NO_ID";
-    const std::string dir = fs::get_config_dir() + "/savestates/" + title + "/";
-    const std::string path = dir + title + "_libretro.SAVESTAT.zst";
-
     stop_pause_watchdog();
     Emu.GracefulShutdown(false, false);
     wait_for_emulation_stop("loading a state");
 
-    bool written = false;
-    if (fs::create_path(dir))
-    {
-        fs::pending_file file(path);
-        written = file.file && file.file.write(data, size) == size && file.commit();
-    }
+    // RetroArch's buffer is not ours past this call: the state into the
+    // core's, which the boot reads where it lies. A trailing pad of zeros
+    // after the zstd frame (a larger buffer) is left in; the reader stops at
+    // the frame's end.
+    const u8* bytes = static_cast<const u8*>(data);
+    s_state.assign(bytes, bytes + size);
 
-    if (written && do_boot_game(path))
+    if (boot_memory_state())
         return true;
 
     if (log_cb)
-        log_cb(RETRO_LOG_ERROR, "RPCS3: the state could not be %s\n", written ? "booted" : "written");
+        log_cb(RETRO_LOG_ERROR, "RPCS3: the state could not be booted\n");
 
     // The game as it was booted, rather than nothing
     if (!s_iso_path.empty())
