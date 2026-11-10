@@ -464,6 +464,7 @@ target_sources(rpcs3_emu PRIVATE
     NP/rpcn_countries.cpp
     NP/upnp_config.cpp
     NP/upnp_handler.cpp
+    NP/net_http_thread.cpp
     NP/ip_address.cpp
     NP/generated/np2_structs.pb.cc
 )
@@ -693,7 +694,6 @@ target_link_libraries(rpcs3_emu
         3rdparty::glslang
         3rdparty::rtmidi
         3rdparty::yaml-cpp
-        3rdparty::libcurl
 )
 
 if(APPLE)

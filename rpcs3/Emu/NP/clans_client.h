@@ -1,6 +1,5 @@
 #pragma once
 
-#include <curl/curl.h>
 #include <formats/rxml.h>
 
 #include <Emu/Cell/Modules/sceNpClans.h>
@@ -73,7 +72,6 @@ namespace clan
 	{
 	private:
 
-		static size_t curl_write_callback(void* data, size_t size, size_t nmemb, void* clientp);
 		SceNpClansError send_request(u32 reqId, ClanRequestAction action, ClanManagerOperationType type, clan_request& xml_body, clan_response& out_response);
 
 		/// @brief Forge and get a V2.1 Ticket for clan operations

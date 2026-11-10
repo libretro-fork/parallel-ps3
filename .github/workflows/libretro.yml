@@ -291,7 +291,6 @@ jobs:
             -DUSE_SDL=OFF \
             -DUSE_DISCORD_RPC=OFF \
             -DUSE_LTO=OFF \
-            -DUSE_SYSTEM_CURL=OFF \
             -DUSE_SYSTEM_OPENCV=OFF \
             -DUSE_SYSTEM_SDL=OFF \
             -DUSE_SYSTEM_OPENAL=OFF \
@@ -339,8 +338,8 @@ jobs:
     # As upstream's macOS build, with LLVM's own clang rather than Apple's:
     # Apple clang does not take fmt::throw_exception's [[noreturn]] constructor
     # as the end of a function, and -Werror=return-type fails all over. Clang,
-    # the LLVM the core links and GLEW from Homebrew, the prebuilt ffmpeg, curl
-    # and wolfSSL from their submodules, and Vulkan through Homebrew's MoltenVK.
+    # the LLVM the core links and GLEW from Homebrew, the prebuilt ffmpeg,
+    # wolfSSL from its submodule, and Vulkan through Homebrew's MoltenVK.
     # Each architecture on its own runner, so Homebrew's libraries are its own.
     name: libretro core macos-${{ matrix.arch }} (experimental)
     runs-on: ${{ matrix.runner }}
@@ -379,8 +378,7 @@ jobs:
             -DBUILD_LIBRETRO_CORE_ONLY=ON \
             -DWITH_LLVM=ON -DBUILD_LLVM=OFF -DSTATIC_LINK_LLVM=ON -DLLVM_DIR=$LLVM/lib/cmake/llvm \
             -DUSE_NATIVE_INSTRUCTIONS=OFF -DUSE_PRECOMPILED_HEADERS=OFF \
-            -DUSE_SYSTEM_FFMPEG=OFF -DUSE_SYSTEM_CURL=OFF \
-            -DCURL_BROTLI=OFF -DCURL_ZSTD=OFF -DUSE_NGHTTP2=OFF \
+            -DUSE_SYSTEM_FFMPEG=OFF \
             -DUSE_SDL=OFF -DUSE_FAUDIO=OFF -DUSE_DISCORD_RPC=OFF \
             -DUSE_SYSTEM_OPENCV=OFF -DUSE_LTO=OFF \
             -DUSE_SYSTEM_MVK=ON \

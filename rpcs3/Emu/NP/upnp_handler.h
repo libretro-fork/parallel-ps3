@@ -5,11 +5,14 @@
 #include <net/net_upnp.h>
 
 #include "upnp_config.h"
+#include "net_http_thread.h"
 #include "Utilities/mutex.h"
 
 class upnp_handler
 {
 public:
+	// Talks to the gateway on @http, the thread every HTTP transfer runs on
+	explicit upnp_handler(np::net_http_thread& http) : m_http(http) {}
 	~upnp_handler();
 
 	void upnp_enable();
@@ -22,6 +25,7 @@ private:
 	void remove_port_redir_external(u16 external_port, std::string_view protocol, bool verbose = true);
 
 private:
+	np::net_http_thread& m_http;
 	atomic_t<bool> m_active = false;
 
 	shared_mutex m_mutex;

@@ -13,8 +13,10 @@ LDLIBS   += -lm
 # The tests are C89; libretro-common builds as RetroArch's samples build it
 TEST_STD := -std=c89 -Wdeclaration-after-statement
 LRC_STD  := -std=gnu99
+# as libretro_common.cmake builds it: net_http over its own TLS client
+LRC_DEFS := -DHAVE_SSL -DHAVE_RETROSSL -DHAVE_CRYPTO
 
-TESTS := test_zstd test_deflate test_rxml test_png_rows test_images
+TESTS := test_zstd test_deflate test_rxml test_png_rows test_images test_http
 
 test_zstd_LRC := \
 	$(LRC)/encodings/encoding_rzstd.c \
@@ -68,11 +70,40 @@ test_images_LRC := \
 	$(LRC)/streams/trans_stream_pipe.c \
 	$(test_deflate_LRC)
 
+# net_http and the TLS client, with what they need
+test_http_LRC := \
+	$(LRC)/net/net_http.c \
+	$(LRC)/net/net_socket.c \
+	$(LRC)/net/net_compat.c \
+	$(LRC)/net/net_socket_ssl_retro.c \
+	$(LRC)/crypto/crypto.c \
+	$(LRC)/crypto/kdf.c \
+	$(LRC)/crypto/pk.c \
+	$(LRC)/crypto/x509.c \
+	$(LRC)/hash/lrc_hash.c \
+	$(LRC)/utils/md5.c \
+	$(LRC)/encodings/encoding_base64.c \
+	$(LRC)/encodings/encoding_utf.c \
+	$(LRC)/streams/file_stream.c \
+	$(LRC)/vfs/vfs_implementation.c \
+	$(LRC)/file/file_path.c \
+	$(LRC)/file/file_path_io.c \
+	$(LRC)/file/retro_dirent.c \
+	$(LRC)/string/rstrtod.c \
+	$(LRC)/string/stdstring.c \
+	$(LRC)/lists/string_list.c \
+	$(LRC)/compat/fopen_utf8.c \
+	$(LRC)/compat/compat_strl.c \
+	$(LRC)/compat/compat_strcasestr.c \
+	$(LRC)/compat/compat_posix_string.c \
+	$(LRC)/features/features_cpu.c \
+	$(LRC)/time/rtime.c
+
 all: $(TESTS)
 
 obj/%.o: $(LRC)/%.c
 	@mkdir -p $(@D)
-	$(CC) $(CFLAGS) $(LRC_STD) $(SANITIZE) -c -o $@ $<
+	$(CC) $(CFLAGS) $(LRC_STD) $(LRC_DEFS) $(SANITIZE) -c -o $@ $<
 
 obj/%.o: %.c test_common.h
 	@mkdir -p $(@D)
@@ -111,6 +142,13 @@ obj/stb_impl.o: stb_impl.c
 test_images: obj/test_images.o obj/stb_impl.o $(call lrc_objs,$(test_images_LRC))
 	$(CC) $(SANITIZE) -o $@ $^ $(LDFLAGS) $(LDLIBS)
 
+obj/test_http.o: test_http.c
+	@mkdir -p $(@D)
+	$(CC) $(CFLAGS) $(LRC_STD) $(SANITIZE) -c -o $@ $<
+
+test_http: obj/test_http.o $(call lrc_objs,$(sort $(test_http_LRC)))
+	$(CC) $(SANITIZE) -o $@ $^ $(LDFLAGS) $(LDLIBS) -lpthread
+
 # Each test also writes what the new code produces, for the reference
 # tools to read back
 check: all
@@ -121,6 +159,7 @@ check: all
 	./test_rxml
 	./test_png_rows
 	./test_images
+	./test_http
 
 clean:
 	rm -rf obj $(TESTS) *_out.*

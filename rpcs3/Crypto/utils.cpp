@@ -124,7 +124,7 @@ bool cmac_hash_compare(const unsigned char *key, int key_len, const unsigned cha
 
 	aes_context ctx;
 	aes_setkey_enc(&ctx, key, 128);
-	aes_cmac(&ctx, in_len, in, out.get());
+	rpcs3_aes_cmac(&ctx, in_len, in, out.get());
 
 	return std::memcmp(out.get(), hash, hash_len) == 0;
 }
@@ -133,7 +133,7 @@ void cmac_hash_forge(const unsigned char *key, int /*key_len*/, const unsigned c
 {
 	aes_context ctx;
 	aes_setkey_enc(&ctx, key, 128);
-	aes_cmac(&ctx, in_len, in, hash);
+	rpcs3_aes_cmac(&ctx, in_len, in, hash);
 }
 
 char* extract_file_name(std::string_view file_path, char real_file_name[CRYPTO_MAX_PATH])

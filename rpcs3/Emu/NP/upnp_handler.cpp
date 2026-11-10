@@ -2,8 +2,6 @@
 #include "upnp_handler.h"
 #include "util/logs.hpp"
 
-#include <net/net_http.h>
-
 LOG_CHANNEL(upnp_log, "UPNP");
 
 // How long a request to the gateway may take
@@ -22,9 +20,6 @@ upnp_handler::~upnp_handler()
 	}
 
 	m_active = false;
-
-	// The connections and DNS entries net_http keeps
-	net_http_deinit();
 }
 
 void upnp_handler::upnp_enable()
@@ -33,13 +28,14 @@ void upnp_handler::upnp_enable()
 
 	m_cfg.load();
 
-	net_http_init();
-
 	const std::string dev_url = m_cfg.get_device_url();
 
 	if (!dev_url.empty())
 	{
-		if (net_upnp_gateway_from_url(&m_gateway, dev_url.c_str(), upnp_timeout_ms))
+		bool found = false;
+		m_http.run([&]() { found = net_upnp_gateway_from_url(&m_gateway, dev_url.c_str(), upnp_timeout_ms); });
+
+		if (found)
 		{
 			upnp_log.notice("Saved UPNP(%s) enabled", dev_url);
 			m_active = true;
@@ -51,7 +47,10 @@ void upnp_handler::upnp_enable()
 
 	upnp_log.notice("Starting UPNP search");
 
-	if (!net_upnp_discover(&m_gateway, upnp_timeout_ms))
+	bool found = false;
+	m_http.run([&]() { found = net_upnp_discover(&m_gateway, upnp_timeout_ms); });
+
+	if (!found)
 	{
 		upnp_log.error("No UPNP IGD device was found");
 		return;
@@ -84,7 +83,10 @@ void upnp_handler::add_port_redir(const std::string& addr, u16 internal_port, st
 	// which is the address the caller found for it
 	for (u32 external_port = internal_port; external_port <= max_port; external_port++)
 	{
-		if (net_upnp_add_port_mapping_ext(&m_gateway, external_port, internal_port, udp, "RPCS3", upnp_timeout_ms))
+		bool added = false;
+		m_http.run([&]() { added = net_upnp_add_port_mapping_ext(&m_gateway, external_port, internal_port, udp, "RPCS3", upnp_timeout_ms); });
+
+		if (added)
 		{
 			m_bindings[protocol_str][static_cast<u16>(internal_port)] = static_cast<u16>(external_port);
 			upnp_log.notice("Successfully bound %s:%d(%s) to IGD:%d", addr, internal_port, protocol, external_port);
@@ -122,7 +124,10 @@ void upnp_handler::remove_port_redir(u16 internal_port, std::string_view protoco
 
 void upnp_handler::remove_port_redir_external(u16 external_port, std::string_view protocol, bool verbose)
 {
-	if (!net_upnp_delete_port_mapping(&m_gateway, external_port, protocol == "UDP", upnp_timeout_ms) && verbose)
+	bool deleted = false;
+	m_http.run([&]() { deleted = net_upnp_delete_port_mapping(&m_gateway, external_port, protocol == "UDP", upnp_timeout_ms); });
+
+	if (!deleted && verbose)
 		upnp_log.error("Failed to delete port mapping IGD:%d(%s)", external_port, protocol);
 }
 

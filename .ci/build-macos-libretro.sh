@@ -13,9 +13,8 @@
 # - MoltenVK is its release, for the Vulkan headers and the library the core
 #   links; the core finds it at run time as @rpath/libMoltenVK.dylib, the one
 #   RetroArch carries in its Frameworks;
-# - ffmpeg is the prebuilt ffmpeg-macos the build fetches by itself, curl and
-#   wolfSSL come from their submodules, zlib is the SDK's, and OpenCV is left
-#   out, as it is optional.
+# - ffmpeg is the prebuilt ffmpeg-macos the build fetches by itself, wolfSSL
+#   comes from its submodule, and OpenCV is left out, as it is optional.
 #
 # ARCH is arm64 or x86_64 (default: the machine's); the x86_64 slice is
 # cross-built on Apple Silicon, as the buildbot runs it. Expects to run from
@@ -151,10 +150,6 @@ cmake -S . -B build -G Ninja $CROSS                    \
     -DUSE_NATIVE_INSTRUCTIONS=OFF                      \
     -DUSE_PRECOMPILED_HEADERS=OFF                      \
     -DUSE_SYSTEM_FFMPEG=OFF                            \
-    -DUSE_SYSTEM_CURL=OFF                              \
-    -DCURL_BROTLI=OFF                                  \
-    -DCURL_ZSTD=OFF                                    \
-    -DUSE_NGHTTP2=OFF                                  \
     -Dprotobuf_FORCE_FETCH_DEPENDENCIES=ON             \
     -Dprotobuf_HAVE_BUILTIN_ATOMICS=ON                 \
     -DUSE_SDL=OFF                                      \

@@ -8,10 +8,10 @@
 # distribution, with no CMake package and no static libraries, so
 # find_package(LLVM) finds nothing. clang64 has all of it as packages: LLVM
 # with its CMake config, and ffmpeg, OpenCV and GLEW besides, which is why
-# this asks for the system copies of those. Not curl: since RPCN and clans
-# went into the emulator itself it links libcurl, and clang64's is a DLL, so
-# curl and wolfSSL come from the submodules and are linked in. protobuf, for
-# RPCN, would take clang64's abseil, DLLs again; it fetches and builds its own.
+# this asks for the system copies of those. Not wolfSSL: RPCN went into the
+# emulator itself, and clang64's is a DLL, so it comes from the submodule and
+# is linked in. protobuf, for RPCN, would take clang64's abseil, DLLs again;
+# it fetches and builds its own.
 
 git config --global --add safe.directory '*'
 
@@ -92,10 +92,6 @@ cmake ..                                               \
     -DCMAKE_SHARED_LINKER_FLAGS="${LINKER_FLAG}"       \
     -DCMAKE_AR="$AR"                                   \
     -DCMAKE_RANLIB="$RANLIB"                           \
-    -DUSE_SYSTEM_CURL=OFF                              \
-    -DCURL_BROTLI=OFF                                  \
-    -DCURL_ZSTD=OFF                                    \
-    -DUSE_NGHTTP2=OFF                                  \
     -Dprotobuf_FORCE_FETCH_DEPENDENCIES=ON             \
     -DUSE_FAUDIO=OFF                                   \
     -DUSE_SDL=OFF                                      \

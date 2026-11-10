@@ -1,21 +1,12 @@
 #include "stdafx.h"
 
+#include <chrono>
 #include <string_view>
 #include <util/types.hpp>
 
-// wolfssl uses old-style casts which break clang builds
-#ifdef __clang__
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wold-style-cast"
-#pragma clang diagnostic ignored "-Wextern-c-compat"
-#pragma clang diagnostic ignored "-Wunsafe-buffer-usage"
-#endif
-
-#include <wolfssl/wolfcrypt/coding.h>
-
-#ifdef __clang__
-#pragma clang diagnostic pop
-#endif
+#include <encodings/base64.h>
+#include <net/net_http.h>
+#include <net/net_socket_ssl.h>
 
 #include <Utilities/StrUtil.h>
 #include <Utilities/StrFmt.h>
@@ -250,50 +241,25 @@ namespace clan
 		return xml_uint(node ? node->data : nullptr);
 	}
 
-	constexpr size_t base64_size(size_t size)
+	// Base64 without line breaks, as the clans server takes it
+	static std::string base64_string(const void* data, usz size)
 	{
-		return (size + 2) / 3 * 4 + 1;
+		int len = 0;
+		char* const encoded = base64(data, ::narrow<int>(size), &len);
+
+		if (!encoded)
+			return {};
+
+		std::string out(encoded, static_cast<usz>(len));
+		std::free(encoded);
+		return out;
 	}
 
-	size_t clans_client::curl_write_callback(void* data, size_t size, size_t nmemb, void* clientp)
-	{
-		const size_t realsize = size * nmemb;
-		std::vector<char>* mem = static_cast<std::vector<char>*>(clientp);
-
-		const size_t old_size = mem->size();
-		mem->resize(old_size + realsize);
-		memcpy(mem->data() + old_size, data, realsize);
-
-		return realsize;
-	}
+	// How long a request to the clans server may take
+	static constexpr s64 clan_timeout_ms = 30000;
 
 	struct clan_request_ctx
 	{
-		clan_request_ctx()
-		{
-			curl = curl_easy_init();
-
-			if (!curl)
-			{
-				clan_log.error("curl_easy_init failed");
-				return;
-			}
-
-			CURLcode err = curl_easy_setopt(curl, CURLOPT_SSL_OPTIONS, CURLSSLOPT_NATIVE_CA);
-			if (err != CURLE_OK) clan_log.error("curl_easy_setopt(CURLOPT_SSL_OPTIONS): %s", curl_easy_strerror(err));
-		}
-
-		~clan_request_ctx()
-		{
-			if (curl)
-			{
-				curl_easy_cleanup(curl);
-				curl = nullptr;
-			}
-		}
-
-		CURL* curl = nullptr;
-
 		// TODO: this was arbitrarily chosen -- see if there's a real amount
 		static constexpr u32 SCE_NP_CLANS_MAX_CTX_NUM = 16;
 
@@ -328,7 +294,7 @@ namespace clan
 		}
 
 		const auto ctx = idm::get_unlocked<clan_request_ctx>(id);
-		if (!ctx || !ctx->curl)
+		if (!ctx)
 		{
 			idm::remove<clan_request_ctx>(id);
 			return SceNpClansError::SCE_NP_CLANS_ERROR_NOT_INITIALIZED;
@@ -351,16 +317,14 @@ namespace clan
 	{
 		auto ctx = idm::get_unlocked<clan_request_ctx>(req_id);
 
-		if (!ctx || !ctx->curl)
+		if (!ctx)
 			return SCE_NP_CLANS_ERROR_NOT_INITIALIZED;
-
-		CURL* curl = ctx->curl;
 
 		const ClanRequestType req_type = xml_body.has_ticket ? ClanRequestType::SEC : ClanRequestType::FUNC;
 
 		const std::string host = g_cfg_clans.get_host();
-		const std::string protocol = g_cfg_clans.get_use_https() ? "https" : "http";
-		const std::string url = fmt::format("%s://%s/clan_manager_%s/%s/%s", protocol, host, op_type, req_type, action);
+		const bool https = g_cfg_clans.get_use_https();
+		const std::string url = fmt::format("%s://%s/clan_manager_%s/%s/%s", https ? "https" : "http", host, op_type, req_type, action);
 
 		usz xml_size = 0;
 		const char* const xml = xml_body.finish(&xml_size);
@@ -371,52 +335,103 @@ namespace clan
 			return SCE_NP_CLANS_ERROR_INVALID_ARGUMENT;
 		}
 
-		char err_buf[CURL_ERROR_SIZE];
-		err_buf[0] = '\0';
+		// POSTed on the thread every HTTP transfer runs on; the body read
+		// where finish() left it
+		char* response = nullptr;
+		std::string failure;
 
-		std::vector<char> response_buffer;
-
-		CURLcode err = curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
-		if (err != CURLE_OK) clan_log.error("curl_easy_setopt(CURLOPT_URL): %s", curl_easy_strerror(err));
-
-		err = curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, curl_write_callback);
-		if (err != CURLE_OK) clan_log.error("curl_easy_setopt(CURLOPT_WRITEFUNCTION): %s", curl_easy_strerror(err));
-
-		err = curl_easy_setopt(curl, CURLOPT_WRITEDATA, &response_buffer);
-		if (err != CURLE_OK) clan_log.error("curl_easy_setopt(CURLOPT_WRITEDATA): %s", curl_easy_strerror(err));
-
-		err = curl_easy_setopt(curl, CURLOPT_ERRORBUFFER, err_buf);
-		if (err != CURLE_OK) clan_log.error("curl_easy_setopt(CURLOPT_ERRORBUFFER): %s", curl_easy_strerror(err));
-
-		// WARN: This disables certificate verification!
-		err = curl_easy_setopt(curl, CURLOPT_SSL_VERIFYHOST, 0L);
-		if (err != CURLE_OK) clan_log.error("curl_easy_setopt(CURLOPT_SSL_VERIFYHOST): %s", curl_easy_strerror(err));
-
-		err = curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 0L);
-		if (err != CURLE_OK) clan_log.error("curl_easy_setopt(CURLOPT_SSL_VERIFYPEER): %s", curl_easy_strerror(err));
-
-		err = curl_easy_setopt(curl, CURLOPT_POST, 1);
-		if (err != CURLE_OK) clan_log.error("curl_easy_setopt(CURLOPT_POST): %s", curl_easy_strerror(err));
-
-		err = curl_easy_setopt(curl, CURLOPT_POSTFIELDS, xml);
-		if (err != CURLE_OK) clan_log.error("curl_easy_setopt(CURLOPT_POSTFIELDS): %s", curl_easy_strerror(err));
-
-		err = curl_easy_setopt(curl, CURLOPT_POSTFIELDSIZE, static_cast<long>(xml_size));
-		if (err != CURLE_OK) clan_log.error("curl_easy_setopt(CURLOPT_POSTFIELDSIZE): %s", curl_easy_strerror(err));
-
-		err = curl_easy_perform(curl);
-
-		if (err != CURLE_OK)
+		const bool ran = g_fxo->get<named_thread<np::np_handler>>().get_http().run([&]()
 		{
-			clan_log.error("curl_easy_perform() failed: %s", curl_easy_strerror(err));
-			clan_log.error("Error buffer: %s", err_buf);
+			http_connection_t* const conn = net_http_connection_new(url.c_str(), "POST", nullptr);
+
+			if (!conn)
+			{
+				failure = "bad URL";
+				return;
+			}
+
+			// The form type curl sent a POST body as
+			net_http_connection_set_content(conn, "application/x-www-form-urlencoded", xml_size, xml);
+
+			// WARN: no certificate is checked, as before
+			ssl_socket_retro_config tls{};
+			tls.flags = SSL_RETRO_NO_VERIFY;
+			if (https)
+				net_http_connection_set_tls(conn, &tls);
+
+			while (!net_http_connection_iterate(conn))
+			{
+			}
+
+			http_t* const http = net_http_connection_done(conn) ? net_http_new(conn) : nullptr;
+
+			if (!http)
+			{
+				failure = "could not start the request";
+				net_http_connection_free(conn);
+				return;
+			}
+
+			const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(clan_timeout_ms);
+
+			while (!net_http_update(http, nullptr, nullptr))
+			{
+				const auto now = std::chrono::steady_clock::now();
+
+				if (now >= deadline)
+				{
+					failure = "timed out";
+					break;
+				}
+
+				const s64 left = std::chrono::duration_cast<std::chrono::milliseconds>(deadline - now).count() + 1;
+				net_http_wait(http, static_cast<int>(std::min<s64>(left, 100)));
+			}
+
+			if (failure.empty())
+			{
+				// A transfer that never got an answer; an HTTP error status
+				// is an answer
+				int code = 0;
+
+				if (const char* const why = net_http_failure(http, &code))
+				{
+					failure = fmt::format("%s (%d)", why, code);
+				}
+				else if (net_http_status(http) <= 0)
+				{
+					failure = "no answer";
+				}
+				else
+				{
+					// Whatever the status, the body is the answer, as curl
+					// handed it on
+					usz len = 0;
+					u8* const data = net_http_data(http, &len, true);
+
+					if (data && (response = static_cast<char*>(std::realloc(data, len + 1))))
+						response[len] = '\0';
+					else if (data)
+						std::free(data);
+					else if ((response = static_cast<char*>(std::malloc(1))))
+						response[0] = '\0';
+				}
+			}
+
+			net_http_delete(http);
+			net_http_connection_free(conn);
+		});
+
+		if (!ran || !response)
+		{
+			clan_log.error("Request to %s failed: %s", url, ran ? failure : "the network thread is stopping");
 			return SCE_NP_CLANS_ERROR_BAD_REQUEST;
 		}
 
-		response_buffer.push_back('\0');
+		const std::unique_ptr<char, decltype(&std::free)> response_buffer(response, &std::free);
 
 		rxml_parse_error_t xml_err{};
-		out_response.doc = rxml_load_document_string_opts(response_buffer.data(), RXML_OPT_STRICT_EOF, &xml_err);
+		out_response.doc = rxml_load_document_string_opts(response_buffer.get(), RXML_OPT_STRICT_EOF, &xml_err);
 		if (!out_response.doc)
 		{
 			clan_log.error("XML parsing failed at line %u, column %u", xml_err.line, xml_err.col);
@@ -468,16 +483,13 @@ namespace clan
 			return "";
 		}
 
-		std::vector<byte> ticket_bytes(base64_size(clan_ticket.size()));
-		uint32_t encoded_ticket_size = ::size32(ticket_bytes);
+		std::string ticket_str = base64_string(clan_ticket.data(), clan_ticket.size());
 
-		if (Base64_Encode_NoNl(clan_ticket.data(), ::size32(clan_ticket), ticket_bytes.data(), &encoded_ticket_size) != 0)
+		if (ticket_str.empty())
 		{
 			clan_log.error("Failed to encode clan ticket to base64");
 			return "";
 		}
-
-		const std::string ticket_str = std::string(reinterpret_cast<char*>(ticket_bytes.data()), encoded_ticket_size);
 
 		return ticket_str;
 	}
@@ -1040,13 +1052,12 @@ namespace clan
 		if (bin_data_size > sizeof(info.binAttr1))
 			return SCE_NP_CLANS_ERROR_INVALID_ARGUMENT;
 
-		byte bin_attr_1[SCE_NP_CLANS_MEMBER_BINARY_ATTRIBUTE1_MAX_SIZE * 2 + 1] = {0};
-		uint32_t bin_attr_1_size = sizeof(bin_attr_1);
+		const std::string bin_attr_1 = base64_string(info.binAttr1, bin_data_size);
 
-		if (Base64_Encode_NoNl(info.binAttr1, bin_data_size, bin_attr_1, &bin_attr_1_size) != 0)
+		if (bin_attr_1.empty() && bin_data_size)
 			return SCE_NP_CLANS_ERROR_INVALID_ARGUMENT;
 
-		doc.element("bin-attr1", reinterpret_cast<const char*>(bin_attr_1));
+		doc.element("bin-attr1", bin_attr_1.c_str());
 
 		doc.element("allow-msg", static_cast<uint32_t>(info.allowMsg));
 

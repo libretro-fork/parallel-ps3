@@ -23,10 +23,6 @@
 	path = 3rdparty/libusb/libusb
 	url = ../../libusb/libusb.git
 	ignore = dirty
-[submodule "3rdparty/curl"]
-	path = 3rdparty/curl/curl
-	url = ../../curl/curl.git
-	ignore = dirty
 [submodule "3rdparty/wolfssl"]
 	path = 3rdparty/wolfssl/wolfssl
 	url = ../../wolfSSL/wolfssl.git

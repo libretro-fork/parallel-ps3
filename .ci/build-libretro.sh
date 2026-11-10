@@ -12,10 +12,11 @@
 # this build could not load it for that reason. A core should carry what is
 # not part of a normal system.
 #
-# curl and wolfSSL come from their submodules and are linked in, as on Windows
-# and Android. The images' system libcurl is Debian's libcurl-gnutls.so.4,
-# which Fedora, Arch, the flatpak runtimes RetroArch is built on and most
-# handheld distributions do not have - the core does not load there at all.
+# wolfSSL comes from its submodule and is linked in, as on Windows and
+# Android. HTTP (UPnP, the clans server) is libretro-common's net_http with
+# its own TLS client: no libcurl, whose system copy on the images is Debian's
+# libcurl-gnutls.so.4, which Fedora, Arch, the flatpak runtimes RetroArch is
+# built on and most handheld distributions do not have.
 #
 # Wayland is disabled deliberately. With it found, rpcs3/Emu links OpenGL::EGL,
 # an imported target created by a find_package down in 3rdparty/ and therefore
@@ -62,10 +63,6 @@ cmake ..                                               \
     -DCMAKE_EXE_LINKER_FLAGS="${LINKER_FLAG}"          \
     -DCMAKE_MODULE_LINKER_FLAGS="${LINKER_FLAG}"       \
     -DCMAKE_SHARED_LINKER_FLAGS="${LINKER_FLAG}"       \
-    -DUSE_SYSTEM_CURL=OFF                              \
-    -DCURL_BROTLI=OFF                                  \
-    -DCURL_ZSTD=OFF                                    \
-    -DUSE_NGHTTP2=OFF                                  \
     -DUSE_SDL=OFF                                      \
     -DUSE_FAUDIO=OFF                                   \
     -DUSE_LIBEVDEV=OFF                                 \

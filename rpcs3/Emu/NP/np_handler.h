@@ -299,6 +299,9 @@ namespace np
 
 		static constexpr std::string_view thread_name = "NP Handler Thread";
 
+		// The thread every HTTP transfer runs on
+		net_http_thread& get_http() { return http; }
+
 	private:
 		// Various generic helpers
 		bool discover_ip_address();
@@ -508,8 +511,10 @@ namespace np
 		std::shared_ptr<rpcn::rpcn_client> rpcn;
 		std::shared_ptr<rpcn::rpcn_client> get_rpcn();
 
-		// UPNP
-		upnp_handler upnp;
+		// The thread every HTTP transfer runs on, then UPnP over it: UPnP
+		// removes its mappings as it goes, before the thread stops
+		net_http_thread http;
+		upnp_handler upnp{http};
 
 		// Presence
 		struct

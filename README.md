@@ -37,7 +37,7 @@ The Linux build runs in a container with the toolchain RPCS3's CI uses, through 
 git clone --recursive https://github.com/WizzardSK/rpcs3-libretro.git
 cd rpcs3-libretro
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release \
-  -DUSE_NATIVE_INSTRUCTIONS=OFF -DUSE_SYSTEM_CURL=ON -DUSE_LIBEVDEV=OFF
+  -DUSE_NATIVE_INSTRUCTIONS=OFF -DUSE_LIBEVDEV=OFF
 cmake --build build --target rpcs3_libretro
 ```
 
