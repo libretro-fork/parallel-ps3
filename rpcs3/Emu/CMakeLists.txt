@@ -686,7 +686,6 @@ target_link_libraries(rpcs3_emu
         3rdparty::soundtouch
         3rdparty::miniupnpc
         3rdparty::protobuf
-        3rdparty::pugixml
         3rdparty::vulkanmemoryallocator
         libretro_common
         Threads::Threads

@@ -988,7 +988,7 @@ error_code sceNpTrophyGetGameInfo(u32 context, u32 handle, vm::ptr<SceNpTrophyGa
 		*data = {};
 
 	trophy_xml_document doc{};
-	pugi::xml_parse_result res = doc.Read(config.to_string());
+	const bool res = doc.Read(config);
 	if (!res)
 	{
 		sceNpTrophy.error("sceNpTrophyGetGameInfo: Failed to read TROPCONF.SFM: %s", config_path);
@@ -1282,7 +1282,7 @@ static error_code NpTrophyGetTrophyInfo(const trophy_context_t* ctxt, s32 trophy
 	SceNpTrophyData tmp_data{};
 
 	trophy_xml_document doc{};
-	pugi::xml_parse_result res = doc.Read(config.to_string());
+	const bool res = doc.Read(config);
 	if (!res)
 	{
 		sceNpTrophy.error("sceNpTrophyGetGameInfo: Failed to read TROPCONF.SFM: %s", config_path);
@@ -1538,7 +1538,7 @@ error_code sceNpTrophyGetTrophyIcon(u32 context, u32 handle, s32 trophyId, vm::p
 		if (config)
 		{
 			trophy_xml_document doc{};
-			pugi::xml_parse_result res = doc.Read(config.to_string());
+			const bool res = doc.Read(config);
 			if (!res)
 			{
 				sceNpTrophy.error("sceNpTrophyGetTrophyIcon: Failed to read TROPCONF.SFM: %s", config_path);

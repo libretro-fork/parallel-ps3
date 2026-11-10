@@ -11,6 +11,7 @@ add_library(libretro_common STATIC
     ${LIBRETRO_COMMON_DIR}/encodings/encoding_rzstd.c
     ${LIBRETRO_COMMON_DIR}/encodings/encoding_xxh64.c
     ${LIBRETRO_COMMON_DIR}/features/features_cpu.c
+    ${LIBRETRO_COMMON_DIR}/formats/xml/rxml.c
     ${LIBRETRO_COMMON_DIR}/time/rtime.c
 )
 

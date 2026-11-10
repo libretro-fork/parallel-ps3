@@ -56,7 +56,7 @@ content_integrity_status content_validation::check_integrity(content_file_type f
 
 	rXmlDocument db;
 
-	if (!db.Read(db_file.to_string()))
+	if (!db.Read(db_file))
 	{
 		sys_log.error("check_integrity: Failed to process file: %s", db_path);
 		return content_integrity_status::ERROR_PARSING_DB;

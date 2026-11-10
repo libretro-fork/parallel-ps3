@@ -14,7 +14,7 @@ LDLIBS   += -lm
 TEST_STD := -std=c89 -Wdeclaration-after-statement
 LRC_STD  := -std=gnu99
 
-TESTS := test_zstd test_deflate
+TESTS := test_zstd test_deflate test_rxml
 
 test_zstd_LRC := \
 	$(LRC)/encodings/encoding_rzstd.c \
@@ -26,6 +26,9 @@ test_deflate_LRC := \
 	$(LRC)/features/features_cpu.c \
 	$(LRC)/compat/compat_strl.c \
 	$(LRC)/time/rtime.c
+
+test_rxml_LRC := \
+	$(LRC)/formats/xml/rxml.c
 
 all: $(TESTS)
 
@@ -45,6 +48,9 @@ test_zstd: obj/test_zstd.o $(call lrc_objs,$(test_zstd_LRC))
 test_deflate: obj/test_deflate.o $(call lrc_objs,$(test_deflate_LRC))
 	$(CC) $(SANITIZE) -o $@ $^ $(LDFLAGS) $(LDLIBS)
 
+test_rxml: obj/test_rxml.o $(call lrc_objs,$(test_rxml_LRC))
+	$(CC) $(SANITIZE) -o $@ $^ $(LDFLAGS) $(LDLIBS)
+
 # Each test also writes what the new code produces, for the reference
 # tools to read back
 check: all
@@ -52,6 +58,7 @@ check: all
 	if command -v zstd >/dev/null; then zstd -q -t zstd_out.zst; fi
 	./test_deflate fixtures deflate_out.gz
 	gzip -t deflate_out.gz
+	./test_rxml
 
 clean:
 	rm -rf obj $(TESTS) *_out.*

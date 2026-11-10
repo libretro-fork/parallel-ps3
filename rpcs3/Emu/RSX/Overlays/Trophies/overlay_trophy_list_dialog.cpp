@@ -458,7 +458,7 @@ namespace rsx
 			}
 
 			// Get game name
-			pugi::xml_parse_result res = game_trophy_data->trop_config.Read(config.to_string());
+			const bool res = game_trophy_data->trop_config.Read(config);
 			if (!res)
 			{
 				rsx_log.error("Failed to read trophy xml: %s", tropconf_path);

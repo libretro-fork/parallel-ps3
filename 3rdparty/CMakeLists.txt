@@ -26,15 +26,6 @@ add_subdirectory(protobuf EXCLUDE_FROM_ALL)
 add_subdirectory(libpng EXCLUDE_FROM_ALL)
 
 
-# pugixml
-if (USE_SYSTEM_PUGIXML)
-	pkg_check_modules(PUGIXML REQUIRED IMPORTED_TARGET pugixml>=1.15)
-	add_library(pugixml INTERFACE)
-	target_link_libraries(pugixml INTERFACE PkgConfig::PUGIXML)
-else()
-	add_subdirectory(pugixml EXCLUDE_FROM_ALL)
-endif()
-
 if (USE_SYSTEM_VULKAN_MEMORY_ALLOCATOR)
 	find_package(VulkanMemoryAllocator REQUIRED GLOBAL)
 	add_library(3rdparty::vulkanmemoryallocator ALIAS GPUOpen::VulkanMemoryAllocator)
@@ -283,7 +274,6 @@ else()
 endif()
 add_library(3rdparty::zlib ALIAS 3rdparty_zlib)
 add_library(3rdparty::protobuf ALIAS 3rdparty_protobuf)
-add_library(3rdparty::pugixml ALIAS pugixml)
 add_library(3rdparty::glslang ALIAS 3rdparty_glslang)
 add_library(3rdparty::yaml-cpp ALIAS yaml-cpp)
 add_library(3rdparty::libpng ALIAS ${LIBPNG_TARGET})

@@ -1,7 +1,7 @@
 #pragma once
 
 #include <curl/curl.h>
-#include <pugixml.hpp>
+#include <formats/rxml.h>
 
 #include <Emu/Cell/Modules/sceNpClans.h>
 #include <Emu/NP/np_handler.h>
@@ -66,12 +66,15 @@ namespace clan
 		DeleteAnnouncement
 	};
 
+	struct clan_request;
+	struct clan_response;
+
 	class clans_client
 	{
 	private:
 
 		static size_t curl_write_callback(void* data, size_t size, size_t nmemb, void* clientp);
-		SceNpClansError send_request(u32 reqId, ClanRequestAction action, ClanManagerOperationType type, const pugi::xml_document& xml_body, pugi::xml_document& out_response);
+		SceNpClansError send_request(u32 reqId, ClanRequestAction action, ClanManagerOperationType type, clan_request& xml_body, clan_response& out_response);
 
 		/// @brief Forge and get a V2.1 Ticket for clan operations
 		std::string get_clan_ticket(np::np_handler& nph);

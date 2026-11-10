@@ -170,7 +170,7 @@ bool TROPUSRLoader::Generate(std::string_view filepath, std::string_view configp
 	}
 
 	trophy_xml_document doc{};
-	pugi::xml_parse_result res = doc.Read(config.to_string());
+	const bool res = doc.Read(config);
 	if (!res)
 	{
 		trp_log.error("TROPUSRLoader::Generate: Failed to read file: %s", filepath);
@@ -275,7 +275,7 @@ u32 TROPUSRLoader::GetUnlockedPlatinumID(u32 trophy_id, const std::string& confi
 	}
 
 	trophy_xml_document doc{};
-	pugi::xml_parse_result res = doc.Read(config.to_string());
+	const bool res = doc.Read(config);
 	if (!res)
 	{
 		trp_log.error("TROPUSRLoader::GetUnlockedPlatinumID: Failed to read file: %s", config_path);
