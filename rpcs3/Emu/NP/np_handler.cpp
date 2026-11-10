@@ -74,33 +74,34 @@ namespace np
 
 		if (fs::file history_file{get_players_history_path(), fs::read + fs::create})
 		{
-			auto [yml_players_history, error] = yaml_load(history_file.to_string());
+			const yaml_doc doc(history_file.to_string());
+			std::string error = doc.error();
 
 			if (!error.empty())
 				return parsing_error(error);
 
-			for (const auto& player : yml_players_history)
+			for (const yaml_node player : doc.root())
 			{
-				std::string username = player.first.Scalar();
-				const auto& seq = player.second;
+				std::string username(player.key());
+				const yaml_node seq = player;
 
-				if (!seq.IsSequence() || seq.size() != 3)
+				if (!seq.is_seq() || seq.size() != 3)
 					return parsing_error("Player history is not a proper sequence!");
 
 				const u64 timestamp = get_yaml_node_value<u64>(seq[0], error);
 				if (!error.empty())
 					return parsing_error(error);
 
-				std::string description = seq[1].Scalar();
+				std::string description(seq[1].scalar());
 
-				if (!seq[2].IsSequence())
+				if (!seq[2].is_seq())
 					return parsing_error("Expected communication ids sequence");
 
 				std::set<std::string> com_ids;
 
-				for (usz i = 0; i < seq[2].size(); i++)
+				for (const yaml_node com_id : seq[2])
 				{
-					com_ids.insert(seq[2][i].Scalar());
+					com_ids.emplace(com_id.scalar());
 				}
 
 				history.insert(std::make_pair(std::move(username), player_history{.timestamp = timestamp, .communication_ids = std::move(com_ids), .description = std::move(description)}));
@@ -1555,26 +1556,27 @@ namespace np
 		if (!history_file)
 			return;
 
-		YAML::Emitter out;
+		yaml_writer out;
 
-		out << YAML::BeginMap;
+		out.begin_map();
 		for (const auto& [player_npid, player_info] : players_history)
 		{
-			out << player_npid;
-			out << YAML::BeginSeq;
-			out << player_info.timestamp;
-			out << player_info.description;
-			out << YAML::BeginSeq;
+			out.key(player_npid);
+			out.begin_seq();
+			out.value(fmt::format("%d", player_info.timestamp));
+			out.value(player_info.description);
+			out.begin_seq();
 			for (const auto& com_id : player_info.communication_ids)
 			{
-				out << com_id;
+				out.value(com_id);
 			}
-			out << YAML::EndSeq;
-			out << YAML::EndSeq;
+			out.end_seq();
+			out.end_seq();
 		}
-		out << YAML::EndMap;
+		out.end_map();
 
-		history_file.write(out.c_str(), out.size());
+		const std::string_view text = out.output();
+		history_file.write(text.data(), text.size());
 	}
 
 	u32 np_handler::get_num_friends()

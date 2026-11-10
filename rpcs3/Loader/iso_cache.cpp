@@ -59,15 +59,16 @@ namespace iso_cache
 			return false;
 		}
 
-		auto [node, error] = yaml_load(yml_file.to_string());
-		if (!error.empty())
+		const yaml_doc doc(yml_file.to_string());
+		const yaml_node node = doc.root();
+		if (!doc.error().empty())
 		{
-			iso_cache_log.warning("Failed to parse cache YAML for '%s': %s", iso_path, error);
+			iso_cache_log.warning("Failed to parse cache YAML for '%s': %s", iso_path, doc.error());
 			return false;
 		}
 
 		// Reject stale entries.
-		const s64 cached_mtime = node["mtime"].as<s64>(0);
+		const s64 cached_mtime = get_yaml_node_value_or<s64>(node["mtime"], 0);
 		if (cached_mtime != iso_stat.mtime)
 		{
 			return false;
@@ -81,9 +82,9 @@ namespace iso_cache
 
 		out_entry.mtime      = cached_mtime;
 		out_entry.psf_data   = sfo_file.to_vector<u8>();
-		out_entry.icon_path  = node["icon_path"].as<std::string>("");
-		out_entry.movie_path = node["movie_path"].as<std::string>("");
-		out_entry.audio_path = node["audio_path"].as<std::string>("");
+		out_entry.icon_path  = node["icon_path"].scalar();
+		out_entry.movie_path = node["movie_path"].scalar();
+		out_entry.audio_path = node["audio_path"].scalar();
 
 		// Icon bytes are optional — game may have no icon.
 		if (const fs::file png_file(png_path); png_file)
@@ -102,17 +103,18 @@ namespace iso_cache
 		const std::string sfo_path = dir + stem + ".sfo";
 		const std::string png_path = dir + stem + ".png";
 
-		YAML::Emitter out;
-		out << YAML::BeginMap;
-		out << YAML::Key << "mtime"      << YAML::Value << static_cast<long long>(entry.mtime);
-		out << YAML::Key << "icon_path"  << YAML::Value << entry.icon_path;
-		out << YAML::Key << "movie_path" << YAML::Value << entry.movie_path;
-		out << YAML::Key << "audio_path" << YAML::Value << entry.audio_path;
-		out << YAML::EndMap;
+		yaml_writer out;
+		out.begin_map();
+		out.key("mtime").value(fmt::format("%d", static_cast<s64>(entry.mtime)));
+		out.key("icon_path").value(entry.icon_path);
+		out.key("movie_path").value(entry.movie_path);
+		out.key("audio_path").value(entry.audio_path);
+		out.end_map();
 
 		if (fs::pending_file yml_file(yml_path); yml_file.file)
 		{
-			yml_file.file.write(out.c_str(), out.size());
+			const std::string_view text = out.output();
+			yml_file.file.write(text.data(), text.size());
 			yml_file.commit();
 		}
 		else
@@ -156,28 +158,29 @@ namespace iso_cache
 			return false;
 		}
 
-		const auto [node, error] = yaml_load(yml_file.to_string());
-		if (!error.empty())
+		const yaml_doc doc(yml_file.to_string());
+		const yaml_node node = doc.root();
+		if (!doc.error().empty())
 		{
-			iso_cache_log.warning("Failed to parse index YAML for '%s': %s", iso_path, error);
+			iso_cache_log.warning("Failed to parse index YAML for '%s': %s", iso_path, doc.error());
 			return false;
 		}
 
-		const s64 cached_mtime = node["mtime"].as<s64>(0);
+		const s64 cached_mtime = get_yaml_node_value_or<s64>(node["mtime"], 0);
 		if (cached_mtime != iso_stat.mtime)
 		{
 			return false;
 		}
 
-		const YAML::Node subdirs_node = node["subdirs"];
-		if (!subdirs_node || !subdirs_node.IsSequence())
+		const yaml_node subdirs_node = node["subdirs"];
+		if (!subdirs_node || !subdirs_node.is_seq())
 		{
 			return false;
 		}
 
-		for (const auto& entry : subdirs_node)
+		for (const yaml_node entry : subdirs_node)
 		{
-			std::string name = entry.as<std::string>("");
+			std::string name(entry.scalar());
 			if (!name.empty())
 			{
 				out_subdirs.push_back(std::move(name));
@@ -197,20 +200,21 @@ namespace iso_cache
 		const std::string dir      = get_cache_dir();
 		const std::string yml_path = dir + get_index_stem(iso_path) + ".yml";
 
-		YAML::Emitter out;
-		out << YAML::BeginMap;
-		out << YAML::Key << "mtime"   << YAML::Value << static_cast<long long>(iso_stat.mtime);
-		out << YAML::Key << "subdirs" << YAML::Value << YAML::BeginSeq;
+		yaml_writer out;
+		out.begin_map();
+		out.key("mtime").value(fmt::format("%d", static_cast<s64>(iso_stat.mtime)));
+		out.key("subdirs").begin_seq();
 		for (const std::string& s : subdirs)
 		{
-			out << s;
+			out.value(s);
 		}
-		out << YAML::EndSeq;
-		out << YAML::EndMap;
+		out.end_seq();
+		out.end_map();
 
 		if (fs::pending_file yml_file(yml_path); yml_file.file)
 		{
-			yml_file.file.write(out.c_str(), out.size());
+			const std::string_view text = out.output();
+			yml_file.file.write(text.data(), text.size());
 			yml_file.commit();
 		}
 		else

@@ -54,7 +54,7 @@
 #include "Emu/RSX/Overlays/overlay_utils.h"
 #include <cstring>
 #include "libretro_localized_strings.h"
-#include "util/yaml.hpp"
+#include <formats/rjson.h>
 #include "Emu/Audio/audio_device_enumerator.h"
 #include "Emu/RSX/RSXThread.h"
 #include "Input/pad_thread.h"
@@ -1413,8 +1413,21 @@ static void install_patches()
 }
 
 // The game's entry, as RPCS3's YAML config, or nothing. The file is JSON,
-// which yaml-cpp reads as the YAML it is a subset of.
+// read with libretro-common's rjson in one pass that stops at the entry: the
+// "config" string of games -> <title id>.
 static std::string s_database_config;
+
+namespace
+{
+    struct database_lookup
+    {
+        std::string_view title_id;
+        std::string_view keys[4]; // the member names on the way down
+        unsigned depth = 0;       // objects and arrays open
+        bool found = false;
+        std::string* out;
+    };
+}
 
 static std::string lookup_database_config(const std::string& title_id)
 {
@@ -1424,17 +1437,43 @@ static std::string lookup_database_config(const std::string& title_id)
     fs::file file(config_database_path());
     if (!file)
         return {};
-    auto [root, error] = yaml_load(file.to_string());
-    if (!error.empty())
-    {
-        if (log_cb)
-            log_cb(RETRO_LOG_WARN, "RPCS3: config database is not readable: %s\n", error.c_str());
+    const std::string text = file.to_string();
+
+    database_lookup lookup{.title_id = title_id, .out = &s_database_config};
+    rjson_parse_quick(text.data(), text.size(), &lookup, RJSON_OPTION_ALLOW_UTF8BOM,
+        [](void* ctx, const char* str, size_t len) // member name
+        {
+            auto& l = *static_cast<database_lookup*>(ctx);
+            if (l.depth < 4)
+                l.keys[l.depth] = std::string_view(str, len);
+            return true;
+        },
+        [](void* ctx, const char* str, size_t len) // string
+        {
+            auto& l = *static_cast<database_lookup*>(ctx);
+            if (l.depth == 3 && l.keys[1] == "games" && l.keys[2] == l.title_id && l.keys[3] == "config")
+            {
+                l.out->assign(str, len);
+                l.found = true;
+                return false; // done
+            }
+            return true;
+        },
+        nullptr,
+        [](void* ctx) { auto& l = *static_cast<database_lookup*>(ctx); l.depth++; if (l.depth < 4) l.keys[l.depth] = {}; return true; },
+        [](void* ctx) { static_cast<database_lookup*>(ctx)->depth--; return true; },
+        [](void* ctx) { auto& l = *static_cast<database_lookup*>(ctx); l.depth++; if (l.depth < 4) l.keys[l.depth] = {}; return true; },
+        [](void* ctx) { static_cast<database_lookup*>(ctx)->depth--; return true; },
+        nullptr, nullptr,
+        [](void* ctx, int line, int col, const char* err) // error, or "" when stopped at the entry
+        {
+            auto& l = *static_cast<database_lookup*>(ctx);
+            if (!l.found && err && *err && log_cb)
+                log_cb(RETRO_LOG_WARN, "RPCS3: config database is not readable: line %d, column %d: %s\n", line, col, err);
+        });
+
+    if (!lookup.found)
         return {};
-    }
-    const YAML::Node entry = root["games"][title_id]["config"];
-    if (!entry || !entry.IsScalar())
-        return {};
-    s_database_config = entry.Scalar();
     if (log_cb)
         log_cb(RETRO_LOG_INFO, "RPCS3: database settings for %s:\n%s\n", title_id.c_str(), s_database_config.c_str());
     return s_database_config;

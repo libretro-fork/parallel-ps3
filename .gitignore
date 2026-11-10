@@ -118,8 +118,6 @@ CMakeLists.txt.user
 # macOS
 .DS_Store
 
-# yaml-cpp
-yaml-cpp.pc
 
 _ReSharper.*/
 CMakeUserPresets.json

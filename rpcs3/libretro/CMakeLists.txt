@@ -70,7 +70,6 @@ target_include_directories(rpcs3_libretro PRIVATE
 target_link_libraries(rpcs3_libretro PRIVATE
     rpcs3_emu
     3rdparty::fusion
-    3rdparty::yaml-cpp
 )
 
 # OpenGL, and everything that goes with it. Not on Android: there is no desktop

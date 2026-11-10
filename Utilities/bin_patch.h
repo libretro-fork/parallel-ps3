@@ -3,6 +3,9 @@
 #include <vector>
 #include <string>
 #include <unordered_map>
+#include <map>
+#include <set>
+#include <sstream>
 #include <functional>
 
 #include "util/types.hpp"
@@ -182,16 +185,16 @@ public:
 	static bool load(patch_map& patches, const std::string& path, std::string content = "", bool importing = false, std::stringstream* log_messages = nullptr);
 
 	// Read and add a patch node to the patch info
-	static bool read_patch_node(patch_info& info, YAML::Node node, const YAML::Node& root, std::string_view path, std::stringstream* log_messages = nullptr);
+	static bool read_patch_node(patch_info& info, yaml_node node, const yaml_node& root, std::string_view path, std::stringstream* log_messages = nullptr);
 
 	// Get the patch type from a string
 	static patch_type get_patch_type(std::string_view text);
 
 	// Get the patch type of a patch node
-	static patch_type get_patch_type(YAML::Node node);
+	static patch_type get_patch_type(yaml_node node);
 
 	// Add the data of a patch node
-	static bool add_patch_data(YAML::Node node, patch_info& info, u32 modifier, const YAML::Node& root, std::string_view path, std::stringstream* log_messages = nullptr);
+	static bool add_patch_data(yaml_node node, patch_info& info, u32 modifier, const yaml_node& root, std::string_view path, std::stringstream* log_messages = nullptr);
 
 	// Save to patch_config.yml
 	static void save_config(const patch_map& patches_map);

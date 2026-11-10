@@ -20,24 +20,6 @@
 LOG_CHANNEL(patch_log, "PAT");
 
 template <>
-void fmt_class_string<YAML::NodeType::value>::format(std::string& out, u64 arg)
-{
-	format_enum(out, arg, [](YAML::NodeType::value value)
-	{
-		switch (value)
-		{
-		case YAML::NodeType::Undefined: return "Undefined";
-		case YAML::NodeType::Null: return "Null";
-		case YAML::NodeType::Scalar: return "Scalar";
-		case YAML::NodeType::Sequence: return "Sequence";
-		case YAML::NodeType::Map: return "Map";
-		}
-
-		return unknown;
-	});
-}
-
-template <>
 void fmt_class_string<patch_configurable_type>::format(std::string& out, u64 arg)
 {
 	format_enum(out, arg, [](patch_configurable_type value)
@@ -177,13 +159,14 @@ bool patch_engine::load(patch_map& patches_map, const std::string& path, std::st
 		content = file.to_string();
 	}
 
-	// Interpret yaml nodes
-	auto [root, error] = yaml_load(content);
+	// Interpret yaml nodes: read where the text lies, kept in the document
+	const yaml_doc doc(std::move(content));
+	const yaml_node root = doc.root();
 
-	if (!error.empty() || !root)
+	if (!doc.error().empty() || !root)
 	{
 		append_log_message(log_messages, "Fatal Error: Failed to load file!");
-		patch_log.fatal("Failed to load patch file %s:\n%s", path, error);
+		patch_log.fatal("Failed to load patch file %s:\n%s", path, doc.error());
 		return false;
 	}
 
@@ -199,16 +182,14 @@ bool patch_engine::load(patch_map& patches_map, const std::string& path, std::st
 
 	if (const auto version_node = root[patch_key::version])
 	{
-		version = version_node.Scalar();
+		version = version_node.scalar();
 
 		if (version != patch_engine_version)
 		{
-			append_log_message(log_messages, fmt::format("Error: File version %s does not match patch engine target version %s (location: %s, file: %s)", version, patch_engine_version, get_yaml_node_location(version_node), path), &patch_log.error);
+			append_log_message(log_messages, fmt::format("Error: File version %s does not match patch engine target version %s (location: %s, file: %s)", version, patch_engine_version, version_node.location(), path), &patch_log.error);
 			return false;
 		}
 
-		// We don't need the Version node in local memory anymore
-		root.remove(patch_key::version);
 	}
 	else
 	{
@@ -219,20 +200,26 @@ bool patch_engine::load(patch_map& patches_map, const std::string& path, std::st
 	bool is_valid = true;
 
 	// Go through each main key in the file
-	for (auto pair : root)
+	for (const yaml_node pair : root)
 	{
-		const std::string& main_key = pair.first.Scalar();
+		const std::string main_key(pair.key());
+
+		// The Version, read above
+		if (main_key == patch_key::version)
+		{
+			continue;
+		}
 
 		if (main_key.empty())
 		{
-			append_log_message(log_messages, fmt::format("Error: Skipping empty key (location: %s, file: %s)", get_yaml_node_location(pair.first), path), &patch_log.error);
+			append_log_message(log_messages, fmt::format("Error: Skipping empty key (location: %s, file: %s)", pair.location(), path), &patch_log.error);
 			is_valid = false;
 			continue;
 		}
 
-		if (const auto yml_type = pair.second.Type(); yml_type != YAML::NodeType::Map)
+		if (const auto yml_type = pair.type_name(); !pair.is_map())
 		{
-			append_log_message(log_messages, fmt::format("Error: Skipping key %s: expected Map, found %s (location: %s, file: %s)", main_key, yml_type, get_yaml_node_location(pair.second), path), &patch_log.error);
+			append_log_message(log_messages, fmt::format("Error: Skipping key %s: expected Map, found %s (location: %s, file: %s)", main_key, yml_type, pair.location(), path), &patch_log.error);
 			is_valid = false;
 			continue;
 		}
@@ -249,23 +236,23 @@ bool patch_engine::load(patch_map& patches_map, const std::string& path, std::st
 		container.version = version;
 
 		// Go through each patch
-		for (auto patches_entry : pair.second)
+		for (const yaml_node patches_entry : pair)
 		{
 			// Each key in "Patches" is also the patch description
-			const std::string& description = patches_entry.first.Scalar();
+			const std::string description(patches_entry.key());
 
 			if (description.empty())
 			{
-				append_log_message(log_messages, fmt::format("Error: Empty patch name (key: %s, location: %s, file: %s)", main_key, get_yaml_node_location(patches_entry.first), path), &patch_log.error);
+				append_log_message(log_messages, fmt::format("Error: Empty patch name (key: %s, location: %s, file: %s)", main_key, patches_entry.location(), path), &patch_log.error);
 				is_valid = false;
 				continue;
 			}
 
 			// Compile patch information
 
-			if (const auto yml_type = patches_entry.second.Type(); yml_type != YAML::NodeType::Map)
+			if (const auto yml_type = patches_entry.type_name(); !patches_entry.is_map())
 			{
-				append_log_message(log_messages, fmt::format("Error: Skipping Patch key %s: expected Map, found %s (key: %s, location: %s, file: %s)", description, yml_type, main_key, get_yaml_node_location(patches_entry.second), path), &patch_log.error);
+				append_log_message(log_messages, fmt::format("Error: Skipping Patch key %s: expected Map, found %s (key: %s, location: %s, file: %s)", description, yml_type, main_key, patches_entry.location(), path), &patch_log.error);
 				is_valid = false;
 				continue;
 			}
@@ -276,42 +263,42 @@ bool patch_engine::load(patch_map& patches_map, const std::string& path, std::st
 			info.version     = version;
 			info.source_path = path;
 
-			if (const auto games_node = patches_entry.second[patch_key::games])
+			if (const auto games_node = patches_entry[patch_key::games])
 			{
-				if (const auto yml_type = games_node.Type(); yml_type != YAML::NodeType::Map)
+				if (const auto yml_type = games_node.type_name(); !games_node.is_map())
 				{
-					append_log_message(log_messages, fmt::format("Error: Skipping Games key: expected Map, found %s (patch: %s, key: %s, location: %s, file: %s)", yml_type, description, main_key, get_yaml_node_location(games_node), path), &patch_log.error);
+					append_log_message(log_messages, fmt::format("Error: Skipping Games key: expected Map, found %s (patch: %s, key: %s, location: %s, file: %s)", yml_type, description, main_key, games_node.location(), path), &patch_log.error);
 					is_valid = false;
 					continue;
 				}
 
-				for (const auto game_node : games_node)
+				for (const yaml_node game_node : games_node)
 				{
-					const std::string& title = game_node.first.Scalar();
+					const std::string title(game_node.key());
 
 					if (title.empty())
 					{
-						append_log_message(log_messages, fmt::format("Error: Empty game title (key: %s, location: %s, file: %s)", main_key, get_yaml_node_location(game_node), path), &patch_log.error);
+						append_log_message(log_messages, fmt::format("Error: Empty game title (key: %s, location: %s, file: %s)", main_key, game_node.location(), path), &patch_log.error);
 						is_valid = false;
 						continue;
 					}
 
-					if (const auto yml_type = game_node.second.Type(); yml_type != YAML::NodeType::Map)
+					if (const auto yml_type = game_node.type_name(); !game_node.is_map())
 					{
-						append_log_message(log_messages, fmt::format("Error: Skipping game %s: expected Map, found %s (patch: %s, key: %s, location: %s, file: %s)", title, yml_type, description, main_key, get_yaml_node_location(game_node), path), &patch_log.error);
+						append_log_message(log_messages, fmt::format("Error: Skipping game %s: expected Map, found %s (patch: %s, key: %s, location: %s, file: %s)", title, yml_type, description, main_key, game_node.location(), path), &patch_log.error);
 						is_valid = false;
 						continue;
 					}
 
 					const bool title_is_all_key = title == patch_key::all;
 
-					for (const auto serial_node : game_node.second)
+					for (const yaml_node serial_node : game_node)
 					{
-						const std::string& serial = serial_node.first.Scalar();
+						const std::string serial(serial_node.key());
 
 						if (serial.empty())
 						{
-							append_log_message(log_messages, fmt::format("Error: Using empty serial (title: %s, patch: %s, key: %s, location: %s, file: %s)", title, description, main_key, get_yaml_node_location(serial_node), path), &patch_log.error);
+							append_log_message(log_messages, fmt::format("Error: Using empty serial (title: %s, patch: %s, key: %s, location: %s, file: %s)", title, description, main_key, serial_node.location(), path), &patch_log.error);
 							is_valid = false;
 							continue;
 						}
@@ -320,49 +307,49 @@ bool patch_engine::load(patch_map& patches_map, const std::string& path, std::st
 						{
 							if (!title_is_all_key)
 							{
-								append_log_message(log_messages, fmt::format("Error: Using '%s' as serial is not allowed for titles other than '%s' (title: %s, patch: %s, key: %s, location: %s, file: %s)", patch_key::all, patch_key::all, title, description, main_key, get_yaml_node_location(serial_node), path), &patch_log.error);
+								append_log_message(log_messages, fmt::format("Error: Using '%s' as serial is not allowed for titles other than '%s' (title: %s, patch: %s, key: %s, location: %s, file: %s)", patch_key::all, patch_key::all, title, description, main_key, serial_node.location(), path), &patch_log.error);
 								is_valid = false;
 								continue;
 							}
 						}
 						else if (title_is_all_key)
 						{
-							append_log_message(log_messages, fmt::format("Error: Only '%s' is allowed as serial if the title is '%s' (serial: %s, patch: %s, key: %s, location: %s, file: %s)", patch_key::all, patch_key::all, serial, description, main_key, get_yaml_node_location(serial_node), path), &patch_log.error);
+							append_log_message(log_messages, fmt::format("Error: Only '%s' is allowed as serial if the title is '%s' (serial: %s, patch: %s, key: %s, location: %s, file: %s)", patch_key::all, patch_key::all, serial, description, main_key, serial_node.location(), path), &patch_log.error);
 							is_valid = false;
 							continue;
 						}
 						else if (serial.size() != 9 || !std::all_of(serial.begin(), serial.end(), [](char c) { return utils::isalnum(c); }))
 						{
-							append_log_message(log_messages, fmt::format("Error: Serial '%s' invalid (patch: %s, key: %s, location: %s, file: %s)", serial, description, main_key, get_yaml_node_location(serial_node), path), &patch_log.error);
+							append_log_message(log_messages, fmt::format("Error: Serial '%s' invalid (patch: %s, key: %s, location: %s, file: %s)", serial, description, main_key, serial_node.location(), path), &patch_log.error);
 							is_valid = false;
 							continue;
 						}
 
-						if (const auto yml_type = serial_node.second.Type(); yml_type != YAML::NodeType::Sequence)
+						if (const auto yml_type = serial_node.type_name(); !serial_node.is_seq())
 						{
-							append_log_message(log_messages, fmt::format("Error: Skipping %s: expected Sequence, found %s (title: %s, patch: %s, key: %s, location: %s, file: %s)", serial, title, yml_type, description, main_key, get_yaml_node_location(serial_node), path), &patch_log.error);
+							append_log_message(log_messages, fmt::format("Error: Skipping %s: expected Sequence, found %s (title: %s, patch: %s, key: %s, location: %s, file: %s)", serial, title, yml_type, description, main_key, serial_node.location(), path), &patch_log.error);
 							is_valid = false;
 							continue;
 						}
 
 						patch_app_versions app_versions;
 
-						for (const auto version : serial_node.second)
+						for (const yaml_node version : serial_node)
 						{
-							const std::string& app_version = version.Scalar();
+							const std::string& app_version = std::string(version.scalar());
 
 							static const std::regex app_ver_regexp("^([0-9]{2}\\.[0-9]{2})$");
 
 							if (app_version != patch_key::all && (app_version.size() != 5 || !std::regex_match(app_version, app_ver_regexp)))
 							{
-								append_log_message(log_messages, fmt::format("Error: Skipping invalid app version '%s' (title: %s, serial: %s, patch: %s, key: %s, location: %s, file: %s)", app_version, title, serial, description, main_key, get_yaml_node_location(serial_node), path), &patch_log.error);
+								append_log_message(log_messages, fmt::format("Error: Skipping invalid app version '%s' (title: %s, serial: %s, patch: %s, key: %s, location: %s, file: %s)", app_version, title, serial, description, main_key, serial_node.location(), path), &patch_log.error);
 								is_valid = false;
 								continue;
 							}
 
 							if (app_versions.contains(app_version))
 							{
-								append_log_message(log_messages, fmt::format("Error: Skipping duplicate app version '%s' (title: %s, serial: %s, patch: %s, key: %s, location: %s, file: %s)", app_version, title, serial, description, main_key, get_yaml_node_location(serial_node), path), &patch_log.error);
+								append_log_message(log_messages, fmt::format("Error: Skipping duplicate app version '%s' (title: %s, serial: %s, patch: %s, key: %s, location: %s, file: %s)", app_version, title, serial, description, main_key, serial_node.location(), path), &patch_log.error);
 								is_valid = false;
 								continue;
 							}
@@ -375,7 +362,7 @@ bool patch_engine::load(patch_map& patches_map, const std::string& path, std::st
 
 						if (app_versions.empty())
 						{
-							append_log_message(log_messages, fmt::format("Error: Skipping %s: empty Sequence (title: %s, patch: %s, key: %s, location: %s, file: %s)", serial, title, description, main_key, get_yaml_node_location(serial_node), path), &patch_log.error);
+							append_log_message(log_messages, fmt::format("Error: Skipping %s: empty Sequence (title: %s, patch: %s, key: %s, location: %s, file: %s)", serial, title, description, main_key, serial_node.location(), path), &patch_log.error);
 							is_valid = false;
 						}
 						else
@@ -386,77 +373,77 @@ bool patch_engine::load(patch_map& patches_map, const std::string& path, std::st
 				}
 			}
 
-			if (const auto author_node = patches_entry.second[patch_key::author])
+			if (const auto author_node = patches_entry[patch_key::author])
 			{
-				info.author = author_node.Scalar();
+				info.author = std::string(author_node.scalar());
 			}
 
-			if (const auto patch_version_node = patches_entry.second[patch_key::patch_version])
+			if (const auto patch_version_node = patches_entry[patch_key::patch_version])
 			{
-				info.patch_version = patch_version_node.Scalar();
+				info.patch_version = std::string(patch_version_node.scalar());
 			}
 
-			if (const auto notes_node = patches_entry.second[patch_key::notes])
+			if (const auto notes_node = patches_entry[patch_key::notes])
 			{
-				if (notes_node.IsSequence())
+				if (notes_node.is_seq())
 				{
-					for (const auto note : notes_node)
+					for (const yaml_node note : notes_node)
 					{
 						if (note)
 						{
-							if (note.IsScalar())
+							if (note.is_scalar())
 							{
-								info.notes += note.Scalar();
+								info.notes += std::string(note.scalar());
 							}
 							else
 							{
-								append_log_message(log_messages, fmt::format("Error: Skipping sequenced Note (patch: %s, key: %s, location: %s, file: %s)", description, main_key, get_yaml_node_location(note), path), &patch_log.error);
+								append_log_message(log_messages, fmt::format("Error: Skipping sequenced Note (patch: %s, key: %s, location: %s, file: %s)", description, main_key, note.location(), path), &patch_log.error);
 								is_valid = false;
 							}
 						}
 						else
 						{
-							append_log_message(log_messages, fmt::format("Error: Skipping sequenced Note (patch: %s, key: %s, location: %s, file: %s)", description, main_key, get_yaml_node_location(notes_node), path), &patch_log.error);
+							append_log_message(log_messages, fmt::format("Error: Skipping sequenced Note (patch: %s, key: %s, location: %s, file: %s)", description, main_key, notes_node.location(), path), &patch_log.error);
 							is_valid = false;
 						}
 					}
 				}
 				else
 				{
-					info.notes = notes_node.Scalar();
+					info.notes = std::string(notes_node.scalar());
 				}
 			}
 
-			if (const auto patch_group_node = patches_entry.second[patch_key::group])
+			if (const auto patch_group_node = patches_entry[patch_key::group])
 			{
-				info.patch_group = patch_group_node.Scalar();
+				info.patch_group = std::string(patch_group_node.scalar());
 			}
 
-			if (const auto config_values_node = patches_entry.second[patch_key::config_values])
+			if (const auto config_values_node = patches_entry[patch_key::config_values])
 			{
-				if (const auto yml_type = config_values_node.Type(); yml_type != YAML::NodeType::Map || config_values_node.size() == 0)
+				if (const auto yml_type = config_values_node.type_name(); !config_values_node.is_map() || config_values_node.size() == 0)
 				{
-					append_log_message(log_messages, fmt::format("Error: Skipping configurable values: expected Map, found %s (patch: %s, key: %s, location: %s, file: %s)", yml_type, description, main_key, get_yaml_node_location(config_values_node), path), &patch_log.error);
+					append_log_message(log_messages, fmt::format("Error: Skipping configurable values: expected Map, found %s (patch: %s, key: %s, location: %s, file: %s)", yml_type, description, main_key, config_values_node.location(), path), &patch_log.error);
 					is_valid = false;
 				}
 				else
 				{
-					for (const auto config_value_node : config_values_node)
+					for (const yaml_node config_value_node : config_values_node)
 					{
-						const std::string& value_key = config_value_node.first.Scalar();
+						const std::string value_key(config_value_node.key());
 
-						if (const auto yml_type = config_value_node.second.Type(); yml_type != YAML::NodeType::Map)
+						if (const auto yml_type = config_value_node.type_name(); !config_value_node.is_map())
 						{
-							append_log_message(log_messages, fmt::format("Error: Skipping configurable value %s: expected Map, found %s (patch: %s, key: %s, location: %s, file: %s)", value_key, yml_type, description, main_key, get_yaml_node_location(config_value_node), path), &patch_log.error);
+							append_log_message(log_messages, fmt::format("Error: Skipping configurable value %s: expected Map, found %s (patch: %s, key: %s, location: %s, file: %s)", value_key, yml_type, description, main_key, config_value_node.location(), path), &patch_log.error);
 							is_valid = false;
 						}
 						else
 						{
 							patch_config_value& config_value = info.default_config_values[value_key];
 
-							if (const auto config_value_type_node = config_value_node.second[patch_key::type]; config_value_type_node && config_value_type_node.IsScalar())
+							if (const auto config_value_type_node = config_value_node[patch_key::type]; config_value_type_node && config_value_type_node.is_scalar())
 							{
-								const std::string& str_type = config_value_type_node.Scalar();
+								const std::string& str_type = std::string(config_value_type_node.scalar());
 								bool is_valid_type = false;
 
 								for (patch_configurable_type type : { patch_configurable_type::double_range, patch_configurable_type::double_enum, patch_configurable_type::long_range, patch_configurable_type::long_enum })
@@ -471,7 +458,7 @@ bool patch_engine::load(patch_map& patches_map, const std::string& path, std::st
 
 								if (is_valid_type)
 								{
-									const auto get_and_check_config_value = [&](const YAML::Node& node)
+									const auto get_and_check_config_value = [&](const yaml_node& node)
 									{
 										std::string err;
 										f64 val{};
@@ -490,20 +477,20 @@ bool patch_engine::load(patch_map& patches_map, const std::string& path, std::st
 
 										if (!err.empty())
 										{
-											append_log_message(log_messages, fmt::format("Error: Invalid data type found in configurable value: %s (key: %s, location: %s, file: %s)", err, main_key, get_yaml_node_location(config_value_node), path), &patch_log.error);
+											append_log_message(log_messages, fmt::format("Error: Invalid data type found in configurable value: %s (key: %s, location: %s, file: %s)", err, main_key, config_value_node.location(), path), &patch_log.error);
 											is_valid = false;
 										}
 
 										return val;
 									};
 
-									if (const auto config_value_value_node = config_value_node.second[patch_key::value]; config_value_value_node && config_value_value_node.IsScalar())
+									if (const auto config_value_value_node = config_value_node[patch_key::value]; config_value_value_node && config_value_value_node.is_scalar())
 									{
 										config_value.value = get_and_check_config_value(config_value_value_node);
 									}
 									else
 									{
-										append_log_message(log_messages, fmt::format("Error: Invalid or missing configurable value (key: %s, location: %s, file: %s)", main_key, get_yaml_node_location(config_value_node), path), &patch_log.error);
+										append_log_message(log_messages, fmt::format("Error: Invalid or missing configurable value (key: %s, location: %s, file: %s)", main_key, config_value_node.location(), path), &patch_log.error);
 										is_valid = false;
 									}
 
@@ -512,35 +499,35 @@ bool patch_engine::load(patch_map& patches_map, const std::string& path, std::st
 									case patch_configurable_type::double_range:
 									case patch_configurable_type::long_range:
 									{
-										if (const auto config_value_min_node = config_value_node.second[patch_key::min]; config_value_min_node && config_value_min_node.IsScalar())
+										if (const auto config_value_min_node = config_value_node[patch_key::min]; config_value_min_node && config_value_min_node.is_scalar())
 										{
 											config_value.min = get_and_check_config_value(config_value_min_node);
 										}
 										else
 										{
-											append_log_message(log_messages, fmt::format("Error: Invalid or missing configurable min (key: %s, location: %s, file: %s)", main_key, get_yaml_node_location(config_value_node), path), &patch_log.error);
+											append_log_message(log_messages, fmt::format("Error: Invalid or missing configurable min (key: %s, location: %s, file: %s)", main_key, config_value_node.location(), path), &patch_log.error);
 											is_valid = false;
 										}
 
-										if (const auto config_value_max_node = config_value_node.second[patch_key::max]; config_value_max_node && config_value_max_node.IsScalar())
+										if (const auto config_value_max_node = config_value_node[patch_key::max]; config_value_max_node && config_value_max_node.is_scalar())
 										{
 											config_value.max = get_and_check_config_value(config_value_max_node);
 										}
 										else
 										{
-											append_log_message(log_messages, fmt::format("Error: Invalid or missing configurable max (key: %s, location: %s, file: %s)", main_key, get_yaml_node_location(config_value_node), path), &patch_log.error);
+											append_log_message(log_messages, fmt::format("Error: Invalid or missing configurable max (key: %s, location: %s, file: %s)", main_key, config_value_node.location(), path), &patch_log.error);
 											is_valid = false;
 										}
 
 										if (config_value.min >= config_value.max)
 										{
-											append_log_message(log_messages, fmt::format("Error: Configurable max has to be larger than configurable min (key: %s, location: %s, file: %s)", main_key, get_yaml_node_location(config_value_node), path), &patch_log.error);
+											append_log_message(log_messages, fmt::format("Error: Configurable max has to be larger than configurable min (key: %s, location: %s, file: %s)", main_key, config_value_node.location(), path), &patch_log.error);
 											is_valid = false;
 										}
 
 										if (config_value.value < config_value.min || config_value.value > config_value.max)
 										{
-											append_log_message(log_messages, fmt::format("Error: Configurable value out of range (key: %s, location: %s, file: %s)", main_key, get_yaml_node_location(config_value_node), path), &patch_log.error);
+											append_log_message(log_messages, fmt::format("Error: Configurable value out of range (key: %s, location: %s, file: %s)", main_key, config_value_node.location(), path), &patch_log.error);
 											is_valid = false;
 										}
 										break;
@@ -548,21 +535,21 @@ bool patch_engine::load(patch_map& patches_map, const std::string& path, std::st
 									case patch_configurable_type::double_enum:
 									case patch_configurable_type::long_enum:
 									{
-										if (const auto config_value_allowed_values_node = config_value_node.second[patch_key::allowed_values]; config_value_allowed_values_node && config_value_allowed_values_node.IsMap())
+										if (const auto config_value_allowed_values_node = config_value_node[patch_key::allowed_values]; config_value_allowed_values_node && config_value_allowed_values_node.is_map())
 										{
 											config_value.allowed_values.clear();
 
-											for (const auto allowed_value : config_value_allowed_values_node)
+											for (const yaml_node allowed_value : config_value_allowed_values_node)
 											{
-												if (allowed_value.second && allowed_value.second.IsScalar())
+												if (allowed_value && allowed_value.is_scalar())
 												{
 													patch_allowed_value new_allowed_value{};
-													new_allowed_value.label = allowed_value.first.Scalar();
-													new_allowed_value.value = get_and_check_config_value(allowed_value.second);
+													new_allowed_value.label = std::string(allowed_value.key());
+													new_allowed_value.value = get_and_check_config_value(allowed_value);
 
 													if (std::any_of(config_value.allowed_values.begin(), config_value.allowed_values.end(), [&new_allowed_value](const patch_allowed_value& other){ return new_allowed_value.value == other.value || new_allowed_value.label == other.label; }))
 													{
-														append_log_message(log_messages, fmt::format("Error: Skipping configurable allowed value. Another entry with the same label or value already exists. (patch: %s, key: %s, location: %s, file: %s)", description, main_key, get_yaml_node_location(allowed_value), path), &patch_log.error);
+														append_log_message(log_messages, fmt::format("Error: Skipping configurable allowed value. Another entry with the same label or value already exists. (patch: %s, key: %s, location: %s, file: %s)", description, main_key, allowed_value.location(), path), &patch_log.error);
 														is_valid = false;
 													}
 													else
@@ -572,26 +559,26 @@ bool patch_engine::load(patch_map& patches_map, const std::string& path, std::st
 												}
 												else
 												{
-													append_log_message(log_messages, fmt::format("Error: Skipping configurable allowed value (patch: %s, key: %s, location: %s, file: %s)", description, main_key, get_yaml_node_location(allowed_value), path), &patch_log.error);
+													append_log_message(log_messages, fmt::format("Error: Skipping configurable allowed value (patch: %s, key: %s, location: %s, file: %s)", description, main_key, allowed_value.location(), path), &patch_log.error);
 													is_valid = false;
 												}
 											}
 
 											if (config_value.allowed_values.size() < 2)
 											{
-												append_log_message(log_messages, fmt::format("Error: Configurable allowed values need at least 2 entries (key: %s, location: %s, file: %s)", main_key, get_yaml_node_location(config_value_allowed_values_node), path), &patch_log.error);
+												append_log_message(log_messages, fmt::format("Error: Configurable allowed values need at least 2 entries (key: %s, location: %s, file: %s)", main_key, config_value_allowed_values_node.location(), path), &patch_log.error);
 												is_valid = false;
 											}
 
 											if (std::none_of(config_value.allowed_values.begin(), config_value.allowed_values.end(), [&config_value](const patch_allowed_value& other){ return other.value == config_value.value; }))
 											{
-												append_log_message(log_messages, fmt::format("Error: Configurable value was not found in allowed values (key: %s, location: %s, file: %s)", main_key, get_yaml_node_location(config_value_allowed_values_node), path), &patch_log.error);
+												append_log_message(log_messages, fmt::format("Error: Configurable value was not found in allowed values (key: %s, location: %s, file: %s)", main_key, config_value_allowed_values_node.location(), path), &patch_log.error);
 												is_valid = false;
 											}
 										}
 										else
 										{
-											append_log_message(log_messages, fmt::format("Error: Invalid or missing configurable allowed values (key: %s, location: %s, file: %s)", main_key, get_yaml_node_location(config_value_node), path), &patch_log.error);
+											append_log_message(log_messages, fmt::format("Error: Invalid or missing configurable allowed values (key: %s, location: %s, file: %s)", main_key, config_value_node.location(), path), &patch_log.error);
 											is_valid = false;
 										}
 										break;
@@ -600,13 +587,13 @@ bool patch_engine::load(patch_map& patches_map, const std::string& path, std::st
 								}
 								else
 								{
-									append_log_message(log_messages, fmt::format("Error: Invalid configurable type (key: %s, location: %s, file: %s)", main_key, get_yaml_node_location(config_value_type_node), path), &patch_log.error);
+									append_log_message(log_messages, fmt::format("Error: Invalid configurable type (key: %s, location: %s, file: %s)", main_key, config_value_type_node.location(), path), &patch_log.error);
 									is_valid = false;
 								}
 							}
 							else
 							{
-								append_log_message(log_messages, fmt::format("Error: Invalid or missing configurable type (key: %s, location: %s, file: %s)", main_key, get_yaml_node_location(config_value_node), path), &patch_log.error);
+								append_log_message(log_messages, fmt::format("Error: Invalid or missing configurable type (key: %s, location: %s, file: %s)", main_key, config_value_node.location(), path), &patch_log.error);
 								is_valid = false;
 							}
 						}
@@ -614,15 +601,15 @@ bool patch_engine::load(patch_map& patches_map, const std::string& path, std::st
 				}
 			}
 
-			if (const auto patch_node = patches_entry.second[patch_key::patch])
+			if (const auto patch_node = patches_entry[patch_key::patch])
 			{
 				if (!read_patch_node(info, patch_node, root, path, log_messages))
 				{
-					for (const auto& it : patches_entry.second)
+					for (const yaml_node it : patches_entry)
 					{
-						if (it.first.Scalar() == patch_key::patch)
+						if (std::string(it.key()) == patch_key::patch)
 						{
-							append_log_message(log_messages, fmt::format("Skipping invalid patch node %s: (key: %s, location: %s, file: %s)", info.description, main_key, get_yaml_node_location(it.first), path), &patch_log.error);
+							append_log_message(log_messages, fmt::format("Skipping invalid patch node %s: (key: %s, location: %s, file: %s)", info.description, main_key, it.location(), path), &patch_log.error);
 							break;
 						}
 					}
@@ -669,21 +656,21 @@ patch_type patch_engine::get_patch_type(std::string_view text)
 	return static_cast<patch_type>(type_val);
 }
 
-patch_type patch_engine::get_patch_type(YAML::Node node)
+patch_type patch_engine::get_patch_type(yaml_node node)
 {
-	if (!node || !node.IsScalar())
+	if (!node || !node.is_scalar())
 	{
 		return patch_type::invalid;
 	}
 
-	return get_patch_type(node.Scalar());
+	return get_patch_type(node.scalar());
 }
 
-bool patch_engine::add_patch_data(YAML::Node node, patch_info& info, u32 modifier, const YAML::Node& root, std::string_view path, std::stringstream* log_messages)
+bool patch_engine::add_patch_data(yaml_node node, patch_info& info, u32 modifier, const yaml_node& root, std::string_view path, std::stringstream* log_messages)
 {
-	if (!node || !node.IsSequence())
+	if (!node || !node.is_seq())
 	{
-		append_log_message(log_messages, fmt::format("Skipping invalid patch node %s. (key: %s, location: %s, file: %s)", info.description, info.hash, get_yaml_node_location(node), path), &patch_log.error);
+		append_log_message(log_messages, fmt::format("Skipping invalid patch node %s. (key: %s, location: %s, file: %s)", info.description, info.hash, node.location(), path), &patch_log.error);
 		return false;
 	}
 
@@ -695,8 +682,8 @@ bool patch_engine::add_patch_data(YAML::Node node, patch_info& info, u32 modifie
 
 	if (type == patch_type::invalid)
 	{
-		const auto type_str = type_node && type_node.IsScalar() ? type_node.Scalar() : "";
-		append_log_message(log_messages, fmt::format("Skipping patch node %s: type '%s' is invalid. (key: %s, location: %s, file: %s)", info.description, type_str, info.hash, get_yaml_node_location(node), path), &patch_log.error);
+		const auto type_str = type_node && type_node.is_scalar() ? std::string(type_node.scalar()) : "";
+		append_log_message(log_messages, fmt::format("Skipping patch node %s: type '%s' is invalid. (key: %s, location: %s, file: %s)", info.description, type_str, info.hash, node.location(), path), &patch_log.error);
 		return false;
 	}
 
@@ -705,18 +692,18 @@ bool patch_engine::add_patch_data(YAML::Node node, patch_info& info, u32 modifie
 		// Special syntax: anchors (named sequence)
 
 		// Check if the anchor was resolved.
-		if (const auto yml_type = addr_node.Type(); yml_type != YAML::NodeType::Sequence)
+		if (const auto yml_type = addr_node.type_name(); !addr_node.is_seq())
 		{
-			append_log_message(log_messages, fmt::format("Skipping patch node %s: expected Sequence, found %s (key: %s, location: %s, file: %s)", info.description, yml_type, info.hash, get_yaml_node_location(node), path), &patch_log.error);
+			append_log_message(log_messages, fmt::format("Skipping patch node %s: expected Sequence, found %s (key: %s, location: %s, file: %s)", info.description, yml_type, info.hash, node.location(), path), &patch_log.error);
 			return false;
 		}
 
 		// Address modifier (optional)
-		const u32 mod = value_node.as<u32>(0);
+		const u32 mod = get_yaml_node_value_or<u32>(value_node, 0);
 
 		bool is_valid = true;
 
-		for (const auto& item : addr_node)
+		for (const yaml_node item : addr_node)
 		{
 			if (!add_patch_data(item, info, mod, root, path, log_messages))
 			{
@@ -727,23 +714,23 @@ bool patch_engine::add_patch_data(YAML::Node node, patch_info& info, u32 modifie
 		return is_valid;
 	}
 
-	if (const auto yml_type = value_node.Type(); yml_type != YAML::NodeType::Scalar)
+	if (const auto yml_type = value_node.type_name(); !value_node.is_scalar())
 	{
-		append_log_message(log_messages, fmt::format("Skipping patch node %s. Value element has wrong type %s. (key: %s, location: %s, file: %s)", info.description, yml_type, info.hash, get_yaml_node_location(node), path), &patch_log.error);
+		append_log_message(log_messages, fmt::format("Skipping patch node %s. Value element has wrong type %s. (key: %s, location: %s, file: %s)", info.description, yml_type, info.hash, node.location(), path), &patch_log.error);
 		return false;
 	}
 
-	if (patch_type_uses_hex_offset(type) && !addr_node.Scalar().starts_with("0x"))
+	if (patch_type_uses_hex_offset(type) && !std::string(addr_node.scalar()).starts_with("0x"))
 	{
-		append_log_message(log_messages, fmt::format("Skipping patch node %s. Address element has wrong format %s. (key: %s, location: %s, file: %s)", info.description, addr_node.Scalar(), info.hash, get_yaml_node_location(node), path), &patch_log.error);
+		append_log_message(log_messages, fmt::format("Skipping patch node %s. Address element has wrong format %s. (key: %s, location: %s, file: %s)", info.description, std::string(addr_node.scalar()), info.hash, node.location(), path), &patch_log.error);
 		return false;
 	}
 
 	patch_data p_data{};
 	p_data.type            = type;
-	p_data.offset          = addr_node.as<u32>(0) + modifier;
-	p_data.original_offset = addr_node.Scalar();
-	p_data.original_value  = value_node.Scalar();
+	p_data.offset          = get_yaml_node_value_or<u32>(addr_node, 0) + modifier;
+	p_data.original_offset = std::string(addr_node.scalar());
+	p_data.original_value  = std::string(value_node.scalar());
 
 	const bool is_config_value = info.default_config_values.contains(p_data.original_value);
 	const patch_config_value config_value = is_config_value ? ::at32(info.default_config_values, p_data.original_value) : patch_config_value{};
@@ -762,14 +749,14 @@ bool patch_engine::add_patch_data(YAML::Node node, patch_info& info, u32 modifie
 		if (!error_message.empty())
 		{
 			error_message = fmt::format("Skipping patch data entry: [ %s, 0x%.8x, %s ] (key: %s, location: %s, file: %s) Invalid patch offset '%s' (not a valid u32 or overflow)",
-				p_data.type, p_data.offset, p_data.original_value.empty() ? "?" : p_data.original_value, info.hash, get_yaml_node_location(node), path, p_data.original_offset);
+				p_data.type, p_data.offset, p_data.original_value.empty() ? "?" : p_data.original_value, info.hash, node.location(), path, p_data.original_offset);
 			append_log_message(log_messages, error_message, &patch_log.error);
 			return false;
 		}
 		if ((0xFFFFFFFF - modifier) < p_data.offset)
 		{
 			error_message = fmt::format("Skipping patch data entry: [ %s, 0x%.8x, %s ] (key: %s, location: %s, file: %s) Invalid combination of patch offset 0x%.8x and modifier 0x%.8x (overflow)",
-				p_data.type, p_data.offset, p_data.original_value.empty() ? "?" : p_data.original_value, info.hash, get_yaml_node_location(node), path, p_data.offset, modifier);
+				p_data.type, p_data.offset, p_data.original_value.empty() ? "?" : p_data.original_value, info.hash, node.location(), path, p_data.offset, modifier);
 			append_log_message(log_messages, error_message, &patch_log.error);
 			return false;
 		}
@@ -851,7 +838,7 @@ bool patch_engine::add_patch_data(YAML::Node node, patch_info& info, u32 modifie
 	if (!error_message.empty())
 	{
 		error_message = fmt::format("Skipping patch data entry: [ %s, 0x%.8x, %s ] (key: %s, location: %s, file: %s) %s",
-			p_data.type, p_data.offset, p_data.original_value.empty() ? "?" : p_data.original_value, info.hash, get_yaml_node_location(node), path, error_message);
+			p_data.type, p_data.offset, p_data.original_value.empty() ? "?" : p_data.original_value, info.hash, node.location(), path, error_message);
 		append_log_message(log_messages, error_message, &patch_log.error);
 		return false;
 	}
@@ -861,23 +848,23 @@ bool patch_engine::add_patch_data(YAML::Node node, patch_info& info, u32 modifie
 	return true;
 }
 
-bool patch_engine::read_patch_node(patch_info& info, YAML::Node node, const YAML::Node& root, std::string_view path, std::stringstream* log_messages)
+bool patch_engine::read_patch_node(patch_info& info, yaml_node node, const yaml_node& root, std::string_view path, std::stringstream* log_messages)
 {
 	if (!node)
 	{
-		append_log_message(log_messages, fmt::format("Skipping invalid patch node %s. (key: %s, location: %s)", info.description, info.hash, get_yaml_node_location(node)), &patch_log.error);
+		append_log_message(log_messages, fmt::format("Skipping invalid patch node %s. (key: %s, location: %s)", info.description, info.hash, node.location()), &patch_log.error);
 		return false;
 	}
 
-	if (const auto yml_type = node.Type(); yml_type != YAML::NodeType::Sequence)
+	if (const auto yml_type = node.type_name(); !node.is_seq())
 	{
-		append_log_message(log_messages, fmt::format("Skipping patch node %s: expected Sequence, found %s (key: %s, location: %s)", info.description, yml_type, info.hash, get_yaml_node_location(node)), &patch_log.error);
+		append_log_message(log_messages, fmt::format("Skipping patch node %s: expected Sequence, found %s (key: %s, location: %s)", info.description, yml_type, info.hash, node.location()), &patch_log.error);
 		return false;
 	}
 
 	bool is_valid = true;
 
-	for (auto patch : node)
+	for (const yaml_node patch : node)
 	{
 		if (!add_patch_data(patch, info, 0, root, path, log_messages))
 		{
@@ -1644,8 +1631,8 @@ void patch_engine::save_config(const patch_map& patches_map)
 	const std::string path = get_patch_config_path();
 	patch_log.notice("Saving patch config file %s", path);
 
-	YAML::Emitter out;
-	out << YAML::BeginMap;
+	yaml_writer out;
+	out.begin_map();
 
 	// Save values per hash, description, serial and app_version
 	patch_map config_map;
@@ -1673,19 +1660,19 @@ void patch_engine::save_config(const patch_map& patches_map)
 
 		if (const auto& patches_to_save = config_map[hash].patch_info_map; !patches_to_save.empty())
 		{
-			out << hash << YAML::BeginMap;
+			out.key(hash).begin_map();
 
 			for (const auto& [description, patch] : patches_to_save)
 			{
-				out << description << YAML::BeginMap;
+				out.key(description).begin_map();
 
 				for (const auto& [title, serials] : patch.titles)
 				{
-					out << title << YAML::BeginMap;
+					out.key(title).begin_map();
 
 					for (const auto& [serial, app_versions] : serials)
 					{
-						out << serial << YAML::BeginMap;
+						out.key(serial).begin_map();
 
 						for (const auto& [app_version, config_values] : app_versions)
 						{
@@ -1694,47 +1681,48 @@ void patch_engine::save_config(const patch_map& patches_map)
 
 							if (config_values.enabled || config_values_dirty)
 							{
-								out << app_version << YAML::BeginMap;
+								out.key(app_version).begin_map();
 
 								if (config_values.enabled)
 								{
-									out << patch_key::enabled << config_values.enabled;
+									out.key(patch_key::enabled).value_bool(config_values.enabled);
 								}
 
 								if (config_values_dirty)
 								{
-									out << patch_key::config_values << YAML::BeginMap;
+									out.key(patch_key::config_values).begin_map();
 
 									for (const auto& [name, config_value] : config_values.config_values)
 									{
-										out << name << config_value.value;
+										out.key(name).value_f64(config_value.value);
 									}
 
-									out << YAML::EndMap;
+									out.end_map();
 								}
 
-								out << YAML::EndMap;
+								out.end_map();
 							}
 						}
 
-						out << YAML::EndMap;
+						out.end_map();
 					}
 
-					out << YAML::EndMap;
+					out.end_map();
 				}
 
-				out << YAML::EndMap;
+				out.end_map();
 			}
 
-			out << YAML::EndMap;
+			out.end_map();
 		}
 	}
 
-	out << YAML::EndMap;
+	out.end_map();
 
 	fs::pending_file file(path);
+	const std::string_view text = out.output();
 
-	if (!file.file || file.file.write(out.c_str(), out.size()) < out.size() || !file.commit())
+	if (!file.file || file.file.write(text.data(), text.size()) < text.size() || !file.commit())
 	{
 		patch_log.error("Failed to create patch config file %s (error=%s)", path, fs::g_tls_error);
 	}
@@ -1813,9 +1801,9 @@ bool patch_engine::save_patches(const patch_map& patches, const std::string& pat
 		return false;
 	}
 
-	YAML::Emitter out;
-	out << YAML::BeginMap;
-	out << patch_key::version << patch_engine_version;
+	yaml_writer out;
+	out.begin_map();
+	out.key(patch_key::version).value(patch_engine_version);
 
 	for (const auto& [hash, container] : patches)
 	{
@@ -1824,77 +1812,77 @@ bool patch_engine::save_patches(const patch_map& patches, const std::string& pat
 			continue;
 		}
 
-		out << YAML::Newline << YAML::Newline;
-		out << hash << YAML::BeginMap;
+		out.blank_line();
+		out.key(hash).begin_map();
 
 		for (const auto& [description, info] : container.patch_info_map)
 		{
-			out << description << YAML::BeginMap;
-			out << patch_key::games << YAML::BeginMap;
+			out.key(description).begin_map();
+			out.key(patch_key::games).begin_map();
 
 			for (const auto& [title, serials] : info.titles)
 			{
-				out << title << YAML::BeginMap;
+				out.key(title).begin_map();
 
 				for (const auto& [serial, app_versions] : serials)
 				{
-					out << serial << YAML::BeginSeq;
+					out.key(serial).begin_seq();
 
 					for (const auto& [app_version, patch_config] : app_versions)
 					{
-						out << app_version;
+						out.value(app_version);
 					}
 
-					out << YAML::EndSeq;
+					out.end_seq();
 				}
 
-				out << YAML::EndMap;
+				out.end_map();
 			}
 
-			out << YAML::EndMap;
+			out.end_map();
 
-			if (!info.author.empty())        out << patch_key::author        << info.author;
-			if (!info.patch_version.empty()) out << patch_key::patch_version << info.patch_version;
-			if (!info.patch_group.empty())   out << patch_key::group         << info.patch_group;
-			if (!info.notes.empty())         out << patch_key::notes         << info.notes;
+			if (!info.author.empty())        out.key(patch_key::author).value(info.author);
+			if (!info.patch_version.empty()) out.key(patch_key::patch_version).value(info.patch_version);
+			if (!info.patch_group.empty())   out.key(patch_key::group).value(info.patch_group);
+			if (!info.notes.empty())         out.key(patch_key::notes).value(info.notes);
 
 			if (!info.default_config_values.empty())
 			{
-				out << patch_key::config_values << YAML::BeginMap;
+				out.key(patch_key::config_values).begin_map();
 
 				for (const auto& [key, config_value] : info.default_config_values)
 				{
-					out << key << YAML::BeginMap;
-					out << patch_key::type << fmt::format("%s", config_value.type);
-					out << patch_key::value << config_value.value;
+					out.key(key).begin_map();
+					out.key(patch_key::type).value(fmt::format("%s", config_value.type));
+					out.key(patch_key::value).value_f64(config_value.value);
 
 					switch (config_value.type)
 					{
 					case patch_configurable_type::double_range:
 					case patch_configurable_type::long_range:
-						out << patch_key::min << config_value.min;
-						out << patch_key::max << config_value.max;
+						out.key(patch_key::min).value_f64(config_value.min);
+						out.key(patch_key::max).value_f64(config_value.max);
 						break;
 					case patch_configurable_type::double_enum:
 					case patch_configurable_type::long_enum:
-						out << patch_key::allowed_values << YAML::BeginMap;
+						out.key(patch_key::allowed_values).begin_map();
 
 						for (const auto& allowed_value : config_value.allowed_values)
 						{
-							out << allowed_value.label << allowed_value.value;
+							out.key(allowed_value.label).value_f64(allowed_value.value);
 						}
 
-						out << YAML::EndMap;
+						out.end_map();
 						break;
 					}
 
-					out << YAML::EndMap;
+					out.end_map();
 				}
 
-				out << YAML::EndMap;
+				out.end_map();
 			}
 
-			out << patch_key::patch << YAML::BeginSeq;
+			out.key(patch_key::patch).begin_seq();
 
 			for (const auto& data : info.data_list)
 			{
@@ -1904,34 +1892,35 @@ bool patch_engine::save_patches(const patch_map& patches, const std::string& pat
 					continue;
 				}
 
-				out << YAML::Flow;
-				out << YAML::BeginSeq;
-				out << fmt::format("%s", data.type);
+				out.begin_seq(true);
+				out.value(fmt::format("%s", data.type));
 
 				if (patch_type_uses_hex_offset(data.type))
 				{
-					out << fmt::format("0x%.8x", data.offset);
+					out.value(fmt::format("0x%.8x", data.offset));
 				}
 				else
 				{
 					// This element is a path for move_file and hide_file, not an address
-					out << data.original_offset;
+					out.value(data.original_offset);
 				}
 
-				out << data.original_value;
-				out << YAML::EndSeq;
+				out.value(data.original_value);
+				out.end_seq();
 			}
 
-			out << YAML::EndSeq;
-			out << YAML::EndMap;
+			out.end_seq();
+			out.end_map();
 		}
 
-		out << YAML::EndMap;
+		out.end_map();
 	}
 
-	out << YAML::EndMap;
+	out.end_map();
 
-	if (file.file.write(out.c_str(), out.size()) < out.size() || !file.commit())
+	const std::string_view text = out.output();
+
+	if (file.file.write(text.data(), text.size()) < text.size() || !file.commit())
 	{
 		append_log_message(log_messages, fmt::format("Failed to write patch file %s (%s)", path, fs::g_tls_error), &patch_log.fatal);
 		return false;
@@ -1983,79 +1972,80 @@ patch_engine::patch_map patch_engine::load_config()
 
 	if (fs::file f{ path })
 	{
-		auto [root, error] = yaml_load(f.to_string());
+		const yaml_doc doc(f.to_string());
+		const yaml_node root = doc.root();
 
-		if (!error.empty())
+		if (!doc.error().empty())
 		{
-			patch_log.fatal("Failed to load patch config file %s:\n%s", path, error);
+			patch_log.fatal("Failed to load patch config file %s:\n%s", path, doc.error());
 			return config_map;
 		}
 
-		for (const auto pair : root)
+		for (const yaml_node pair : root)
 		{
-			const std::string& hash = pair.first.Scalar();
+			const std::string hash(pair.key());
 
-			if (const auto yml_type = pair.second.Type(); yml_type != YAML::NodeType::Map)
+			if (const auto yml_type = pair.type_name(); !pair.is_map())
 			{
 				patch_log.error("Error loading patch config key %s: expected Map, found %s (file: %s)", hash, yml_type, path);
 				continue;
 			}
 
-			for (const auto patch : pair.second)
+			for (const yaml_node patch : pair)
 			{
-				const std::string& description = patch.first.Scalar();
+				const std::string description(patch.key());
 
-				if (const auto yml_type = patch.second.Type(); yml_type != YAML::NodeType::Map)
+				if (const auto yml_type = patch.type_name(); !patch.is_map())
 				{
 					patch_log.error("Error loading patch %s: expected Map, found %s (hash: %s, file: %s)", description, yml_type, hash, path);
 					continue;
 				}
 
-				for (const auto title_node : patch.second)
+				for (const yaml_node title_node : patch)
 				{
-					const std::string& title = title_node.first.Scalar();
+					const std::string title(title_node.key());
 
-					if (const auto yml_type = title_node.second.Type(); yml_type != YAML::NodeType::Map)
+					if (const auto yml_type = title_node.type_name(); !title_node.is_map())
 					{
 						patch_log.error("Error loading %s: expected Map, found %s (description: %s, hash: %s, file: %s)", title, yml_type, description, hash, path);
 						continue;
 					}
 
-					for (const auto serial_node : title_node.second)
+					for (const yaml_node serial_node : title_node)
 					{
-						const std::string& serial = serial_node.first.Scalar();
+						const std::string serial(serial_node.key());
 
-						if (const auto yml_type = serial_node.second.Type(); yml_type != YAML::NodeType::Map)
+						if (const auto yml_type = serial_node.type_name(); !serial_node.is_map())
 						{
 							patch_log.error("Error loading %s: expected Map, found %s (title: %s, description: %s, hash: %s, file: %s)", serial, yml_type, title, description, hash, path);
 							continue;
 						}
 
-						for (const auto app_version_node : serial_node.second)
+						for (const yaml_node app_version_node : serial_node)
 						{
-							const auto& app_version = app_version_node.first.Scalar();
+							const std::string app_version(app_version_node.key());
 							auto& config_values = config_map[hash].patch_info_map[description].titles[title][serial][app_version];
 
-							if (app_version_node.second.IsMap())
+							if (app_version_node.is_map())
 							{
-								if (const auto enable_node = app_version_node.second[patch_key::enabled])
+								if (const auto enable_node = app_version_node[patch_key::enabled])
 								{
-									config_values.enabled = enable_node.as<bool>(false);
+									config_values.enabled = get_yaml_node_value_or<bool>(enable_node, false);
 								}
 
-								if (const auto config_values_node = app_version_node.second[patch_key::config_values])
+								if (const auto config_values_node = app_version_node[patch_key::config_values])
 								{
-									for (const auto config_value_node : config_values_node)
+									for (const yaml_node config_value_node : config_values_node)
 									{
-										patch_config_value& config_value = config_values.config_values[config_value_node.first.Scalar()];
-										config_value.value = config_value_node.second.as<f64>(0.0);
+										patch_config_value& config_value = config_values.config_values[std::string(config_value_node.key())];
+										config_value.value = get_yaml_node_value_or<f64>(config_value_node, 0.0);
 									}
 								}
 							}
 							else
 							{
 								// Legacy
-								config_values.enabled = app_version_node.second.as<bool>(false);
+								config_values.enabled = get_yaml_node_value_or<bool>(app_version_node, false);
 							}
 						}
 					}

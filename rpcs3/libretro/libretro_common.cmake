@@ -26,9 +26,12 @@ add_library(libretro_common STATIC
     ${LIBRETRO_COMMON_DIR}/formats/dds/rdds.c
     ${LIBRETRO_COMMON_DIR}/formats/gif/rgif.c
     ${LIBRETRO_COMMON_DIR}/formats/jpeg/rjpeg.c
+    ${LIBRETRO_COMMON_DIR}/formats/json/rjson.c
     ${LIBRETRO_COMMON_DIR}/formats/png/rpng.c
     ${LIBRETRO_COMMON_DIR}/formats/png/rpng_rows.c
     ${LIBRETRO_COMMON_DIR}/formats/xml/rxml.c
+    ${LIBRETRO_COMMON_DIR}/formats/yaml/ryaml.c
+    ${LIBRETRO_COMMON_DIR}/formats/yaml/ryaml_writer.c
     ${LIBRETRO_COMMON_DIR}/hash/lrc_hash.c
     ${LIBRETRO_COMMON_DIR}/lists/string_list.c
     ${LIBRETRO_COMMON_DIR}/net/net_compat.c

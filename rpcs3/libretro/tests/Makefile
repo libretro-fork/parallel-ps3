@@ -16,7 +16,7 @@ LRC_STD  := -std=gnu99
 # as libretro_common.cmake builds it: net_http over its own TLS client
 LRC_DEFS := -DHAVE_SSL -DHAVE_RETROSSL -DHAVE_CRYPTO
 
-TESTS := test_zstd test_deflate test_rxml test_png_rows test_images test_http test_bcn test_tls_duplex
+TESTS := test_zstd test_deflate test_rxml test_png_rows test_images test_http test_bcn test_tls_duplex test_yaml
 
 test_zstd_LRC := \
 	$(LRC)/encodings/encoding_rzstd.c \
@@ -80,6 +80,12 @@ $(BCDEC)/bcdec.h:
 	git -C $(BCDEC) checkout -q $(BCDEC_COMMIT)
 
 test_bcn_LRC := $(LRC)/formats/dds/rdds.c
+
+# ryaml and ryaml_writer; rinflate for the gzipped fixtures
+test_yaml_LRC := \
+	$(LRC)/formats/yaml/ryaml.c \
+	$(LRC)/formats/yaml/ryaml_writer.c \
+	$(test_deflate_LRC)
 
 # net_http and the TLS client, with what they need
 test_http_LRC := \
@@ -171,6 +177,9 @@ obj/test_tls_duplex.o: test_tls_duplex.c
 test_tls_duplex: obj/test_tls_duplex.o $(call lrc_objs,$(sort $(test_http_LRC)))
 	$(CC) $(SANITIZE) -o $@ $^ $(LDFLAGS) $(LDLIBS) -lpthread
 
+test_yaml: obj/test_yaml.o $(call lrc_objs,$(test_yaml_LRC))
+	$(CC) $(SANITIZE) -o $@ $^ $(LDFLAGS) $(LDLIBS)
+
 test_bcn: obj/test_bcn.o obj/bcdec_impl.o $(call lrc_objs,$(test_bcn_LRC))
 	$(CC) $(SANITIZE) -o $@ $^ $(LDFLAGS) $(LDLIBS)
 
@@ -187,6 +196,7 @@ check: all
 	./test_http
 	./test_bcn
 	./tls_duplex_test.sh ./test_tls_duplex
+	./test_yaml fixtures
 
 clean:
 	rm -rf obj $(TESTS) *_out.*

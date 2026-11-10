@@ -140,27 +140,28 @@ void music_selection_context::create_playlist(const std::string& new_hash)
 	const std::string yaml_path = get_yaml_path();
 	cellMusicSelectionContext.notice("create_playlist: Saving music playlist file %s", yaml_path);
 
-	YAML::Emitter out;
-	out << YAML::BeginMap;
-	out << "Version" << target_version;
-	out << "FileType" << target_file_type;
-	out << "ContentType" << content_type;
-	out << "ContextOption" << context_option;
-	out << "RepeatMode" << repeat_mode;
-	out << "FirstTrack" << first_track;
-	out << "Tracks" << YAML::BeginSeq;
+	yaml_writer out;
+	out.begin_map();
+	out.key("Version").value(target_version);
+	out.key("FileType").value(target_file_type);
+	out.key("ContentType").value(fmt::format("%d", static_cast<u32>(content_type)));
+	out.key("ContextOption").value(fmt::format("%d", static_cast<u32>(context_option)));
+	out.key("RepeatMode").value(fmt::format("%d", static_cast<u32>(repeat_mode)));
+	out.key("FirstTrack").value(fmt::format("%d", first_track));
+	out.key("Tracks").begin_seq();
 
 	for (const std::string& track : playlist)
 	{
-		out << track;
+		out.value(track);
 	}
 
-	out << YAML::EndSeq;
-	out << YAML::EndMap;
+	out.end_seq();
+	out.end_map();
 
 	fs::pending_file file(yaml_path);
+	const std::string_view text = out.output();
 
-	if (!file.file || file.file.write(out.c_str(), out.size()) < out.size() || !file.commit())
+	if (!file.file || file.file.write(text.data(), text.size()) < text.size() || !file.commit())
 	{
 		cellMusicSelectionContext.error("create_playlist: Failed to create music playlist file '%s' (error=%s)", yaml_path, fs::g_tls_error);
 	}
@@ -187,11 +188,12 @@ bool music_selection_context::load_playlist()
 		content = file.to_string();
 	}
 
-	auto [root, error] = yaml_load(content);
+	const yaml_doc doc(std::move(content));
+	const yaml_node root = doc.root();
 
-	if (!error.empty() || !root)
+	if (!doc.error().empty() || !root)
 	{
-		cellMusicSelectionContext.error("load_playlist: Failed to load music playlist file '%s':\n%s", path, error);
+		cellMusicSelectionContext.error("load_playlist: Failed to load music playlist file '%s':\n%s", path, doc.error());
 		return false;
 	}
 
@@ -251,18 +253,18 @@ bool music_selection_context::load_playlist()
 		return false;
 	}
 
-	const YAML::Node& track_node = root["Tracks"];
+	const yaml_node track_node = root["Tracks"];
 
-	if (!track_node || track_node.Type() != YAML::NodeType::Sequence)
+	if (!track_node || !track_node.is_seq())
 	{
 		cellMusicSelectionContext.error("load_playlist: No Tracks entry found or Tracks is not a Sequence. (file: '%s')", path);
 		return false;
 	}
 
-	for (usz i = 0; i < track_node.size(); i++)
+	for (const yaml_node track : track_node)
 	{
-		cellMusicSelectionContext.notice("load_playlist: Adding track to playlist: '%s'. (file: '%s')", track_node[i].Scalar(), path);
-		playlist.push_back(track_node[i].Scalar());
+		cellMusicSelectionContext.notice("load_playlist: Adding track to playlist: '%s'. (file: '%s')", track.scalar(), path);
+		playlist.emplace_back(track.scalar());
 	}
 
 	cellMusicSelectionContext.notice("load_playlist: Loaded music playlist file '%s' (context: %s)", path, to_string());

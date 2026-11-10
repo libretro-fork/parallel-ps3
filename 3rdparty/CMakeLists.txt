@@ -68,9 +68,6 @@ endif()
 # glslang
 add_subdirectory(glslang EXCLUDE_FROM_ALL)
 
-# yaml-cpp
-add_subdirectory(yaml-cpp)
-
 
 # OpenGL
 
@@ -257,7 +254,6 @@ else()
 endif()
 add_library(3rdparty::protobuf ALIAS 3rdparty_protobuf)
 add_library(3rdparty::glslang ALIAS 3rdparty_glslang)
-add_library(3rdparty::yaml-cpp ALIAS yaml-cpp)
 add_library(3rdparty::opengl ALIAS 3rdparty_opengl)
 add_library(3rdparty::stblib ALIAS 3rdparty_stblib)
 add_library(3rdparty::vulkan ALIAS ${VULKAN_TARGET})

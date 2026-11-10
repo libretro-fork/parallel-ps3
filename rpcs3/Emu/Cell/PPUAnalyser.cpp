@@ -44,21 +44,22 @@ void ppu_module<lv2_obj>::validate(u32 reloc)
 	// Load custom PRX configuration if available
 	if (fs::file yml{path + ".yml"})
 	{
-		const auto [cfg, error] = yaml_load(yml.to_string());
+		const yaml_doc doc(yml.to_string());
+		const yaml_node cfg = doc.root();
 
-		if (!error.empty())
+		if (!doc.error().empty())
 		{
-			ppu_validator.error("Failed to load %s.yml: %s", path, error);
+			ppu_validator.error("Failed to load %s.yml: %s", path, doc.error());
 			return;
 		}
 
 		u32 index = 0;
 
 		// Validate detected functions using information provided
-		for (const auto func : cfg["functions"])
+		for (const yaml_node func : cfg["functions"])
 		{
-			const u32 addr = func["addr"].as<u32>(-1);
-			const u32 size = func["size"].as<u32>(0);
+			const u32 addr = get_yaml_node_value_or<u32>(func["addr"], umax);
+			const u32 size = get_yaml_node_value_or<u32>(func["size"], 0);
 
 			if (addr != umax && index < funcs.size())
 			{

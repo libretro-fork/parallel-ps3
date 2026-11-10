@@ -65,11 +65,11 @@ namespace cfg
 	}
 
 	// Emit YAML
-	static void encode(YAML::Emitter& out, const class _base& rhs);
+	static void encode(yaml_writer& out, const class _base& rhs);
 
-	// Incrementally load config entries from YAML::Node.
+	// Incrementally load config entries from a YAML node.
 	// The config value is preserved if the corresponding YAML node doesn't exist.
-	[[nodiscard]] static bool decode(const YAML::Node& data, class _base& rhs, bool dynamic, bool strict);
+	[[nodiscard]] static bool decode(const yaml_node& data, class _base& rhs, bool dynamic, bool strict);
 }
 
 std::vector<std::string> cfg::make_int_range(s64 min, s64 max)
@@ -381,92 +381,90 @@ size_t cfg::try_to_enum_size(decltype(&fmt_class_string<int>::format) func)
 	return result;
 }
 
-void cfg::encode(YAML::Emitter& out, const cfg::_base& rhs)
+void cfg::encode(yaml_writer& out, const cfg::_base& rhs)
 {
 	switch (rhs.get_type())
 	{
 	case type::node:
 	{
-		out << YAML::BeginMap;
+		out.begin_map();
 		for (const auto& node : static_cast<const node&>(rhs).get_nodes())
 		{
-			out << YAML::Key << node->get_name();
-			out << YAML::Value;
+			out.key(node->get_name());
 			encode(out, *node);
 		}
-		out << YAML::EndMap;
+		out.end_map();
 		return;
 	}
 	case type::set:
 	{
-		out << YAML::BeginSeq;
+		out.begin_seq();
 		for (const auto& str : static_cast<const set_entry&>(rhs).get_set())
 		{
-			out << str;
+			out.value(str);
 		}
-		out << YAML::EndSeq;
+		out.end_seq();
 		return;
 	}
 	case type::map:
 	{
-		out << YAML::BeginMap;
+		out.begin_map();
 		for (const auto& np : static_cast<const map_entry&>(rhs).get_map())
 		{
-			out << YAML::Key << np.first;
-			out << YAML::Value << fmt::format("%s", np.second);
+			out.key(np.first);
+			out.value(fmt::format("%s", np.second));
 		}
-		out << YAML::EndMap;
+		out.end_map();
 		return;
 	}
 	case type::node_map:
 	{
-		//out << YAML::Block; // Does nothing, output is in Flow mode still (TODO)
-		out << YAML::BeginMap;
+		out.begin_map();
 		for (const auto& np : static_cast<const node_map_entry&>(rhs).get_map())
 		{
-			out << YAML::Key << np.first;
-			out << YAML::Value << fmt::format("%s", np.second);
+			out.key(np.first);
+			out.value(fmt::format("%s", np.second));
 		}
-		out << YAML::EndMap;
+		out.end_map();
 		return;
 	}
 	case type::log:
 	{
-		out << YAML::BeginMap;
+		out.begin_map();
 		for (const auto& np : static_cast<const log_entry&>(rhs).get_map())
 		{
 			if (np.second == logs::level::_default) continue;
-			out << YAML::Key << np.first;
-			out << YAML::Value << fmt::format("%s", np.second);
+			out.key(np.first);
+			out.value(fmt::format("%s", np.second));
 		}
-		out << YAML::EndMap;
+		out.end_map();
 		return;
 	}
 	case type::device:
 	{
-		out << YAML::BeginMap;
+		out.begin_map();
 		for (const auto& [key, info] : static_cast<const device_entry&>(rhs).get_map())
 		{
-			out << YAML::Key << key;
-			out << YAML::BeginMap;
-			out << YAML::Key << "Path" << YAML::Value << info.path;
-			out << YAML::Key << "Serial" << YAML::Value << info.serial;
-			out << YAML::Key << "VID" << YAML::Value << info.vid;
-			out << YAML::Key << "PID" << YAML::Value << info.pid;
-			out << YAML::EndMap;
+			out.key(key);
+			out.begin_map();
+			out.key("Path").value(info.path);
+			out.key("Serial").value(info.serial);
+			out.key("VID").value(info.vid);
+			out.key("PID").value(info.pid);
+			out.end_map();
 		}
-		out << YAML::EndMap;
+		out.end_map();
 		return;
 	}
 	default:
 	{
-		out << rhs.to_string();
+		out.value(rhs.to_string());
 		return;
 	}
 	}
 }
 
-bool cfg::decode(const YAML::Node& data, cfg::_base& rhs, bool dynamic, bool strict)
+bool cfg::decode(const yaml_node& data, cfg::_base& rhs, bool dynamic, bool strict)
 {
 	if (dynamic && !rhs.get_is_dynamic())
 	{
@@ -477,7 +475,7 @@ bool cfg::decode(const YAML::Node& data, cfg::_base& rhs, bool dynamic, bool str
 	{
 	case type::node:
 	{
-		if (!data.IsMap())
+		if (!data.is_map())
 		{
 			cfg_log.error("node node is not a map");
 			return false;
@@ -485,25 +483,25 @@ bool cfg::decode(const YAML::Node& data, cfg::_base& rhs, bool dynamic, bool str
 
 		bool success = true;
 
-		for (const auto& pair : data)
+		for (const yaml_node pair : data)
 		{
-			if (!pair.first.IsScalar()) continue;
+			const std::string_view key = pair.key();
 
 			// Find the key among existing nodes
 			const auto& nodes = static_cast<node&>(rhs).get_nodes();
-			const auto it = std::find_if(nodes.cbegin(), nodes.cend(), [&pair](const auto& node) { return ensure(node)->get_name() == pair.first.Scalar(); });
+			const auto it = std::find_if(nodes.cbegin(), nodes.cend(), [&key](const auto& node) { return ensure(node)->get_name() == key; });
 
 			if (it == nodes.cend())
 			{
 				if (strict)
 				{
-					cfg_log.error("Unknown key found: '%s'", pair.first.Scalar());
+					cfg_log.error("Unknown key found: '%s'", key);
 					success = false;
 				}
 				continue;
 			}
 
-			if (!decode(pair.second, *ensure(*it), dynamic, strict) && strict)
+			if (!decode(pair, *ensure(*it), dynamic, strict) && strict)
 			{
 				success = false;
 			}
@@ -515,7 +513,19 @@ bool cfg::decode(const YAML::Node& data, cfg::_base& rhs, bool dynamic, bool str
 	{
 		std::vector<std::string> values;
 
-		if (YAML::convert<decltype(values)>::decode(data, values))
+		// A sequence of scalars, as a list
+		bool is_list = data.is_seq();
+		for (const yaml_node item : data)
+		{
+			if (!item.is_scalar())
+			{
+				is_list = false;
+				break;
+			}
+			values.emplace_back(item.scalar());
+		}
+
+		if (is_list)
 		{
 			if (!rhs.from_list(std::move(values)) && strict)
 			{
@@ -528,7 +538,7 @@ bool cfg::decode(const YAML::Node& data, cfg::_base& rhs, bool dynamic, bool str
 	case type::map:
 	case type::node_map:
 	{
-		if (!data.IsMap())
+		if (!data.is_map())
 		{
 			cfg_log.error("map node is not a map");
 			return false;
@@ -536,11 +546,11 @@ bool cfg::decode(const YAML::Node& data, cfg::_base& rhs, bool dynamic, bool str
 
 		map_of_type<std::string> values;
 
-		for (const auto& pair : data)
+		for (const yaml_node pair : data)
 		{
-			if (!pair.first.IsScalar() || !pair.second.IsScalar()) continue;
+			if (!pair.is_scalar()) continue;
 
-			values.emplace(pair.first.Scalar(), pair.second.Scalar());
+			values.emplace(pair.key(), pair.scalar());
 		}
 
 		static_cast<map_entry&>(rhs).set_map(std::move(values));
@@ -548,7 +558,7 @@ bool cfg::decode(const YAML::Node& data, cfg::_base& rhs, bool dynamic, bool str
 	}
 	case type::log:
 	{
-		if (!data.IsMap())
+		if (!data.is_map())
 		{
 			cfg_log.error("log node is not a map");
 			return false;
@@ -556,28 +566,25 @@ bool cfg::decode(const YAML::Node& data, cfg::_base& rhs, bool dynamic, bool str
 
 		map_of_type<logs::level> values;
 
-		for (const auto& pair : data)
+		for (const yaml_node pair : data)
 		{
-			if (!pair.first.IsScalar() || !pair.second.IsScalar())
+			if (!pair.is_scalar())
 			{
 				if (strict)
 				{
-					if (!pair.first.IsScalar())
-						cfg_log.error("Key in map is not a scalar");
-					else
-						cfg_log.error("Value in map is not a scalar. key='%s'", pair.first.Scalar());
+					cfg_log.error("Value in map is not a scalar. key='%s'", pair.key());
 					return false;
 				}
 				continue;
 			}
 
 			u64 value;
-			if (!cfg::try_to_enum_value(&value, &fmt_class_string<logs::level>::format, pair.second.Scalar(), pair.first.Scalar()) && strict)
+			if (!cfg::try_to_enum_value(&value, &fmt_class_string<logs::level>::format, pair.scalar(), pair.key()) && strict)
 			{
 				return false;
 			}
 
-			values.emplace(pair.first.Scalar(), static_cast<logs::level>(static_cast<int>(value)));
+			values.emplace(pair.key(), static_cast<logs::level>(static_cast<int>(value)));
 		}
 
 		static_cast<log_entry&>(rhs).set_map(std::move(values));
@@ -585,7 +592,7 @@ bool cfg::decode(const YAML::Node& data, cfg::_base& rhs, bool dynamic, bool str
 	}
 	case type::device:
 	{
-		if (!data.IsMap())
+		if (!data.is_map())
 		{
 			cfg_log.error("device node is not a map");
 			return false;
@@ -593,16 +600,13 @@ bool cfg::decode(const YAML::Node& data, cfg::_base& rhs, bool dynamic, bool str
 
 		map_of_type<device_info> values;
 
-		for (const auto& pair : data)
+		for (const yaml_node pair : data)
 		{
-			if (!pair.first.IsScalar() || !pair.second.IsMap())
+			if (!pair.is_map())
 			{
 				if (strict)
 				{
-					if (!pair.first.IsScalar())
-						cfg_log.error("Key in device map is not a scalar");
-					else
-						cfg_log.error("Value in device map is not a map. key='%s'", pair.first.Scalar());
+					cfg_log.error("Value in device map is not a map. key='%s'", pair.key());
 					return false;
 				}
 				continue;
@@ -610,35 +614,34 @@ bool cfg::decode(const YAML::Node& data, cfg::_base& rhs, bool dynamic, bool str
 
 			device_info info{};
 
-			for (const auto& key_value : pair.second)
+			for (const yaml_node key_value : pair)
 			{
-				if (!key_value.first.IsScalar() || !key_value.second.IsScalar())
+				if (!key_value.is_scalar())
 				{
 					if (strict)
 					{
-						if (!key_value.first.IsScalar())
-							cfg_log.error("Key in device info map is not a scalar");
-						else
-							cfg_log.error("Value in device map is not a scalar. key='%s'", key_value.first.Scalar());
+						cfg_log.error("Value in device map is not a scalar. key='%s'", key_value.key());
 						return false;
 					}
 					continue;
 				}
 
-				if (key_value.first.Scalar() == "Path")
-					info.path = key_value.second.Scalar();
+				const std::string_view key = key_value.key();
 
-				if (key_value.first.Scalar() == "Serial")
-					info.serial = key_value.second.Scalar();
+				if (key == "Path")
+					info.path = key_value.scalar();
 
-				if (key_value.first.Scalar() == "VID")
-					info.vid = key_value.second.Scalar();
+				if (key == "Serial")
+					info.serial = key_value.scalar();
 
-				if (key_value.first.Scalar() == "PID")
-					info.pid = key_value.second.Scalar();
+				if (key == "VID")
+					info.vid = key_value.scalar();
+
+				if (key == "PID")
+					info.pid = key_value.scalar();
 			}
 
-			values.emplace(pair.first.Scalar(), std::move(info));
+			values.emplace(pair.key(), std::move(info));
 		}
 
 		static_cast<device_entry&>(rhs).set_map(std::move(values));
@@ -646,11 +649,9 @@ bool cfg::decode(const YAML::Node& data, cfg::_base& rhs, bool dynamic, bool str
 	}
 	default:
 	{
-		std::string value;
-
-		if (YAML::convert<std::string>::decode(data, value))
+		if (data.is_scalar())
 		{
-			if (!rhs.from_string(value, dynamic) && strict)
+			if (!rhs.from_string(data.scalar(), dynamic) && strict)
 			{
 				return false;
 			}
@@ -665,22 +666,23 @@ bool cfg::decode(const YAML::Node& data, cfg::_base& rhs, bool dynamic, bool str
 
 std::string cfg::node::to_string() const
 {
-	YAML::Emitter out;
+	yaml_writer out;
 	cfg::encode(out, *this);
 
-	return {out.c_str(), out.size()};
+	return std::string(out.output());
 }
 
 bool cfg::node::from_string(std::string_view value, bool dynamic)
 {
-	auto [result, error] = yaml_load(std::string(value));
+	// Read where it lies: the tree is gone before this returns
+	const yaml_doc doc(value);
 
-	if (error.empty())
+	if (doc.error().empty())
 	{
-		return cfg::decode(result, *this, dynamic, false);
+		return cfg::decode(doc.root(), *this, dynamic, false);
 	}
 
-	cfg_log.error("Failed to load node: %s", error);
+	cfg_log.error("Failed to load node: %s", doc.error());
 	return false;
 }
 
@@ -702,14 +704,14 @@ void cfg::node::restore_defaults()
 
 bool cfg::node::validate(std::string_view value)
 {
-	auto [result, error] = yaml_load(std::string(value));
+	const yaml_doc doc(value);
 
-	if (error.empty())
+	if (doc.error().empty())
 	{
-		return cfg::decode(result, *this, false, true);
+		return cfg::decode(doc.root(), *this, false, true);
 	}
 
-	cfg_log.error("Failed to load node: %s", error);
+	cfg_log.error("Failed to load node: %s", doc.error());
 	return false;
 }
 

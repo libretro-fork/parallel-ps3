@@ -15,10 +15,6 @@
 	path = 3rdparty/glslang/glslang
 	url = ../../KhronosGroup/glslang.git
 	ignore = dirty
-[submodule "3rdparty/yaml-cpp"]
-	path = 3rdparty/yaml-cpp/yaml-cpp
-	url = ../../RPCS3/yaml-cpp.git
-	ignore = dirty
 [submodule "3rdparty/libusb"]
 	path = 3rdparty/libusb/libusb
 	url = ../../libusb/libusb.git

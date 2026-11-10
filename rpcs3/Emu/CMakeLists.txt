@@ -115,11 +115,6 @@ set_source_files_properties("../../Utilities/JITLLVM.cpp" "../../Utilities/JITAS
     SKIP_PRECOMPILE_HEADERS ON
 )
 
-set_source_files_properties("../util/yaml.cpp" PROPERTIES
-    COMPILE_FLAGS "$<IF:$<CXX_COMPILER_ID:MSVC>,/EHsc,-fexceptions>"
-    SKIP_PRECOMPILE_HEADERS ON
-)
-
 # Crypto
 target_sources(rpcs3_emu PRIVATE
     ../Crypto/aes.cpp
@@ -690,7 +685,6 @@ target_link_libraries(rpcs3_emu
     PRIVATE
         3rdparty::glslang
         3rdparty::rtmidi
-        3rdparty::yaml-cpp
 )
 
 if(APPLE)

@@ -139,12 +139,18 @@ games_config::result games_config::remove_game(const std::string& key)
 
 bool games_config::save_nl()
 {
-	YAML::Emitter out;
-	out << m_games;
+	yaml_writer out;
+	out.begin_map();
+	for (const auto& [serial, path] : m_games)
+	{
+		out.key(serial).value(path);
+	}
+	out.end_map();
 
 	fs::pending_file temp(fs::get_config_dir(true) + "games.yml");
+	const std::string_view text = out.output();
 
-	if (temp.file && temp.file.write(out.c_str(), out.size()) >= out.size() && temp.commit())
+	if (temp.file && temp.file.write(text.data(), text.size()) >= text.size() && temp.commit())
 	{
 		m_dirty = false;
 		return true;
@@ -185,27 +191,28 @@ void games_config::load()
 
 	if (fs::file f{path, fs::read + fs::create})
 	{
-		auto [result, error] = yaml_load(f.to_string());
+		const yaml_doc doc(f.to_string());
+		const yaml_node result = doc.root();
 
-		if (!error.empty())
+		if (!doc.error().empty())
 		{
-			cfg_log.error("Failed to load games.yml: %s", error);
+			cfg_log.error("Failed to load games.yml: %s", doc.error());
 		}
 
-		if (!result.IsMap())
+		if (!result.is_map())
 		{
-			if (!result.IsNull())
+			if (!result.is_null())
 			{
-				cfg_log.error("Failed to load games.yml: type %d not a map", result.Type());
+				cfg_log.error("Failed to load games.yml: %s, not a map", result.type_name());
 			}
 			return;
 		}
 
-		for (const auto& entry : result)
+		for (const yaml_node entry : result)
 		{
-			if (!entry.first.Scalar().empty() && entry.second.IsScalar() && !entry.second.Scalar().empty())
+			if (!entry.key().empty() && entry.is_scalar() && !entry.scalar().empty())
 			{
-				m_games.emplace(entry.first.Scalar(), entry.second.Scalar());
+				m_games.emplace(entry.key(), entry.scalar());
 			}
 		}
 	}
