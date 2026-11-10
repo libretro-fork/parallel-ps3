@@ -193,6 +193,7 @@ bool g_libretro_vulkan_hw = false;
 static bool core_initialized = false;
 static bool game_loaded = false;
 static bool pending_game_boot = false;
+static u64 s_run_count = 0; // retro_run calls, for save states
 static std::string game_path;
 // The disc image a game was loaded from, empty for anything else: a reset
 // mounts it again, as the emulator's stop drops it (Emulator::Kill).
@@ -2152,7 +2153,8 @@ void retro_deinit(void)
 
 }
 
-static bool do_boot_game();
+static bool do_boot_game(const std::string& path);
+static void forget_state();
 
 static void context_reset()
 {
@@ -2168,7 +2170,7 @@ static void context_reset()
     if (pending_game_boot && !game_loaded)
     {
 
-        if (do_boot_game())
+        if (do_boot_game(game_path))
         {
             game_loaded = true;
             start_pause_watchdog();
@@ -2507,7 +2509,7 @@ static void vk_context_reset()
 
     if (pending_game_boot && !game_loaded)
     {
-        if (do_boot_game())
+        if (do_boot_game(game_path))
         {
             game_loaded = true;
             start_pause_watchdog();
@@ -2669,6 +2671,15 @@ bool retro_load_game(const struct retro_game_info* game)
         { if (log_cb) log_cb(RETRO_LOG_INFO, "RPCS3: multi-channel audio output negotiated; Audio Format can offer games 5.1/7.1\n"); }
     else
         { if (log_cb) log_cb(RETRO_LOG_INFO, "RPCS3: the frontend has no multi-channel audio output; stereo\n"); }
+
+    // Save states (see retro_serialize_size): none until the game runs, a
+    // size of their own each, and as RPCS3 writes them, little-endian
+    {
+        uint64_t quirks = RETRO_SERIALIZATION_QUIRK_MUST_INITIALIZE
+            | RETRO_SERIALIZATION_QUIRK_CORE_VARIABLE_SIZE
+            | RETRO_SERIALIZATION_QUIRK_ENDIAN_DEPENDENT;
+        environ_cb(RETRO_ENVIRONMENT_SET_SERIALIZATION_QUIRKS, &quirks);
+    }
 
     // Get content directory from RetroArch (for PKG installation)
     const char* content_dir_ptr = nullptr;
@@ -2940,7 +2951,7 @@ bool retro_load_game(const struct retro_game_info* game)
     if (g_cfg.video.renderer.get() == video_renderer::null || g_libretro_software_present)
     {
 
-        if (!do_boot_game())
+        if (!do_boot_game(game_path))
         {
             return false;
         }
@@ -2958,7 +2969,7 @@ bool retro_load_game(const struct retro_game_info* game)
 }
 
 // Actually boot the game - called from context_reset() when GL context is ready
-static bool do_boot_game()
+static bool do_boot_game(const std::string& path)
 {
 
 
@@ -3018,19 +3029,19 @@ static bool do_boot_game()
     try
     {
         Emu.SetForceBoot(true);
-        result = Emu.BootGame(game_path);
+        result = Emu.BootGame(path);
     }
     catch (const std::exception& e)
     {
         if (log_cb)
-            log_cb(RETRO_LOG_ERROR, "RPCS3: booting %s threw: %s\n", game_path.c_str(), e.what());
+            log_cb(RETRO_LOG_ERROR, "RPCS3: booting %s threw: %s\n", path.c_str(), e.what());
         stop_failed_boot();
         return false;
     }
     catch (...)
     {
         if (log_cb)
-            log_cb(RETRO_LOG_ERROR, "RPCS3: booting %s threw an unknown exception\n", game_path.c_str());
+            log_cb(RETRO_LOG_ERROR, "RPCS3: booting %s threw an unknown exception\n", path.c_str());
         stop_failed_boot();
         return false;
     }
@@ -3061,7 +3072,7 @@ static bool do_boot_game()
         // Without this the frontend only says the content failed to load, and
         // the reason is nowhere - rpcs3_detailed.log does not always have it.
         if (log_cb)
-            log_cb(RETRO_LOG_ERROR, "RPCS3: booting %s failed: %s\n", game_path.c_str(), error_str);
+            log_cb(RETRO_LOG_ERROR, "RPCS3: booting %s failed: %s\n", path.c_str(), error_str);
         stop_failed_boot();
         return false;
     }
@@ -3142,6 +3153,7 @@ void retro_unload_game(void)
     libretro_input_stop_rumble();
 
     stop_pause_watchdog();
+    forget_state();
     if (game_loaded)
     {
         Emu.GracefulShutdown(false, false);
@@ -3216,6 +3228,7 @@ void retro_run(void)
 
     static u64 s_run_counter = 0;
     s_run_counter++;
+    s_run_count++;
 
     // Update watchdog timestamp.
     s_last_retro_run_us.store(lr_now_us());
@@ -3378,7 +3391,7 @@ void retro_reset(void)
     if (!s_iso_path.empty())
         load_iso(s_iso_path);
 
-    if (!do_boot_game())
+    if (!do_boot_game(game_path))
     {
         if (log_cb)
             log_cb(RETRO_LOG_ERROR, "RPCS3: the game did not boot again after a reset\n");
@@ -3391,23 +3404,174 @@ void retro_reset(void)
     }
 }
 
+// Save states. RPCS3 makes a savestate in one way only: it stops the
+// emulation, writes the whole machine to a zstd-compressed .SAVESTAT.zst file
+// and boots back into it, which takes seconds and is hundreds of MB. So the
+// size RetroArch asks for before a save is that of a state made right then,
+// and the save that follows reads the file straight into RetroArch's buffer,
+// with no copy in between. Loading one boots it. The size changes from one
+// state to the next (RETRO_SERIALIZATION_QUIRK_CORE_VARIABLE_SIZE), and the
+// .info file gives RetroArch basic save states only, never rewind, run-ahead
+// or netplay, which would make one every frame.
+static std::string s_state_path; // the state made for the save to come
+static u64 s_state_size = 0;
+static u64 s_state_run = 0;      // made while this frame was the latest
+
+static void forget_state()
+{
+    s_state_path.clear();
+    s_state_size = 0;
+}
+
+// Ends the session when the game cannot be booted again
+static void lost_the_game(const char* what)
+{
+    if (log_cb)
+        log_cb(RETRO_LOG_ERROR, "RPCS3: the game did not boot again after %s\n", what);
+    libretro_show_message("The game could not be resumed", 300);
+    unload_iso();
+    s_iso_path.clear();
+    game_loaded = false;
+    environ_cb(RETRO_ENVIRONMENT_SHUTDOWN, nullptr);
+}
+
+static bool make_state()
+{
+    forget_state();
+
+    if (!game_loaded || pending_game_boot || !(Emu.IsRunning() || Emu.IsPaused()))
+        return false;
+
+    stop_pause_watchdog();
+    if (Emu.IsPaused())
+        Emu.Resume();
+
+    Emu.Kill(false, true);
+
+    // Until the emulation has stopped (the state written, or not), or the
+    // preparation gave up on it and the game runs on: SPU threads that cannot
+    // be paused where a state can be taken, a video decoder or a game save in
+    // progress. RPCS3 says which on screen.
+    // Writing a large state takes a while; one that has not stopped after two
+    // minutes is not going to
+    for (int waited = 0; !Emu.IsStopped(true) && (Emu.IsClosePending() || Emu.IsStopped()) && waited < 120000; waited++)
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+
+    if (!Emu.IsStopped(true))
+    {
+        if (log_cb)
+            log_cb(RETRO_LOG_WARN, "RPCS3: the game cannot be saved right now\n");
+        start_pause_watchdog();
+        return false;
+    }
+
+    // Where the stop wrote it, if it did
+    const std::string path = Emu.GetBoot();
+    fs::stat_t st{};
+    const bool written = path.ends_with(".SAVESTAT.zst") && fs::get_stat(path, st) && st.size;
+
+    // Back into the game: from the state, or as it was booted if there is none
+    if (!written && !s_iso_path.empty())
+        load_iso(s_iso_path);
+
+    if (!do_boot_game(written ? path : game_path))
+    {
+        lost_the_game("saving a state");
+        return false;
+    }
+
+    if (!written)
+    {
+        if (log_cb)
+            log_cb(RETRO_LOG_ERROR, "RPCS3: writing the state failed\n");
+        return false;
+    }
+
+    s_state_path = path;
+    s_state_size = st.size;
+    s_state_run = s_run_count;
+    return true;
+}
+
 size_t retro_serialize_size(void)
 {
-    // Save states not fully implemented yet
-    return 0;
+    // One state for one save: RetroArch asks for the size and saves within
+    // the same frame
+    if (!s_state_path.empty() && s_state_run == s_run_count)
+        return static_cast<size_t>(s_state_size);
+
+    return make_state() ? static_cast<size_t>(s_state_size) : 0;
 }
 
 bool retro_serialize(void* data, size_t size)
 {
-    (void)data;
-    (void)size;
-    return false;
+    if ((s_state_path.empty() || s_state_run != s_run_count) && !make_state())
+        return false;
+
+    const std::string path = std::move(s_state_path);
+    const u64 state_size = s_state_size;
+    forget_state();
+
+    if (!data || size < state_size)
+        return false;
+
+    // The file into RetroArch's buffer, as RPCS3 wrote it
+    fs::file file(path, fs::read + fs::isfile);
+    if (!file || file.read(data, state_size) != state_size)
+    {
+        if (log_cb)
+            log_cb(RETRO_LOG_ERROR, "RPCS3: reading the state back failed (%s)\n", path.c_str());
+        return false;
+    }
+
+    if (size > state_size)
+        std::memset(static_cast<u8*>(data) + state_size, 0, size - state_size);
+
+    return true;
 }
 
 bool retro_unserialize(const void* data, size_t size)
 {
-    (void)data;
-    (void)size;
+    forget_state();
+
+    // A state this core made: a zstd frame (magic 28 B5 2F FD)
+    static constexpr u8 zstd_magic[4] = {0x28, 0xb5, 0x2f, 0xfd};
+    if (!game_loaded || pending_game_boot || !data || size < 4 || std::memcmp(data, zstd_magic, 4))
+        return false;
+
+    // Next to the states RPCS3 makes for the game, under one name the core
+    // reuses, and booted from there: RPCS3 reads a state from its file as it
+    // boots
+    std::string title = Emu.GetTitleID();
+    if (title.empty())
+        title = "NO_ID";
+    const std::string dir = fs::get_config_dir() + "/savestates/" + title + "/";
+    const std::string path = dir + title + "_libretro.SAVESTAT.zst";
+
+    stop_pause_watchdog();
+    Emu.GracefulShutdown(false, false);
+    wait_for_emulation_stop("loading a state");
+
+    bool written = false;
+    if (fs::create_path(dir))
+    {
+        fs::pending_file file(path);
+        written = file.file && file.file.write(data, size) == size && file.commit();
+    }
+
+    if (written && do_boot_game(path))
+        return true;
+
+    if (log_cb)
+        log_cb(RETRO_LOG_ERROR, "RPCS3: the state could not be %s\n", written ? "booted" : "written");
+
+    // The game as it was booted, rather than nothing
+    if (!s_iso_path.empty())
+        load_iso(s_iso_path);
+
+    if (!do_boot_game(game_path))
+        lost_the_game("a state that would not load");
+
     return false;
 }
 
