@@ -187,13 +187,17 @@ if(NOT ANDROID OR USE_SYSTEM_FFMPEG)
 			message(FATAL_ERROR "@#$%! FFMPEG NOT FOUND! ${FFMPEG_LIB_DIR}")
 		endif()
 
+		# Each archive before the ones it uses, avutil last: the linker takes
+		# from an archive only what the ones before it have asked for, and
+		# swscale uses avutil's ff_init_half2float_tables, which avutil before
+		# it left undefined in the core
 		target_link_libraries(3rdparty_ffmpeg
 		INTERFACE
 			${FFMPEG_LIB_AVFORMAT}
 			${FFMPEG_LIB_AVCODEC}
-			${FFMPEG_LIB_AVUTIL}
 			${FFMPEG_LIB_SWSCALE}
 			${FFMPEG_LIB_SWRESAMPLE}
+			${FFMPEG_LIB_AVUTIL}
 		)
 		target_include_directories(3rdparty_ffmpeg SYSTEM INTERFACE "ffmpeg/include")
 	endif()
