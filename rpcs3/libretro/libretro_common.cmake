@@ -13,6 +13,7 @@ add_library(libretro_common STATIC
     ${LIBRETRO_COMMON_DIR}/encodings/encoding_utf.c
     ${LIBRETRO_COMMON_DIR}/encodings/encoding_xxh64.c
     ${LIBRETRO_COMMON_DIR}/features/features_cpu.c
+    ${LIBRETRO_COMMON_DIR}/formats/png/rpng_rows.c
     ${LIBRETRO_COMMON_DIR}/formats/xml/rxml.c
     ${LIBRETRO_COMMON_DIR}/lists/string_list.c
     ${LIBRETRO_COMMON_DIR}/net/net_compat.c

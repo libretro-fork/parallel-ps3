@@ -294,7 +294,6 @@ jobs:
             -DUSE_SYSTEM_CURL=OFF \
             -DUSE_SYSTEM_OPENCV=OFF \
             -DUSE_SYSTEM_SDL=OFF \
-            -DUSE_SYSTEM_ZLIB=OFF \
             -DUSE_SYSTEM_OPENAL=OFF \
             -DUSE_SYSTEM_FFMPEG=ON \
             -DCMAKE_PREFIX_PATH="$FFMPEG_PREFIX" \
@@ -360,7 +359,7 @@ jobs:
           fetch-depth: 0
 
       - name: Submodules
-        run: git submodule -q update --init --depth 1 $(awk '/path/ && !/llvm/ && !/opencv/ && !/libsdl-org/ && !/zlib/ { print $3 }' .gitmodules)
+        run: git submodule -q update --init --depth 1 $(awk '/path/ && !/llvm/ && !/opencv/ && !/libsdl-org/ { print $3 }' .gitmodules)
 
       - name: Dependencies
         run: |

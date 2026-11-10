@@ -26,6 +26,9 @@ if(WITH_LLVM)
 		option(LLVM_INCLUDE_UTILS "Generate build targets for the LLVM utils." OFF)
 		option(LLVM_CCACHE_BUILD "Set to ON for a ccache enabled build" OFF)
 		set(LLVM_ENABLE_WARNINGS OFF CACHE BOOL "Enable compiler warnings.")
+		# The core builds no zlib or zstd of its own any more
+		set(LLVM_ENABLE_ZLIB OFF CACHE STRING "Use zlib for compression/decompression if available.")
+		set(LLVM_ENABLE_ZSTD OFF CACHE STRING "Use zstd for compression/decompression if available.")
 
 		# For Windows x86 (not Windows AArch64).
 		# Check on MSVC is needed due to COMPILER_X86, COMPILER_ARM etc. are not set/supported by the MSVC compiler, if used.

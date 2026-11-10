@@ -30,7 +30,7 @@ git config --global --add safe.directory '*'
 # Pull all the submodules except some. LLVM is deliberately left out: the image
 # already carries a built one at /opt/llvm.
 # shellcheck disable=SC2046
-git submodule -q update --init --force $(awk '/path/ && !/llvm/ && !/opencv/ && !/libsdl-org/ && !/zlib/ { print $3 }' .gitmodules)
+git submodule -q update --init --force $(awk '/path/ && !/llvm/ && !/opencv/ && !/libsdl-org/ { print $3 }' .gitmodules)
 
 mkdir -p build && cd build || exit 1
 

@@ -3,21 +3,11 @@
 #include "Emu/IdManager.h"
 #include "Emu/Cell/PPUModule.h"
 #include "Emu/Cell/lv2/sys_fs.h"
-#include "png.h"
 #include "cellPng.h"
 #include "cellPngDec.h"
+#include "cellPngDec_rows.h"
 
-#if PNG_LIBPNG_VER_MAJOR >= 1 && (PNG_LIBPNG_VER_MINOR < 5 \
-|| (PNG_LIBPNG_VER_MINOR == 5 && PNG_LIBPNG_VER_RELEASE < 7))
-#define PNG_ERROR_ACTION_NONE 1
-#define PNG_RGB_TO_GRAY_DEFAULT (-1)
-#endif
-
-#if PNG_LIBPNG_VER_MAJOR >= 1 && PNG_LIBPNG_VER_MINOR >= 5
-typedef png_bytep iCCP_profile_type;
-#else
-typedef png_charp iCCP_profile_type;
-#endif
+#include <formats/rpng_rows.h>
 
 LOG_CHANNEL(cellPngDec);
 
@@ -68,123 +58,89 @@ using PCbControlDisp     = vm::cptr<CellPngDecCbCtrlDisp>;
 using PCbControlStream   = vm::cptr<CellPngDecCbCtrlStrm>;
 using PDispParam         = vm::ptr<CellPngDecDispParam>;
 
-// Custom read function for libpng, so we could decode images from a buffer
-void pngDecReadBuffer(png_structp png_ptr, png_bytep out, png_size_t length)
+// The decoder's host side: the row decoder, the conversions the game set,
+// and the file reader, all made at open and kept until close
+struct PngDecHost
 {
-	// Get the IO pointer
-	png_voidp io_ptr = png_get_io_ptr(png_ptr);
+	rpng_rows_t* rows = nullptr;
+	pdr conv{};
+	pdr_push push{};
+	bool params_set = false;
+	bool done = false;
 
-	// Check if obtaining of the IO pointer failed
-	if (!io_ptr)
+	// File source: the signature read at open, then the file a block at a time
+	u8 sig[8]{};
+	usz sig_at = 0;
+	std::vector<u8> file_buf;
+	usz file_at = 0;
+	usz file_have = 0;
+
+	PngDecHost() = default;
+	PngDecHost(const PngDecHost&) = delete;
+	PngDecHost& operator=(const PngDecHost&) = delete;
+
+	~PngDecHost()
 	{
-		cellPngDec.error("Failed to obtain the io_ptr failed.");
-		return;
+		rpng_rows_free(rows);
+		pdr_free(&conv);
 	}
+};
 
-	// Cast the IO pointer to our custom structure
-	PngBuffer& buffer = *static_cast<PngBuffer*>(io_ptr);
-
-	// Read froma  file or a buffer
-	if (buffer.file)
-	{
-		// Get the file
-		auto file = idm::get_unlocked<lv2_fs_object, lv2_file>(buffer.fd);
-
-		// Read the data
-		file->file.read(out, length);
-	}
-	else
-	{
-		// Get the current data pointer, including the current cursor position
-		void* data = static_cast<u8*>(buffer.data.get_ptr()) + buffer.cursor;
-
-		// Copy the length of the current data pointer to the output
-		memcpy(out, data, length);
-
-		// Increment the cursor for the next time
-		buffer.cursor += length;
-	}
-}
-
-void pngDecRowCallback(png_structp png_ptr, png_bytep new_row, png_uint_32 row_num, int pass)
+// The next event of the decoder, the input taken from the stream's source.
+// RPNG_ROWS_NEXT means the source has no more to give.
+static int pngDecStep(PngStream* stream, rpng_rows_row* row)
 {
-	PngStream* stream = static_cast<PngStream*>(png_get_progressive_ptr(png_ptr));
-	if (!stream)
-	{
-		cellPngDec.error("Failed to obtain streamPtr in rowCallback.");
-		return;
-	}
+	PngDecHost& host = *stream->host;
+	PngBuffer& buffer = *stream->buffer;
 
-	// we have to check this everytime as this func can be called multiple times per row, and/or only once per row
-	if (stream->nextRow + stream->outputCounts == row_num)
-		stream->nextRow = row_num;
-
-	if (stream->ppuContext && (stream->nextRow == row_num  || pass > 0))
+	while (true)
 	{
-		if (pass > 0 )
+		const u8* in;
+		usz len;
+
+		if (!buffer.file)
 		{
-			stream->cbDispInfo->scanPassCount = pass;
-			stream->cbDispInfo->nextOutputStartY = row_num;
+			in = static_cast<const u8*>(buffer.data.get_ptr()) + buffer.cursor;
+			len = buffer.length - buffer.cursor;
 		}
-		else {
-			stream->cbDispInfo->scanPassCount = 0;
-			stream->cbDispInfo->nextOutputStartY = 0;
+		else if (host.sig_at < sizeof(host.sig))
+		{
+			in = host.sig + host.sig_at;
+			len = sizeof(host.sig) - host.sig_at;
+		}
+		else
+		{
+			if (host.file_at == host.file_have)
+			{
+				const auto file = idm::get_unlocked<lv2_fs_object, lv2_file>(buffer.fd);
+				host.file_at = 0;
+				host.file_have = file ? file->file.read(host.file_buf.data(), host.file_buf.size()) : 0;
+			}
+
+			in = host.file_buf.data() + host.file_at;
+			len = host.file_have - host.file_at;
 		}
 
-		stream->cbDispInfo->outputImage = stream->cbDispParam->nextOutputImage;
-		stream->cbCtrlDisp.cbCtrlDispFunc(*stream->ppuContext, stream->cbDispInfo, stream->cbDispParam, stream->cbCtrlDisp.cbCtrlDispArg);
-		stream->cbDispInfo->outputStartY = row_num;
+		usz taken = 0;
+		const int ev = rpng_rows_step(host.rows, in, len, &taken, row);
+
+		if (!buffer.file)
+			buffer.cursor += taken;
+		else if (host.sig_at < sizeof(host.sig))
+			host.sig_at += taken;
+		else
+			host.file_at += taken;
+
+		// Out of input: a file has more unless the read came back empty
+		if (ev == RPNG_ROWS_NEXT && buffer.file && len)
+			continue;
+
+		return ev;
 	}
-	u8* data;
-	if (pass > 0)
-		data = static_cast<u8*>(stream->cbDispParam->nextOutputImage.get_ptr());
-	else
-		data = static_cast<u8*>(stream->cbDispParam->nextOutputImage.get_ptr()) + ((row_num - stream->cbDispInfo->outputStartY) * stream->cbDispInfo->outputFrameWidthByte);
-
-	png_progressive_combine_row(png_ptr, data, new_row);
-}
-
-void pngDecInfoCallback(png_structp png_ptr, png_infop /*info*/)
-{
-	PngStream* stream = static_cast<PngStream*>(png_get_progressive_ptr(png_ptr));
-	if (!stream)
-	{
-		cellPngDec.error("Failed to obtain streamPtr in rowCallback.");
-		return;
-	}
-
-	const usz remaining = png_process_data_pause(png_ptr, false);
-	stream->buffer->cursor += (stream->buffer->length - remaining);
-}
-
-void pngDecEndCallback(png_structp png_ptr, png_infop /*info*/)
-{
-	PngStream* stream = static_cast<PngStream*>(png_get_progressive_ptr(png_ptr));
-	if (!stream)
-	{
-		cellPngDec.error("Failed to obtain streamPtr in endCallback.");
-		return;
-	}
-
-	stream->endOfFile = true;
-}
-
-// Custom error handler for libpng
-[[noreturn]] void pngDecError(png_structp /*png_ptr*/, png_const_charp error_message)
-{
-	cellPngDec.error("pngDecError: %s", error_message);
-	// we can't return here or libpng blows up
-	fmt::throw_exception("Fatal Error in libpng: %s", error_message);
-}
-
-// Custom warning handler for libpng
-void pngDecWarning(png_structp /*png_ptr*/, png_const_charp error_message)
-{
-	cellPngDec.warning("pngDecWarning: %s", error_message);
 }
 
 // Get the chunk information of the PNG file. IDAT is marked as existing, only after decoding or reading the header.
-// Bits (if set indicates existence of the chunk):
+// Bits (if set indicates existence of the chunk), the order rpng_rows reports them in:
 // 0  - gAMA
 // 1  - sBIT
 // 2  - cHRM
@@ -202,134 +158,10 @@ void pngDecWarning(png_structp /*png_ptr*/, png_const_charp error_message)
 // 14 - sCAL
 // 15 - IDAT
 // 16:30 - reserved
-be_t<u32> pngDecGetChunkInformation(PngStream* stream, bool IDAT = false)
+static be_t<u32> pngDecGetChunkInformation(PngStream* stream, bool IDAT = false)
 {
-	// The end result of the chunk information (bigger-endian)
-	be_t<u32> chunk_information = 0;
-
-	// Needed pointers for getting the chunk information
-	f64 gamma;
-	f64 red_x;
-	f64 red_y;
-	f64 green_x;
-	f64 green_y;
-	f64 blue_x;
-	f64 blue_y;
-	f64 white_x;
-	f64 white_y;
-	f64 width;
-	f64 height;
-	s32 intent;
-	s32 num_trans;
-	s32 num_palette;
-	s32 unit_type;
-	s32 type;
-	s32 nparams;
-	s32 compression_type;
-	s32 unit;
-	u16* hist;
-	png_uint_32 proflen;
-	iCCP_profile_type profile;
-	png_bytep trans_alpha;
-	png_charp units;
-	png_charp name;
-	png_charp purpose;
-	png_charpp params;
-	png_int_32 X0;
-	png_int_32 X1;
-	png_int_32 offset_x;
-	png_int_32 offset_y;
-	png_uint_32 res_x;
-	png_uint_32 res_y;
-	png_colorp palette;
-	png_color_8p sig_bit;
-	png_color_16p background;
-	png_color_16p trans_color;
-	png_sPLT_tp entries;
-	png_timep mod_time;
-
-	// Get chunk information and set the appropriate bits
-	if (png_get_gAMA(stream->png_ptr, stream->info_ptr, &gamma))
-	{
-		chunk_information |= 1 << 0; // gAMA
-	}
-
-	if (png_get_sBIT(stream->png_ptr, stream->info_ptr, &sig_bit))
-	{
-		chunk_information |= 1 << 1; // sBIT
-	}
-
-	if (png_get_cHRM(stream->png_ptr, stream->info_ptr, &white_x, &white_y, &red_x, &red_y, &green_x, &green_y, &blue_x, &blue_y))
-	{
-		chunk_information |= 1 << 2; // cHRM
-	}
-
-	if (png_get_PLTE(stream->png_ptr, stream->info_ptr, &palette, &num_palette))
-	{
-		chunk_information |= 1 << 3; // PLTE
-	}
-
-	if (png_get_tRNS(stream->png_ptr, stream->info_ptr, &trans_alpha, &num_trans, &trans_color))
-	{
-		chunk_information |= 1 << 4; // tRNS
-	}
-
-	if (png_get_bKGD(stream->png_ptr, stream->info_ptr, &background))
-	{
-		chunk_information |= 1 << 5; // bKGD
-	}
-
-	if (png_get_hIST(stream->png_ptr, stream->info_ptr, &hist))
-	{
-		chunk_information |= 1 << 6; // hIST
-	}
-
-	if (png_get_pHYs(stream->png_ptr, stream->info_ptr, &res_x, &res_y, &unit_type))
-	{
-		chunk_information |= 1 << 7; // pHYs
-	}
-
-	if (png_get_oFFs(stream->png_ptr, stream->info_ptr, &offset_x, &offset_y, &unit_type))
-	{
-		chunk_information |= 1 << 8; // oFFs
-	}
-
-	if (png_get_tIME(stream->png_ptr, stream->info_ptr, &mod_time))
-	{
-		chunk_information |= 1 << 9; // tIME
-	}
-
-	if (png_get_pCAL(stream->png_ptr, stream->info_ptr, &purpose, &X0, &X1, &type, &nparams, &units, &params))
-	{
-		chunk_information |= 1 << 10; // pCAL
-	}
-
-	if (png_get_sRGB(stream->png_ptr, stream->info_ptr, &intent))
-	{
-		chunk_information |= 1 << 11; // sRGB
-	}
-
-	if (png_get_iCCP(stream->png_ptr, stream->info_ptr, &name, &compression_type, &profile, &proflen))
-	{
-		chunk_information |= 1 << 12; // iCCP
-	}
-
-	if (png_get_sPLT(stream->png_ptr, stream->info_ptr, &entries))
-	{
-		chunk_information |= 1 << 13; // sPLT
-	}
-
-	if (png_get_sCAL(stream->png_ptr, stream->info_ptr, &unit, &width, &height))
-	{
-		chunk_information |= 1 << 14; // sCAL
-	}
-
-	if (IDAT)
-	{
-		chunk_information |= 1 << 15; // IDAT
-	}
-
-	return chunk_information;
+	const u32 chunks = rpng_rows_info(stream->host->rows)->chunks;
+	return IDAT ? chunks : (chunks & ~u32{RPNG_ROWS_IDAT});
 }
 
 error_code pngDecCreate(ppu_thread& ppu, PPHandle png_handle, PThreadInParam thread_in_param, PThreadOutParam thread_out_param, PExtThreadInParam /*extra_thread_in_param*/ = vm::null, PExtThreadOutParam extra_thread_out_param = vm::null)
@@ -401,6 +233,7 @@ error_code pngDecOpen(ppu_thread& ppu, PHandle handle, PPStream png_stream, PSrc
 
 	// Set the stream source to the source give by the game
 	stream->source = *source;
+	stream->host = nullptr;
 
 	// Use virtual memory address as a handle
 	*png_stream = stream;
@@ -464,42 +297,44 @@ error_code pngDecOpen(ppu_thread& ppu, PHandle handle, PPStream png_stream, PSrc
 	}
 
 	// Check if the header indicates a valid PNG file
-	if (png_sig_cmp(header, 0, 8))
+	static constexpr u8 png_signature[8] = {0x89, 'P', 'N', 'G', 0x0d, 0x0a, 0x1a, 0x0a};
+
+	if (std::memcmp(header, png_signature, 8) != 0)
 	{
 		cellPngDec.error("PNG signature is invalid.");
 		return CELL_PNGDEC_ERROR_HEADER;
 	}
 
-	// Create a libpng structure, also pass our custom error/warning functions
-	stream->png_ptr = png_create_read_struct(PNG_LIBPNG_VER_STRING, nullptr, pngDecError, pngDecWarning);
+	// The decoder; the file source reads a block at a time into a buffer
+	// made here, a buffer source is read where it is
+	auto host = std::make_unique<PngDecHost>();
+	host->rows = rpng_rows_new();
 
-	// Check if the creation of the structure failed
-	if (!stream->png_ptr)
+	if (!host->rows)
 	{
-		cellPngDec.error("Creation of png_structp failed.");
+		cellPngDec.error("PNG decoder creation failed.");
 		return CELL_PNGDEC_ERROR_FATAL;
 	}
 
-	// Create a libpng info structure
-	stream->info_ptr = png_create_info_struct(stream->png_ptr);
-
-	// Check if the creation of the structure failed
-	if (!stream->info_ptr)
+	if (buffer->file)
 	{
-		fmt::throw_exception("Creation of png_infop failed.");
+		std::memcpy(host->sig, header, 8);
+		host->file_buf.resize(0x10000);
 	}
+
+	stream->host = host.release();
 
 	// We must indicate, that we allocated more memory
 	open_info->initSpaceAllocated += u32{sizeof(PngBuffer)};
 
 	if (source->srcSelect == CELL_PNGDEC_BUFFER)
 	{
+		// The decoder reads the signature again itself
 		buffer->length = stream->source.streamSize;
 		buffer->data = stream->source.streamPtr;
-		buffer->cursor = 8;
+		buffer->cursor = 0;
 	}
 
-	// Set the custom read function for decoding
 	if (control_stream)
 	{
 		if (open_param && open_param->selectChunk != 0u)
@@ -507,18 +342,6 @@ error_code pngDecOpen(ppu_thread& ppu, PHandle handle, PPStream png_stream, PSrc
 
 		stream->cbCtrlStream.cbCtrlStrmArg = control_stream->cbCtrlStrmArg;
 		stream->cbCtrlStream.cbCtrlStrmFunc = control_stream->cbCtrlStrmFunc;
-
-		png_set_progressive_read_fn(stream->png_ptr, stream.get_ptr(), pngDecInfoCallback, pngDecRowCallback, pngDecEndCallback);
-
-		// push header tag to libpng to keep us in sync
-		png_process_data(stream->png_ptr, stream->info_ptr, header, 8);
-	}
-	else
-	{
-		png_set_read_fn(stream->png_ptr, buffer.get_ptr(), pngDecReadBuffer);
-
-		// We need to tell libpng, that we already read 8 bytes
-		png_set_sig_bytes(stream->png_ptr, 8);
 	}
 
 	return CELL_OK;
@@ -542,8 +365,9 @@ error_code pngDecClose(ppu_thread& ppu, PHandle handle, PStream stream)
 		}
 	}
 
-	// Free the memory allocated by libpng
-	png_destroy_read_struct(&stream->png_ptr, &stream->info_ptr, nullptr);
+	// Free the decoder
+	delete stream->host;
+	stream->host = nullptr;
 
 	// Deallocate the stream memory
 	if (handle->free_(ppu, stream, handle->free_arg) != 0)
@@ -557,13 +381,23 @@ error_code pngDecClose(ppu_thread& ppu, PHandle handle, PStream stream)
 
 void pngSetHeader(PngStream* stream)
 {
-	stream->info.imageWidth = png_get_image_width(stream->png_ptr, stream->info_ptr);
-	stream->info.imageHeight = png_get_image_height(stream->png_ptr, stream->info_ptr);
-	stream->info.numComponents = png_get_channels(stream->png_ptr, stream->info_ptr);
-	stream->info.colorSpace = getPngDecColourType(png_get_color_type(stream->png_ptr, stream->info_ptr));
-	stream->info.bitDepth = png_get_bit_depth(stream->png_ptr, stream->info_ptr);
-	stream->info.interlaceMethod = png_get_interlace_type(stream->png_ptr, stream->info_ptr);
+	const struct rpng_rows_info& info = *rpng_rows_info(stream->host->rows);
+
+	stream->info.imageWidth = info.width;
+	stream->info.imageHeight = info.height;
+	stream->info.numComponents = info.channels;
+	stream->info.colorSpace = pdr_color_space(info.color_type);
+	stream->info.bitDepth = info.depth;
+	stream->info.interlaceMethod = info.interlace;
 	stream->info.chunkInformation = pngDecGetChunkInformation(stream);
+}
+
+// Reads up to the image data, for the header; false if the PNG is broken
+// or ends before it
+static bool pngDecReadToHeader(PngStream* stream)
+{
+	rpng_rows_row row;
+	return pngDecStep(stream, &row) == RPNG_ROWS_HEADER;
 }
 
 error_code pngDecSetParameter(PStream stream, PInParam in_param, POutParam out_param, PExtInParam extra_in_param = vm::null, PExtOutParam extra_out_param = vm::null)
@@ -573,81 +407,34 @@ error_code pngDecSetParameter(PStream stream, PInParam in_param, POutParam out_p
 		fmt::throw_exception("Packing not supported! (%d)", in_param->outputPackFlag);
 	}
 
-	// flag to keep unknown chunks
-	png_set_keep_unknown_chunks(stream->png_ptr, PNG_HANDLE_CHUNK_IF_SAFE, nullptr, 0);
-
-	// Scale 16 bit depth down to 8 bit depth.
-	if (stream->info.bitDepth == 16u && in_param->outputBitDepth == 8u)
-	{
-		// PS3 uses png_set_strip_16, since png_set_scale_16 wasn't available back then.
-		png_set_strip_16(stream->png_ptr);
-	}
-
 	// This shouldnt ever happen, but not sure what to do if it does, just want it logged for now
 	if (stream->info.bitDepth != 16u && in_param->outputBitDepth == 16u)
 		cellPngDec.error("Output depth of 16 with non input depth of 16 specified!");
 	if (in_param->commandPtr)
 		cellPngDec.warning("Ignoring CommandPtr.");
 
-	if (stream->info.colorSpace != in_param->outputColorSpace)
+	// The conversions the module asked libpng for (cellPngDec_rows.c)
+	PngDecHost& host = *stream->host;
+	const struct rpng_rows_info* info = rpng_rows_info(host.rows);
+	unsigned filler = 0;
+	int unsupported = 0;
+	const unsigned flags = pdr_flags_for(info, in_param->outputColorSpace, in_param->outputAlphaSelect,
+		in_param->outputColorAlpha, in_param->outputBitDepth, &filler, &unsupported);
+
+	if (unsupported)
 	{
-		// check if we need to set alpha
-		const bool inputHasAlpha = cellPngColorSpaceHasAlpha(stream->info.colorSpace);
-		const bool outputWantsAlpha = cellPngColorSpaceHasAlpha(in_param->outputColorSpace);
-
-		if (outputWantsAlpha && !inputHasAlpha)
-		{
-			if (in_param->outputAlphaSelect == CELL_PNGDEC_FIX_ALPHA)
-				png_set_add_alpha(stream->png_ptr, in_param->outputColorAlpha, in_param->outputColorSpace == CELL_PNGDEC_ARGB ? PNG_FILLER_BEFORE : PNG_FILLER_AFTER);
-			else
-			{
-				// Check if we can steal the alpha from a trns block
-				if (png_get_valid(stream->png_ptr, stream->info_ptr, PNG_INFO_tRNS))
-					png_set_tRNS_to_alpha(stream->png_ptr);
-				// if not, just set default of 0xff
-				else
-					png_set_add_alpha(stream->png_ptr, 0xff, in_param->outputColorSpace == CELL_PNGDEC_ARGB ? PNG_FILLER_BEFORE : PNG_FILLER_AFTER);
-			}
-		}
-		else if (inputHasAlpha && !outputWantsAlpha)
-			png_set_strip_alpha(stream->png_ptr);
-		else if (in_param->outputColorSpace == CELL_PNGDEC_ARGB && stream->info.colorSpace == CELL_PNGDEC_RGBA)
-			png_set_swap_alpha(stream->png_ptr);
-
-		// Handle gray<->rgb colorspace conversions
-		// rgb output
-		if (in_param->outputColorSpace == CELL_PNGDEC_ARGB
-			|| in_param->outputColorSpace == CELL_PNGDEC_RGBA
-			|| in_param->outputColorSpace == CELL_PNGDEC_RGB)
-		{
-
-			if (stream->info.colorSpace == CELL_PNGDEC_PALETTE)
-				png_set_palette_to_rgb(stream->png_ptr);
-			if ((stream->info.colorSpace == CELL_PNGDEC_GRAYSCALE || stream->info.colorSpace == CELL_PNGDEC_GRAYSCALE_ALPHA)
-				&& stream->info.bitDepth < 8)
-				png_set_expand_gray_1_2_4_to_8(stream->png_ptr);
-		}
-		// grayscale output
-		else
-		{
-			if (stream->info.colorSpace == CELL_PNGDEC_ARGB
-				|| stream->info.colorSpace == CELL_PNGDEC_RGBA
-				|| stream->info.colorSpace == CELL_PNGDEC_RGB)
-			{
-
-				png_set_rgb_to_gray(stream->png_ptr, PNG_ERROR_ACTION_NONE, PNG_RGB_TO_GRAY_DEFAULT, PNG_RGB_TO_GRAY_DEFAULT);
-			}
-			else {
-				// not sure what to do here
-				cellPngDec.error("Grayscale / Palette to Grayscale / Palette conversion currently unsupported.");
-			}
-		}
+		// not sure what to do here
+		cellPngDec.error("Grayscale / Palette to Grayscale / Palette conversion currently unsupported.");
 	}
 
-	stream->passes = png_set_interlace_handling(stream->png_ptr);
+	if (!pdr_setup(&host.conv, info, flags, filler))
+	{
+		cellPngDec.error("PNG decoder memory allocation failed.");
+		return CELL_PNGDEC_ERROR_FATAL;
+	}
 
-	// Update the info structure
-	png_read_update_info(stream->png_ptr, stream->info_ptr);
+	host.params_set = true;
+	stream->passes = info->interlace ? 7 : 1;
 
 	stream->out_param.outputWidth = stream->info.imageWidth;
 	stream->out_param.outputHeight = stream->info.imageHeight;
@@ -655,12 +442,12 @@ error_code pngDecSetParameter(PStream stream, PInParam in_param, POutParam out_p
 	stream->out_param.outputColorSpace = in_param->outputColorSpace;
 	stream->out_param.outputMode = in_param->outputMode;
 
-	stream->out_param.outputWidthByte = png_get_rowbytes(stream->png_ptr, stream->info_ptr);
-	stream->out_param.outputComponents = png_get_channels(stream->png_ptr, stream->info_ptr);
+	stream->out_param.outputWidthByte = ::narrow<u32>(host.conv.out_rowbytes);
+	stream->out_param.outputComponents = host.conv.out.channels;
 
 	stream->packing = in_param->outputPackFlag;
 
-	// Set the memory usage. We currently don't actually allocate memory for libpng through the callbacks, due to libpng needing a lot more memory compared to PS3 variant.
+	// Set the memory usage. The decoder's memory is the host's, not taken through the game's callbacks.
 	stream->out_param.useMemorySpace = 0;
 
 	if (extra_in_param)
@@ -693,6 +480,83 @@ error_code pngDecSetParameter(PStream stream, PInParam in_param, POutParam out_p
 	return CELL_OK;
 }
 
+// What the progressive reader does with each row libpng's would hand it
+// (pdr_push_row): the game's display callback, and the row drawn as
+// png_progressive_combine_row draws it
+static void pngDecRowCallback(void* userdata, const u8* new_row, u32 row_num, unsigned pass)
+{
+	PngStream* stream = static_cast<PngStream*>(userdata);
+
+	// we have to check this everytime as this func can be called multiple times per row, and/or only once per row
+	if (stream->nextRow + stream->outputCounts == row_num)
+		stream->nextRow = row_num;
+
+	if (stream->ppuContext && (stream->nextRow == row_num || pass > 0))
+	{
+		if (pass > 0)
+		{
+			stream->cbDispInfo->scanPassCount = pass;
+			stream->cbDispInfo->nextOutputStartY = row_num;
+		}
+		else
+		{
+			stream->cbDispInfo->scanPassCount = 0;
+			stream->cbDispInfo->nextOutputStartY = 0;
+		}
+
+		stream->cbDispInfo->outputImage = stream->cbDispParam->nextOutputImage;
+		stream->cbCtrlDisp.cbCtrlDispFunc(*stream->ppuContext, stream->cbDispInfo, stream->cbDispParam, stream->cbCtrlDisp.cbCtrlDispArg);
+		stream->cbDispInfo->outputStartY = row_num;
+	}
+
+	u8* data;
+	if (pass > 0)
+		data = static_cast<u8*>(stream->cbDispParam->nextOutputImage.get_ptr());
+	else
+		data = static_cast<u8*>(stream->cbDispParam->nextOutputImage.get_ptr()) + ((row_num - stream->cbDispInfo->outputStartY) * stream->cbDispInfo->outputFrameWidthByte);
+
+	if (new_row)
+	{
+		const pdr& conv = stream->host->conv;
+		pdr_combine(&conv, data, new_row, conv.info->interlace ? static_cast<int>(pass) : -1, 1);
+	}
+}
+
+// Hands a block of the stream to the progressive reader; false on a broken PNG
+static bool pngDecPushBlock(PngStream* stream, const u8* in, usz len)
+{
+	PngDecHost& host = *stream->host;
+
+	for (usz at = 0; !stream->endOfFile;)
+	{
+		rpng_rows_row row;
+		usz taken = 0;
+		const int ev = rpng_rows_step(host.rows, in + at, len - at, &taken, &row);
+		at += taken;
+
+		if (ev == RPNG_ROWS_ROW)
+		{
+			const u8* converted = pdr_convert(&host.conv, row.data, row.width);
+			pdr_push_row(&host.conv, &host.push, converted, row.width, pngDecRowCallback, stream);
+		}
+		else if (ev == RPNG_ROWS_END)
+		{
+			stream->endOfFile = true;
+		}
+		else if (ev == RPNG_ROWS_ERROR)
+		{
+			stream->endOfFile = true;
+			return false;
+		}
+		else if (ev == RPNG_ROWS_NEXT)
+		{
+			break;
+		}
+	}
+
+	return true;
+}
+
 error_code pngDecodeData(ppu_thread& ppu, PHandle handle, PStream stream, vm::ptr<u8> data, PDataControlParam data_control_param, PDataOutInfo data_out_info, PCbControlDisp cb_control_disp = vm::null, PDispParam disp_param = vm::null)
 {
 	// Indicate, that the PNG decoding is stopped/failed. This is incase, we return an error code in the middle of decoding
@@ -705,6 +569,17 @@ error_code pngDecodeData(ppu_thread& ppu, PHandle handle, PStream stream, vm::pt
 	{
 		fmt::throw_exception("Bytes per line less than expected output! Got: %d, expected: %d", bytes_per_line, stream->out_param.outputWidthByte);
 	}
+
+	PngDecHost& host = *stream->host;
+
+	if (!host.params_set || !host.conv.valid)
+	{
+		// libpng failed on such a set of conversions, at its first row
+		cellPngDec.error("The output parameters set ask for a conversion libpng refuses.");
+		return CELL_PNGDEC_ERROR_FATAL;
+	}
+
+	bool broken = false;
 
 	// partial decoding
 	if (cb_control_disp && stream->outputCounts > 0)
@@ -742,12 +617,15 @@ error_code pngDecodeData(ppu_thread& ppu, PHandle handle, PStream stream, vm::pt
 
 		stream->cbDispParam->nextOutputImage = disp_param->nextOutputImage;
 
+		pdr_push_begin(&host.push);
+
 		streamInfo->decodedStrmSize = ::narrow<u32>(stream->buffer->cursor);
-		// push the rest of the buffer we have
+		// push the rest of the buffer we have, where it is
 		if (stream->buffer->length > stream->buffer->cursor)
 		{
-			u8* data = static_cast<u8*>(stream->buffer->data.get_ptr()) + stream->buffer->cursor;
-			png_process_data(stream->png_ptr, stream->info_ptr, data, stream->buffer->length - stream->buffer->cursor);
+			const u8* data = static_cast<const u8*>(stream->buffer->data.get_ptr()) + stream->buffer->cursor;
+			broken = !pngDecPushBlock(stream.get_ptr(), data, stream->buffer->length - stream->buffer->cursor);
+			stream->buffer->cursor = stream->buffer->length;
 			streamInfo->decodedStrmSize = ::narrow<u32>(stream->buffer->length);
 		}
 
@@ -757,7 +635,7 @@ error_code pngDecodeData(ppu_thread& ppu, PHandle handle, PStream stream, vm::pt
 		{
 			stream->cbCtrlStream.cbCtrlStrmFunc(ppu, streamInfo, streamParam, stream->cbCtrlStream.cbCtrlStrmArg);
 			streamInfo->decodedStrmSize += streamParam->strmSize;
-			png_process_data(stream->png_ptr, stream->info_ptr, static_cast<u8*>(streamParam->strmPtr.get_ptr()), streamParam->strmSize);
+			broken = !pngDecPushBlock(stream.get_ptr(), static_cast<const u8*>(streamParam->strmPtr.get_ptr()), streamParam->strmSize);
 		}
 
 		freeMem();
@@ -767,30 +645,39 @@ error_code pngDecodeData(ppu_thread& ppu, PHandle handle, PStream stream, vm::pt
 		// Check if the image needs to be flipped
 		const bool flip = stream->out_param.outputMode == CELL_PNGDEC_BOTTOM_TO_TOP;
 
-		// Decode the image
+		// Decode the image: each row converted in the decoder's memory and
+		// written straight to its line of the game's output, an interlaced
+		// pass row to the pixels of the line it draws
 		// todo: commandptr
+		while (true)
 		{
-			for (u32 j = 0; j < stream->passes; j++)
+			rpng_rows_row row;
+			const int ev = pngDecStep(stream.get_ptr(), &row);
+
+			if (ev == RPNG_ROWS_ROW)
 			{
-				for (u32 i = 0; i < stream->out_param.outputHeight; ++i)
-				{
-					const u32 line = flip ? stream->out_param.outputHeight - i - 1 : i;
-					png_read_row(stream->png_ptr, &data[line*bytes_per_line], nullptr);
-				}
+				const u32 line = flip ? stream->out_param.outputHeight - row.y - 1 : row.y;
+				const u8* converted = pdr_convert(&host.conv, row.data, row.width);
+				pdr_scatter(&host.conv, &data[line * bytes_per_line], converted, &row);
+				continue;
 			}
-			png_read_end(stream->png_ptr, stream->info_ptr);
+
+			broken = ev != RPNG_ROWS_END;
+			break;
 		}
 	}
 
-	// Get the number of iTXt, tEXt and zTXt chunks
-	const s32 text_chunks = png_get_text(stream->png_ptr, stream->info_ptr, nullptr, nullptr);
+	if (broken)
+	{
+		cellPngDec.error("The PNG data is broken or ends before the image does.");
+		return CELL_PNGDEC_ERROR_STREAM_FORMAT;
+	}
 
-	// Set the chunk information and the previously obtained number of text chunks
-	data_out_info->numText = static_cast<u32>(text_chunks);
+	// Set the chunk information and the number of iTXt, tEXt and zTXt chunks
+	const struct rpng_rows_info* info = rpng_rows_info(host.rows);
+	data_out_info->numText = info->text_chunks;
 	data_out_info->chunkInformation = pngDecGetChunkInformation(stream.get_ptr(), true);
-	png_unknown_chunkp unknowns;
-	const int num_unknowns = png_get_unknown_chunks(stream->png_ptr, stream->info_ptr, &unknowns);
-	data_out_info->numUnknownChunk = num_unknowns;
+	data_out_info->numUnknownChunk = info->unknown_chunks;
 
 	// Indicate that the decoding succeeded
 	data_out_info->status = CELL_PNGDEC_DEC_STATUS_FINISH;
@@ -839,7 +726,11 @@ error_code cellPngDecReadHeader(PHandle handle, PStream stream, PInfo info)
 	cellPngDec.warning("cellPngDecReadHeader(handle=*0x%x, stream=*0x%x, info=*0x%x)", handle, stream, info);
 
 	// Read the header info
-	png_read_info(stream->png_ptr, stream->info_ptr);
+	if (!pngDecReadToHeader(stream.get_ptr()))
+	{
+		cellPngDec.error("The PNG header is broken or missing.");
+		return CELL_PNGDEC_ERROR_HEADER;
+	}
 
 	pngSetHeader(stream.get_ptr());
 
@@ -857,20 +748,15 @@ error_code cellPngDecExtReadHeader(PHandle handle, PStream stream, PInfo info, P
 		extInfo->reserved = 0;
 	}
 
-	// lets push what we have so far
-	u8* data = static_cast<u8*>(stream->buffer->data.get_ptr()) + stream->buffer->cursor;
-	png_process_data(stream->png_ptr, stream->info_ptr, data, stream->buffer->length);
-
-	// lets hope we pushed enough for callback
-	pngSetHeader(stream.get_ptr());
-
-	// png doesnt allow empty image, so quick check for 0 verifys if we got the header
+	// lets push what we have so far, up to the image data
 	// not sure exactly what should happen if we dont have header, ask for more data with callback?
-	if (stream->info.imageWidth == 0u)
+	if (!pngDecReadToHeader(stream.get_ptr()))
 	{
 		fmt::throw_exception("Invalid or not enough data sent to get header");
 		return CELL_PNGDEC_ERROR_HEADER;
 	}
+
+	pngSetHeader(stream.get_ptr());
 
 	// Set the pointer to stream info
 	*info = stream->info;

@@ -14,7 +14,7 @@ LDLIBS   += -lm
 TEST_STD := -std=c89 -Wdeclaration-after-statement
 LRC_STD  := -std=gnu99
 
-TESTS := test_zstd test_deflate test_rxml
+TESTS := test_zstd test_deflate test_rxml test_png_rows
 
 test_zstd_LRC := \
 	$(LRC)/encodings/encoding_rzstd.c \
@@ -29,6 +29,13 @@ test_deflate_LRC := \
 
 test_rxml_LRC := \
 	$(LRC)/formats/xml/rxml.c
+
+# libpng is the oracle here, never linked by the core
+test_png_rows_LRC := \
+	$(LRC)/formats/png/rpng_rows.c \
+	$(test_deflate_LRC)
+PNG_CFLAGS := $(shell pkg-config --cflags libpng 2>/dev/null)
+PNG_LIBS   := $(shell pkg-config --libs libpng 2>/dev/null || echo -lpng)
 
 all: $(TESTS)
 
@@ -51,6 +58,17 @@ test_deflate: obj/test_deflate.o $(call lrc_objs,$(test_deflate_LRC))
 test_rxml: obj/test_rxml.o $(call lrc_objs,$(test_rxml_LRC))
 	$(CC) $(SANITIZE) -o $@ $^ $(LDFLAGS) $(LDLIBS)
 
+obj/cellPngDec_rows.o: ../../Emu/Cell/Modules/cellPngDec_rows.c ../../Emu/Cell/Modules/cellPngDec_rows.h
+	@mkdir -p $(@D)
+	$(CC) $(CFLAGS) $(TEST_STD) $(SANITIZE) -c -o $@ $<
+
+obj/test_png_rows.o: test_png_rows.c test_common.h ../../Emu/Cell/Modules/cellPngDec_rows.h
+	@mkdir -p $(@D)
+	$(CC) $(CFLAGS) $(LRC_STD) $(PNG_CFLAGS) $(SANITIZE) -c -o $@ $<
+
+test_png_rows: obj/test_png_rows.o obj/cellPngDec_rows.o $(call lrc_objs,$(test_png_rows_LRC))
+	$(CC) $(SANITIZE) -o $@ $^ $(LDFLAGS) $(PNG_LIBS) $(LDLIBS)
+
 # Each test also writes what the new code produces, for the reference
 # tools to read back
 check: all
@@ -59,6 +77,7 @@ check: all
 	./test_deflate fixtures deflate_out.gz
 	gzip -t deflate_out.gz
 	./test_rxml
+	./test_png_rows
 
 clean:
 	rm -rf obj $(TESTS) *_out.*

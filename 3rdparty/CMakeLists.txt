@@ -16,14 +16,9 @@ endif()
 add_library(3rdparty_dummy_lib INTERFACE)
 
 
-# ZLib
-add_subdirectory(zlib EXCLUDE_FROM_ALL)
-
 # Protobuf
 add_subdirectory(protobuf EXCLUDE_FROM_ALL)
 
-# libPNG
-add_subdirectory(libpng EXCLUDE_FROM_ALL)
 
 
 if (USE_SYSTEM_VULKAN_MEMORY_ALLOCATOR)
@@ -269,11 +264,9 @@ if(USE_SYSTEM_LIBUSB)
 else()
 	add_library(3rdparty::libusb ALIAS usb-1.0-static)
 endif()
-add_library(3rdparty::zlib ALIAS 3rdparty_zlib)
 add_library(3rdparty::protobuf ALIAS 3rdparty_protobuf)
 add_library(3rdparty::glslang ALIAS 3rdparty_glslang)
 add_library(3rdparty::yaml-cpp ALIAS yaml-cpp)
-add_library(3rdparty::libpng ALIAS ${LIBPNG_TARGET})
 add_library(3rdparty::opengl ALIAS 3rdparty_opengl)
 add_library(3rdparty::stblib ALIAS 3rdparty_stblib)
 add_library(3rdparty::vulkan ALIAS ${VULKAN_TARGET})

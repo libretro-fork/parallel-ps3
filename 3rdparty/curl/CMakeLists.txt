@@ -14,6 +14,7 @@ else()
 	find_package(WolfSSL REQUIRED)
 	set(CURL_USE_WOLFSSL ON CACHE INTERNAL "")
 	set(CURL_USE_OPENSSL OFF CACHE INTERNAL "")
+	set(CURL_ZLIB OFF CACHE INTERNAL "") # The core builds no zlib of its own
 	set(HTTP_ONLY ON CACHE INTERNAL "")
 	set(USE_LIBIDN2 OFF CACHE INTERNAL "") # Disabled because MacOS CI doesn't work otherwise
 	set(CURL_CA_PATH "none" CACHE INTERNAL "")

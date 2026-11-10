@@ -17,7 +17,7 @@ git config --global --add safe.directory '*'
 
 # The ones clang64 provides as packages are left out, as is LLVM.
 # shellcheck disable=SC2046
-git submodule -q update --init --depth 1 $(awk '/path/ && !/llvm/ && !/opencv/ && !/ffmpeg/ && !/FAudio/ && !/zlib/ { print $3 }' .gitmodules)
+git submodule -q update --init --depth 1 $(awk '/path/ && !/llvm/ && !/opencv/ && !/ffmpeg/ && !/FAudio/ { print $3 }' .gitmodules)
 
 # The core has to be one DLL that needs nothing but Windows, the Vulkan loader
 # and OpenGL. RetroArch loads it with LoadLibraryW on its full path, so Windows

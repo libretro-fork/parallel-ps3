@@ -125,10 +125,6 @@ if [ ! -f "$DEPS/lib/libglew32.a" ]; then
     cmake --install "$DEPS/src/glew-build"
 fi
 
-# PNG_LIBCONF_HEADER: libpng takes its prebuilt pnglibconf.h instead of
-# generating one, which preprocesses a file including zlib.h without the
-# builtin zlib on the include path - Linux and the NDK have a zlib.h of their
-# own to fall back on, a MinGW sysroot does not.
 cmake -S . -B build -G Ninja                           \
     -DCMAKE_TOOLCHAIN_FILE="$DEPS/toolchain.cmake"     \
     -DCMAKE_BUILD_TYPE=Release                         \
@@ -148,7 +144,6 @@ cmake -S . -B build -G Ninja                           \
     -DUSE_SYSTEM_FFMPEG=OFF                            \
     -DUSE_SYSTEM_OPENCV=OFF                            \
     -DUSE_SYSTEM_OPENAL=OFF                            \
-    -DUSE_SYSTEM_ZLIB=OFF                              \
     -DUSE_DISCORD_RPC=OFF                              \
     -DUSE_LTO=OFF                                      \
     -DOpenGL_GL_PREFERENCE=LEGACY                      \
@@ -158,8 +153,7 @@ cmake -S . -B build -G Ninja                           \
     -DGLEW_INCLUDE_DIR="$DEPS/include"                 \
     -DGLEW_STATIC_ARCHIVE="$DEPS/lib/libglew32.a"      \
     -DVulkan_INCLUDE_DIR="$DEPS/include"               \
-    -DVulkan_LIBRARY="$DEPS/lib/libvulkan-1.a"         \
-    -DPNG_LIBCONF_HEADER="$SRC/3rdparty/libpng/libpng/scripts/pnglibconf.h.prebuilt"
+    -DVulkan_LIBRARY="$DEPS/lib/libvulkan-1.a"
 
 # -k 0 under KEEP_GOING=1, so a trial run reports every error, not the first.
 cmake --build build --target rpcs3_libretro -j "$JOBS" -- ${KEEP_GOING:+-k 0}

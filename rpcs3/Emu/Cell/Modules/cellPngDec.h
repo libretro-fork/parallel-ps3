@@ -2,8 +2,6 @@
 
 #include "Emu/Memory/vm_ptr.h"
 
-#include "png.h"
-
 enum : u32
 {
 	PNGDEC_CODEC_VERSION = 0x00420000,
@@ -270,7 +268,7 @@ struct PngHandle
 	vm::ptr<void> free_arg;
 };
 
-// For reading from a buffer using libpng
+// The PNG's source: a buffer in guest memory, or a file
 struct PngBuffer
 {
 	// The cursor location and data pointer for reading from a buffer
@@ -308,42 +306,6 @@ struct PngStream
 	// PNG custom read function structure, for decoding from a buffer
 	vm::ptr<PngBuffer> buffer;
 
-	// libpng structures for reading and decoding the PNG file
-	png_structp png_ptr;
-	png_infop info_ptr;
-};
-
-// Converts libpng colour type to cellPngDec colour type
-static s32 getPngDecColourType(u8 type)
-{
-	switch (type)
-	{
-	case PNG_COLOR_TYPE_RGB:        return CELL_PNGDEC_RGB;
-	case PNG_COLOR_TYPE_RGBA:       return CELL_PNGDEC_RGBA; // We can't diffrentiate between ARGB and RGBA. Doesn't seem to be exactly important.
-	case PNG_COLOR_TYPE_PALETTE:    return CELL_PNGDEC_PALETTE;
-	case PNG_COLOR_TYPE_GRAY:       return CELL_PNGDEC_GRAYSCALE;
-	case PNG_COLOR_TYPE_GRAY_ALPHA: return CELL_PNGDEC_GRAYSCALE_ALPHA;
-	default: fmt::throw_exception("Unknown colour type: %d", type);
-	}
-}
-
-static bool cellPngColorSpaceHasAlpha(u32 colorspace)
-{
-	switch (colorspace)
-	{
-	case CELL_PNGDEC_RGBA:
-	case CELL_PNGDEC_ARGB:
-	case CELL_PNGDEC_GRAYSCALE_ALPHA:
-		return true;
-	default:
-		return false;
-	}
-}
-
-// Custom exception for libPng errors
-
-class LibPngCustomException : public std::runtime_error
-{
-public:
-	LibPngCustomException(char const* const message) : runtime_error(message) {}
+	// The decoder: host memory, made at open (cellPngDec.cpp)
+	struct PngDecHost* host;
 };

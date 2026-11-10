@@ -45,7 +45,7 @@ git config --global --add safe.directory '*'
 
 # Everything but the ones this build does not use.
 # shellcheck disable=SC2046
-git submodule -q update --init --force --depth 1 $(awk '/path/ && !/opencv/ && !/libsdl-org/ && !/zlib/ { print $3 }' .gitmodules)
+git submodule -q update --init --force --depth 1 $(awk '/path/ && !/opencv/ && !/libsdl-org/ { print $3 }' .gitmodules)
 
 mkdir -p "$DEPS"
 

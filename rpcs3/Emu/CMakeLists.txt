@@ -292,6 +292,7 @@ target_sources(rpcs3_emu PRIVATE
     Cell/Modules/cellPhotoExport.cpp
     Cell/Modules/cellPhotoImport.cpp
     Cell/Modules/cellPngDec.cpp
+    Cell/Modules/cellPngDec_rows.c
     Cell/Modules/cellPngEnc.cpp
     Cell/Modules/cellPrint.cpp
     Cell/Modules/cellRec.cpp
@@ -690,7 +691,6 @@ target_link_libraries(rpcs3_emu
         Threads::Threads
     PRIVATE
         3rdparty::glslang
-        3rdparty::libpng
         3rdparty::rtmidi
         3rdparty::yaml-cpp
         3rdparty::libcurl
