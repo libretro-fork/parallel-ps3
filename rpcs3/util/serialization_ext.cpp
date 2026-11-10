@@ -8,7 +8,7 @@
 #include "Utilities/StrFmt.h"
 #include "serialization_ext.hpp"
 
-#include <zlib.h>
+#include <encodings/deflate.h>
 #include <encodings/rzstd.h>
 
 LOG_CHANNEL(sys_log, "SYS");
@@ -25,9 +25,11 @@ void fmt_class_string<utils::serial>::format(std::string& out, u64 arg)
 	fmt::append(out, "{ %s, 0x%x/0x%x, memory=0x%x, sample64=0x%016x }", ar.is_writing() ? "writing" : "reading", ar.pos, ar.data_offset + ar.data.size(), ar.data.size(), sample64);
 }
 
-static constexpr uInt adjust_for_uint(usz size)
+// Room enough for compressing @size bytes at once in most cases (zlib's
+// compressBound plus the gzip wrapper); the writers grow past it if not
+static constexpr usz deflate_bound(usz size)
 {
-	return static_cast<uInt>(std::min<usz>(uInt{umax}, size));
+	return size + (size >> 12) + (size >> 14) + (size >> 25) + 13 + 18;
 }
 
 bool uncompressed_serialization_file_handler::handle_file_op(utils::serial& ar, usz pos, usz size, const void* data)
@@ -179,7 +181,15 @@ enum : u64
 
 struct compressed_stream_data
 {
-	z_stream m_zs{};
+	void* m_deflate{}; // rdeflate stream, while writing
+	void* m_inflate{}; // rinflate stream, while reading
+
+	~compressed_stream_data()
+	{
+		rdeflate_free(m_deflate);
+		rinflate_free(m_inflate);
+	}
+
 	lf_queue<std::vector<u8>> m_queued_data_to_process;
 	lf_queue<std::vector<u8>> m_queued_data_to_write;
 };
@@ -198,21 +208,13 @@ void compressed_serialization_file_handler::initialize(utils::serial& ar)
 			return;
 		}
 
-		z_stream& m_zs = m_stream->m_zs;
-#ifndef _MSC_VER
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wold-style-cast"
-#endif
 		if (m_read_inited)
 		{
 			finalize(ar);
 		}
 
-		m_zs = {};
-		ensure(deflateInit2(&m_zs, ar.expect_little_data() ? 9 : 8, Z_DEFLATED, 16 + 15, 9, Z_DEFAULT_STRATEGY) == Z_OK);
-#ifndef _MSC_VER
-#pragma GCC diagnostic pop
-#endif
+		rdeflate_free(m_stream->m_deflate);
+		ensure(m_stream->m_deflate = rdeflate_new(ar.expect_little_data() ? 9 : 8, 16 + 15));
 		m_write_inited = true;
 		m_errored = false;
 
@@ -234,17 +236,15 @@ void compressed_serialization_file_handler::initialize(utils::serial& ar)
 			finalize(ar);
 		}
 
-		z_stream& m_zs = m_stream->m_zs;
+		if (m_stream->m_inflate)
+		{
+			rinflate_reset(m_stream->m_inflate, 16 + 15);
+		}
+		else
+		{
+			ensure(m_stream->m_inflate = rinflate_new(16 + 15));
+		}
 
-		m_zs.avail_in = 0;
-		m_zs.avail_out = 0;
-		m_zs.next_in = nullptr;
-		m_zs.next_out = nullptr;
-	#ifndef _MSC_VER
-	#pragma GCC diagnostic push
-	#pragma GCC diagnostic ignored "-Wold-style-cast"
-	#endif
-		ensure(inflateInit2(&m_zs, 16 + 15) == Z_OK);
 		m_read_inited = true;
 		m_errored = false;
 	}
@@ -452,66 +452,45 @@ usz compressed_serialization_file_handler::read_at(utils::serial& ar, usz read_p
 
 	initialize(ar);
 
-	z_stream& m_zs = m_stream->m_zs;
+	void* const zs = m_stream->m_inflate;
 
 	const usz total_to_read = size;
 	usz read_size = 0;
-	u8* out_data = static_cast<u8*>(data);
+	u8* const out_data = static_cast<u8*>(data);
 
-	for (; read_size < total_to_read;)
+	while (read_size < total_to_read)
 	{
 		// Drain extracted memory stash (also before first file read)
-		out_data = static_cast<u8*>(data) + read_size;
-		m_zs.avail_in = adjust_for_uint(m_stream_data.size() - m_stream_data_index);
-		m_zs.next_in = reinterpret_cast<const u8*>(m_stream_data.data() + m_stream_data_index);
-		m_zs.next_out = out_data;
-		m_zs.avail_out = adjust_for_uint(size - read_size);
-
-		while (read_size < total_to_read && m_zs.avail_in)
+		if (const usz avail_in = m_stream_data.size() - m_stream_data_index)
 		{
-			const int res = inflate(&m_zs, Z_BLOCK);
+			size_t taken = 0;
+			size_t wrote = 0;
 
-			bool need_more_file_memory = false;
+			rinflate_set_in(zs, m_stream_data.data() + m_stream_data_index, avail_in);
+			rinflate_set_out(zs, out_data + read_size, total_to_read - read_size);
+			const int res = rinflate_process(zs, &taken, &wrote);
 
-			switch (res)
+			read_size += wrote;
+			m_stream_data_index += taken;
+
+			if (res == RDEFLATE_PROCESS_ERROR)
 			{
-			case Z_OK:
-			case Z_STREAM_END:
-				break;
-			case Z_BUF_ERROR:
-			{
-				if (m_zs.avail_in)
-				{
-					need_more_file_memory = true;
-					break;
-				}
-
-				[[fallthrough]];
-			}
-			default:
 				m_errored = true;
-				inflateEnd(&m_zs);
 				m_read_inited = false;
-				sys_log.error("Failure of compressed data reading. (res=%d, read_size=0x%x, avail_in=0x%x, avail_out=0x%x, ar=%s)", res, read_size, m_zs.avail_in, m_zs.avail_out, ar);
+				sys_log.error("Failure of compressed data reading. (read_size=0x%x, avail_in=0x%x, ar=%s)", read_size, avail_in, ar);
 				return read_size;
 			}
 
-			read_size = m_zs.next_out - static_cast<u8*>(data);
-			m_stream_data_index = m_zs.avail_in ? m_zs.next_in - m_stream_data.data() : m_stream_data.size();
-
-			// Adjust again in case the values simply did not fit into uInt
-			m_zs.avail_out = adjust_for_uint(utils::sub_saturate<usz>(total_to_read, read_size));
-			m_zs.avail_in = adjust_for_uint(m_stream_data.size() - m_stream_data_index);
-
-			if (need_more_file_memory)
+			if (res == RDEFLATE_PROCESS_END)
 			{
+				// The end of the stream: nothing follows
 				break;
 			}
-		}
 
-		if (read_size >= total_to_read)
-		{
-			break;
+			if (read_size >= total_to_read || m_stream_data_index < m_stream_data.size())
+			{
+				continue;
+			}
 		}
 
 		const usz add_size = ar.expect_little_data() ? 0x1'0000 : 0x10'0000;
@@ -566,11 +545,9 @@ void compressed_serialization_file_handler::finalize(utils::serial& ar)
 	}
 
 	auto& stream = *m_stream;
-	z_stream& m_zs = m_stream->m_zs;
 
 	if (m_read_inited)
 	{
-		ensure(inflateEnd(&m_zs) == Z_OK);
 		m_read_inited = false;
 		return;
 	}
@@ -586,27 +563,37 @@ void compressed_serialization_file_handler::finalize(utils::serial& ar)
 	m_stream_data_prepare_thread.reset();
 	m_file_writer_thread.reset();
 
-	m_zs.avail_in = 0;
-	m_zs.next_in  = nullptr;
-
-	m_stream_data.resize(0x10'0000);
-
-	do
+	if (void* const zs = stream.m_deflate; zs && !m_errored)
 	{
-		m_zs.avail_out = static_cast<uInt>(m_stream_data.size());
-		m_zs.next_out  = m_stream_data.data();
+		rdeflate_set_in(zs, nullptr, 0);
+		rdeflate_finish(zs);
 
-		if (deflate(&m_zs, Z_FINISH) == Z_STREAM_ERROR)
+		m_stream_data.resize(0x10'0000);
+
+		while (true)
 		{
-			break;
+			size_t wrote = 0;
+			rdeflate_set_out(zs, m_stream_data.data(), m_stream_data.size());
+			const int res = rdeflate_process(zs, nullptr, &wrote);
+
+			if (res == RDEFLATE_PROCESS_ERROR)
+			{
+				break;
+			}
+
+			m_file->write(m_stream_data.data(), wrote);
+
+			if (res == RDEFLATE_PROCESS_END)
+			{
+				break;
+			}
 		}
 
-		m_file->write(m_stream_data.data(), m_stream_data.size() - m_zs.avail_out);
+		m_stream_data = {};
 	}
-	while (m_zs.avail_out == 0);
 
-	m_stream_data = {};
-	ensure(deflateEnd(&m_zs) == Z_OK);
+	rdeflate_free(stream.m_deflate);
+	stream.m_deflate = nullptr;
 
 	m_write_inited = false;
 	ar.data = {}; // Deallocate and clear
@@ -617,7 +604,7 @@ void compressed_serialization_file_handler::finalize(utils::serial& ar)
 void compressed_serialization_file_handler::stream_data_prepare_thread_op()
 {
 	compressed_stream_data& stream = *m_stream;
-	z_stream& m_zs = stream.m_zs;
+	void* const zs = stream.m_deflate;
 
 	while (true)
 	{
@@ -632,37 +619,35 @@ void compressed_serialization_file_handler::stream_data_prepare_thread_op()
 				return;
 			}
 
-			m_zs.avail_in = adjust_for_uint(data.size());
-			m_zs.next_in  = data.data();
+			rdeflate_set_in(zs, data.data(), data.size());
 
 			usz buffer_offset = 0;
-			m_stream_data.resize(::compressBound(m_zs.avail_in));
+			m_stream_data.resize(deflate_bound(data.size()));
 
-			do
+			// The input is all taken once the output has room left
+			while (true)
 			{
-				m_zs.avail_out = adjust_for_uint(m_stream_data.size() - buffer_offset);
-				m_zs.next_out  = m_stream_data.data() + buffer_offset;
+				size_t wrote = 0;
+				rdeflate_set_out(zs, m_stream_data.data() + buffer_offset, m_stream_data.size() - buffer_offset);
 
-				if (deflate(&m_zs, Z_NO_FLUSH) == Z_STREAM_ERROR)
+				if (rdeflate_process(zs, nullptr, &wrote) == RDEFLATE_PROCESS_ERROR)
 				{
 					m_errored = true;
-					deflateEnd(&m_zs);
 
 					// Abort
 					stream.m_queued_data_to_write.push(std::vector<u8>());
 					break;
 				}
 
-				buffer_offset = m_zs.next_out - m_stream_data.data();
+				buffer_offset += wrote;
 
-				m_zs.avail_in = adjust_for_uint(data.size() - (m_zs.next_in - data.data()));
-
-				if (m_zs.avail_out == 0)
+				if (buffer_offset < m_stream_data.size())
 				{
-					m_stream_data.resize(m_stream_data.size() + (m_zs.avail_in / 4) + (m_stream_data.size() / 16) + 1);
+					break;
 				}
+
+				m_stream_data.resize(m_stream_data.size() + (m_stream_data.size() / 16) + 1);
 			}
-			while (m_zs.avail_out == 0 || m_zs.avail_in != 0);
 
 			if (m_errored)
 			{
@@ -737,28 +722,29 @@ void compressed_serialization_file_handler::file_writer_thread_op()
 
 void compressed_serialization_file_handler::blocked_compressed_write(const std::vector<u8>& data)
 {
-	z_stream& m_zs = m_stream->m_zs;
+	void* const zs = m_stream->m_deflate;
 
-	m_zs.avail_in = adjust_for_uint(data.size());
-	m_zs.next_in = data.data();
+	rdeflate_set_in(zs, data.data(), data.size());
 
-	m_stream_data.resize(::compressBound(m_zs.avail_in));
+	m_stream_data.resize(deflate_bound(data.size()));
 
-	do
+	// The input is all taken once the output has room left
+	while (true)
 	{
-		m_zs.avail_out = adjust_for_uint(m_stream_data.size());
-		m_zs.next_out = m_stream_data.data();
+		size_t wrote = 0;
+		rdeflate_set_out(zs, m_stream_data.data(), m_stream_data.size());
 
-		if (deflate(&m_zs, Z_NO_FLUSH) == Z_STREAM_ERROR || m_file->write(m_stream_data.data(), m_stream_data.size() - m_zs.avail_out) != m_stream_data.size() - m_zs.avail_out)
+		if (rdeflate_process(zs, nullptr, &wrote) == RDEFLATE_PROCESS_ERROR || m_file->write(m_stream_data.data(), wrote) != wrote)
 		{
 			m_errored = true;
-			deflateEnd(&m_zs);
 			break;
 		}
 
-		m_zs.avail_in = adjust_for_uint(data.size() - (m_zs.next_in - data.data()));
+		if (wrote < m_stream_data.size())
+		{
+			break;
+		}
 	}
-	while (m_zs.avail_out == 0);
 }
 
 usz compressed_serialization_file_handler::get_size(const utils::serial& ar, usz recommended) const

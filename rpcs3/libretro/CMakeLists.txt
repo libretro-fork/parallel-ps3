@@ -64,8 +64,6 @@ target_include_directories(rpcs3_libretro PRIVATE
     ${CMAKE_SOURCE_DIR}
     ${CMAKE_SOURCE_DIR}/3rdparty
     ${CMAKE_CURRENT_SOURCE_DIR}
-    ${CMAKE_SOURCE_DIR}/3rdparty/zlib/zlib
-    ${CMAKE_BINARY_DIR}/3rdparty/zlib/zlib
 )
 
 # Link against emucore and required libraries

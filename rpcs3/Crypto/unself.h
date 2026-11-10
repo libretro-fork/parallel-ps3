@@ -1,7 +1,7 @@
 #pragma once
 
 #include "key_vault.h"
-#include "zlib.h"
+#include <encodings/deflate.h>
 
 #include "util/types.hpp"
 #include "Utilities/File.h"
@@ -512,22 +512,26 @@ private:
 					const auto filesz = phdr.p_filesz;
 					decomp_buf.resize(filesz);
 
-					// Create a buffer separate from data_buf to uncompress.
+					// The zlib stream is decoded where it lies in data_buf, straight into decomp_buf
 					ensure(data_buf.size() > data_buf_offset);
-					const std::vector<u8> zlib_buf(data_buf.cbegin() + data_buf_offset, data_buf.cend());
-		
-					// Use zlib uncompress on the new buffer.
-					// decomp_buf_length changes inside the call to uncompress
-					uLongf decomp_buf_length = ::narrow<uLongf>(filesz);
-					const int rv = uncompress(decomp_buf.data(), &decomp_buf_length, zlib_buf.data(), ::size32(zlib_buf));
+
+					size_t decomp_buf_length = 0;
+					int rv = RDEFLATE_PROCESS_ERROR;
+
+					if (void* const zs = rinflate_new(15))
+					{
+						rinflate_set_in(zs, data_buf.data() + data_buf_offset, data_buf.size() - data_buf_offset);
+						rinflate_set_out(zs, decomp_buf.data(), decomp_buf.size());
+						rv = rinflate_process(zs, nullptr, &decomp_buf_length);
+						rinflate_free(zs);
+					}
 
 					// Check for errors (TODO: Probably safe to remove this once these changes have passed testing.)
 					switch (rv)
 					{
-					case Z_MEM_ERROR: self_log.error("MakeELF encountered a Z_MEM_ERROR!"); break;
-					case Z_BUF_ERROR: self_log.error("MakeELF encountered a Z_BUF_ERROR!"); break;
-					case Z_DATA_ERROR: self_log.error("MakeELF encountered a Z_DATA_ERROR!"); break;
-					default: break;
+					case RDEFLATE_PROCESS_END: break;
+					case RDEFLATE_PROCESS_NEXT: break; // The segment is full; a short one is warned about below
+					default: self_log.error("MakeELF: the zlib stream is broken"); break;
 					}
 
 					ensure(decomp_buf_length <= decomp_buf.size());

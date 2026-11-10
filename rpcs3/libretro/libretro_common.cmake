@@ -5,8 +5,13 @@
 set(LIBRETRO_COMMON_DIR ${CMAKE_CURRENT_LIST_DIR}/libretro-common)
 
 add_library(libretro_common STATIC
+    ${LIBRETRO_COMMON_DIR}/compat/compat_strl.c
+    ${LIBRETRO_COMMON_DIR}/encodings/encoding_crc32.c
+    ${LIBRETRO_COMMON_DIR}/encodings/encoding_deflate.c
     ${LIBRETRO_COMMON_DIR}/encodings/encoding_rzstd.c
     ${LIBRETRO_COMMON_DIR}/encodings/encoding_xxh64.c
+    ${LIBRETRO_COMMON_DIR}/features/features_cpu.c
+    ${LIBRETRO_COMMON_DIR}/time/rtime.c
 )
 
 set_target_properties(libretro_common PROPERTIES

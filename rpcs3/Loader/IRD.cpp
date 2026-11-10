@@ -6,7 +6,8 @@
 #include "Crypto/utils.h"
 #include "Utilities/File.h"
 
-#include <zlib.h>
+#include <encodings/crc32.h>
+#include <encodings/deflate.h>
 
 LOG_CHANNEL(ird_log, "IRD");
 
@@ -161,46 +162,48 @@ static std::vector<u8> ird_ungzip(const std::vector<u8>& data, u32 expected_size
 	// everything decompressed so far on the way. It is only ever a hint, so a wrong one costs nothing but that
 	std::vector<u8> out(expected_size ? expected_size : std::max<usz>(data.size() * 6, 0x10000));
 
-	z_stream zs{};
+	void* const zs = ::rinflate_new(16 + 15);
 
-	if (::inflateInit2(&zs, 16 + 15) != Z_OK)
+	if (!zs)
 	{
 		return {};
 	}
 
-	zs.avail_in = ::narrow<uInt>(data.size());
-	zs.next_in = const_cast<u8*>(data.data());
-	zs.avail_out = ::narrow<uInt>(out.size());
-	zs.next_out = out.data();
+	usz consumed = 0;
+	usz written = 0;
 
-	for (int res = Z_OK; res != Z_STREAM_END;)
+	while (true)
 	{
-		res = ::inflate(&zs, Z_NO_FLUSH);
+		size_t taken = 0;
+		size_t wrote = 0;
 
-		if (res == Z_STREAM_END)
+		::rinflate_set_in(zs, data.data() + consumed, data.size() - consumed);
+		::rinflate_set_out(zs, out.data() + written, out.size() - written);
+		const int res = ::rinflate_process(zs, &taken, &wrote);
+
+		consumed += taken;
+		written += wrote;
+
+		// The end of the member: whatever padding follows is left alone
+		if (res == RDEFLATE_PROCESS_END)
 		{
 			break;
 		}
 
-		// Either the input ran out before the end of the stream (i.e. it is truncated) or inflate itself gave up
-		if ((res != Z_OK && res != Z_BUF_ERROR) || zs.avail_in == 0 || zs.avail_out != 0)
+		// Either the input ran out before the end of the stream (i.e. it is truncated) or the stream is broken
+		if (res == RDEFLATE_PROCESS_ERROR || consumed == data.size() || written != out.size())
 		{
-			::inflateEnd(&zs);
+			::rinflate_free(zs);
 			return {};
 		}
 
 		// Only the output ran out: make room and go on
-		const usz written = zs.next_out - out.data();
-
 		out.resize(out.size() + 0x100000);
-
-		zs.next_out = out.data() + written;
-		zs.avail_out = ::narrow<uInt>(out.size() - written);
 	}
 
-	out.resize(zs.next_out - out.data());
+	out.resize(written);
 
-	::inflateEnd(&zs);
+	::rinflate_free(zs);
 
 	return out;
 }
@@ -404,7 +407,7 @@ ird_parse_status ird_file::parse(const std::vector<u8>& data)
 		return ird_parse_status::ERROR_TRUNCATED;
 	}
 
-	m_crc_valid = crc == ::crc32(::crc32(0, nullptr, 0), data.data(), ::narrow<uInt>(crc_pos));
+	m_crc_valid = crc == ::encoding_crc32(0, data.data(), crc_pos);
 
 	if (!m_crc_valid)
 	{

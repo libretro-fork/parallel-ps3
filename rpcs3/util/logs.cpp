@@ -25,7 +25,7 @@ using namespace std::literals::chrono_literals;
 #include <sys/stat.h>
 #endif
 
-#include <zlib.h>
+#include <encodings/deflate.h>
 
 static std::string default_string()
 {
@@ -86,7 +86,7 @@ namespace logs
 		u64 m_max_size{};
 
 		std::unique_ptr<uchar[]> m_fptr{};
-		z_stream m_zs{};
+		void* m_zs{}; // rdeflate stream writing the .gz
 		shared_mutex m_m{};
 
 		atomic_t<u64, 128> m_buf{0}; // MSB (39 bits): push begin, LSB (25 bis): push size
@@ -503,7 +503,7 @@ logs::file_writer::file_writer(const std::string& name, u64 max_size)
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wold-style-cast"
 #endif
-		if (deflateInit2(&m_zs, 9, Z_DEFLATED, 16 + 15, 9, Z_DEFAULT_STRATEGY) != Z_OK)
+		if (!(m_zs = rdeflate_new(9, 16 + 15)))
 #ifndef _MSC_VER
 #pragma GCC diagnostic pop
 #endif
@@ -567,24 +567,25 @@ logs::file_writer::~file_writer()
 	m_out = -1;
 	m_writer.join();
 
-	if (m_fout2)
+	if (m_fout2 && m_zs)
 	{
-		m_zs.avail_in = 0;
-		m_zs.next_in  = nullptr;
+		rdeflate_set_in(m_zs, nullptr, 0);
+		rdeflate_finish(m_zs);
 
-		do
+		while (true)
 		{
-			m_zs.avail_out = sizeof(m_zout);
-			m_zs.next_out  = m_zout;
+			usz wrote = 0;
+			rdeflate_set_out(m_zs, m_zout, sizeof(m_zout));
+			const int res = rdeflate_process(m_zs, nullptr, &wrote);
 
-			if (deflate(&m_zs, Z_FINISH) == Z_STREAM_ERROR || m_fout2.write(m_zout, sizeof(m_zout) - m_zs.avail_out) != sizeof(m_zout) - m_zs.avail_out)
+			if (res == RDEFLATE_PROCESS_ERROR || m_fout2.write(m_zout, wrote) != wrote || res == RDEFLATE_PROCESS_END)
 			{
 				break;
 			}
 		}
-		while (m_zs.avail_out == 0);
 
-		deflateEnd(&m_zs);
+		rdeflate_free(m_zs);
+		m_zs = nullptr;
 	}
 
 #ifdef _WIN32
@@ -621,30 +622,34 @@ bool logs::file_writer::flush(u64 bufv)
 		// Write compressed
 		if (m_fout2)
 		{
-			m_zs.avail_in = static_cast<uInt>(size);
-			m_zs.next_in  = m_fptr.get() + out_index;
-
-			do
-			{
-				m_zs.avail_out = sizeof(m_zout);
-				m_zs.next_out  = m_zout;
+			rdeflate_set_in(m_zs, m_fptr.get() + out_index, size);
 
 #ifdef LIBRETRO_CORE
-				// Every write complete in the file: testers send the .gz, and
-				// after a crash or a kill the last block, with whatever went
-				// wrong in it, was otherwise never written out
-				constexpr int flush_mode = Z_SYNC_FLUSH;
-#else
-				constexpr int flush_mode = Z_NO_FLUSH;
+			// Every write complete in the file: testers send the .gz, and
+			// after a crash or a kill the last block, with whatever went
+			// wrong in it, was otherwise never written out
+			rdeflate_flush(m_zs);
 #endif
-				if (deflate(&m_zs, flush_mode) == Z_STREAM_ERROR || m_fout2.write(m_zout, sizeof(m_zout) - m_zs.avail_out) != sizeof(m_zout) - m_zs.avail_out)
+
+			// Until the input is taken and the output has room left
+			while (true)
+			{
+				usz wrote = 0;
+				rdeflate_set_out(m_zs, m_zout, sizeof(m_zout));
+
+				if (rdeflate_process(m_zs, nullptr, &wrote) == RDEFLATE_PROCESS_ERROR || m_fout2.write(m_zout, wrote) != wrote)
 				{
-					deflateEnd(&m_zs);
+					rdeflate_free(m_zs);
+					m_zs = nullptr;
 					m_fout2.close();
 					break;
 				}
+
+				if (wrote < sizeof(m_zout))
+				{
+					break;
+				}
 			}
-			while (m_zs.avail_out == 0);
 		}
 
 		m_out += size;
@@ -769,24 +774,25 @@ void logs::file_writer::close_prematurely()
 
 	std::lock_guard lock(m_m);
 
-	if (m_fout2)
+	if (m_fout2 && m_zs)
 	{
-		m_zs.avail_in = 0;
-		m_zs.next_in  = nullptr;
+		rdeflate_set_in(m_zs, nullptr, 0);
+		rdeflate_finish(m_zs);
 
-		do
+		while (true)
 		{
-			m_zs.avail_out = sizeof(m_zout);
-			m_zs.next_out  = m_zout;
+			usz wrote = 0;
+			rdeflate_set_out(m_zs, m_zout, sizeof(m_zout));
+			const int res = rdeflate_process(m_zs, nullptr, &wrote);
 
-			if (deflate(&m_zs, Z_FINISH) == Z_STREAM_ERROR || m_fout2.write(m_zout, sizeof(m_zout) - m_zs.avail_out) != sizeof(m_zout) - m_zs.avail_out)
+			if (res == RDEFLATE_PROCESS_ERROR || m_fout2.write(m_zout, wrote) != wrote || res == RDEFLATE_PROCESS_END)
 			{
 				break;
 			}
 		}
-		while (m_zs.avail_out == 0);
 
-		deflateEnd(&m_zs);
+		rdeflate_free(m_zs);
+		m_zs = nullptr;
 
 #ifdef _WIN32
 		// Cancel compressed log file auto-deletion

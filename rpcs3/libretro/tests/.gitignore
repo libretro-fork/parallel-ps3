@@ -2,3 +2,5 @@ test_*
 !test_*.c
 !test_*.h
 *_out.*
+obj/
+!Makefile

@@ -11,7 +11,7 @@
 #include "Crypto/md5.h"
 #include "Crypto/utils.h"
 
-#include <zlib.h>
+#include <encodings/crc32.h>
 
 #include <chrono>
 #include <map>
@@ -47,7 +47,7 @@ static std::vector<u8> generate_lic_dat(const std::string& game_id)
 	std::memcpy(lic.data() + 0x801, game_id.data(), std::min<usz>(game_id.size(), 0x10));
 
 	// CRC32 of the first 2304 bytes (i.e. up to the end of the id), stored big endian right after the header
-	const be_t<u32> crc = ::crc32(::crc32(0, nullptr, 0), lic.data(), 2304);
+	const be_t<u32> crc = ::encoding_crc32(0, lic.data(), 2304);
 	std::memcpy(lic.data() + lic_header.size(), &crc, sizeof(crc));
 
 	return lic;

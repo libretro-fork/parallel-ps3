@@ -1,7 +1,7 @@
 #include "stdafx.h"
 #include "unzip.h"
 
-#include <zlib.h>
+#include <encodings/deflate.h>
 
 #include "util/serialization_ext.hpp"
 
@@ -12,54 +12,53 @@ std::vector<u8> unzip(const void* src, usz size)
 		return {};
 	}
 
-	std::vector<uchar> out(size * 6);
+	std::vector<u8> out(size * 6);
 
-	z_stream zs{};
-#ifndef _MSC_VER
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wold-style-cast"
-#endif
-	int res = inflateInit2(&zs, 16 + 15);
-	if (res != Z_OK)
+	void* const zs = rinflate_new(16 + 15);
+
+	if (!zs)
 	{
 		return {};
 	}
-#ifndef _MSC_VER
-#pragma GCC diagnostic pop
-#endif
-	zs.avail_in = static_cast<uInt>(size);
-	zs.next_in = reinterpret_cast<const u8*>(src);
-	zs.avail_out = static_cast<uInt>(out.size());
-	zs.next_out  = out.data();
 
-	while (zs.avail_in)
+	const u8* const in = static_cast<const u8*>(src);
+	usz consumed = 0;
+	usz written = 0;
+
+	while (consumed < size)
 	{
-		switch (inflate(&zs, Z_FINISH))
+		size_t taken = 0;
+		size_t wrote = 0;
+
+		rinflate_set_in(zs, in + consumed, size - consumed);
+		rinflate_set_out(zs, out.data() + written, out.size() - written);
+		const int res = rinflate_process(zs, &taken, &wrote);
+
+		consumed += taken;
+		written += wrote;
+
+		if (res == RDEFLATE_PROCESS_ERROR)
 		{
-		case Z_OK:
-		case Z_STREAM_END:
-			break;
-		case Z_BUF_ERROR:
-			if (zs.avail_in)
-				break;
-			[[fallthrough]];
-		default:
-			inflateEnd(&zs);
+			// What came out before the error, as before
+			rinflate_free(zs);
+			out.resize(written);
 			return out;
 		}
 
-		if (zs.avail_in)
+		if (res == RDEFLATE_PROCESS_END)
 		{
-			const auto cur_size = zs.next_out - out.data();
+			break;
+		}
+
+		if (written == out.size())
+		{
 			out.resize(out.size() + 65536);
-			zs.avail_out = static_cast<uInt>(out.size() - cur_size);
-			zs.next_out = &out[cur_size];
 		}
 	}
 
-	out.resize(zs.next_out - out.data());
+	out.resize(written);
 
-	res = inflateEnd(&zs);
+	rinflate_free(zs);
 
 	return out;
 }
@@ -71,63 +70,47 @@ bool unzip(const void* src, usz size, fs::file& out)
 		return false;
 	}
 
-	bool is_valid = true;
+	bool is_valid = false;
 
 	constexpr usz BUFSIZE = 32ULL * 1024ULL;
 	std::vector<u8> tempbuf(BUFSIZE);
-	z_stream strm{};
-	strm.avail_in = ::narrow<uInt>(size);
-	strm.avail_out = static_cast<uInt>(tempbuf.size());
-	strm.next_in = reinterpret_cast<const u8*>(src);
-	strm.next_out = tempbuf.data();
-#ifndef _MSC_VER
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wold-style-cast"
-#endif
-	int res = inflateInit(&strm);
-	if (res != Z_OK)
+
+	void* const zs = rinflate_new(15);
+
+	if (!zs)
 	{
 		return false;
 	}
-#ifndef _MSC_VER
-#pragma GCC diagnostic pop
-#endif
-	while (strm.avail_in)
+
+	rinflate_set_in(zs, static_cast<const u8*>(src), size);
+
+	// The zlib stream decoded a buffer at a time, written out as it fills
+	while (true)
 	{
-		res = inflate(&strm, Z_NO_FLUSH);
-		if (res == Z_STREAM_END)
-			break;
-		if (res != Z_OK)
-			is_valid = false;
+		size_t wrote = 0;
 
-		if (strm.avail_out)
-			break;
+		rinflate_set_out(zs, tempbuf.data(), BUFSIZE);
+		const int res = rinflate_process(zs, nullptr, &wrote);
 
-		if (out.write(tempbuf.data(), tempbuf.size()) != tempbuf.size())
+		if (wrote && out.write(tempbuf.data(), wrote) != wrote)
 		{
-			is_valid = false;
+			break;
 		}
 
-		strm.next_out = tempbuf.data();
-		strm.avail_out = static_cast<uInt>(tempbuf.size());
-	}
-
-	res = inflate(&strm, Z_FINISH);
-
-	if (res != Z_STREAM_END)
-		is_valid = false;
-
-	if (strm.avail_out < tempbuf.size())
-	{
-		const usz bytes_to_write = tempbuf.size() - strm.avail_out;
-
-		if (out.write(tempbuf.data(), bytes_to_write) != bytes_to_write)
+		if (res == RDEFLATE_PROCESS_END)
 		{
-			is_valid = false;
+			is_valid = true;
+			break;
+		}
+
+		// An error, or the input ran out before the end of the stream
+		if (res == RDEFLATE_PROCESS_ERROR || wrote < BUFSIZE)
+		{
+			break;
 		}
 	}
 
-	res = inflateEnd(&strm);
+	rinflate_free(zs);
 
 	return is_valid;
 }

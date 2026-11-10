@@ -688,14 +688,13 @@ target_link_libraries(rpcs3_emu
         3rdparty::protobuf
         3rdparty::pugixml
         3rdparty::vulkanmemoryallocator
+        libretro_common
         Threads::Threads
     PRIVATE
         3rdparty::glslang
         3rdparty::libpng
         3rdparty::rtmidi
         3rdparty::yaml-cpp
-        3rdparty::zlib
-        libretro_common
         3rdparty::libcurl
 )
 
