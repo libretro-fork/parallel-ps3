@@ -16,7 +16,7 @@ LRC_STD  := -std=gnu99
 # as libretro_common.cmake builds it: net_http over its own TLS client
 LRC_DEFS := -DHAVE_SSL -DHAVE_RETROSSL -DHAVE_CRYPTO
 
-TESTS := test_zstd test_deflate test_rxml test_png_rows test_images test_http
+TESTS := test_zstd test_deflate test_rxml test_png_rows test_images test_http test_bcn
 
 test_zstd_LRC := \
 	$(LRC)/encodings/encoding_rzstd.c \
@@ -69,6 +69,17 @@ test_images_LRC := \
 	$(LRC)/streams/trans_stream_deflate.c \
 	$(LRC)/streams/trans_stream_pipe.c \
 	$(test_deflate_LRC)
+
+# bcdec is the oracle for rdds's block decoders: the commit RPCS3's copy
+# (3rdparty/bcdec/bcdec.hpp, gone) was based on
+BCDEC        := bcdec-963c5e5
+BCDEC_COMMIT := 963c5e56b7a335e066cff7d16a3de75f4e8ad366
+
+$(BCDEC)/bcdec.h:
+	git clone -q https://github.com/iOrange/bcdec.git $(BCDEC)
+	git -C $(BCDEC) checkout -q $(BCDEC_COMMIT)
+
+test_bcn_LRC := $(LRC)/formats/dds/rdds.c
 
 # net_http and the TLS client, with what they need
 test_http_LRC := \
@@ -149,6 +160,13 @@ obj/test_http.o: test_http.c
 test_http: obj/test_http.o $(call lrc_objs,$(sort $(test_http_LRC)))
 	$(CC) $(SANITIZE) -o $@ $^ $(LDFLAGS) $(LDLIBS) -lpthread
 
+obj/bcdec_impl.o: bcdec_impl.c $(BCDEC)/bcdec.h
+	@mkdir -p $(@D)
+	$(CC) -O2 -w $(LRC_STD) -I$(BCDEC) -c -o $@ $<
+
+test_bcn: obj/test_bcn.o obj/bcdec_impl.o $(call lrc_objs,$(test_bcn_LRC))
+	$(CC) $(SANITIZE) -o $@ $^ $(LDFLAGS) $(LDLIBS)
+
 # Each test also writes what the new code produces, for the reference
 # tools to read back
 check: all
@@ -160,6 +178,7 @@ check: all
 	./test_png_rows
 	./test_images
 	./test_http
+	./test_bcn
 
 clean:
 	rm -rf obj $(TESTS) *_out.*

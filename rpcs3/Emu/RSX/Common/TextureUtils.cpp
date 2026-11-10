@@ -6,7 +6,8 @@
 #include "../Utils/color_utils.hpp"
 #include "../Utils/image_utils.hpp"
 
-#include "3rdparty/bcdec/bcdec.hpp"
+// BC1-BC3 blocks decoded on the CPU for a GPU without BCn, into BGRA8
+#include <formats/rdds.h>
 
 #include "util/asm.hpp"
 
@@ -511,7 +512,7 @@ struct copy_decoded_bc1_block
 			{
 				const u8* compressedBlock = reinterpret_cast<const u8*>(&src[src_offset + col]);
 				u8* decompressedBlock = reinterpret_cast<u8*>(&dst[dst_offset + col * 4]);
-				bcdec_bc1(compressedBlock, decompressedBlock, destinationPitch);
+				rdds_decode_block_bc1_bgra(compressedBlock, decompressedBlock, destinationPitch);
 			}
 
 			src_offset += src_pitch_in_block;
@@ -531,7 +532,7 @@ struct copy_decoded_bc2_block
 			{
 				const u8* compressedBlock = src[src_offset + col]._u8;
 				u8* decompressedBlock = reinterpret_cast<u8*>(&dst[dst_offset + col * 4]);
-				bcdec_bc2(compressedBlock, decompressedBlock, destinationPitch);
+				rdds_decode_block_bc2_bgra(compressedBlock, decompressedBlock, destinationPitch);
 			}
 
 			src_offset += src_pitch_in_block;
@@ -551,7 +552,7 @@ struct copy_decoded_bc3_block
 			{
 				const u8* compressedBlock = src[src_offset + col]._u8;
 				u8* decompressedBlock = reinterpret_cast<u8*>(&dst[dst_offset + col * 4]);
-				bcdec_bc3(compressedBlock, decompressedBlock, destinationPitch);
+				rdds_decode_block_bc3_bgra(compressedBlock, decompressedBlock, destinationPitch);
 			}
 
 			src_offset += src_pitch_in_block;
