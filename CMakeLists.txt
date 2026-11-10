@@ -35,7 +35,6 @@ option(USE_SYSTEM_PROTOBUF "Prefer system protobuf instead of the builtin one" O
 option(USE_SYSTEM_GLSLANG "Prefer system glslang instead of the builtin one" OFF)
 option(USE_SYSTEM_LIBPNG "Prefer system libpng instead of the builtin one" OFF)
 option(USE_SYSTEM_LIBUSB "Prefer system libusb instead of the builtin one" OFF)
-option(USE_SYSTEM_MINIUPNPC "Prefer system MiniUPnPc instead of the builtin one" OFF)
 option(USE_SYSTEM_MVK "Prefer system MoltenVK instead of the builtin one" OFF)
 option(USE_SYSTEM_OPENCV "Prefer system OpenCV instead of the builtin one" ON)
 option(USE_SYSTEM_RTMIDI "Prefer system RtMidi instead of the builtin one" OFF)

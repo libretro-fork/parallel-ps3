@@ -43,10 +43,6 @@
 	path = 3rdparty/SoundTouch/soundtouch
 	url = ../../RPCS3/soundtouch.git
 	ignore = dirty
-[submodule "3rdparty/miniupnp/miniupnp"]
-	path = 3rdparty/miniupnp/miniupnp
-	url = ../../miniupnp/miniupnp.git
-	ignore = dirty
 [submodule "3rdparty/rtmidi/rtmidi"]
 	path = 3rdparty/rtmidi/rtmidi
 	url = ../../thestk/rtmidi

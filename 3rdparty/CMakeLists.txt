@@ -254,9 +254,6 @@ add_subdirectory(wolfssl EXCLUDE_FROM_ALL)
 # CURL
 add_subdirectory(curl EXCLUDE_FROM_ALL)
 
-# MINIUPNP
-add_subdirectory(miniupnp EXCLUDE_FROM_ALL)
-
 # RTMIDI
 add_subdirectory(rtmidi EXCLUDE_FROM_ALL)
 
@@ -285,7 +282,6 @@ add_library(3rdparty::glew ALIAS 3rdparty_glew)
 add_library(3rdparty::wolfssl ALIAS wolfssl)
 add_library(3rdparty::libcurl ALIAS 3rdparty_libcurl)
 add_library(3rdparty::soundtouch ALIAS soundtouch)
-add_library(3rdparty::miniupnpc ALIAS 3rdparty_miniupnpc)
 add_library(3rdparty::rtmidi ALIAS rtmidi)
 add_library(3rdparty::opencv ALIAS ${OPENCV_TARGET})
 add_library(3rdparty::fusion ALIAS Fusion)

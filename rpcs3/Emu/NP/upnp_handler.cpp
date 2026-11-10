@@ -2,10 +2,12 @@
 #include "upnp_handler.h"
 #include "util/logs.hpp"
 
-#include <miniwget.h>
-#include <upnpcommands.h>
+#include <net/net_http.h>
 
 LOG_CHANNEL(upnp_log, "UPNP");
+
+// How long a request to the gateway may take
+static constexpr int upnp_timeout_ms = 2000;
 
 upnp_handler::~upnp_handler()
 {
@@ -20,6 +22,9 @@ upnp_handler::~upnp_handler()
 	}
 
 	m_active = false;
+
+	// The connections and DNS entries net_http keeps
+	net_http_deinit();
 }
 
 void upnp_handler::upnp_enable()
@@ -28,32 +33,13 @@ void upnp_handler::upnp_enable()
 
 	m_cfg.load();
 
-	auto check_igd = [&](const char* url) -> bool
-	{
-		int desc_xml_size = 0;
-		int status_code = 0;
+	net_http_init();
 
-		m_igd_data = {};
-		m_igd_urls = {};
-
-		char* desc_xml = static_cast<char*>(miniwget(url, &desc_xml_size, 1, &status_code));
-
-		if (!desc_xml)
-			return false;
-
-		parserootdesc(desc_xml, desc_xml_size, &m_igd_data);
-		free(desc_xml);
-		desc_xml = nullptr;
-		GetUPNPUrls(&m_igd_urls, &m_igd_data, url, 1);
-
-		return true;
-	};
-
-	std::string dev_url = m_cfg.get_device_url();
+	const std::string dev_url = m_cfg.get_device_url();
 
 	if (!dev_url.empty())
 	{
-		if (check_igd(dev_url.c_str()))
+		if (net_upnp_gateway_from_url(&m_gateway, dev_url.c_str(), upnp_timeout_ms))
 		{
 			upnp_log.notice("Saved UPNP(%s) enabled", dev_url);
 			m_active = true;
@@ -65,53 +51,18 @@ void upnp_handler::upnp_enable()
 
 	upnp_log.notice("Starting UPNP search");
 
-	int upnperror = 0;
-	UPNPDev* devlist = upnpDiscover(2000, nullptr, nullptr, 0, 0, 2, &upnperror);
-
-	if (!devlist)
+	if (!net_upnp_discover(&m_gateway, upnp_timeout_ms))
 	{
-		upnp_log.error("No UPNP device was found");
+		upnp_log.error("No UPNP IGD device was found");
 		return;
 	}
 
-	const UPNPDev* dev = devlist;
-	for (; dev; dev = dev->pNext)
-	{
-		if (strstr(dev->st, "InternetGatewayDevice"))
-			break;
-	}
+	upnp_log.notice("Found UPnP device type:%s at %s", m_gateway.service_type, m_gateway.desc_url);
 
-	if (dev)
-	{
-		int desc_xml_size = 0;
-		int status_code = 0;
-		char* desc_xml = static_cast<char*>(miniwget(dev->descURL, &desc_xml_size, 1, &status_code));
+	m_cfg.set_device_url(m_gateway.desc_url);
+	m_cfg.save();
 
-		if (desc_xml)
-		{
-			parserootdesc(desc_xml, desc_xml_size, &m_igd_data);
-			free(desc_xml);
-			desc_xml = nullptr;
-			GetUPNPUrls(&m_igd_urls, &m_igd_data, dev->descURL, 1);
-
-			upnp_log.notice("Found UPnP device type:%s at %s", dev->st, dev->descURL);
-
-			m_cfg.set_device_url(dev->descURL);
-			m_cfg.save();
-
-			m_active = true;
-		}
-		else
-		{
-			upnp_log.error("Failed to retrieve UPNP xml for %s", dev->descURL);
-		}
-	}
-	else
-	{
-		upnp_log.error("No UPNP IGD device was found");
-	}
-
-	freeUPNPDevlist(devlist);
+	m_active = true;
 }
 
 void upnp_handler::add_port_redir(const std::string& addr, u16 internal_port, std::string_view protocol)
@@ -120,36 +71,30 @@ void upnp_handler::add_port_redir(const std::string& addr, u16 internal_port, st
 		return;
 
 	const std::string protocol_str(protocol);
+	const bool udp = protocol_str == "UDP";
 
 	std::lock_guard lock(m_mutex);
 
 	if (m_bindings[protocol_str].contains(internal_port))
 		return;
 
-	const std::string internal_port_str = fmt::format("%d", internal_port);
 	const u32 max_port = std::min(static_cast<u32>(internal_port) + 100, 0xFFFFu);
-	int res = 0;
 
+	// The mapping goes to this host's address on the route to the gateway,
+	// which is the address the caller found for it
 	for (u32 external_port = internal_port; external_port <= max_port; external_port++)
 	{
-		std::string external_port_str = fmt::format("%d", external_port);
-		res = UPNP_AddPortMapping(m_igd_urls.controlURL, m_igd_data.first.servicetype, external_port_str.c_str(), internal_port_str.c_str(), addr.c_str(), "RPCS3", protocol_str.c_str(), nullptr, nullptr);
-		if (res == UPNPCOMMAND_SUCCESS)
+		if (net_upnp_add_port_mapping_ext(&m_gateway, external_port, internal_port, udp, "RPCS3", upnp_timeout_ms))
 		{
-			m_bindings[protocol_str][static_cast<u16>(internal_port)] = external_port;
+			m_bindings[protocol_str][static_cast<u16>(internal_port)] = static_cast<u16>(external_port);
 			upnp_log.notice("Successfully bound %s:%d(%s) to IGD:%d", addr, internal_port, protocol, external_port);
 			return;
 		}
 
 		// need more testing, may vary per router, etc, for now assume port conflict silently
-		// else if (res != 718) // ConflictInMappingEntry
-		// {
-		// 	upnp_log.error("Failed to bind %s:%d(%s) to IGD:%d: %d", addr, internal_port, protocol, external_port, res);
-		// 	return;
-		// }
 	}
 
-	upnp_log.error("Failed to bind %s:%d(%s) to IGD:(%d=>%d): %d", addr, internal_port, protocol, internal_port, internal_port, res);
+	upnp_log.error("Failed to bind %s:%d(%s) to IGD:(%d=>%d)", addr, internal_port, protocol, internal_port, max_port);
 }
 
 void upnp_handler::remove_port_redir(u16 internal_port, std::string_view protocol)
@@ -177,11 +122,8 @@ void upnp_handler::remove_port_redir(u16 internal_port, std::string_view protoco
 
 void upnp_handler::remove_port_redir_external(u16 external_port, std::string_view protocol, bool verbose)
 {
-	const std::string str_ext_port = fmt::format("%d", external_port);
-	const std::string protocol_str(protocol);
-
-	if (int res = UPNP_DeletePortMapping(m_igd_urls.controlURL, m_igd_data.first.servicetype, str_ext_port.c_str(), protocol_str.c_str(), nullptr); res != 0 && verbose)
-		upnp_log.error("Failed to delete port mapping IGD:%s(%s): %d", str_ext_port, protocol, res);
+	if (!net_upnp_delete_port_mapping(&m_gateway, external_port, protocol == "UDP", upnp_timeout_ms) && verbose)
+		upnp_log.error("Failed to delete port mapping IGD:%d(%s)", external_port, protocol);
 }
 
 bool upnp_handler::is_active() const

@@ -4,6 +4,7 @@ What changed in the libretro core of this fork, newest first. Changes that come 
 
 ## Unreleased
 
+- UPnP port forwarding (Network > UPnP) goes through libretro-common's net_upnp instead of miniupnpc, which is no longer built. The router found before, saved in `upnp.yml`, is used again without a new search, and a port the router has taken is tried as the next one up, as before. Not tried with a real router by anyone yet.
 - XML goes through libretro-common's rxml instead of pugixml: trophy configurations, the redump database check and the clans server's requests and responses. The trophy and redump files are read straight into the buffer the parser keeps, without the copy they went through before. Not tried against a clans server by anyone yet.
 - RPCS3's own compression goes through libretro-common's Deflate instead of zlib: the compressed log (`rpcs3_detailed.log.gz`, still complete up to its last line after a crash), gzip savestates, IRD files, PKG/SDAT and SELF decompression and the IRD checksums. Files written before read as they did, and what the core writes is standard gzip (checked in CI). zlib itself is still built for libpng until that goes too.
 - Savestates are compressed and read with libretro-common's Zstandard instead of the zstd library, which is no longer built. Savestates made before load as they did, and the ones the core writes are standard Zstandard frames, which the reference zstd reads (checked in CI). They come out a little larger: on one 16 MB sample 9% larger than zstd's, written at the same speed.

@@ -684,7 +684,6 @@ target_link_libraries(rpcs3_emu
         3rdparty::libusb
         3rdparty::wolfssl
         3rdparty::soundtouch
-        3rdparty::miniupnpc
         3rdparty::protobuf
         3rdparty::vulkanmemoryallocator
         libretro_common

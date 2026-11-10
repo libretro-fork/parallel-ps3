@@ -2,7 +2,7 @@
 
 #include <unordered_map>
 
-#include <miniupnpc.h>
+#include <net/net_upnp.h>
 
 #include "upnp_config.h"
 #include "Utilities/mutex.h"
@@ -26,7 +26,6 @@ private:
 
 	shared_mutex m_mutex;
 	cfg_upnp m_cfg;
-	IGDdatas m_igd_data{};
-	UPNPUrls m_igd_urls{};
+	net_upnp_gateway m_gateway{};
 	std::unordered_map<std::string, std::unordered_map<u16, u16>> m_bindings;
 };
