@@ -56,8 +56,7 @@ namespace rsx
 		struct image_info : public image_info_base
 		{
 		private:
-			u8* data = nullptr;
-			std::vector<u8> data_grey;
+			u8* data = nullptr; // RGBA8, malloc'd by the decoder
 
 		public:
 			using image_info_base::image_info_base;
@@ -67,7 +66,7 @@ namespace rsx
 			virtual ~image_info();
 
 			void load_data(const std::span<const u8>& bytes, bool grayscaled = false);
-			const u8* get_data() const override { return channels == 4 ? data : data_grey.empty() ? nullptr : data_grey.data(); }
+			const u8* get_data() const override { return data; }
 
 			static std::unique_ptr<image_info> load_icon(const std::string& icon_path, const std::string& archive_path);
 		};

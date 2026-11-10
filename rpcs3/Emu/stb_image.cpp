@@ -1,14 +1,11 @@
 #include "stdafx.h"
-// Defines STB_IMAGE_IMPLEMENTATION *once* for stb_image.h includes (Should this be placed somewhere else?)
-#define STB_IMAGE_IMPLEMENTATION
-
-// Sneak in truetype as well.
+// stb_truetype, for the overlays' fonts, defined once here. Images are
+// decoded by libretro-common's rpng, rjpeg and rgif instead of stb_image.
 #define STB_TRUETYPE_IMPLEMENTATION
 
 // This header generates lots of errors, so we ignore those (not rpcs3 code)
 #ifdef _MSC_VER
 #pragma warning(push, 0)
-#include <stb_image.h>
 #include <stb_truetype.h>
 #pragma warning(pop)
 #else
@@ -24,7 +21,6 @@
 #pragma GCC diagnostic ignored "-Wduplicated-branches"
 #endif
 #pragma GCC diagnostic ignored "-Wsign-compare"
-#include <stb_image.h>
 #include <stb_truetype.h>
 #pragma GCC diagnostic pop
 #endif

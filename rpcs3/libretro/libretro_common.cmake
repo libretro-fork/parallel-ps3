@@ -13,6 +13,9 @@ add_library(libretro_common STATIC
     ${LIBRETRO_COMMON_DIR}/encodings/encoding_utf.c
     ${LIBRETRO_COMMON_DIR}/encodings/encoding_xxh64.c
     ${LIBRETRO_COMMON_DIR}/features/features_cpu.c
+    ${LIBRETRO_COMMON_DIR}/formats/gif/rgif.c
+    ${LIBRETRO_COMMON_DIR}/formats/jpeg/rjpeg.c
+    ${LIBRETRO_COMMON_DIR}/formats/png/rpng.c
     ${LIBRETRO_COMMON_DIR}/formats/png/rpng_rows.c
     ${LIBRETRO_COMMON_DIR}/formats/xml/rxml.c
     ${LIBRETRO_COMMON_DIR}/lists/string_list.c
@@ -20,6 +23,9 @@ add_library(libretro_common STATIC
     ${LIBRETRO_COMMON_DIR}/net/net_http.c
     ${LIBRETRO_COMMON_DIR}/net/net_socket.c
     ${LIBRETRO_COMMON_DIR}/net/net_upnp.c
+    ${LIBRETRO_COMMON_DIR}/streams/trans_stream.c
+    ${LIBRETRO_COMMON_DIR}/streams/trans_stream_deflate.c
+    ${LIBRETRO_COMMON_DIR}/streams/trans_stream_pipe.c
     ${LIBRETRO_COMMON_DIR}/string/stdstring.c
     ${LIBRETRO_COMMON_DIR}/time/rtime.c
 )

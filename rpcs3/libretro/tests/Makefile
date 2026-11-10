@@ -14,7 +14,7 @@ LDLIBS   += -lm
 TEST_STD := -std=c89 -Wdeclaration-after-statement
 LRC_STD  := -std=gnu99
 
-TESTS := test_zstd test_deflate test_rxml test_png_rows
+TESTS := test_zstd test_deflate test_rxml test_png_rows test_images
 
 test_zstd_LRC := \
 	$(LRC)/encodings/encoding_rzstd.c \
@@ -56,6 +56,18 @@ obj/libpng/%.o: $(LIBPNG)/pnglibconf.h
 	@mkdir -p $(@D)
 	$(CC) -O2 -w $(LIBPNG_DEF) -I$(LIBPNG) -c -o $@ $(LIBPNG)/$*.c
 
+# stb_image is the oracle for rpng, rjpeg and rgif: the stb RPCS3 pins
+# (3rdparty/stblib/stb, a submodule), which also writes the PNGs and JPEGs
+STB := ../../../3rdparty/stblib/stb
+test_images_LRC := \
+	$(LRC)/formats/png/rpng.c \
+	$(LRC)/formats/jpeg/rjpeg.c \
+	$(LRC)/formats/gif/rgif.c \
+	$(LRC)/streams/trans_stream.c \
+	$(LRC)/streams/trans_stream_deflate.c \
+	$(LRC)/streams/trans_stream_pipe.c \
+	$(test_deflate_LRC)
+
 all: $(TESTS)
 
 obj/%.o: $(LRC)/%.c
@@ -88,6 +100,17 @@ obj/test_png_rows.o: test_png_rows.c test_common.h ../../Emu/Cell/Modules/cellPn
 test_png_rows: obj/test_png_rows.o obj/cellPngDec_rows.o $(call lrc_objs,$(test_png_rows_LRC)) $(LIBPNG_OBJ)
 	$(CC) $(SANITIZE) -o $@ $^ $(LDFLAGS) -lz $(LDLIBS)
 
+obj/test_images.o: test_images.c
+	@mkdir -p $(@D)
+	$(CC) $(CFLAGS) $(LRC_STD) -I$(STB) $(SANITIZE) -c -o $@ $<
+
+obj/stb_impl.o: stb_impl.c
+	@mkdir -p $(@D)
+	$(CC) -O2 -w $(LRC_STD) -I$(STB) -c -o $@ $<
+
+test_images: obj/test_images.o obj/stb_impl.o $(call lrc_objs,$(test_images_LRC))
+	$(CC) $(SANITIZE) -o $@ $^ $(LDFLAGS) $(LDLIBS)
+
 # Each test also writes what the new code produces, for the reference
 # tools to read back
 check: all
@@ -97,6 +120,7 @@ check: all
 	gzip -t deflate_out.gz
 	./test_rxml
 	./test_png_rows
+	./test_images
 
 clean:
 	rm -rf obj $(TESTS) *_out.*

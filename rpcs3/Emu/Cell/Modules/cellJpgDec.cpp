@@ -3,8 +3,10 @@
 #include "Emu/IdManager.h"
 #include "Emu/Cell/PPUModule.h"
 
-// STB_IMAGE_IMPLEMENTATION is already defined in stb_image.cpp
-#include <stb_image.h>
+#include <formats/image.h>
+#include <formats/rjpeg.h>
+
+#include <bit>
 
 #include "Emu/Cell/lv2/sys_fs.h"
 #include "cellJpgDec.h"
@@ -206,102 +208,116 @@ error_code cellJpgDecDecodeData(u32 mainHandle, u32 subHandle, vm::ptr<u8> data,
 	const u64& fileSize = subHandle_data->fileSize;
 	const CellJpgDecOutParam& current_outParam = subHandle_data->outParam;
 
-	//Copy the JPG file to a buffer
-	std::unique_ptr<u8[]> jpg(new u8[fileSize]);
+	// A file's bytes, read into memory taken once on each thread that
+	// decodes and kept
+	thread_local std::vector<u8> file_buf;
+
+	// The file where it lies: the game's buffer as it is, or a file read
+	const u8* jpg = nullptr;
 
 	switch (subHandle_data->src.srcSelect)
 	{
 	case CELL_JPGDEC_BUFFER:
-		std::memcpy(jpg.get(), vm::base(subHandle_data->src.streamPtr), fileSize);
+		jpg = static_cast<const u8*>(vm::base(subHandle_data->src.streamPtr));
 		break;
 
 	case CELL_JPGDEC_FILE:
 	{
 		auto file = idm::get_unlocked<lv2_fs_object, lv2_file>(fd);
+		if (file_buf.size() < fileSize)
+		{
+			file_buf.resize(fileSize);
+		}
 		file->file.seek(0);
-		file->file.read(jpg.get(), fileSize);
+		file->file.read(file_buf.data(), fileSize);
+		jpg = file_buf.data();
 		break;
 	}
 	default: break; // TODO
 	}
 
-	//Decode JPG file. (TODO: Is there any faster alternative? Can we do it without external libraries?)
-	int width = 0, height = 0, actual_components = 0;
-	auto image = std::unique_ptr<unsigned char,decltype(&::free)>
-		(
-			stbi_load_from_memory(jpg.get(), ::narrow<int>(fileSize), &width, &height, &actual_components, 4),
-			&::free
-		);
+	// Decoded to 32-bit pixels, R, G, B, A in memory
+	static_assert(std::endian::native == std::endian::little, "rjpeg's ABGR32 is R, G, B, A in memory here");
+	unsigned width = 0, height = 0;
+	void* pixels = nullptr;
+
+	if (jpg)
+	{
+		rjpeg_t* dec = rjpeg_alloc();
+		if (dec && rjpeg_set_buf_ptr(dec, const_cast<u8*>(jpg), fileSize))
+		{
+			int ret;
+			rjpeg_set_out_rgba(dec, true);
+			do
+			{
+				ret = rjpeg_process_image(dec, &pixels, fileSize, &width, &height, true);
+			} while (ret == IMAGE_PROCESS_NEXT);
+
+			if (ret != IMAGE_PROCESS_END)
+			{
+				std::free(pixels);
+				pixels = nullptr;
+			}
+		}
+		rjpeg_free(dec);
+	}
+
+	const auto image = std::unique_ptr<u8, decltype(&::free)>(static_cast<u8*>(pixels), &::free);
 
 	if (!image)
 		return CELL_JPGDEC_ERROR_STREAM_FORMAT;
 
 	const bool flip = current_outParam.outputMode == CELL_JPGDEC_BOTTOM_TO_TOP;
-	const int bytesPerLine = static_cast<int>(dataCtrlParam->outputBytesPerLine);
-	usz image_size = width * height;
+	const usz bytesPerLine = dataCtrlParam->outputBytesPerLine;
+	usz image_size = usz{width} * height;
+
+	// Each row straight into the game's buffer in the format it asked for:
+	// rows of outputBytesPerLine (cut to it) where that is wider than the
+	// image or the picture is upside down, packed otherwise
+	const auto put_rows = [&](usz n_components, auto&& put_pixel)
+	{
+		const usz row_bytes = usz{width} * n_components;
+		const bool padded = bytesPerLine > row_bytes || flip;
+		const usz stride = padded ? bytesPerLine : row_bytes;
+		const usz line = padded ? std::min(bytesPerLine, row_bytes) : row_bytes;
+		const usz line_pixels = line / n_components;
+
+		for (u32 y = 0; y < height; y++)
+		{
+			const u8* src = image.get() + usz{width} * 4 * (flip ? height - y - 1 : y);
+			u8* dst = data.get_ptr() + stride * y;
+
+			for (usz x = 0; x < line_pixels; x++)
+			{
+				put_pixel(dst + x * n_components, src + x * 4);
+			}
+			// A line cut inside a pixel takes that pixel's first bytes
+			if (const usz rest = line - line_pixels * n_components)
+			{
+				u8 px[4];
+				put_pixel(px, src + line_pixels * 4);
+				std::memcpy(dst + line_pixels * n_components, px, rest);
+			}
+		}
+	};
 
 	switch(current_outParam.outputColorSpace)
 	{
-	case CELL_JPG_RGB:
 	case CELL_JPG_RGBA:
-	{
-		const char nComponents = current_outParam.outputColorSpace == CELL_JPG_RGBA ? 4 : 3;
-		image_size *= nComponents;
-		if (bytesPerLine > width * nComponents || flip) //check if we need padding
-		{
-			const int linesize = std::min(bytesPerLine, width * nComponents);
-			for (int i = 0; i < height; i++)
-			{
-				const int dstOffset = i * bytesPerLine;
-				const int srcOffset = width * nComponents * (flip ? height - i - 1 : i);
-				memcpy(&data[dstOffset], &image.get()[srcOffset], linesize);
-			}
-		}
-		else
-		{
-			memcpy(data.get_ptr(), image.get(), image_size);
-		}
+		image_size *= 4;
+		put_rows(4, [](u8* d, const u8* s) { std::memcpy(d, s, 4); });
 		break;
-	}
+
+	case CELL_JPG_RGB:
+		image_size *= 3;
+		put_rows(3, [](u8* d, const u8* s) { d[0] = s[0]; d[1] = s[1]; d[2] = s[2]; });
+		break;
+
 	case CELL_JPG_ARGB:
-	{
-		constexpr int nComponents = 4;
-		image_size *= nComponents;
-		if (bytesPerLine > width * nComponents || flip) //check if we need padding
-		{
-			//TODO: Find out if we can't do padding without an extra copy
-			const int linesize = std::min(bytesPerLine, width * nComponents);
-			std::vector<char> output(image_size);
-			for (int i = 0; i < height; i++)
-			{
-				const int dstOffset = i * bytesPerLine;
-				const int srcOffset = width * nComponents * (flip ? height - i - 1 : i);
-				for (int j = 0; j < linesize; j += nComponents)
-				{
-					output[j + 0] = image.get()[srcOffset + j + 3];
-					output[j + 1] = image.get()[srcOffset + j + 0];
-					output[j + 2] = image.get()[srcOffset + j + 1];
-					output[j + 3] = image.get()[srcOffset + j + 2];
-				}
-				std::memcpy(&data[dstOffset], output.data(), linesize);
-			}
-		}
-		else
-		{
-			std::vector<u32> img(image_size);
-			const u32* source_current = reinterpret_cast<const u32*>(image.get());
-			u32* dest_current = img.data();
-			for (u32 i = 0; i < image_size / nComponents; i++)
-			{
-				const u32 val = *source_current;
-				*dest_current = (val >> 24) | (val << 8); // set alpha (A8) as leftmost byte
-				source_current++;
-				dest_current++;
-			}
-			std::memcpy(data.get_ptr(), img.data(), image_size);
-		}
+		image_size *= 4;
+		put_rows(4, [](u8* d, const u8* s) { d[0] = s[3]; d[1] = s[0]; d[2] = s[1]; d[3] = s[2]; });
 		break;
-	}
+
 	case CELL_JPG_GRAYSCALE:
 	case CELL_JPG_YCbCr:
 	case CELL_JPG_UPSAMPLE_ONLY:

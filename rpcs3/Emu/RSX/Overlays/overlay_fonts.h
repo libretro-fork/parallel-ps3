@@ -6,8 +6,7 @@
 #include <memory>
 #include <vector>
 
-// STB_IMAGE_IMPLEMENTATION and STB_TRUETYPE_IMPLEMENTATION defined externally
-#include <stb_image.h>
+// STB_TRUETYPE_IMPLEMENTATION defined externally
 #include <stb_truetype.h>
 
 namespace rsx

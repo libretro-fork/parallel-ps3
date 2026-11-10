@@ -3,8 +3,7 @@
 #include "Emu/IdManager.h"
 #include "Emu/Cell/PPUModule.h"
 
-// STB_IMAGE_IMPLEMENTATION is already defined in stb_image.cpp
-#include <stb_image.h>
+#include <formats/rgif.h>
 
 #include "Emu/Cell/lv2/sys_fs.h"
 #include "cellGifDec.h"
@@ -482,100 +481,83 @@ error_code cellGifDecDecodeData(vm::ptr<GifDecoder> mainHandle, vm::cptr<GifStre
 	const u64 fileSize = subHandle->fileSize;
 	const CellGifDecOutParam& current_outParam = subHandle->outParam;
 
-	//Copy the GIF file to a buffer
-	std::unique_ptr<u8[]> gif(new u8[fileSize]);
+	// The decoder's memory and a file's bytes, taken once on each thread
+	// that decodes and kept: one GIF after another takes nothing more
+	struct gif_thread_state
+	{
+		std::unique_ptr<rgif_t, decltype(&rgif_free)> dec{rgif_new(), &rgif_free};
+		std::vector<u8> file;
+	};
+	thread_local gif_thread_state tls;
+
+	if (!tls.dec)
+	{
+		return CELL_GIFDEC_ERROR_FATAL;
+	}
+
+	// The file where it lies: the game's buffer as it is, or a file read
+	const u8* gif = nullptr;
 
 	switch (subHandle->src.srcSelect)
 	{
 	case CELL_GIFDEC_BUFFER:
-		std::memcpy(gif.get(), subHandle->src.streamPtr.get_ptr(), fileSize);
+		gif = static_cast<const u8*>(subHandle->src.streamPtr.get_ptr());
 		break;
 
 	case CELL_GIFDEC_FILE:
 	{
 		auto file = idm::get_unlocked<lv2_fs_object, lv2_file>(fd);
+		if (tls.file.size() < fileSize)
+		{
+			tls.file.resize(fileSize);
+		}
 		file->file.seek(0);
-		file->file.read(gif.get(), fileSize);
+		file->file.read(tls.file.data(), fileSize);
+		gif = tls.file.data();
 		break;
 	}
 	default: break; // TODO
 	}
 
-	//Decode GIF file. (TODO: Is there any faster alternative? Can we do it without external libraries?)
-	int width = 0, height = 0, actual_components = 0;
-	auto image = std::unique_ptr<u8, decltype(&::free)>
-		(
-			stbi_load_from_memory(gif.get(), ::narrow<int>(fileSize), &width, &height, &actual_components, 4),
-			&::free
-		);
+	unsigned width = 0, height = 0;
 
-	if (!image)
+	if (!gif || !rgif_size(gif, fileSize, &width, &height))
+	{
 		return CELL_GIFDEC_ERROR_STREAM_FORMAT;
-
-	const int bytesPerLine = static_cast<int>(dataCtrlParam->outputBytesPerLine);
-	constexpr char nComponents = 4;
-	const u32 image_size = width * height * nComponents;
-	u8* src = image.get();
-
-	switch(current_outParam.outputColorSpace)
-	{
-	case CELL_GIFDEC_RGBA:
-	{
-		if (bytesPerLine > width * nComponents) // Check if we need padding
-		{
-			const int linesize = std::min(bytesPerLine, width * nComponents);
-			for (int i = 0; i < height; i++)
-			{
-				const int dstOffset = i * bytesPerLine;
-				const int srcOffset = width * nComponents * i;
-				std::memcpy(&data[dstOffset], &src[srcOffset], linesize);
-			}
-		}
-		else
-		{
-			std::memcpy(data.get_ptr(), src, image_size);
-		}
-		break;
 	}
-	case CELL_GIFDEC_ARGB:
+
+	// The pixels go straight into the game's buffer: rows of
+	// outputBytesPerLine where that is wider than the image, packed where
+	// it is not
+	const usz row_bytes = usz{width} * 4;
+	const usz bytes_per_line = dataCtrlParam->outputBytesPerLine;
+	const usz stride = bytes_per_line > row_bytes ? bytes_per_line : row_bytes;
+	unsigned order = 0;
+
+	switch (current_outParam.outputColorSpace)
 	{
-		if (bytesPerLine > width * nComponents) // Check if we need padding
-		{
-			//TODO: find out if we can't do padding without an extra copy
-			const int linesize = std::min(bytesPerLine, width * nComponents);
-			const auto output = std::make_unique<char[]>(linesize);
-			for (int i = 0; i < height; i++)
-			{
-				const int dstOffset = i * bytesPerLine;
-				const int srcOffset = width * nComponents * i;
-				for (int j = 0; j < linesize; j += nComponents)
-				{
-					output[j + 0] = src[srcOffset + j + 3];
-					output[j + 1] = src[srcOffset + j + 0];
-					output[j + 2] = src[srcOffset + j + 1];
-					output[j + 3] = src[srcOffset + j + 2];
-				}
-				std::memcpy(&data[dstOffset], output.get(), linesize);
-			}
-		}
-		else
-		{
-			const auto img = std::make_unique<uint[]>(image_size);
-			uint* source_current = reinterpret_cast<uint*>(src);
-			uint* dest_current = img.get();
-			for (uint i = 0; i < image_size / nComponents; i++)
-			{
-				uint val = *source_current;
-				*dest_current = (val >> 24) | (val << 8); // set alpha (A8) as leftmost byte
-				source_current++;
-				dest_current++;
-			}
-			std::memcpy(data.get_ptr(), img.get(), image_size);
-		}
-		break;
-	}
+	case CELL_GIFDEC_RGBA: order = RGIF_RGBA; break;
+	case CELL_GIFDEC_ARGB: order = RGIF_ARGB; break;
 	default:
+	{
+		// A broken file is reported before the colour space, as the
+		// module always has: decoded aside for the verdict
+		if (tls.file.size() < fileSize + row_bytes * height)
+		{
+			tls.file.resize(fileSize + row_bytes * height);
+		}
+		const u8* src = subHandle->src.srcSelect == CELL_GIFDEC_FILE ? tls.file.data() : gif;
+		if (!rgif_decode(tls.dec.get(), src, fileSize, tls.file.data() + fileSize, row_bytes, RGIF_RGBA))
+		{
+			return CELL_GIFDEC_ERROR_STREAM_FORMAT;
+		}
 		return CELL_GIFDEC_ERROR_ARG;
+	}
+	}
+
+	if (!rgif_decode(tls.dec.get(), gif, fileSize, data.get_ptr(), stride, order))
+	{
+		return CELL_GIFDEC_ERROR_STREAM_FORMAT;
 	}
 
 	dataOutInfo->status = CELL_GIFDEC_DEC_STATUS_FINISH;

@@ -9,7 +9,13 @@
 #include "Loader/ISO.h"
 #include "Emu/system_config.h"
 
+#include <bit>
 #include <numbers>
+
+#include <formats/image.h>
+#include <formats/rgif.h>
+#include <formats/rjpeg.h>
+#include <formats/rpng.h>
 
 #ifndef _WIN32
 #include <unistd.h>
@@ -116,32 +122,93 @@ namespace rsx
 
 		image_info::~image_info()
 		{
-			if (data) stbi_image_free(data);
+			std::free(data);
+		}
+
+		// A PNG, JPEG or GIF as 32-bit pixels, R, G, B, A in memory, by
+		// libretro-common's decoders, which read the file where it lies
+		static u8* decode_image(std::span<const u8> bytes, unsigned& width, unsigned& height)
+		{
+			static_assert(std::endian::native == std::endian::little, "ABGR32 is R, G, B, A in memory here");
+			void* buf = const_cast<u8*>(bytes.data());
+			void* pixels = nullptr;
+			int ret = IMAGE_PROCESS_ERROR;
+
+			if (bytes.size() >= 8 && !std::memcmp(bytes.data(), "\x89PNG\r\n\x1a\n", 8))
+			{
+				if (rpng_t* dec = rpng_alloc())
+				{
+					if (rpng_set_buf_ptr(dec, buf, bytes.size()) && rpng_start(dec))
+					{
+						while (rpng_iterate_image(dec))
+						{
+						}
+						if (rpng_is_valid(dec))
+						{
+							do
+							{
+								ret = rpng_process_image(dec, &pixels, bytes.size(), &width, &height, true);
+							} while (ret == IMAGE_PROCESS_NEXT);
+						}
+					}
+					rpng_free(dec);
+				}
+			}
+			else if (bytes.size() >= 3 && bytes[0] == 0xff && bytes[1] == 0xd8 && bytes[2] == 0xff)
+			{
+				if (rjpeg_t* dec = rjpeg_alloc())
+				{
+					if (rjpeg_set_buf_ptr(dec, buf, bytes.size()))
+					{
+						rjpeg_set_out_rgba(dec, true);
+						do
+						{
+							ret = rjpeg_process_image(dec, &pixels, bytes.size(), &width, &height, true);
+						} while (ret == IMAGE_PROCESS_NEXT);
+					}
+					rjpeg_free(dec);
+				}
+			}
+			else if (bytes.size() >= 6 && !std::memcmp(bytes.data(), "GIF8", 4))
+			{
+				if (rgif_t* dec = rgif_new())
+				{
+					if (rgif_set_buf_ptr(dec, buf, bytes.size()))
+					{
+						ret = rgif_process_image(dec, &pixels, bytes.size(), &width, &height, true);
+					}
+					rgif_free(dec);
+				}
+			}
+
+			if (ret != IMAGE_PROCESS_END)
+			{
+				std::free(pixels);
+				return nullptr;
+			}
+			return static_cast<u8*>(pixels);
 		}
 
 		void image_info::load_data(const std::span<const u8>& bytes, bool grayscaled)
 		{
-			data = stbi_load_from_memory(bytes.data(), ::narrow<int>(bytes.size()), &w, &h, &bpp, grayscaled ? STBI_grey_alpha : STBI_rgb_alpha);
-			channels = grayscaled ? 2 : 4;
+			unsigned width = 0, height = 0;
+
+			std::free(data);
+			data = decode_image(bytes, width, height);
+			w = data ? static_cast<int>(width) : 0;
+			h = data ? static_cast<int>(height) : 0;
+			bpp = 4;
+			channels = 4;
 
 			if (data && grayscaled)
 			{
-				data_grey.resize(4 * w * h);
-
-				for (usz i = 0, n = 0; i < data_grey.size(); i += 4, n += 2)
+				// In place, with stb_image's weights: (77 R + 150 G + 29 B) / 256
+				u8* p = data;
+				for (usz i = 0, n = usz{width} * height; i < n; i++, p += 4)
 				{
-					const u8 grey = data[n];
-					const u8 alpha = data[n + 1];
-
-					data_grey[i + 0] = grey;
-					data_grey[i + 1] = grey;
-					data_grey[i + 2] = grey;
-					data_grey[i + 3] = alpha;
+					const u8 grey = static_cast<u8>((p[0] * 77 + p[1] * 150 + p[2] * 29) >> 8);
+					p[0] = p[1] = p[2] = grey;
 				}
-			}
-			else
-			{
-				data_grey.clear();
 			}
 		}
 

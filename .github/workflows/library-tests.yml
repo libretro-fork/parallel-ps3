@@ -33,5 +33,10 @@ jobs:
       - name: Reference tools
         run: sudo apt-get install -y -q zstd zlib1g-dev
 
+      # stb_image, the oracle the image decoders are checked against: the
+      # stb RPCS3 pins, the one submodule these tests need
+      - name: stb
+        run: git submodule update --init --depth 1 3rdparty/stblib/stb
+
       - name: Run
         run: make -C rpcs3/libretro/tests -j"$(nproc)" check
