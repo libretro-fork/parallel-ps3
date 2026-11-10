@@ -8,8 +8,7 @@
 # distribution, with no CMake package and no static libraries, so
 # find_package(LLVM) finds nothing. clang64 has all of it as packages: LLVM
 # with its CMake config, and ffmpeg, OpenCV and GLEW besides, which is why
-# this asks for the system copies of those. protobuf, for RPCN, would take
-# clang64's abseil, DLLs again; it fetches and builds its own.
+# this asks for the system copies of those.
 
 git config --global --add safe.directory '*'
 
@@ -60,7 +59,7 @@ case "$FFMPEG_LIBS" in
 esac
 
 # zlib and zstd come in through LLVM's CMake package, libc++ and libunwind
-# through the compiler driver, and winpthread with abseil's threads, each as
+# through the compiler driver, and winpthread, each as
 # clang64's import library. winpthread has two of them: libwinpthread.dll.a
 # and libpthread.dll.a, which is what -pthread (CMake's Threads::Threads)
 # links, so both go. Neither lets the caller ask for the static archive
@@ -90,7 +89,6 @@ cmake ..                                               \
     -DCMAKE_SHARED_LINKER_FLAGS="${LINKER_FLAG}"       \
     -DCMAKE_AR="$AR"                                   \
     -DCMAKE_RANLIB="$RANLIB"                           \
-    -Dprotobuf_FORCE_FETCH_DEPENDENCIES=ON             \
     -DUSE_FAUDIO=OFF                                   \
     -DUSE_SDL=OFF                                      \
     -DUSE_SYSTEM_FFMPEG=ON                             \

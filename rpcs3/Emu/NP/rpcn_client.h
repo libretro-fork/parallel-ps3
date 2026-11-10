@@ -1,5 +1,6 @@
 #pragma once
 
+#include <optional>
 #include <unordered_map>
 #include <chrono>
 #include <thread>
@@ -127,21 +128,27 @@ public:
 		return com_id;
 	}
 
+	// A message, read where it lies: its strings and bytes point into the
+	// packet, which must outlive it
 	template <typename T>
-	std::unique_ptr<T> get_protobuf()
+	std::optional<T> get_protobuf()
 	{
-		auto rawdata_vec = get_rawdata();
+		const u32 size = get<u32>();
 
-		if (error)
-			return nullptr;
-
-		auto msg = std::make_unique<T>();
-		if (!msg->ParseFromArray(rawdata_vec.data(), static_cast<int>(rawdata_vec.size())))
+		if (error || size > vec.size() - i)
 		{
 			error = true;
-			return nullptr;
+			return std::nullopt;
 		}
 
+		std::optional<T> msg(std::in_place);
+		if (!msg->ParseFromArray(vec.data() + i, size))
+		{
+			error = true;
+			return std::nullopt;
+		}
+
+		i += size;
 		return msg;
 	}
 
@@ -391,11 +398,38 @@ namespace rpcn
 		bool get_reply(u64 expected_id, std::vector<u8>& data);
 
 		static void write_communication_id(const SceNpCommunicationId& com_id, std::vector<u8>& data);
+		static void write_communication_id(const SceNpCommunicationId& com_id, u8* out);
+
+		// A request packet with room for a message of @msg_size bytes (after
+		// the communication id when there is one, and its size) and
+		// @extra_size bytes after it; @msg_at is where the message goes
+		std::vector<u8> forge_message_packet(rpcn::CommandType command, u64 packet_id, const SceNpCommunicationId* com_id, usz msg_size, usz extra_size, usz& msg_at) const;
+
+		// A request whose data is @msg, written straight into the packet
+		template <typename T>
+			requires requires(const T& m) { m.SerializeWithCachedSizesToArray(nullptr); }
+		bool forge_request_with_com_id(const T& msg, const SceNpCommunicationId& com_id, rpcn::CommandType command, u64 packet_id)
+		{
+			usz at = 0;
+			std::vector<u8> packet = forge_message_packet(command, packet_id, &com_id, msg.ByteSizeLong(), 0, at);
+			msg.SerializeWithCachedSizesToArray(packet.data() + at);
+			add_packet(std::move(packet));
+			return true;
+		}
+
+		template <typename T>
+			requires requires(const T& m) { m.SerializeWithCachedSizesToArray(nullptr); }
+		bool forge_request_with_data(const T& msg, rpcn::CommandType command, u64 packet_id)
+		{
+			usz at = 0;
+			std::vector<u8> packet = forge_message_packet(command, packet_id, nullptr, msg.ByteSizeLong(), 0, at);
+			msg.SerializeWithCachedSizesToArray(packet.data() + at);
+			add_packet(std::move(packet));
+			return true;
+		}
 
 		std::vector<u8> forge_request(rpcn::CommandType command, u64 packet_id, const std::vector<u8>& data) const;
 		bool forge_send(rpcn::CommandType command, u64 packet_id, const std::vector<u8>& data);
-		bool forge_request_with_com_id(std::string_view serialized_data, const SceNpCommunicationId& com_id, CommandType command, u64 packet_id);
-		bool forge_request_with_data(std::string_view serialized_data, CommandType command, u64 packet_id);
 		bool forge_send_reply(rpcn::CommandType command, u64 packet_id, const std::vector<u8>& data, std::vector<u8>& reply_data);
 
 		bool error_and_disconnect(std::string_view error_mgs);

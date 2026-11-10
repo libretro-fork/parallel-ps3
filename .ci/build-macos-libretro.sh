@@ -150,8 +150,6 @@ cmake -S . -B build -G Ninja $CROSS                    \
     -DUSE_NATIVE_INSTRUCTIONS=OFF                      \
     -DUSE_PRECOMPILED_HEADERS=OFF                      \
     -DUSE_SYSTEM_FFMPEG=OFF                            \
-    -Dprotobuf_FORCE_FETCH_DEPENDENCIES=ON             \
-    -Dprotobuf_HAVE_BUILTIN_ATOMICS=ON                 \
     -DUSE_SDL=OFF                                      \
     -DUSE_FAUDIO=OFF                                   \
     -DUSE_DISCORD_RPC=OFF                              \

@@ -1,8 +1,10 @@
 test_*
 !test_*.c
 !test_*.h
+!test_*.cpp
 *_out.*
 obj/
 !Makefile
 libpng-*/
 bcdec-*/
+stb-*/

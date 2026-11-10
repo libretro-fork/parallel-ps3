@@ -14,11 +14,11 @@ namespace np
 		memcpy(ptr, bin_attr.data().data(), bin_attr.data().size());
 	}
 
-	void BinAttrs_to_SceNpMatching2BinAttrs(event_data& edata, const google::protobuf::RepeatedPtrField<np2_structs::BinAttr>& pb_attrs, SceNpMatching2BinAttr* binattr_info)
+	void BinAttrs_to_SceNpMatching2BinAttrs(event_data& edata, const std::vector<np2_structs::BinAttr>& pb_attrs, SceNpMatching2BinAttr* binattr_info)
 	{
-		for (int i = 0; i < pb_attrs.size(); i++)
+		for (usz i = 0; i < pb_attrs.size(); i++)
 		{
-			const auto& cur_pb_attr = pb_attrs.Get(i);
+			const auto& cur_pb_attr = pb_attrs[i];
 			auto* cur_binattr       = binattr_info + i;
 
 			BinAttr_to_SceNpMatching2BinAttr(edata, cur_pb_attr, cur_binattr);
@@ -55,11 +55,11 @@ namespace np
 		sce_group->curGroupMemberNum = pb_group.curgroupmembernum();
 	}
 
-	void RoomGroups_to_SceNpMatching2RoomGroups(const google::protobuf::RepeatedPtrField<np2_structs::RoomGroup>& pb_groups, SceNpMatching2RoomGroup* sce_groups)
+	void RoomGroups_to_SceNpMatching2RoomGroups(const std::vector<np2_structs::RoomGroup>& pb_groups, SceNpMatching2RoomGroup* sce_groups)
 	{
-		for (int i = 0; i < pb_groups.size(); i++)
+		for (usz i = 0; i < pb_groups.size(); i++)
 		{
-			const auto& pb_group               = pb_groups.Get(i);
+			const auto& pb_group               = pb_groups[i];
 			SceNpMatching2RoomGroup* sce_group = &sce_groups[i];
 			RoomGroup_to_SceNpMatching2RoomGroup(pb_group, sce_group);
 		}
@@ -69,34 +69,34 @@ namespace np
 	{
 		if (!user.npid().empty())
 		{
-			std::memcpy(user_info->userId.handle.data, user.npid().c_str(), std::min<usz>(16, user.npid().size()));
+			std::memcpy(user_info->userId.handle.data, user.npid().data(), std::min<usz>(16, user.npid().size()));
 		}
 
 		if (!user.onlinename().empty())
 		{
-			std::memcpy(user_info->name.data, user.onlinename().c_str(), std::min<usz>(48, user.onlinename().size()));
+			std::memcpy(user_info->name.data, user.onlinename().data(), std::min<usz>(48, user.onlinename().size()));
 		}
 
 		if (!user.avatarurl().empty())
 		{
-			std::memcpy(user_info->icon.data, user.avatarurl().c_str(), std::min<usz>(127, user.avatarurl().size()));
+			std::memcpy(user_info->icon.data, user.avatarurl().data(), std::min<usz>(127, user.avatarurl().size()));
 		}
 	}
 
 	void UserInfo_to_SceNpUserInfo2(event_data& edata, const np2_structs::UserInfo& user, SceNpUserInfo2* user_info, bool include_onlinename, bool include_avatarurl)
 	{
 		if (!user.npid().empty())
-			std::memcpy(user_info->npId.handle.data, user.npid().c_str(), std::min<usz>(16, user.npid().size()));
+			std::memcpy(user_info->npId.handle.data, user.npid().data(), std::min<usz>(16, user.npid().size()));
 
 		if (include_onlinename && !user.onlinename().empty())
 		{
 			auto* ptr = edata.allocate<SceNpOnlineName>(sizeof(SceNpOnlineName), user_info->onlineName);
-			std::memcpy(ptr->data, user.onlinename().c_str(), std::min<usz>(48, user.onlinename().size()));
+			std::memcpy(ptr->data, user.onlinename().data(), std::min<usz>(48, user.onlinename().size()));
 		}
 		if (include_avatarurl && !user.avatarurl().empty())
 		{
 			auto* ptr = edata.allocate<SceNpAvatarUrl>(sizeof(SceNpAvatarUrl), user_info->avatarUrl);
-			std::memcpy(ptr->data, user.avatarurl().c_str(), std::min<usz>(127, user.avatarurl().size()));
+			std::memcpy(ptr->data, user.avatarurl().data(), std::min<usz>(127, user.avatarurl().size()));
 		}
 	}
 
@@ -570,7 +570,7 @@ namespace np
 		if (!resp.kick_actor().empty())
 		{
 			auto* npid = edata.allocate<SceNpId>(sizeof(SceNpId), room_status->kick_actor);
-			std::memcpy(npid->handle.data, resp.kick_actor().c_str(), std::min<usz>(16, resp.kick_actor().size()));
+			std::memcpy(npid->handle.data, resp.kick_actor().data(), std::min<usz>(16, resp.kick_actor().size()));
 		}
 
 		if (!resp.opt().empty())
@@ -589,15 +589,15 @@ namespace np
 		MatchingRoomStatus_to_SceNpMatchingRoomStatus(edata, resp, &room_info->room_status);
 	}
 
-	void MatchingAttr_to_SceNpMatchingAttr(event_data& edata, const google::protobuf::RepeatedPtrField<np2_structs::MatchingAttr>& attr_list, vm::bptr<SceNpMatchingAttr>& first_attr)
+	void MatchingAttr_to_SceNpMatchingAttr(event_data& edata, const std::vector<np2_structs::MatchingAttr>& attr_list, vm::bptr<SceNpMatchingAttr>& first_attr)
 	{
 		if (attr_list.size() > 0)
 		{
 			SceNpMatchingAttr* cur_attr = nullptr;
 
-			for (int i_attr = 0; i_attr < attr_list.size(); i_attr++)
+			for (usz i_attr = 0; i_attr < attr_list.size(); i_attr++)
 			{
-				const auto& attr = attr_list.Get(i_attr);
+				const auto& attr = attr_list[i_attr];
 				cur_attr         = edata.allocate<SceNpMatchingAttr>(sizeof(SceNpMatchingAttr), cur_attr ? cur_attr->next : first_attr);
 
 				cur_attr->type = attr.attr_type();

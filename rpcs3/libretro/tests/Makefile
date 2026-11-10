@@ -16,7 +16,7 @@ LRC_STD  := -std=gnu99
 # as libretro_common.cmake builds it: net_http over its own TLS client
 LRC_DEFS := -DHAVE_SSL -DHAVE_RETROSSL -DHAVE_CRYPTO
 
-TESTS := test_zstd test_deflate test_rxml test_png_rows test_images test_http test_bcn test_tls_duplex test_yaml test_font
+TESTS := test_zstd test_deflate test_rxml test_png_rows test_images test_http test_bcn test_tls_duplex test_yaml test_font test_np2
 
 test_zstd_LRC := \
 	$(LRC)/encodings/encoding_rzstd.c \
@@ -200,6 +200,28 @@ obj/test_font.o: test_font.c ../../Emu/RSX/Overlays/overlay_font_pack.h $(STB)/s
 test_font: obj/test_font.o obj/stb_impl.o $(call lrc_objs,$(sort $(test_font_LRC)))
 	$(CC) $(SANITIZE) -o $@ $^ $(LDFLAGS) $(LDLIBS)
 
+# RPCN's messages: the code the core builds is made again from the .proto
+# here, checked against the one in the tree, and read and written against
+# what the protobuf library made of the fixtures
+CXX     ?= c++
+NP2     := ../../Emu/NP/generated
+NP2_GEN := obj/np2/np2_structs.h obj/np2/np2_structs.cpp obj/np2/np2_dump.h
+
+$(NP2_GEN): $(NP2)/np2_structs.proto $(NP2)/np2_structs_gen.py
+	@mkdir -p obj/np2
+	python3 $(NP2)/np2_structs_gen.py --out obj/np2 --dump obj/np2/np2_dump.h
+	cmp obj/np2/np2_structs.h $(NP2)/np2_structs.h
+	cmp obj/np2/np2_structs.cpp $(NP2)/np2_structs.cpp
+
+obj/np2/%.o: obj/np2/%.cpp $(NP2_GEN) ../../Emu/NP/pb_wire.h
+	$(CXX) -O2 -std=c++17 -Wall -Wextra -I../.. $(SANITIZE) -c -o $@ $<
+
+obj/test_np2.o: test_np2.cpp $(NP2_GEN) ../../Emu/NP/pb_wire.h
+	$(CXX) -O2 -std=c++17 -Wall -Wextra -Iobj/np2 -I../.. -I$(LRC)/include $(SANITIZE) -c -o $@ $<
+
+test_np2: obj/test_np2.o obj/np2/np2_structs.o $(call lrc_objs,$(test_deflate_LRC))
+	$(CXX) $(SANITIZE) -o $@ $^ $(LDFLAGS) $(LDLIBS)
+
 test_bcn: obj/test_bcn.o obj/bcdec_impl.o $(call lrc_objs,$(test_bcn_LRC))
 	$(CC) $(SANITIZE) -o $@ $^ $(LDFLAGS) $(LDLIBS)
 
@@ -218,6 +240,7 @@ check: all
 	./tls_duplex_test.sh ./test_tls_duplex
 	./test_yaml fixtures
 	./test_font fixtures
+	./test_np2 fixtures
 
 clean:
 	rm -rf obj $(TESTS) *_out.*

@@ -134,7 +134,6 @@ cmake -S . -B build -G Ninja                           \
     -DCMAKE_C_FLAGS="-idirafter $CASE_INC"             \
     -DCMAKE_CXX_FLAGS="-idirafter $CASE_INC"           \
     -DCMAKE_SHARED_LINKER_FLAGS="-static -L$CASE_LIB"  \
-    -Dprotobuf_FORCE_FETCH_DEPENDENCIES=ON             \
     -DUSE_FAUDIO=OFF                                   \
     -DUSE_SDL=OFF                                      \
     -DUSE_SYSTEM_FFMPEG=OFF                            \

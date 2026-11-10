@@ -35,7 +35,3 @@
 	path = 3rdparty/GPUOpen/VulkanMemoryAllocator
 	url = ../../GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator.git
 	ignore = dirty
-[submodule "3rdparty/protobuf/protobuf"]
-	path = 3rdparty/protobuf/protobuf
-	url = ../../protocolbuffers/protobuf.git
-	ignore = dirty

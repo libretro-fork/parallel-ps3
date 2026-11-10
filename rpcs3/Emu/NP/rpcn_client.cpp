@@ -17,7 +17,7 @@
 #include "Emu/system_config.h"
 #include "Emu/RSX/Overlays/overlay_message.h"
 
-#include "generated/np2_structs.pb.h"
+#include "generated/np2_structs.h"
 
 #ifdef _WIN32
 #include <winsock2.h>
@@ -1840,10 +1840,7 @@ namespace rpcn
 			opt->mutable_hubmemberid()->set_value(req->sigOptParam->hubMemberId);
 		}
 
-		std::string serialized;
-		pb_req.SerializeToString(&serialized);
-
-		return forge_request_with_com_id(serialized, communication_id, CommandType::CreateRoom, req_id);
+		return forge_request_with_com_id(pb_req, communication_id, CommandType::CreateRoom, req_id);
 	}
 
 	bool rpcn_client::join_room(u32 req_id, const SceNpCommunicationId& communication_id, const SceNpMatching2JoinRoomRequest* req)
@@ -1873,10 +1870,7 @@ namespace rpcn
 		optdata->set_data(req->optData.data, 16);
 		optdata->set_len(req->optData.length);
 
-		std::string serialized;
-		pb_req.SerializeToString(&serialized);
-
-		return forge_request_with_com_id(serialized, communication_id, CommandType::JoinRoom, req_id);
+		return forge_request_with_com_id(pb_req, communication_id, CommandType::JoinRoom, req_id);
 	}
 
 	bool rpcn_client::leave_room(u32 req_id, const SceNpCommunicationId& communication_id, const SceNpMatching2LeaveRoomRequest* req)
@@ -1888,10 +1882,7 @@ namespace rpcn
 		optdata->set_data(req->optData.data, 16);
 		optdata->set_len(req->optData.length);
 
-		std::string serialized;
-		pb_req.SerializeToString(&serialized);
-
-		return forge_request_with_com_id(serialized, communication_id, CommandType::LeaveRoom, req_id);
+		return forge_request_with_com_id(pb_req, communication_id, CommandType::LeaveRoom, req_id);
 	}
 
 	bool rpcn_client::search_room(u32 req_id, const SceNpCommunicationId& communication_id, const SceNpMatching2SearchRoomRequest* req)
@@ -1938,10 +1929,7 @@ namespace rpcn
 			}
 		}
 
-		std::string serialized;
-		pb_req.SerializeToString(&serialized);
-
-		return forge_request_with_com_id(serialized, communication_id, CommandType::SearchRoom, req_id);
+		return forge_request_with_com_id(pb_req, communication_id, CommandType::SearchRoom, req_id);
 	}
 
 	bool rpcn_client::get_roomdata_external_list(u32 req_id, const SceNpCommunicationId& communication_id, const SceNpMatching2GetRoomDataExternalListRequest* req)
@@ -1958,10 +1946,7 @@ namespace rpcn
 			pb_req.add_attrids()->set_value(req->attrId[i]);
 		}
 
-		std::string serialized;
-		pb_req.SerializeToString(&serialized);
-
-		return forge_request_with_com_id(serialized, communication_id, CommandType::GetRoomDataExternalList, req_id);
+		return forge_request_with_com_id(pb_req, communication_id, CommandType::GetRoomDataExternalList, req_id);
 	}
 
 	bool rpcn_client::get_room_member_data_external_list(u32 req_id, const SceNpCommunicationId& communication_id, u64 room_id)
@@ -2025,10 +2010,7 @@ namespace rpcn
 			}
 		}
 
-		std::string serialized;
-		pb_req.SerializeToString(&serialized);
-
-		return forge_request_with_com_id(serialized, communication_id, CommandType::SetRoomDataExternal, req_id);
+		return forge_request_with_com_id(pb_req, communication_id, CommandType::SetRoomDataExternal, req_id);
 	}
 
 	bool rpcn_client::get_roomdata_internal(u32 req_id, const SceNpCommunicationId& communication_id, const SceNpMatching2GetRoomDataInternalRequest* req)
@@ -2044,10 +2026,7 @@ namespace rpcn
 			}
 		}
 
-		std::string serialized;
-		pb_req.SerializeToString(&serialized);
-
-		return forge_request_with_com_id(serialized, communication_id, CommandType::GetRoomDataInternal, req_id);
+		return forge_request_with_com_id(pb_req, communication_id, CommandType::GetRoomDataInternal, req_id);
 	}
 
 	bool rpcn_client::set_roomdata_internal(u32 req_id, const SceNpCommunicationId& communication_id, const SceNpMatching2SetRoomDataInternalRequest* req)
@@ -2090,10 +2069,7 @@ namespace rpcn
 			}
 		}
 
-		std::string serialized;
-		pb_req.SerializeToString(&serialized);
-
-		return forge_request_with_com_id(serialized, communication_id, CommandType::SetRoomDataInternal, req_id);
+		return forge_request_with_com_id(pb_req, communication_id, CommandType::SetRoomDataInternal, req_id);
 	}
 
 	bool rpcn_client::get_roommemberdata_internal(u32 req_id, const SceNpCommunicationId& communication_id, const SceNpMatching2GetRoomMemberDataInternalRequest* req)
@@ -2110,10 +2086,7 @@ namespace rpcn
 			}
 		}
 
-		std::string serialized;
-		pb_req.SerializeToString(&serialized);
-
-		return forge_request_with_com_id(serialized, communication_id, CommandType::GetRoomMemberDataInternal, req_id);
+		return forge_request_with_com_id(pb_req, communication_id, CommandType::GetRoomMemberDataInternal, req_id);
 	}
 
 	bool rpcn_client::set_roommemberdata_internal(u32 req_id, const SceNpCommunicationId& communication_id, const SceNpMatching2SetRoomMemberDataInternalRequest* req)
@@ -2133,10 +2106,7 @@ namespace rpcn
 			}
 		}
 
-		std::string serialized;
-		pb_req.SerializeToString(&serialized);
-
-		return forge_request_with_com_id(serialized, communication_id, CommandType::SetRoomMemberDataInternal, req_id);
+		return forge_request_with_com_id(pb_req, communication_id, CommandType::SetRoomMemberDataInternal, req_id);
 	}
 
 	bool rpcn_client::set_userinfo(u32 req_id, const SceNpCommunicationId& communication_id, const SceNpMatching2SetUserInfoRequest* req)
@@ -2154,10 +2124,7 @@ namespace rpcn
 			}
 		}
 
-		std::string serialized;
-		pb_req.SerializeToString(&serialized);
-
-		return forge_request_with_com_id(serialized, communication_id, CommandType::SetUserInfo, req_id);
+		return forge_request_with_com_id(pb_req, communication_id, CommandType::SetUserInfo, req_id);
 	}
 
 	bool rpcn_client::ping_room_owner(u32 req_id, const SceNpCommunicationId& communication_id, u64 room_id)
@@ -2200,10 +2167,7 @@ namespace rpcn
 
 		pb_req.set_msg(req->msg.get_ptr(), req->msgLen);
 
-		std::string serialized;
-		pb_req.SerializeToString(&serialized);
-
-		return forge_request_with_com_id(serialized, communication_id, CommandType::SendRoomMessage, req_id);
+		return forge_request_with_com_id(pb_req, communication_id, CommandType::SendRoomMessage, req_id);
 	}
 
 	bool rpcn_client::req_sign_infos(u32 req_id, std::string_view npid)
@@ -2243,20 +2207,13 @@ namespace rpcn
 		pb_message.SerializeToString(&serialized_message);
 
 		np2_structs::SendMessageRequest pb_req;
-		pb_req.set_message(serialized_message);
+		pb_req.set_message(std::move(serialized_message));
 		for (const auto& npid : npids)
 		{
 			pb_req.add_npids(npid);
 		}
 
-		std::string serialized;
-		pb_req.SerializeToString(&serialized);
-
-		std::vector<u8> data(serialized.size() + sizeof(u32));
-		write_to_ptr<le_t<u32>>(data, 0, static_cast<u32>(serialized.size()));
-		memcpy(data.data() + sizeof(u32), serialized.data(), serialized.size());
-
-		return forge_send(CommandType::SendMessage, rpcn_request_counter.fetch_add(1), data);
+		return forge_request_with_data(pb_req, CommandType::SendMessage, rpcn_request_counter.fetch_add(1));
 	}
 
 	bool rpcn_client::get_board_infos(u32 req_id, const SceNpCommunicationId& communication_id, SceNpScoreBoardId board_id)
@@ -2283,10 +2240,7 @@ namespace rpcn
 			pb_req.set_data(score_data->data(), score_data->size());
 		}
 
-		std::string serialized;
-		pb_req.SerializeToString(&serialized);
-
-		return forge_request_with_com_id(serialized, communication_id, CommandType::RecordScore, req_id);
+		return forge_request_with_com_id(pb_req, communication_id, CommandType::RecordScore, req_id);
 	}
 
 	bool rpcn_client::get_score_range(u32 req_id, const SceNpCommunicationId& communication_id, SceNpScoreBoardId board_id, u32 start_rank, u32 num_rank, bool with_comment, bool with_gameinfo)
@@ -2298,10 +2252,7 @@ namespace rpcn
 		pb_req.set_withcomment(with_comment);
 		pb_req.set_withgameinfo(with_gameinfo);
 
-		std::string serialized;
-		pb_req.SerializeToString(&serialized);
-
-		return forge_request_with_com_id(serialized, communication_id, CommandType::GetScoreRange, req_id);
+		return forge_request_with_com_id(pb_req, communication_id, CommandType::GetScoreRange, req_id);
 	}
 
 	bool rpcn_client::get_score_npid(u32 req_id, const SceNpCommunicationId& communication_id, SceNpScoreBoardId board_id, const std::vector<std::pair<SceNpId, s32>>& npids, bool with_comment, bool with_gameinfo)
@@ -2318,10 +2269,7 @@ namespace rpcn
 			npid_entry->set_pcid(npids[i].second);
 		}
 
-		std::string serialized;
-		pb_req.SerializeToString(&serialized);
-
-		return forge_request_with_com_id(serialized, communication_id, CommandType::GetScoreNpid, req_id);
+		return forge_request_with_com_id(pb_req, communication_id, CommandType::GetScoreNpid, req_id);
 	}
 
 	bool rpcn_client::get_score_friend(u32 req_id, const SceNpCommunicationId& communication_id, SceNpScoreBoardId board_id, bool include_self, bool with_comment, bool with_gameinfo, u32 max_entries)
@@ -2333,10 +2281,7 @@ namespace rpcn
 		pb_req.set_withcomment(with_comment);
 		pb_req.set_withgameinfo(with_gameinfo);
 
-		std::string serialized;
-		pb_req.SerializeToString(&serialized);
-
-		return forge_request_with_com_id(serialized, communication_id, CommandType::GetScoreFriends, req_id);
+		return forge_request_with_com_id(pb_req, communication_id, CommandType::GetScoreFriends, req_id);
 	}
 
 	bool rpcn_client::record_score_data(u32 req_id, const SceNpCommunicationId& communication_id, SceNpScorePcId pc_id, SceNpScoreBoardId board_id, s64 score, const std::vector<u8>& score_data)
@@ -2346,19 +2291,18 @@ namespace rpcn
 		pb_req.set_pcid(pc_id);
 		pb_req.set_score(score);
 
-		std::string serialized;
-		pb_req.SerializeToString(&serialized);
+		// The message, then the game's data with its size, written straight
+		// into the packet
+		const usz bufsize = pb_req.ByteSizeLong();
+		usz at = 0;
+		std::vector<u8> packet = forge_message_packet(CommandType::RecordScoreData, req_id, &communication_id, bufsize, sizeof(u32) + score_data.size(), at);
+		pb_req.SerializeWithCachedSizesToArray(packet.data() + at);
+		write_to_ptr<le_t<u32>>(packet, at + bufsize, static_cast<u32>(score_data.size()));
+		if (!score_data.empty())
+			memcpy(packet.data() + at + bufsize + sizeof(u32), score_data.data(), score_data.size());
 
-		const usz bufsize = serialized.size();
-		std::vector<u8> data(COMMUNICATION_ID_SIZE + sizeof(u32) + bufsize + sizeof(u32) + score_data.size());
-
-		rpcn_client::write_communication_id(communication_id, data);
-		write_to_ptr<le_t<u32>>(data, COMMUNICATION_ID_SIZE, static_cast<u32>(bufsize));
-		memcpy(data.data() + COMMUNICATION_ID_SIZE + sizeof(u32), serialized.data(), bufsize);
-		write_to_ptr<le_t<u32>>(data, COMMUNICATION_ID_SIZE + sizeof(u32) + bufsize, static_cast<u32>(score_data.size()));
-		memcpy(data.data() + COMMUNICATION_ID_SIZE + sizeof(u32) + bufsize + sizeof(u32), score_data.data(), score_data.size());
-
-		return forge_send(CommandType::RecordScoreData, req_id, data);
+		add_packet(std::move(packet));
+		return true;
 	}
 
 	bool rpcn_client::get_score_data(u32 req_id, const SceNpCommunicationId& communication_id, SceNpScorePcId pc_id, SceNpScoreBoardId board_id, const SceNpId& npid)
@@ -2368,10 +2312,7 @@ namespace rpcn
 		pb_req.set_npid(np::npid_to_string(npid));
 		pb_req.set_pcid(pc_id);
 
-		std::string serialized;
-		pb_req.SerializeToString(&serialized);
-
-		return forge_request_with_com_id(serialized, communication_id, CommandType::GetScoreData, req_id);
+		return forge_request_with_com_id(pb_req, communication_id, CommandType::GetScoreData, req_id);
 	}
 
 	bool rpcn_client::tus_set_multislot_variable(u32 req_id, const SceNpCommunicationId& communication_id, const SceNpOnlineId& targetNpId, vm::cptr<SceNpTusSlotId> slotIdArray, vm::cptr<s64> variableArray, s32 arrayNum, bool vuser)
@@ -2387,10 +2328,7 @@ namespace rpcn
 			pb_req.add_variablearray(variableArray[i]);
 		}
 
-		std::string serialized;
-		pb_req.SerializeToString(&serialized);
-
-		return forge_request_with_com_id(serialized, communication_id, CommandType::TusSetMultiSlotVariable, req_id);
+		return forge_request_with_com_id(pb_req, communication_id, CommandType::TusSetMultiSlotVariable, req_id);
 	}
 
 	bool rpcn_client::tus_get_multislot_variable(u32 req_id, const SceNpCommunicationId& communication_id, const SceNpOnlineId& targetNpId, vm::cptr<SceNpTusSlotId> slotIdArray, s32 arrayNum, bool vuser)
@@ -2405,10 +2343,7 @@ namespace rpcn
 			pb_req.add_slotidarray(slotIdArray[i]);
 		}
 
-		std::string serialized;
-		pb_req.SerializeToString(&serialized);
-
-		return forge_request_with_com_id(serialized, communication_id, CommandType::TusGetMultiSlotVariable, req_id);
+		return forge_request_with_com_id(pb_req, communication_id, CommandType::TusGetMultiSlotVariable, req_id);
 	}
 
 	bool rpcn_client::tus_get_multiuser_variable(u32 req_id, const SceNpCommunicationId& communication_id, const std::vector<SceNpOnlineId>& targetNpIdArray, SceNpTusSlotId slotId, s32 arrayNum, bool vuser)
@@ -2423,10 +2358,7 @@ namespace rpcn
 			user->set_npid(targetNpIdArray[i].data);
 		}
 
-		std::string serialized;
-		pb_req.SerializeToString(&serialized);
-
-		return forge_request_with_com_id(serialized, communication_id, CommandType::TusGetMultiUserVariable, req_id);
+		return forge_request_with_com_id(pb_req, communication_id, CommandType::TusGetMultiUserVariable, req_id);
 	}
 
 	bool rpcn_client::tus_get_friends_variable(u32 req_id, const SceNpCommunicationId& communication_id, SceNpTusSlotId slotId, bool includeSelf, s32 sortType, s32 arrayNum)
@@ -2437,10 +2369,7 @@ namespace rpcn
 		pb_req.set_sorttype(sortType);
 		pb_req.set_arraynum(arrayNum);
 
-		std::string serialized;
-		pb_req.SerializeToString(&serialized);
-
-		return forge_request_with_com_id(serialized, communication_id, CommandType::TusGetFriendsVariable, req_id);
+		return forge_request_with_com_id(pb_req, communication_id, CommandType::TusGetFriendsVariable, req_id);
 	}
 
 	bool rpcn_client::tus_add_and_get_variable(u32 req_id, const SceNpCommunicationId& communication_id, const SceNpOnlineId& targetNpId, SceNpTusSlotId slotId, s64 inVariable, vm::ptr<SceNpTusAddAndGetVariableOptParam> option, bool vuser)
@@ -2465,10 +2394,7 @@ namespace rpcn
 			}
 		}
 
-		std::string serialized;
-		pb_req.SerializeToString(&serialized);
-
-		return forge_request_with_com_id(serialized, communication_id, CommandType::TusAddAndGetVariable, req_id);
+		return forge_request_with_com_id(pb_req, communication_id, CommandType::TusAddAndGetVariable, req_id);
 	}
 
 	bool rpcn_client::tus_try_and_set_variable(u32 req_id, const SceNpCommunicationId& communication_id, const SceNpOnlineId& targetNpId, SceNpTusSlotId slotId, s32 opeType, s64 variable, vm::ptr<SceNpTusTryAndSetVariableOptParam> option, bool vuser)
@@ -2499,10 +2425,7 @@ namespace rpcn
 			}
 		}
 
-		std::string serialized;
-		pb_req.SerializeToString(&serialized);
-
-		return forge_request_with_com_id(serialized, communication_id, CommandType::TusTryAndSetVariable, req_id);
+		return forge_request_with_com_id(pb_req, communication_id, CommandType::TusTryAndSetVariable, req_id);
 	}
 
 	bool rpcn_client::tus_delete_multislot_variable(u32 req_id, const SceNpCommunicationId& communication_id, const SceNpOnlineId& targetNpId, vm::cptr<SceNpTusSlotId> slotIdArray, s32 arrayNum, bool vuser)
@@ -2517,10 +2440,7 @@ namespace rpcn
 			pb_req.add_slotidarray(slotIdArray[i]);
 		}
 
-		std::string serialized;
-		pb_req.SerializeToString(&serialized);
-
-		return forge_request_with_com_id(serialized, communication_id, CommandType::TusDeleteMultiSlotVariable, req_id);
+		return forge_request_with_com_id(pb_req, communication_id, CommandType::TusDeleteMultiSlotVariable, req_id);
 	}
 
 	bool rpcn_client::tus_set_data(u32 req_id, SceNpCommunicationId& communication_id, const SceNpOnlineId& targetNpId, SceNpTusSlotId slotId, const std::vector<u8>& tus_data, vm::cptr<SceNpTusDataInfo> info, vm::ptr<SceNpTusSetDataOptParam> option, bool vuser)
@@ -2550,10 +2470,7 @@ namespace rpcn
 			}
 		}
 
-		std::string serialized;
-		pb_req.SerializeToString(&serialized);
-
-		return forge_request_with_com_id(serialized, communication_id, CommandType::TusSetData, req_id);
+		return forge_request_with_com_id(pb_req, communication_id, CommandType::TusSetData, req_id);
 	}
 
 	bool rpcn_client::tus_get_data(u32 req_id, SceNpCommunicationId& communication_id, const SceNpOnlineId& targetNpId, SceNpTusSlotId slotId, bool vuser)
@@ -2564,10 +2481,7 @@ namespace rpcn
 		user->set_npid(targetNpId.data);
 		pb_req.set_slotid(slotId);
 
-		std::string serialized;
-		pb_req.SerializeToString(&serialized);
-
-		return forge_request_with_com_id(serialized, communication_id, CommandType::TusGetData, req_id);
+		return forge_request_with_com_id(pb_req, communication_id, CommandType::TusGetData, req_id);
 	}
 
 	bool rpcn_client::tus_get_multislot_data_status(u32 req_id, SceNpCommunicationId& communication_id, const SceNpOnlineId& targetNpId, vm::cptr<SceNpTusSlotId> slotIdArray, s32 arrayNum, bool vuser)
@@ -2582,10 +2496,7 @@ namespace rpcn
 			pb_req.add_slotidarray(slotIdArray[i]);
 		}
 
-		std::string serialized;
-		pb_req.SerializeToString(&serialized);
-
-		return forge_request_with_com_id(serialized, communication_id, CommandType::TusGetMultiSlotDataStatus, req_id);
+		return forge_request_with_com_id(pb_req, communication_id, CommandType::TusGetMultiSlotDataStatus, req_id);
 	}
 
 	bool rpcn_client::tus_get_multiuser_data_status(u32 req_id, SceNpCommunicationId& communication_id, const std::vector<SceNpOnlineId>& targetNpIdArray, SceNpTusSlotId slotId, s32 arrayNum, bool vuser)
@@ -2600,10 +2511,7 @@ namespace rpcn
 			user->set_npid(targetNpIdArray[i].data);
 		}
 
-		std::string serialized;
-		pb_req.SerializeToString(&serialized);
-
-		return forge_request_with_com_id(serialized, communication_id, CommandType::TusGetMultiUserDataStatus, req_id);
+		return forge_request_with_com_id(pb_req, communication_id, CommandType::TusGetMultiUserDataStatus, req_id);
 	}
 
 	bool rpcn_client::tus_get_friends_data_status(u32 req_id, SceNpCommunicationId& communication_id, SceNpTusSlotId slotId, bool includeSelf, s32 sortType, s32 arrayNum)
@@ -2614,10 +2522,7 @@ namespace rpcn
 		pb_req.set_sorttype(sortType);
 		pb_req.set_arraynum(arrayNum);
 
-		std::string serialized;
-		pb_req.SerializeToString(&serialized);
-
-		return forge_request_with_com_id(serialized, communication_id, CommandType::TusGetFriendsDataStatus, req_id);
+		return forge_request_with_com_id(pb_req, communication_id, CommandType::TusGetFriendsDataStatus, req_id);
 	}
 
 	bool rpcn_client::tus_delete_multislot_data(u32 req_id, SceNpCommunicationId& communication_id, const SceNpOnlineId& targetNpId, vm::cptr<SceNpTusSlotId> slotIdArray, s32 arrayNum, bool vuser)
@@ -2632,10 +2537,7 @@ namespace rpcn
 			pb_req.add_slotidarray(slotIdArray[i]);
 		}
 
-		std::string serialized;
-		pb_req.SerializeToString(&serialized);
-
-		return forge_request_with_com_id(serialized, communication_id, CommandType::TusDeleteMultiSlotData, req_id);
+		return forge_request_with_com_id(pb_req, communication_id, CommandType::TusDeleteMultiSlotData, req_id);
 	}
 
 	bool rpcn_client::send_presence(const SceNpCommunicationId& pr_com_id, const std::string& pr_title, const std::string& pr_status, const std::string& pr_comment, const std::vector<u8>& pr_data)
@@ -2646,10 +2548,7 @@ namespace rpcn
 		pb_req.set_comment(pr_comment);
 		pb_req.set_data(pr_data.data(), pr_data.size());
 
-		std::string serialized;
-		pb_req.SerializeToString(&serialized);
-
-		return forge_request_with_com_id(serialized, pr_com_id, CommandType::SetPresence, rpcn_request_counter.fetch_add(1));
+		return forge_request_with_com_id(pb_req, pr_com_id, CommandType::SetPresence, rpcn_request_counter.fetch_add(1));
 	}
 
 	bool rpcn_client::unlock_trophy(const SceNpCommunicationId& communication_id, s32 trophy_id, s64 timestamp)
@@ -2780,10 +2679,7 @@ namespace rpcn
 		pb_req.set_privilege_grant(privilege_grant);
 		pb_req.set_stealth(stealth);
 
-		std::string serialized;
-		pb_req.SerializeToString(&serialized);
-
-		return forge_request_with_com_id(serialized, communication_id, CommandType::CreateRoomGUI, req_id);
+		return forge_request_with_com_id(pb_req, communication_id, CommandType::CreateRoomGUI, req_id);
 	}
 
 	bool rpcn_client::join_room_gui(u32 req_id, const SceNpRoomId& room_id)
@@ -2791,10 +2687,7 @@ namespace rpcn
 		np2_structs::MatchingGuiRoomId pb_req;
 		pb_req.set_id(room_id.opt, sizeof(room_id.opt));
 
-		std::string serialized;
-		pb_req.SerializeToString(&serialized);
-
-		return forge_request_with_data(serialized, CommandType::JoinRoomGUI, req_id);
+		return forge_request_with_data(pb_req, CommandType::JoinRoomGUI, req_id);
 	}
 
 	bool rpcn_client::leave_room_gui(u32 req_id, const SceNpRoomId& room_id)
@@ -2802,10 +2695,7 @@ namespace rpcn
 		np2_structs::MatchingGuiRoomId pb_req;
 		pb_req.set_id(room_id.opt, sizeof(room_id.opt));
 
-		std::string serialized;
-		pb_req.SerializeToString(&serialized);
-
-		return forge_request_with_data(serialized, CommandType::LeaveRoomGUI, req_id);
+		return forge_request_with_data(pb_req, CommandType::LeaveRoomGUI, req_id);
 	}
 
 	bool rpcn_client::get_room_list_gui(u32 req_id, const SceNpCommunicationId& communication_id, const SceNpMatchingReqRange* range, vm::ptr<SceNpMatchingSearchCondition> cond, vm::ptr<SceNpMatchingAttr> attr)
@@ -2830,10 +2720,7 @@ namespace rpcn
 			pb_attr->set_attr_id(cur_attr->id);
 		}
 
-		std::string serialized;
-		pb_req.SerializeToString(&serialized);
-
-		return forge_request_with_com_id(serialized, communication_id, CommandType::GetRoomListGUI, req_id);
+		return forge_request_with_com_id(pb_req, communication_id, CommandType::GetRoomListGUI, req_id);
 	}
 
 	bool rpcn_client::set_room_search_flag_gui(u32 req_id, const SceNpRoomId& room_id, bool stealth)
@@ -2842,10 +2729,7 @@ namespace rpcn
 		pb_req.set_roomid(room_id.opt, sizeof(room_id.opt));
 		pb_req.set_stealth(stealth);
 
-		std::string serialized;
-		pb_req.SerializeToString(&serialized);
-
-		return forge_request_with_data(serialized, CommandType::SetRoomSearchFlagGUI, req_id);
+		return forge_request_with_data(pb_req, CommandType::SetRoomSearchFlagGUI, req_id);
 	}
 
 	bool rpcn_client::get_room_search_flag_gui(u32 req_id, const SceNpRoomId& room_id)
@@ -2853,10 +2737,7 @@ namespace rpcn
 		np2_structs::MatchingGuiRoomId pb_req;
 		pb_req.set_id(room_id.opt, sizeof(room_id.opt));
 
-		std::string serialized;
-		pb_req.SerializeToString(&serialized);
-
-		return forge_request_with_data(serialized, CommandType::GetRoomSearchFlagGUI, req_id);
+		return forge_request_with_data(pb_req, CommandType::GetRoomSearchFlagGUI, req_id);
 	}
 
 	bool rpcn_client::set_room_info_gui(u32 req_id, const SceNpRoomId& room_id, vm::ptr<SceNpMatchingAttr> attrs)
@@ -2886,10 +2767,7 @@ namespace rpcn
 			}
 		}
 
-		std::string serialized;
-		pb_req.SerializeToString(&serialized);
-
-		return forge_request_with_data(serialized, CommandType::SetRoomInfoGUI, req_id);
+		return forge_request_with_data(pb_req, CommandType::SetRoomInfoGUI, req_id);
 	}
 
 	bool rpcn_client::get_room_info_gui(u32 req_id, const SceNpRoomId& room_id, vm::ptr<SceNpMatchingAttr> attrs)
@@ -2904,10 +2782,7 @@ namespace rpcn
 			pb_attr->set_attr_id(cur_attr->id);
 		}
 
-		std::string serialized;
-		pb_req.SerializeToString(&serialized);
-
-		return forge_request_with_data(serialized, CommandType::GetRoomInfoGUI, req_id);
+		return forge_request_with_data(pb_req, CommandType::GetRoomInfoGUI, req_id);
 	}
 
 	bool rpcn_client::quickmatch_gui(u32 req_id, const SceNpCommunicationId& com_id, vm::cptr<SceNpMatchingSearchCondition> cond, s32 available_num)
@@ -2924,10 +2799,7 @@ namespace rpcn
 			pb_cond->set_comp_value(cur_cond->compared.value.num);
 		}
 
-		std::string serialized;
-		pb_req.SerializeToString(&serialized);
-
-		return forge_request_with_com_id(serialized, com_id, CommandType::QuickMatchGUI, req_id);
+		return forge_request_with_com_id(pb_req, com_id, CommandType::QuickMatchGUI, req_id);
 	}
 
 	bool rpcn_client::searchjoin_gui(u32 req_id, const SceNpCommunicationId& com_id, vm::cptr<SceNpMatchingSearchCondition> cond, vm::cptr<SceNpMatchingAttr> attr)
@@ -2950,42 +2822,40 @@ namespace rpcn
 			pb_attr->set_attr_id(cur_attr->id);
 		}
 
-		std::string serialized;
-		pb_req.SerializeToString(&serialized);
-
-		return forge_request_with_com_id(serialized, com_id, CommandType::SearchJoinRoomGUI, req_id);
+		return forge_request_with_com_id(pb_req, com_id, CommandType::SearchJoinRoomGUI, req_id);
 	}
 
 	void rpcn_client::write_communication_id(const SceNpCommunicationId& com_id, std::vector<u8>& data)
 	{
+		write_communication_id(com_id, data.data());
+	}
+
+	void rpcn_client::write_communication_id(const SceNpCommunicationId& com_id, u8* out)
+	{
 		ensure(np::validate_communication_id(com_id), "rpcn_client::write_communication_id: Invalid SceNpCommunicationId");
 		const std::string com_id_str = np::communication_id_to_string(com_id);
 		ensure(com_id_str.size() == 12, "rpcn_client::write_communication_id: Error formatting SceNpCommunicationId");
-		memcpy(data.data(), com_id_str.data(), COMMUNICATION_ID_SIZE);
+		memcpy(out, com_id_str.data(), COMMUNICATION_ID_SIZE);
 	}
 
-	bool rpcn_client::forge_request_with_com_id(std::string_view serialized_data, const SceNpCommunicationId& com_id, CommandType command, u64 packet_id)
+
+	std::vector<u8> rpcn_client::forge_message_packet(rpcn::CommandType command, u64 packet_id, const SceNpCommunicationId* com_id, usz msg_size, usz extra_size, usz& msg_at) const
 	{
-		const usz bufsize = serialized_data.size();
-		std::vector<u8> data(COMMUNICATION_ID_SIZE + sizeof(u32) + bufsize);
+		const usz head = RPCN_HEADER_SIZE + (com_id ? COMMUNICATION_ID_SIZE : 0);
+		const usz packet_size = head + sizeof(u32) + msg_size + extra_size;
 
-		rpcn_client::write_communication_id(com_id, data);
+		std::vector<u8> packet(packet_size);
+		packet[0] = static_cast<u8>(PacketType::Request);
+		write_to_ptr<le_t<u16>>(packet, 1, static_cast<u16>(command));
+		write_to_ptr<le_t<u32>>(packet, 3, ::narrow<u32>(packet_size));
+		write_to_ptr<le_t<u64>>(packet, 7, packet_id);
 
-		write_to_ptr<le_t<u32>>(data, COMMUNICATION_ID_SIZE, static_cast<u32>(bufsize));
-		memcpy(data.data() + COMMUNICATION_ID_SIZE + sizeof(u32), serialized_data.data(), bufsize);
+		if (com_id)
+			write_communication_id(*com_id, packet.data() + RPCN_HEADER_SIZE);
 
-		return forge_send(command, packet_id, data);
-	}
-
-	bool rpcn_client::forge_request_with_data(std::string_view serialized_data, CommandType command, u64 packet_id)
-	{
-		const usz bufsize = serialized_data.size();
-		std::vector<u8> data(sizeof(u32) + bufsize);
-
-		write_to_ptr<le_t<u32>>(data, 0, static_cast<u32>(bufsize));
-		memcpy(data.data() + sizeof(u32), serialized_data.data(), bufsize);
-
-		return forge_send(command, packet_id, data);
+		write_to_ptr<le_t<u32>>(packet, head, static_cast<u32>(msg_size));
+		msg_at = head + sizeof(u32);
+		return packet;
 	}
 
 	std::vector<u8> rpcn_client::forge_request(rpcn::CommandType command, u64 packet_id, const std::vector<u8>& data) const
@@ -3265,8 +3135,8 @@ namespace rpcn
 			.mainType = static_cast<u16>(main_type),
 			.subType = static_cast<u16>(sub_type),
 			.msgFeatures = pb_mdata->msgfeatures(),
-			.subject = pb_mdata->subject(),
-			.body = pb_mdata->body()};
+			.subject = std::string(pb_mdata->subject()),
+			.body = std::string(pb_mdata->body())};
 
 		mdata.commId = *communication_id;
 		mdata.data.assign(pb_mdata->data().begin(), pb_mdata->data().end());

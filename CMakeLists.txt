@@ -30,7 +30,6 @@ option(STATIC_LINK_LLVM "Link against LLVM statically. This will get set to ON i
 option(USE_VULKAN "Vulkan render backend" ON)
 option(USE_PRECOMPILED_HEADERS "Use precompiled headers" OFF)
 option(USE_SYSTEM_FFMPEG "Prefer system ffmpeg instead of the prebuild one" OFF)
-option(USE_SYSTEM_PROTOBUF "Prefer system protobuf instead of the builtin one" OFF)
 option(USE_SYSTEM_GLSLANG "Prefer system glslang instead of the builtin one" OFF)
 option(USE_SYSTEM_LIBUSB "Prefer system libusb instead of the builtin one" OFF)
 option(USE_SYSTEM_MVK "Prefer system MoltenVK instead of the builtin one" OFF)

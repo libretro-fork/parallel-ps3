@@ -459,7 +459,7 @@ target_sources(rpcs3_emu PRIVATE
     NP/upnp_handler.cpp
     NP/net_http_thread.cpp
     NP/ip_address.cpp
-    NP/generated/np2_structs.pb.cc
+    NP/generated/np2_structs.cpp
 )
 
 # Memory
@@ -676,7 +676,6 @@ target_link_libraries(rpcs3_emu
         3rdparty::vulkan
         3rdparty::glew
         3rdparty::libusb
-        3rdparty::protobuf
         3rdparty::vulkanmemoryallocator
         libretro_common
         Threads::Threads
