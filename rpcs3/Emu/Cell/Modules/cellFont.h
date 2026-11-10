@@ -315,8 +315,8 @@ struct CellFont
 
 	be_t<u32> fontdata_addr;
 	be_t<u32> origin;
-	struct stbtt_fontinfo* stbfont;
-	// hack: don't place anything after pointer
+	// The face, in the host's table (cellFont.cpp), not in guest memory
+	struct cell_font_face* face;
 };
 
 struct CellFontRendererConfig

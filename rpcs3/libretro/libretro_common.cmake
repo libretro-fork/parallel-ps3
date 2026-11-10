@@ -32,6 +32,7 @@ add_library(libretro_common STATIC
     ${LIBRETRO_COMMON_DIR}/formats/xml/rxml.c
     ${LIBRETRO_COMMON_DIR}/formats/yaml/ryaml.c
     ${LIBRETRO_COMMON_DIR}/formats/yaml/ryaml_writer.c
+    ${LIBRETRO_COMMON_DIR}/gfx/font/rtt.c
     ${LIBRETRO_COMMON_DIR}/hash/lrc_hash.c
     ${LIBRETRO_COMMON_DIR}/lists/string_list.c
     ${LIBRETRO_COMMON_DIR}/net/net_compat.c

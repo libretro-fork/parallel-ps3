@@ -16,7 +16,7 @@ LRC_STD  := -std=gnu99
 # as libretro_common.cmake builds it: net_http over its own TLS client
 LRC_DEFS := -DHAVE_SSL -DHAVE_RETROSSL -DHAVE_CRYPTO
 
-TESTS := test_zstd test_deflate test_rxml test_png_rows test_images test_http test_bcn test_tls_duplex test_yaml
+TESTS := test_zstd test_deflate test_rxml test_png_rows test_images test_http test_bcn test_tls_duplex test_yaml test_font
 
 test_zstd_LRC := \
 	$(LRC)/encodings/encoding_rzstd.c \
@@ -58,9 +58,16 @@ obj/libpng/%.o: $(LIBPNG)/pnglibconf.h
 	@mkdir -p $(@D)
 	$(CC) -O2 -w $(LIBPNG_DEF) -I$(LIBPNG) -c -o $@ $(LIBPNG)/$*.c
 
-# stb_image is the oracle for rpng, rjpeg and rgif: the stb RPCS3 pins
-# (3rdparty/stblib/stb, a submodule), which also writes the PNGs and JPEGs
-STB := ../../../3rdparty/stblib/stb
+# stb is the oracle for rpng, rjpeg and rgif (stb_image, whose writer
+# also makes the PNGs and JPEGs) and for rtt (stb_truetype): the commit
+# RPCS3 pinned (3rdparty/stblib/stb, gone)
+STB        := stb-013ac3b
+STB_COMMIT := 013ac3beddff3dbffafd5177e7972067cd2b5083
+
+$(STB)/stb_image.h:
+	git clone -q https://github.com/nothings/stb.git $(STB)
+	git -C $(STB) checkout -q $(STB_COMMIT)
+
 test_images_LRC := \
 	$(LRC)/formats/png/rpng.c \
 	$(LRC)/formats/jpeg/rjpeg.c \
@@ -148,11 +155,11 @@ obj/test_png_rows.o: test_png_rows.c test_common.h ../../Emu/Cell/Modules/cellPn
 test_png_rows: obj/test_png_rows.o obj/cellPngDec_rows.o $(call lrc_objs,$(test_png_rows_LRC)) $(LIBPNG_OBJ)
 	$(CC) $(SANITIZE) -o $@ $^ $(LDFLAGS) -lz $(LDLIBS)
 
-obj/test_images.o: test_images.c
+obj/test_images.o: test_images.c $(STB)/stb_image.h
 	@mkdir -p $(@D)
 	$(CC) $(CFLAGS) $(LRC_STD) -I$(STB) $(SANITIZE) -c -o $@ $<
 
-obj/stb_impl.o: stb_impl.c
+obj/stb_impl.o: stb_impl.c $(STB)/stb_image.h
 	@mkdir -p $(@D)
 	$(CC) -O2 -w $(LRC_STD) -I$(STB) -c -o $@ $<
 
@@ -180,6 +187,19 @@ test_tls_duplex: obj/test_tls_duplex.o $(call lrc_objs,$(sort $(test_http_LRC)))
 test_yaml: obj/test_yaml.o $(call lrc_objs,$(test_yaml_LRC))
 	$(CC) $(SANITIZE) -o $@ $^ $(LDFLAGS) $(LDLIBS)
 
+# the overlays' packer is the core's own header, built here as C (gnu99,
+# as stb_truetype is not C89)
+test_font_LRC := \
+	$(LRC)/gfx/font/rtt.c \
+	$(test_deflate_LRC)
+
+obj/test_font.o: test_font.c ../../Emu/RSX/Overlays/overlay_font_pack.h $(STB)/stb_image.h
+	@mkdir -p $(@D)
+	$(CC) $(CFLAGS) $(LRC_STD) -Wdeclaration-after-statement -isystem $(STB) $(SANITIZE) -c -o $@ $<
+
+test_font: obj/test_font.o obj/stb_impl.o $(call lrc_objs,$(sort $(test_font_LRC)))
+	$(CC) $(SANITIZE) -o $@ $^ $(LDFLAGS) $(LDLIBS)
+
 test_bcn: obj/test_bcn.o obj/bcdec_impl.o $(call lrc_objs,$(test_bcn_LRC))
 	$(CC) $(SANITIZE) -o $@ $^ $(LDFLAGS) $(LDLIBS)
 
@@ -197,6 +217,7 @@ check: all
 	./test_bcn
 	./tls_duplex_test.sh ./test_tls_duplex
 	./test_yaml fixtures
+	./test_font fixtures
 
 clean:
 	rm -rf obj $(TESTS) *_out.*

@@ -99,8 +99,6 @@ else()
 	target_compile_definitions(3rdparty_opengl INTERFACE WITHOUT_OPENGL=1)
 endif()
 
-# stblib
-add_subdirectory(stblib)
 
 # Vulkan
 set(VULKAN_TARGET 3rdparty_dummy_lib)
@@ -255,7 +253,6 @@ endif()
 add_library(3rdparty::protobuf ALIAS 3rdparty_protobuf)
 add_library(3rdparty::glslang ALIAS 3rdparty_glslang)
 add_library(3rdparty::opengl ALIAS 3rdparty_opengl)
-add_library(3rdparty::stblib ALIAS 3rdparty_stblib)
 add_library(3rdparty::vulkan ALIAS ${VULKAN_TARGET})
 add_library(3rdparty::ffmpeg ALIAS 3rdparty_ffmpeg)
 add_library(3rdparty::glew ALIAS 3rdparty_glew)

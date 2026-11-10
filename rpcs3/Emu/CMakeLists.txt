@@ -5,7 +5,6 @@ add_library(rpcs3_emu STATIC
     localized_string.cpp
     savestate_utils.cpp
     scoped_progress_dialog.cpp
-    stb_image.cpp
     System.cpp
     system_config.cpp
     system_config_types.cpp
@@ -674,7 +673,6 @@ target_link_libraries(rpcs3_emu
         3rdparty::asmjit
         3rdparty::ffmpeg
         3rdparty::opengl
-        3rdparty::stblib
         3rdparty::vulkan
         3rdparty::glew
         3rdparty::libusb

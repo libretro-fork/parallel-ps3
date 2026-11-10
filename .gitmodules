@@ -23,10 +23,6 @@
 	path = 3rdparty/rtmidi/rtmidi
 	url = ../../thestk/rtmidi
 	ignore = dirty
-[submodule "3rdparty/stblib/stb"]
-	path = 3rdparty/stblib/stb
-	url = ../../nothings/stb.git
-	ignore = dirty
 [submodule "3rdparty/opencv/opencv"]
 	path = 3rdparty/opencv/opencv
 	url = ../../Megamouse/opencv_minimal.git

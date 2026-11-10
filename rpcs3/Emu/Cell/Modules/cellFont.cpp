@@ -1,12 +1,98 @@
 #include "stdafx.h"
 #include "Emu/VFS.h"
 #include "Emu/Cell/PPUModule.h"
+#include "Emu/IdManager.h"
 
-#include <stb_truetype.h>
+#include "Emu/RSX/Overlays/overlay_font_pack.h"
 
 #include "cellFont.h"
 
+#include <cmath>
+
 LOG_CHANNEL(cellFont);
+
+// A font a game opened, read in place from its memory by libretro-common's
+// rtt. The faces live here, in a table claimed with atomics, instead of in
+// guest memory after the game's CellFont; the CellFont holds a pointer.
+struct cell_font_face
+{
+	atomic_t<u32> owner{0}; // the CellFont's address; 0 when free
+	rtt_font_t info{};
+
+	// Pixels per font unit at a height of @height pixels
+	f32 scale(f32 height) const
+	{
+		int ascent = 0, descent = 0, line_gap = 0;
+		rtt_vmetrics(&info, &ascent, &descent, &line_gap);
+		return ascent != descent ? height / static_cast<f32>(ascent - descent) : 0.f;
+	}
+};
+
+struct cell_font_faces
+{
+	static constexpr usz face_count = 256;
+	cell_font_face faces[face_count];
+
+	// The rasterizer's memory, kept from glyph to glyph and lent to one
+	// drawing thread at a time
+	static constexpr usz scratch_count = 8;
+	atomic_t<u32> scratch_lent[scratch_count]{};
+	rtt_scratch_t scratch[scratch_count]{};
+
+	cell_font_faces() = default;
+	cell_font_faces(const cell_font_faces&) = delete;
+	cell_font_faces& operator=(const cell_font_faces&) = delete;
+
+	~cell_font_faces()
+	{
+		for (rtt_scratch_t& sc : scratch)
+			rtt_scratch_free(&sc);
+	}
+
+	// The face @p points to, if it is one of ours and open
+	cell_font_face* check(const cell_font_face* p)
+	{
+		const uptr off = reinterpret_cast<uptr>(p) - reinterpret_cast<uptr>(faces);
+		if (off >= sizeof(faces) || off % sizeof(cell_font_face))
+			return nullptr;
+		cell_font_face* face = &faces[off / sizeof(cell_font_face)];
+		return face->owner ? face : nullptr;
+	}
+
+	// A free face for the CellFont at @addr: the one it has if it is opened
+	// again, else the first free one
+	cell_font_face* claim(u32 addr, const cell_font_face* had)
+	{
+		if (cell_font_face* face = check(had); face && face->owner == addr)
+			return face;
+		for (cell_font_face& face : faces)
+		{
+			if (face.owner.compare_and_swap_test(0, addr))
+				return &face;
+		}
+		return nullptr;
+	}
+
+	rtt_scratch_t* lend(usz& slot)
+	{
+		for (slot = 0; slot < scratch_count; slot++)
+		{
+			if (scratch_lent[slot].compare_and_swap_test(0, 1))
+				return &scratch[slot];
+		}
+		return nullptr;
+	}
+
+	void give_back(usz slot)
+	{
+		scratch_lent[slot].release(0);
+	}
+};
+
+static cell_font_face* font_face(vm::ptr<CellFont> font)
+{
+	return g_fxo->get<cell_font_faces>().check(font->face);
+}
 
 template <>
 void fmt_class_string<CellFontError>::format(std::string& out, u64 arg)
@@ -135,12 +221,30 @@ error_code cellFontOpenFontMemory(vm::ptr<CellFontLibrary> library, u32 fontAddr
 
 	// TODO
 
-	font->stbfont = vm::_ptr<stbtt_fontinfo>(font.addr() + font.size()); // hack: use next bytes of the struct
+	cell_font_face* face = g_fxo->get<cell_font_faces>().claim(font.addr(), font->face);
 
-	if (!stbtt_InitFont(font->stbfont, vm::_ptr<unsigned char>(fontAddr), 0))
+	if (!face)
 	{
+		return CELL_FONT_ERROR_FONT_OPEN_MAX;
+	}
+
+	const u8* data = vm::_ptr<u8>(fontAddr);
+	int offset = rtt_font_offset_for_index(data, fontSize, subNum);
+
+	if (offset < 0)
+	{
+		offset = rtt_font_offset_for_index(data, fontSize, 0);
+	}
+
+	if (offset < 0 || !rtt_init(&face->info, data, fontSize, offset))
+	{
+		face->owner.release(0);
+		font->face = nullptr;
 		return CELL_FONT_ERROR_FONT_OPEN_FAILED;
 	}
+
+	rtt_set_flatness(&face->info, RPCS3_FONT_FLATNESS);
+	font->face = face;
 
 	font->renderer_addr = 0;
 	font->fontdata_addr = fontAddr;
@@ -323,7 +427,7 @@ error_code cellFontOpenFontInstance(vm::ptr<CellFont> openedFont, vm::ptr<CellFo
 	font->scale_x = openedFont->scale_x;
 	font->scale_y = openedFont->scale_y;
 	font->slant = openedFont->slant;
-	font->stbfont = openedFont->stbfont;
+	font->face = openedFont->face;
 	font->origin = CELL_FONT_OPEN_FONT_INSTANCE;
 
 	return CELL_OK;
@@ -549,9 +653,16 @@ error_code cellFontGetHorizontalLayout(vm::ptr<CellFont> font, vm::ptr<CellFontH
 		return CELL_FONT_ERROR_INVALID_PARAMETER;
 	}
 
-	s32 ascent, descent, lineGap;
-	const f32 scale = stbtt_ScaleForPixelHeight(font->stbfont, font->scale_y);
-	stbtt_GetFontVMetrics(font->stbfont, &ascent, &descent, &lineGap);
+	const cell_font_face* face = font_face(font);
+
+	if (!face)
+	{
+		return CELL_FONT_ERROR_INVALID_PARAMETER;
+	}
+
+	int ascent = 0, descent = 0, lineGap = 0;
+	const f32 scale = face->scale(font->scale_y);
+	rtt_vmetrics(&face->info, &ascent, &descent, &lineGap);
 
 	layout->baseLineY = ascent * scale;
 	layout->lineHeight = (ascent-descent+lineGap) * scale;
@@ -707,38 +818,69 @@ error_code cellFontRenderCharGlyphImage(vm::ptr<CellFont> font, u32 code, vm::pt
 		return CELL_FONT_ERROR_RENDERER_UNBIND;
 	}
 
-	// Render the character
-	s32 width, height, xoff, yoff;
-	const f32 scale = stbtt_ScaleForPixelHeight(font->stbfont, font->scale_y);
-	unsigned char* box = stbtt_GetCodepointBitmap(font->stbfont, scale, scale, code, &width, &height, &xoff, &yoff);
+	const cell_font_face* face = font_face(font);
 
-	if (!box)
+	if (!face)
+	{
+		return CELL_FONT_ERROR_INVALID_PARAMETER;
+	}
+
+	// The character's box, in pixels from the pen
+	const f32 scale = face->scale(font->scale_y);
+	const int glyph = rtt_find_glyph(&face->info, code);
+	int x0 = 0, y0 = 0, x1 = 0, y1 = 0;
+
+	if (!rtt_glyph_box(&face->info, glyph, &x0, &y0, &x1, &y1))
+	{
+		return CELL_OK;
+	}
+
+	const s32 xoff = static_cast<s32>(std::floor(static_cast<f32>(x0) * scale));
+	const s32 yoff = static_cast<s32>(std::floor(static_cast<f32>(-y1) * scale));
+	const s32 width = static_cast<s32>(std::ceil(static_cast<f32>(x1) * scale)) - xoff;
+	const s32 height = static_cast<s32>(std::ceil(static_cast<f32>(-y0) * scale)) - yoff;
+
+	if (width <= 0 || height <= 0)
 	{
 		return CELL_OK;
 	}
 
 	// Get the baseLineY value
-	s32 ascent, descent, lineGap;
-	stbtt_GetFontVMetrics(font->stbfont, &ascent, &descent, &lineGap);
+	int ascent = 0, descent = 0, lineGap = 0;
+	rtt_vmetrics(&face->info, &ascent, &descent, &lineGap);
 	const s32 baseLineY = static_cast<int>(ascent * scale); // ???
 
-	// Move the rendered character to the surface
-	unsigned char* buffer = vm::_ptr<unsigned char>(surface->buffer.addr());
-	for (u32 ypos = 0; ypos < static_cast<u32>(height); ypos++)
+	// The part of the surface the character covers, cut at its right and
+	// bottom edges; nothing when it starts above or left of the surface
+	// TODO: There are some oddities in the position of the character in the final buffer
+	const s32 top = static_cast<s32>(y) + yoff + baseLineY;
+	const s32 left = static_cast<s32>(x);
+	const s32 surf_w = static_cast<s32>(surface->width);
+	const s32 surf_h = static_cast<s32>(surface->height);
+
+	if (top < 0 || left < 0 || top >= surf_h || left >= surf_w)
 	{
-		if (static_cast<u32>(y) + ypos + yoff + baseLineY >= static_cast<u32>(surface->height))
-			break;
-
-		for (u32 xpos = 0; xpos < static_cast<u32>(width); xpos++)
-		{
-			if (static_cast<u32>(x) + xpos >= static_cast<u32>(surface->width))
-				break;
-
-			// TODO: There are some oddities in the position of the character in the final buffer
-			buffer[(static_cast<s32>(y) + ypos + yoff + baseLineY) * surface->width + static_cast<s32>(x) + xpos] = box[ypos * width + xpos];
-		}
+		return CELL_OK;
 	}
-	stbtt_FreeBitmap(box, nullptr);
+
+	// Drawn straight into the surface
+	auto& faces = g_fxo->get<cell_font_faces>();
+	usz slot = 0;
+	rtt_scratch_t own{};
+	rtt_scratch_t* sc = faces.lend(slot);
+	u8* buffer = vm::_ptr<u8>(surface->buffer.addr());
+	rtt_render_glyph(&face->info, sc ? sc : &own, buffer + static_cast<usz>(top) * surf_w + left,
+		std::min(width, surf_w - left), std::min(height, surf_h - top), surf_w, scale, scale, glyph, x0, y1, 0);
+
+	if (sc)
+	{
+		faces.give_back(slot);
+	}
+	else
+	{
+		rtt_scratch_free(&own);
+	}
+
 	return CELL_OK;
 }
 
@@ -859,6 +1001,12 @@ error_code cellFontCloseFont(vm::ptr<CellFont> font)
 		font->origin == CELL_FONT_OPEN_FONT_FILE ||
 		font->origin == CELL_FONT_OPEN_MEMORY)
 	{
+		if (cell_font_face* face = font_face(font); face && face->owner == font.addr())
+		{
+			face->owner.release(0);
+		}
+
+		font->face = nullptr;
 		vm::dealloc(font->fontdata_addr, vm::main);
 	}
 
@@ -884,11 +1032,19 @@ error_code cellFontGetCharGlyphMetrics(vm::ptr<CellFont> font, u32 code, vm::ptr
 		return CELL_FONT_ERROR_NO_SUPPORT_CODE;
 	}
 
-	s32 x0, y0, x1, y1;
-	s32 advanceWidth, leftSideBearing;
-	const f32 scale = stbtt_ScaleForPixelHeight(font->stbfont, font->scale_y);
-	stbtt_GetCodepointBox(font->stbfont, code, &x0, &y0, &x1, &y1);
-	stbtt_GetCodepointHMetrics(font->stbfont, code, &advanceWidth, &leftSideBearing);
+	const cell_font_face* face = font_face(font);
+
+	if (!face)
+	{
+		return CELL_FONT_ERROR_INVALID_PARAMETER;
+	}
+
+	int x0 = 0, y0 = 0, x1 = 0, y1 = 0;
+	int advanceWidth = 0, leftSideBearing = 0;
+	const f32 scale = face->scale(font->scale_y);
+	const int glyph = rtt_find_glyph(&face->info, code);
+	rtt_glyph_box(&face->info, glyph, &x0, &y0, &x1, &y1);
+	rtt_glyph_hmetrics(&face->info, glyph, &advanceWidth, &leftSideBearing);
 
 	// TODO: Add the rest of the information
 	metrics->width = (x1-x0) * scale;

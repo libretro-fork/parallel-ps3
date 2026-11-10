@@ -23,29 +23,29 @@ namespace rsx
 			glyph_data.resize(bitmap_width * bitmap_height);
 			pack_info.resize(256);
 
-			stbtt_pack_context context;
-			if (!stbtt_PackBegin(&context, glyph_data.data(), bitmap_width, bitmap_height, 0, 1, nullptr))
+			// The font is read where it lies; the rasterizer's memory is
+			// kept from glyph to glyph and let go once the page is drawn
+			rtt_font_t info;
+			const int offset = rtt_font_offset_for_index(ttf_data.data(), ttf_data.size(), 0);
+			if (offset < 0 || !rtt_init(&info, ttf_data.data(), ttf_data.size(), offset))
 			{
 				rsx_log.error("Font packing failed");
 				return;
 			}
+			rtt_set_flatness(&info, RPCS3_FONT_FLATNESS);
 
-			stbtt_PackSetOversampling(&context, oversample, oversample);
-
-			if (!stbtt_PackFontRange(&context, ttf_data.data(), 0, font_size, (codepage_id * 256), 256, pack_info.data()))
+			rtt_scratch_t scratch{};
+			if (!font_pack_range(&info, &scratch, glyph_data.data(), bitmap_width, bitmap_height, font_size, codepage_id * 256, 256, oversample, pack_info.data()))
 			{
 				rsx_log.error("Font packing failed");
-				stbtt_PackEnd(&context);
-				return;
 			}
-
-			stbtt_PackEnd(&context);
+			rtt_scratch_free(&scratch);
 		}
 
-		stbtt_aligned_quad codepage::get_char(char32_t c, f32& x_advance, f32& y_advance)
+		font_quad codepage::get_char(char32_t c, f32& x_advance, f32& y_advance)
 		{
-			stbtt_aligned_quad quad;
-			stbtt_GetPackedQuad(pack_info.data(), bitmap_width, bitmap_height, (c - glyph_base), &x_advance, &y_advance, &quad, false);
+			font_quad quad;
+			font_packed_quad(&pack_info[c - glyph_base], bitmap_width, bitmap_height, &x_advance, &y_advance, &quad);
 
 			quad.t0 += sampler_z;
 			quad.t1 += sampler_z;
@@ -195,10 +195,11 @@ namespace rsx
 				f.read(bytes, f.size());
 
 				// Check if the character exists in the font
-				stbtt_fontinfo info;
-				if (stbtt_InitFont(&info, bytes.data(), stbtt_GetFontOffsetForIndex(bytes.data(), 0)) != 0)
+				rtt_font_t info;
+				const int offset = rtt_font_offset_for_index(bytes.data(), bytes.size(), 0);
+				if (offset >= 0 && rtt_init(&info, bytes.data(), bytes.size(), offset))
 				{
-					font_found = stbtt_FindGlyphIndex(&info, c) != 0;
+					font_found = rtt_find_glyph(&info, c) != 0;
 				}
 
 				if (!font_found)
@@ -290,7 +291,7 @@ namespace rsx
 			return ret;
 		}
 
-		stbtt_aligned_quad font::get_char(char32_t c, f32& x_advance, f32& y_advance)
+		font_quad font::get_char(char32_t c, f32& x_advance, f32& y_advance)
 		{
 			if (!initialized)
 				return {};
@@ -363,7 +364,7 @@ namespace rsx
 				default:
 				{
 					const bool is_whitespace = c == ' ';
-					stbtt_aligned_quad quad{};
+					font_quad quad{};
 
 					if (is_whitespace)
 					{

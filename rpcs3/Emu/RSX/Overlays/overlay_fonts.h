@@ -6,8 +6,8 @@
 #include <memory>
 #include <vector>
 
-// STB_TRUETYPE_IMPLEMENTATION defined externally
-#include <stb_truetype.h>
+// Glyphs are drawn by libretro-common's rtt, packed as stb_truetype packed them
+#include "overlay_font_pack.h"
 
 namespace rsx
 {
@@ -36,13 +36,13 @@ namespace rsx
 			static constexpr u32 char_count = 256; // 16x16 grid at max 48pt
 			static constexpr u32 oversample = 2;
 
-			std::vector<stbtt_packedchar> pack_info;
+			std::vector<font_packed_char> pack_info;
 			std::vector<u8> glyph_data;
 			char32_t glyph_base = 0;
 			f32 sampler_z = 0.f;
 
 			void initialize_glyphs(char32_t codepage_id, f32 font_size, const std::vector<u8>& ttf_data);
-			stbtt_aligned_quad get_char(char32_t c, f32& x_advance, f32& y_advance);
+			font_quad get_char(char32_t c, f32& x_advance, f32& y_advance);
 		};
 
 		class font
@@ -71,7 +71,7 @@ namespace rsx
 
 			font(std::string_view ttf_name, f32 size);
 
-			stbtt_aligned_quad get_char(char32_t c, f32& x_advance, f32& y_advance);
+			font_quad get_char(char32_t c, f32& x_advance, f32& y_advance);
 
 			std::vector<vertex> render_text_ex(f32& x_advance, f32& y_advance, const char32_t* text, usz char_limit, u16 max_width, bool wrap);
 
