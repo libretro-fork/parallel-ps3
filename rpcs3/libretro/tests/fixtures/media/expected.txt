@@ -151,3 +151,27 @@ TAG:major_brand=isom
 TAG:minor_version=512
 TAG:compatible_brands=isomiso2mp41
 TAG:encoder=Lavf60.16.100
+== video_xvid.avi
+codec_name=mpeg4
+codec_type=video
+codec_name=mp3
+codec_type=audio
+sample_rate=48000
+duration=0.560000
+TAG:software=Lavf60.16.100
+== video_avc.avi
+codec_name=h264
+codec_type=video
+codec_name=ac3
+codec_type=audio
+sample_rate=48000
+duration=0.608000
+TAG:software=Lavf60.16.100
+== video_wmv2.wmv
+codec_name=wmv2
+codec_type=video
+codec_name=wmav2
+codec_type=audio
+sample_rate=48000
+duration=0.606000
+TAG:encoder=Lavf60.16.100

@@ -32,6 +32,7 @@ SOURCES_LRC := \
 	$(CORE_DIR)/rpcs3/libretro/libretro-common/formats/atrac3/ratrac3.c \
 	$(CORE_DIR)/rpcs3/libretro/libretro-common/formats/atrac3p/ratrac3p.c \
 	$(CORE_DIR)/rpcs3/libretro/libretro-common/formats/audio_transfer.c \
+	$(CORE_DIR)/rpcs3/libretro/libretro-common/formats/container/rcontainer.c \
 	$(CORE_DIR)/rpcs3/libretro/libretro-common/formats/dds/rdds.c \
 	$(CORE_DIR)/rpcs3/libretro/libretro-common/formats/flac/rflac.c \
 	$(CORE_DIR)/rpcs3/libretro/libretro-common/formats/gif/rgif.c \

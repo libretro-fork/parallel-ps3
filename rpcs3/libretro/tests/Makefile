@@ -326,6 +326,7 @@ test_media_LRC := \
 	$(LRC)/formats/tags/rtags.c \
 	$(LRC)/formats/webm/rwebm.c \
 	$(LRC)/formats/mpeg1/rmpeg1_ps.c \
+	$(LRC)/formats/container/rcontainer.c \
 	$(LRC)/audio/resampler/drivers/sinc_resampler.c \
 	$(LRC)/memmap/memalign.c \
 	$(LRC)/streams/file_stream.c \

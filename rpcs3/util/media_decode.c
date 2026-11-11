@@ -11,6 +11,7 @@
 #include <formats/rmp4.h>
 #include <formats/rwebm.h>
 #include <formats/rmpeg1_ps.h>
+#include <formats/rcontainer.h>
 
 #include "media_decode.h"
 
@@ -370,8 +371,71 @@ static bool md_probe_ps(const uint8_t *data, size_t len, struct md_info *info)
    return true;
 }
 
+/* AVI and ASF: a video FourCC, an audio WAVE format tag */
+static int md_tag_video(uint32_t f)
+{
+   static const char *const mpeg4[] = { "XVID", "DIVX", "DX50", "FMP4", "MP4V", "3IV2", "XVIX" };
+   static const char *const avc[]   = { "H264", "X264", "AVC1", "DAVC" };
+   char     t[5];
+   unsigned i;
+   for (i = 0; i < 4; i++)
+   {
+      char c = (char)((f >> (8 * i)) & 0xff);
+      t[i] = c >= 'a' && c <= 'z' ? (char)(c - 32) : c;
+   }
+   t[4] = '\0';
+   for (i = 0; i < sizeof(mpeg4) / sizeof(mpeg4[0]); i++)
+      if (!strcmp(t, mpeg4[i]))
+         return MD_CODEC_MPEG4;
+   for (i = 0; i < sizeof(avc) / sizeof(avc[0]); i++)
+      if (!strcmp(t, avc[i]))
+         return MD_CODEC_AVC;
+   if (!strcmp(t, "MPG2") || !strcmp(t, "MPEG"))
+      return MD_CODEC_MPEG2;
+   if (!strcmp(t, "MPG1"))
+      return MD_CODEC_MPEG1;
+   return MD_CODEC_OTHER;
+}
+
+static int md_tag_audio(unsigned tag)
+{
+   switch (tag)
+   {
+      case 0x0001: case 0x0003: return MD_CODEC_LPCM;
+      case 0x0050:              return MD_CODEC_MP2;
+      case 0x0055:              return MD_CODEC_MP3;
+      case 0x00FF: case 0x1610: case 0x706D: case 0xA106: return MD_CODEC_AAC;
+      case 0x2000:              return MD_CODEC_AC3;
+      case 0x0160: case 0x0161: case 0x0162: case 0x0163: return MD_CODEC_WMA;
+      case 0x0270:              return MD_CODEC_ATRAC3;
+      default:                  return MD_CODEC_OTHER;
+   }
+}
+
+static bool md_probe_container(const uint8_t *data, size_t len, struct md_info *info)
+{
+   rcontainer_info c;
+   unsigned        i;
+   if (!rcontainer_probe(data, len, &c) || c.streams[0].type != RCONTAINER_STREAM_VIDEO)
+      return false;
+   info->duration_us   = c.duration_us;
+   info->video_codec   = md_tag_video(c.streams[0].fourcc);
+   info->video_bitrate = (int32_t)c.streams[0].bitrate;
+   for (i = 1; i < c.num_streams; i++)
+      if (c.streams[i].type == RCONTAINER_STREAM_AUDIO)
+      {
+         info->audio_codec   = md_tag_audio(c.streams[i].format_tag);
+         info->audio_bitrate = (int32_t)c.streams[i].bitrate;
+         info->sample_rate   = (int32_t)c.streams[i].sample_rate;
+         break;
+      }
+   return true;
+}
+
 static bool md_probe_video(const uint8_t *data, size_t len, struct md_info *info)
 {
+   if (md_probe_container(data, len, info))
+      return true;
    if (md_is_mp4(data, len))
       return md_probe_mp4(data, len, info);
    if (len >= 4 && data[0] == 0x1A && data[1] == 0x45 && data[2] == 0xDF && data[3] == 0xA3)

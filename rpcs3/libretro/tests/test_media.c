@@ -12,7 +12,8 @@
  *     decode and resampling (the resamplers differ, so by the error
  *     against it);
  *   - video: MPEG-4 Part 2 and AVC in MP4, AVC in Matroska, MPEG-1 and
- *     MPEG-2 program streams with MPEG audio or AC-3, with the codecs
+ *     MPEG-2 program streams with MPEG audio or AC-3, XVID with MP3 and
+ *     AVC with AC-3 in AVI, WMV2 with WMA2 in ASF, with the codecs
  *     and length ffprobe gives; a video file is not music and a music
  *     file is not video;
  *   - every prefix of each (in steps) probed and played inside it.
@@ -38,8 +39,8 @@ struct music
 static const struct music musics[] = {
    { "music.mp3",  MD_CODEC_MP3,    44100, 50, true,  true  },
    { "music.m4a",  MD_CODEC_AAC,    48000, 70, true,  true  },
-   /* rwma hands over the two priming frames FFmpeg drops, and FFmpeg
-    * the last frame rwma does not: the same samples between */
+   /* rwma plays WMA gapless; FFmpeg drops two frames at the start, one
+    * of them audio, so the lengths differ: the same samples between */
    { "music.wma",  MD_CODEC_WMA,    44100, 50, true,  false },
    { "music.flac", MD_CODEC_FLAC,   48000, 70, true,  true  },
    { "music.wav",  MD_CODEC_LPCM,   22050, 50, false, true  },
@@ -59,7 +60,11 @@ static const struct video videos[] = {
    { "video_avc.mkv",       MD_CODEC_AVC,   MD_CODEC_MP3, 0.523 },
    { "video_mpeg1.mpg",     MD_CODEC_MPEG1, MD_CODEC_MP2, 0.504 },
    { "video_mpeg2.mpg",     MD_CODEC_MPEG2, MD_CODEC_MP2, 0.504 },
-   { "video_mpeg2_ac3.vob", MD_CODEC_MPEG2, MD_CODEC_AC3, 0.384 }
+   { "video_mpeg2_ac3.vob", MD_CODEC_MPEG2, MD_CODEC_AC3, 0.384 },
+   { "video_xvid.avi",      MD_CODEC_MPEG4, MD_CODEC_MP3, 0.560 },
+   { "video_avc.avi",       MD_CODEC_AVC,   MD_CODEC_AC3, 0.608 },
+   /* WMV2 is no codec cellSearch names */
+   { "video_wmv2.wmv",      MD_CODEC_OTHER, MD_CODEC_WMA, 0.606 }
 };
 
 static void path_of(char *path, const char *dir, const char *name)

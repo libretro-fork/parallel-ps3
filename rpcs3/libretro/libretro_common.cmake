@@ -30,6 +30,7 @@ add_library(libretro_common STATIC
     ${LIBRETRO_COMMON_DIR}/formats/atrac3/ratrac3.c
     ${LIBRETRO_COMMON_DIR}/formats/atrac3p/ratrac3p.c
     ${LIBRETRO_COMMON_DIR}/formats/audio_transfer.c
+    ${LIBRETRO_COMMON_DIR}/formats/container/rcontainer.c
     ${LIBRETRO_COMMON_DIR}/formats/dds/rdds.c
     ${LIBRETRO_COMMON_DIR}/formats/flac/rflac.c
     ${LIBRETRO_COMMON_DIR}/formats/gif/rgif.c

@@ -1,7 +1,8 @@
 /* Music and video files on libretro-common: what cellSearch lists (a
  * file's codecs, rate, bit rates and length) and what cellMusicDecode
  * plays (any of audio_transfer's formats, folded to stereo and
- * resampled to 48 kHz). The file is mapped where it lies, or read once
+ * resampled to 48 kHz). Videos: MP4, Matroska, MPEG program streams,
+ * AVI and ASF (WMV). The file is mapped where it lies, or read once
  * when it cannot be. C89. */
 
 #ifndef MEDIA_DECODE_H
