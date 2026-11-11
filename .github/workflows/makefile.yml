@@ -11,7 +11,9 @@ on:
       - 'Makefile.common'
       - 'rpcs3/libretro/make/**'
       - 'rpcs3/libretro/tests/test_savestate_memory.cpp'
+      - 'rpcs3/libretro/tests/test_decoders.cpp'
       - 'rpcs3/Emu/savestate_utils.*'
+      - 'rpcs3/Emu/System.cpp'
       - '**/CMakeLists.txt'
       - '.github/workflows/makefile.yml'
   pull_request:
@@ -20,16 +22,25 @@ on:
       - 'Makefile.common'
       - 'rpcs3/libretro/make/**'
       - 'rpcs3/libretro/tests/test_savestate_memory.cpp'
+      - 'rpcs3/libretro/tests/test_decoders.cpp'
       - 'rpcs3/Emu/savestate_utils.*'
+      - 'rpcs3/Emu/System.cpp'
       - '**/CMakeLists.txt'
       - '.github/workflows/makefile.yml'
   workflow_dispatch:
 
 jobs:
   makefile:
-    name: Makefile build (Linux x86_64)
+    # Also without LLVM, as a build finds itself where there is no LLVM to
+    # link: the interpreters take the place of the LLVM recompilers
+    # (test_decoders), where a game stopped at its first PPU module
+    name: Makefile build (Linux x86_64${{ matrix.llvm == '0' && ', no LLVM' || '' }})
     runs-on: ubuntu-24.04
     timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        llvm: ['1', '0']
     steps:
       - name: Checkout repository
         uses: actions/checkout@main
@@ -42,8 +53,11 @@ jobs:
       # the static libraries are unpacked. (21's release has some libraries
       # as LTO bitcode, which GNU ld cannot link; 22's are plain objects.)
       - name: Dependencies
+        run: sudo apt-get install -y -q libx11-dev libegl-dev libgl-dev zlib1g-dev unzip >/dev/null
+
+      - name: LLVM
+        if: matrix.llvm == '1'
         run: |
-          sudo apt-get install -y -q libx11-dev libegl-dev libgl-dev zlib1g-dev unzip >/dev/null
           mkdir -p "$RUNNER_TEMP/llvm"
           curl -fsSL https://github.com/llvm/llvm-project/releases/download/llvmorg-22.1.0/LLVM-22.1.0-Linux-X64.tar.xz |
             tar -xJ -C "$RUNNER_TEMP/llvm" --strip-components=1 --wildcards \
@@ -51,7 +65,7 @@ jobs:
           echo "LLVM_CONFIG=$RUNNER_TEMP/llvm/bin/llvm-config" >> "$GITHUB_ENV"
 
       - name: Build
-        run: make -j"$(nproc)" LLVM_CONFIG="$LLVM_CONFIG"
+        run: make -j"$(nproc)" HAVE_LLVM=${{ matrix.llvm }} LLVM_CONFIG="${LLVM_CONFIG:-llvm-config}"
 
       # Nothing to install for Vulkan or GLEW, and nothing of theirs needed
       # by the core: GLEW is compiled in, Vulkan opened at run time
@@ -61,11 +75,11 @@ jobs:
           if readelf -d parallel_ps3_libretro.so | grep -qE 'NEEDED.*(libvulkan|libGLEW)'; then exit 1; fi
 
       - name: Load
-        run: make check LLVM_CONFIG="$LLVM_CONFIG"
+        run: make check HAVE_LLVM=${{ matrix.llvm }} LLVM_CONFIG="${LLVM_CONFIG:-llvm-config}"
 
       # Twice: the second finds the generated folder gone, and must still
       # succeed without an error from make
       - name: Clean
         run: |
-          for i in 1 2; do make clean LLVM_CONFIG="$LLVM_CONFIG" 2>&1 | tee clean.log; ! grep -q 'Error' clean.log; done
+          for i in 1 2; do make clean HAVE_LLVM=${{ matrix.llvm }} LLVM_CONFIG="${LLVM_CONFIG:-llvm-config}" 2>&1 | tee clean.log; ! grep -q 'Error' clean.log; done
           test -z "$(find Utilities rpcs3/Emu -maxdepth 1 -name '*.o' | head -1)"

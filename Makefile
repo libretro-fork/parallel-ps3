@@ -206,7 +206,7 @@ ifneq ($(HAVE_LLVM),0)
    ifeq ($(HAVE_LLVM)$(LLVM_NO),auto)
       HAVE_LLVM := 1
    else ifeq ($(HAVE_LLVM),auto)
-      $(warning $(LLVM_NO): building without the LLVM recompilers)
+      $(warning $(LLVM_NO): building without the LLVM recompilers - games run on the PPU interpreter and ASMJIT, many times slower)
       HAVE_LLVM := 0
    else ifneq ($(LLVM_NO),)
       $(error HAVE_LLVM=1, but $(LLVM_NO))
@@ -468,12 +468,23 @@ $(SAVESTATE_TEST): $(OBJ_SAVESTATE_TEST) $(OBJ_LIBRETRO) $(ARCHIVES)
 	$(SAY) LINK $@
 	$(Q)$(CXX) -o $@ $(OBJ_SAVESTATE_TEST) $(OBJ_LIBRETRO) $(GROUP_START) $(ARCHIVES) $(GROUP_END) $(LDFLAGS) $(LIBS)
 
-check: $(TARGET) $(SAVESTATE_TEST)
+# The decoders a build without LLVM gives a game in place of the LLVM
+# recompilers, linked the same way
+DECODERS_TEST := $(GEN_DIR)/test_decoders
+OBJ_DECODERS_TEST := $(CORE_DIR)/rpcs3/libretro/tests/test_decoders.o
+$(OBJ_DECODERS_TEST): FLAGS := $(FLAGS_LIBRETRO)
+
+$(DECODERS_TEST): $(OBJ_DECODERS_TEST) $(OBJ_LIBRETRO) $(ARCHIVES)
+	$(SAY) LINK $@
+	$(Q)$(CXX) -o $@ $(OBJ_DECODERS_TEST) $(OBJ_LIBRETRO) $(GROUP_START) $(ARCHIVES) $(GROUP_END) $(LDFLAGS) $(LIBS)
+
+check: $(TARGET) $(SAVESTATE_TEST) $(DECODERS_TEST)
 	$(HOST_CC) -O2 -o $(GEN_DIR)/load_test $(CORE_DIR)/rpcs3/libretro/make/load_test.c -ldl
 	$(GEN_DIR)/load_test ./$(TARGET)
 	$(SAVESTATE_TEST)
+	$(DECODERS_TEST)
 
--include $(OBJECTS:.o=.d) $(OBJ_SAVESTATE_TEST:.o=.d)
+-include $(OBJECTS:.o=.d) $(OBJ_SAVESTATE_TEST:.o=.d) $(OBJ_DECODERS_TEST:.o=.d)
 
 clean:
 	@$(REMOVE_OBJECTS)

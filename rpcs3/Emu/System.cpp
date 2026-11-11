@@ -289,6 +289,34 @@ void init_fxo_for_exec(utils::serial* ar, bool full = false)
 }
 
 // Some settings are not allowed with certain conditions
+// A build without LLVM has no LLVM recompilers, and a game that reached one
+// stopped at its first PPU module with "LLVM is not available in this build"
+// (the libretro core, built by its Makefile where it found no LLVM, froze on
+// "Scanning PPU Modules"): the PPU interpreter in their place, and for the SPU
+// the ASMJIT recompiler, or the dynamic interpreter where there is none.
+// Nothing changes in a build with LLVM.
+void fixup_decoders_without_llvm()
+{
+#ifndef LLVM_AVAILABLE
+	if (g_cfg.core.ppu_decoder == ppu_decoder_type::llvm)
+	{
+		sys_log.warning("The PPU decoder '%s' is not available in a build without LLVM and will therefore be set to '%s'.", g_cfg.core.ppu_decoder.get(), ppu_decoder_type::_static);
+		g_cfg.core.ppu_decoder.set(ppu_decoder_type::_static);
+	}
+
+	if (g_cfg.core.spu_decoder == spu_decoder_type::llvm)
+	{
+#if defined(ARCH_X64)
+		constexpr spu_decoder_type spu_fallback = spu_decoder_type::asmjit;
+#else
+		constexpr spu_decoder_type spu_fallback = spu_decoder_type::dynamic;
+#endif
+		sys_log.warning("The SPU decoder '%s' is not available in a build without LLVM and will therefore be set to '%s'.", g_cfg.core.spu_decoder.get(), spu_fallback);
+		g_cfg.core.spu_decoder.set(spu_fallback);
+	}
+#endif
+}
+
 static void fixup_settings(const psf::registry* _psf)
 {
 	// Disable some incompatible settings in headless mode
@@ -321,6 +349,8 @@ static void fixup_settings(const psf::registry* _psf)
 			g_cfg.video.renderer.set(Emu.GetDefaultRenderer());
 		}
 	}
+
+	fixup_decoders_without_llvm();
 
 	// Some settings are not allowed in certain PPU decoders
 	if (g_cfg.core.ppu_decoder != ppu_decoder_type::_static)

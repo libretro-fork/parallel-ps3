@@ -11,7 +11,10 @@
 #include "libretro_patch_manager.h"
 #include "Loader/PSF.h"
 
+#include <cstdio>
 #include <cstdlib>
+
+#include <retro_atomic.h>
 
 #include "Emu/System.h"
 #include "Emu/savestate_utils.hpp"
@@ -632,6 +635,12 @@ static void libretro_limit_disk_cache()
         rpcs3::cache::limit_cache_size();
 }
 
+// Without LLVM in the build, what Emulator::Load puts in place of the LLVM
+// recompilers (fixup_settings) - here too, as options changed while a game
+// runs, or its database settings put back on top of them, would set them
+// again for the SPU threads it starts
+extern void fixup_decoders_without_llvm();
+
 static void libretro_apply_core_options()
 {
     if (!environ_cb)
@@ -668,6 +677,8 @@ static void libretro_apply_core_options()
         g_cfg.core.spu_decoder.set(spu_decoder_type::dynamic);
     else
         g_cfg.core.spu_decoder.set(spu_decoder_type::_static);
+
+    fixup_decoders_without_llvm();
 
     // SPU Block Size
     std::string spu_block = get_option_value("rpcs3_spu_block_size", "safe");
@@ -1209,11 +1220,31 @@ static void lrcore_uninstall_crash_handler()
 
 namespace
 {
+    // The first error an emulation thread stopped on, for retro_run to show:
+    // a thread that ends on one leaves the picture where it was, and nothing
+    // said why (a build without LLVM froze on "Scanning PPU Modules"). The
+    // thread that claims the slot writes the text, then publishes it; the
+    // frontend's thread shows it once.
+    retro_atomic_int_t s_fatal_claims; // the first to add to it writes the text
+    retro_atomic_int_t s_fatal_ready;  // 1 written, 2 shown
+    char s_fatal_text[256];
+
     struct libretro_log_listener : public logs::listener
     {
-        void log(u64 /*stamp*/, const logs::message& /*msg*/, std::string_view /*prefix*/, std::string_view /*text*/) override
+        void log(u64 /*stamp*/, const logs::message& msg, std::string_view /*prefix*/, std::string_view text) override
         {
-            // Logging disabled
+            // Only that; other logging is not forwarded
+            static constexpr std::string_view terminated = "Thread terminated due to fatal error: ";
+            if (logs::level{msg} != logs::level::fatal || !text.starts_with(terminated))
+                return;
+            if (retro_atomic_fetch_add_int(&s_fatal_claims, 1) != 0)
+                return;
+            text.remove_prefix(terminated.size());
+            // Its first line: the reason, without the source location
+            text = text.substr(0, text.find('\n'));
+            std::snprintf(s_fatal_text, sizeof(s_fatal_text), "The emulation stopped: %.*s",
+                static_cast<int>(std::min<usz>(text.size(), 200)), text.data());
+            retro_atomic_store_release_int(&s_fatal_ready, 1);
         }
     };
 
@@ -2694,6 +2725,9 @@ static u32 s_pkg_install_frames = 0;
 
 bool retro_load_game(const struct retro_game_info* game)
 {
+    // No emulation thread runs yet: a new game, nothing to show
+    retro_atomic_store_relaxed_int(&s_fatal_claims, 0);
+    retro_atomic_store_relaxed_int(&s_fatal_ready, 0);
 
 
     if (!game || !game->path)
@@ -3237,6 +3271,12 @@ void retro_run(void)
     if (!game_loaded)
         return;
 
+    if (retro_atomic_load_acquire_int(&s_fatal_ready) == 1)
+    {
+        libretro_show_message(s_fatal_text, 900);
+        retro_atomic_store_relaxed_int(&s_fatal_ready, 2);
+    }
+
     // The guest can end the emulation on its own (_sys_process_exit, e.g. the
     // ScummVM launcher's Quit). Nothing told the frontend so far, so RetroArch
     // kept spinning on the last frame of a dead emulator. Ask it to unload.
@@ -3282,6 +3322,7 @@ void retro_run(void)
         // it runs, as they were at its start.
         if (!s_database_config.empty())
             g_cfg.from_string(s_database_config);
+        fixup_decoders_without_llvm();
     }
 
     // Poll input
