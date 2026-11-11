@@ -7,27 +7,8 @@
 #include "Emu/Cell/lv2/sys_process.h"
 #include "Emu/savestate_utils.hpp"
 #include "sysPrxForUser.h"
-#include "util/media_utils.h"
 
-#ifdef _MSC_VER
-#pragma warning(push, 0)
-#else
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wall"
-#pragma GCC diagnostic ignored "-Wextra"
-#pragma GCC diagnostic ignored "-Wold-style-cast"
-#endif
-extern "C"
-{
-#include "libavcodec/avcodec.h"
-#include "libavutil/imgutils.h"
-#include "libswscale/swscale.h"
-}
-#ifdef _MSC_VER
-#pragma warning(pop)
-#else
-#pragma GCC diagnostic pop
-#endif
+#include "cellVdec_codec.h"
 
 #include "cellPamf.h"
 #include "libavcdec.h"
@@ -47,36 +28,7 @@ extern "C"
 #include <variant>
 #include "util/asm.hpp"
 
-std::mutex g_mutex_avcodec_open2;
-
-constexpr int averror_eof = AVERROR_EOF; // workaround for old-style-cast error
-
 LOG_CHANNEL(cellVdec);
-
-// Checks whether the AU holds a header that tells the decoder the picture size:
-// MPEG-2: sequence header; MPEG-4 Part 2: Video Object Layer header, or a short video header (H.263 picture start code) at the start of the AU
-static bool au_has_sequence_header(AVCodecID codec_id, const u8* data, u32 size)
-{
-	if (codec_id == AV_CODEC_ID_MPEG4 && size >= 3 && data[0] == 0 && data[1] == 0 && (data[2] & 0xfc) == 0x80)
-	{
-		return true;
-	}
-
-	for (u32 i = 0; i + 3 < size; i++)
-	{
-		if (data[i] == 0 && data[i + 1] == 0 && data[i + 2] == 1)
-		{
-			const u8 code = data[i + 3];
-
-			if (codec_id == AV_CODEC_ID_MPEG2VIDEO ? code == 0xb3 : (code & 0xf0) == 0x20)
-			{
-				return true;
-			}
-		}
-	}
-
-	return false;
-}
 
 template<>
 void fmt_class_string<CellVdecError>::format(std::string& out, u64 arg)
@@ -183,32 +135,86 @@ struct vdec_cmd
 	std::vector<u8> au_data;
 };
 
+// Picture buffers a decoder's pictures are copied into: taken by the
+// decoder thread, given back when the game has had the picture. Once the
+// pool holds as many as are in flight, of the stream's size, a picture
+// takes no memory. Lock-free: a slot is taken by exchange and filled by
+// compare-and-swap; a buffer that finds no free slot is freed.
+struct vdec_pic_pool
+{
+	static constexpr usz size = 72; // the output queue's 60, and those in flight
+	atomic_t<vdc_pic*> slots[size]{};
+
+	vdec_pic_pool() = default;
+	vdec_pic_pool(const vdec_pic_pool&) = delete;
+	vdec_pic_pool& operator=(const vdec_pic_pool&) = delete;
+
+	~vdec_pic_pool()
+	{
+		for (auto& slot : slots)
+			free_pic(slot.exchange(nullptr));
+	}
+
+	static void free_pic(vdc_pic* pic)
+	{
+		if (pic)
+		{
+			vdc_pic_free(pic);
+			delete pic;
+		}
+	}
+
+	vdc_pic* take()
+	{
+		for (auto& slot : slots)
+		{
+			if (vdc_pic* pic = slot.exchange(nullptr))
+				return pic;
+		}
+
+		return new vdc_pic{};
+	}
+
+	void give(vdc_pic* pic)
+	{
+		if (!pic)
+			return;
+
+		for (auto& slot : slots)
+		{
+			if (slot.compare_and_swap_test(nullptr, pic))
+				return;
+		}
+
+		free_pic(pic);
+	}
+};
+
 struct vdec_frame
 {
-	struct frame_dtor
+	struct pic_return
 	{
-		void operator()(AVFrame* data) const
+		std::shared_ptr<vdec_pic_pool> pool;
+
+		void operator()(vdc_pic* pic) const
 		{
-			av_frame_unref(data);
-			av_frame_free(&data);
+			if (pool)
+				pool->give(pic);
+			else
+				vdec_pic_pool::free_pic(pic);
 		}
 	};
 
 	u64 seq_id{};
 	u64 cmd_id{};
 
-	std::unique_ptr<AVFrame, frame_dtor> avf;
+	std::unique_ptr<vdc_pic, pic_return> pic;
 	u64 dts{};
 	u64 pts{};
 	u64 userdata{};
 	u32 frc{};
 	bool pic_item_received = false;
 	CellVdecPicAttr attr = CELL_VDEC_PICITEM_ATTR_NORMAL;
-
-	AVFrame* operator ->() const
-	{
-		return avf.get();
-	}
 };
 
 struct vdec_context final
@@ -226,10 +232,20 @@ struct vdec_context final
 	atomic_t<bool> is_running = false;   // Used for thread interaction
 	atomic_t<sequence_state> seq_state = sequence_state::closed;
 
-	const AVCodec* codec{};
-	const AVCodecDescriptor* codec_desc{};
-	AVCodecContext* ctx{};
-	SwsContext* sws{};
+	vdc* dec{}; // libretro-common's decoder for the codec
+	const std::shared_ptr<vdec_pic_pool> pic_pool = std::make_shared<vdec_pic_pool>();
+
+	// Each AU's time stamps and user data, under the command ID the decoder
+	// carries through its reordering to the pictures decoded from it
+	struct au_stamps
+	{
+		u64 cmd_id = umax;
+		u64 pts = umax;
+		u64 dts = umax;
+		u64 userdata = 0;
+	};
+	static constexpr usz au_stamps_count = 128;
+	au_stamps au_stamp[au_stamps_count]{};
 
 	shared_mutex mutex; // Used for 'out' queue (TODO)
 
@@ -252,10 +268,8 @@ struct vdec_context final
 
 	lf_queue<vdec_cmd> in_cmd;
 
-	AVRational log_time_base{}; // Used to reduce log spam
-	AVRational log_framerate{}; // Used to reduce log spam
-	u32 skipped_au_count{}; // Used to reduce log spam
-	bool sequence_header_found = false;
+	u32 log_framerate_num{}; // Used to reduce log spam
+	u32 log_framerate_den{}; // Used to reduce log spam
 
 	vdec_context(s32 type, u32 /*profile*/, u32 addr, u32 size, vm::ptr<CellVdecCbMsg> func, u32 arg)
 		: type(type)
@@ -266,74 +280,20 @@ struct vdec_context final
 	{
 		switch (type)
 		{
-		case CELL_VDEC_CODEC_TYPE_MPEG2:
-		{
-			codec = avcodec_find_decoder(AV_CODEC_ID_MPEG2VIDEO);
-			break;
-		}
-		case CELL_VDEC_CODEC_TYPE_AVC:
-		{
-			codec = avcodec_find_decoder(AV_CODEC_ID_H264);
-			break;
-		}
+		case CELL_VDEC_CODEC_TYPE_MPEG2: dec = vdc_new(VDC_MPEG2); break;
+		case CELL_VDEC_CODEC_TYPE_AVC: dec = vdc_new(VDC_AVC); break;
 		case CELL_VDEC_CODEC_TYPE_MPEG4:
-		case CELL_VDEC_CODEC_TYPE_DIVX:
-		{
-			codec = avcodec_find_decoder(AV_CODEC_ID_MPEG4);
-			break;
-		}
+		case CELL_VDEC_CODEC_TYPE_DIVX: dec = vdc_new(VDC_MPEG4); break;
 		default:
 		{
 			fmt::throw_exception("Unknown video decoder type (0x%x)", type);
 		}
 		}
 
-		if (!codec)
+		if (!dec)
 		{
-			fmt::throw_exception("avcodec_find_decoder() failed (type=0x%x)", type);
+			fmt::throw_exception("vdc_new() failed (type=0x%x)", type);
 		}
-
-		codec_desc = avcodec_descriptor_get(codec->id);
-
-		if (!codec_desc)
-		{
-			fmt::throw_exception("avcodec_descriptor_get() failed (type=0x%x)", type);
-		}
-
-		// Only these decoders are checked for a sequence header before an AU is passed to them
-		sequence_header_found = codec->id != AV_CODEC_ID_MPEG2VIDEO && codec->id != AV_CODEC_ID_MPEG4;
-
-		ctx = avcodec_alloc_context3(codec);
-
-		if (!ctx)
-		{
-			fmt::throw_exception("avcodec_alloc_context3() failed (type=0x%x)", type);
-		}
-
-		// Carry the AU userdata from each packet to the picture decoded from it, across the frame reordering
-		ctx->flags |= AV_CODEC_FLAG_COPY_OPAQUE;
-
-		AVDictionary* opts = nullptr;
-
-		std::lock_guard lock(g_mutex_avcodec_open2);
-
-		int err = avcodec_open2(ctx, codec, &opts);
-		if (err || opts)
-		{
-			avcodec_free_context(&ctx);
-			std::string dict_content;
-			if (opts)
-			{
-				AVDictionaryEntry* tag = nullptr;
-				while ((tag = av_dict_get(opts, "", tag, AV_DICT_IGNORE_SUFFIX)))
-				{
-					fmt::append(dict_content, "['%s': '%s']", tag->key, tag->value);
-				}
-			}
-			fmt::throw_exception("avcodec_open2() failed (err=0x%x='%s', opts=%s)", err, utils::av_error_to_string(err), dict_content);
-		}
-
-		av_dict_free(&opts);
 
 		seq_state = sequence_state::dormant;
 	}
@@ -343,11 +303,10 @@ struct vdec_context final
 		release_decoder();
 	}
 
-	// Frees the FFmpeg decoder, which may take milliseconds
+	// Frees the decoder and its pictures' memory, which may take milliseconds
 	void release_decoder()
 	{
-		avcodec_free_context(&ctx);
-		sws_freeContext(std::exchange(sws, nullptr));
+		vdc_free(std::exchange(dec, nullptr));
 	}
 
 	static u32 freq_to_framerate_code(f64 freq)
@@ -408,11 +367,11 @@ struct vdec_context final
 					cellVdec.trace("Start sequence... (handle=0x%x, seq_id=%d, cmd_id=%d)", handle, cmd->seq_id, cmd->id);
 				}
 
-				avcodec_flush_buffers(ctx);
+				vdc_start(dec);
 
 				out_queue.clear(); // Flush image queue
-				log_time_base = {};
-				log_framerate = {};
+				log_framerate_num = 0;
+				log_framerate_den = 0;
 
 				frc_set = 0; // TODO: ???
 				next_pts = 0;
@@ -439,12 +398,9 @@ struct vdec_context final
 			case vdec_cmd_type::drain:
 			case vdec_cmd_type::au_decode:
 			{
-				AVPacket packet{};
-				packet.pos = -1;
-
 				u64 au_usrd{};
 
-				// When draining, the command has no AU. Sending a null packet makes the decoder output the pictures it still holds.
+				// When draining, the command has no AU: the decoder lets out the pictures it still holds
 				const bool drain = cmd->type == vdec_cmd_type::drain;
 
 				const u32 au_mode = cmd->mode;
@@ -452,12 +408,6 @@ struct vdec_context final
 				const u64 au_pts = u64{cmd->au.pts.upper} << 32 | cmd->au.pts.lower;
 				const u64 au_dts = u64{cmd->au.dts.upper} << 32 | cmd->au.dts.lower;
 				au_usrd = cmd->au.userData;
-
-				packet.data = cmd->au_data.data();
-				packet.size = au_size;
-				packet.pts = au_pts != umax ? au_pts : s64{smin};
-				packet.dts = au_dts != umax ? au_dts : s64{smin};
-				packet.opaque = reinterpret_cast<void*>(au_usrd);
 
 				if (next_pts == 0 && au_pts != umax)
 				{
@@ -471,96 +421,75 @@ struct vdec_context final
 
 				const CellVdecPicAttr attr = au_mode == CELL_VDEC_DEC_MODE_NORMAL ? CELL_VDEC_PICITEM_ATTR_NORMAL : CELL_VDEC_PICITEM_ATTR_SKIPPED;
 
-				ctx->skip_frame =
-					au_mode == CELL_VDEC_DEC_MODE_NORMAL ? AVDISCARD_DEFAULT :
-					au_mode == CELL_VDEC_DEC_MODE_B_SKIP ? AVDISCARD_NONREF : AVDISCARD_NONINTRA;
-
 				std::deque<vdec_frame> decoded_frames;
 
 				if (!abort_decode && seq_id == cmd->seq_id)
 				{
 					cellVdec.trace("AU decoding: handle=0x%x, seq_id=%d, cmd_id=%d, size=0x%x, pts=0x%llx, dts=0x%llx, userdata=0x%llx", handle, cmd->seq_id, cmd->id, au_size, au_pts, au_dts, au_usrd);
 
-					if (!drain && !sequence_header_found && !au_has_sequence_header(codec->id, packet.data, au_size))
+					if (drain)
 					{
-						// The decoder cannot use an AU before a sequence header (e.g. a stream continued on a new decoder,
-						// or one that sends its sequence header after its first pictures): skip it
-						if (skipped_au_count++ == 0)
-						{
-							cellVdec.warning("No sequence header yet, skipping AUs until one arrives (handle=0x%x, seq_id=%d, cmd_id=%d)", handle, cmd->seq_id, cmd->id);
-						}
-					}
-					else if (int ret = avcodec_send_packet(ctx, drain ? nullptr : &packet); ret < 0)
-					{
-						fmt::throw_exception("AU queuing error (handle=0x%x, seq_id=%d, cmd_id=%d, error=0x%x): %s", handle, cmd->seq_id, cmd->id, ret, utils::av_error_to_string(ret));
+						vdc_feed(dec, nullptr, 0, 0, VDC_SKIP_NONE);
 					}
 					else
 					{
-						sequence_header_found = true;
+						// The AU's stamps wait for the pictures decoded from it, under its command ID
+						au_stamps& st = au_stamp[cmd->id % au_stamps_count];
+						st.cmd_id = cmd->id;
+						st.pts = au_pts;
+						st.dts = au_dts;
+						st.userdata = au_usrd;
+
+						const u32 errors = vdc_errors(dec);
+						vdc_feed(dec, cmd->au_data.data(), au_size, cmd->id,
+							au_mode == CELL_VDEC_DEC_MODE_NORMAL ? VDC_SKIP_NONE : au_mode == CELL_VDEC_DEC_MODE_B_SKIP ? VDC_SKIP_B : VDC_SKIP_PB);
+
+						if (vdc_errors(dec) != errors)
+						{
+							cellVdec.error("AU decoding error (handle=0x%x, seq_id=%d, cmd_id=%d)", handle, cmd->seq_id, cmd->id);
+						}
 					}
 
 					while (!abort_decode && seq_id == cmd->seq_id)
 					{
-						// Keep receiving frames
+						// Keep receiving pictures
 						vdec_frame frame;
 						frame.seq_id = cmd->seq_id;
 						frame.cmd_id = cmd->id;
-						frame.avf.reset(av_frame_alloc());
+						frame.pic = std::unique_ptr<vdc_pic, vdec_frame::pic_return>(pic_pool->take(), vdec_frame::pic_return{pic_pool});
 
-						if (!frame.avf)
+						if (!vdc_next(dec, frame.pic.get()))
 						{
-							fmt::throw_exception("av_frame_alloc() failed (handle=0x%x, seq_id=%d, cmd_id=%d)", handle, cmd->seq_id, cmd->id);
+							break;
 						}
 
-						if (int ret = avcodec_receive_frame(ctx, frame.avf.get()); ret < 0)
-						{
-							if (ret == AVERROR(EAGAIN) || ret == averror_eof)
-							{
-								break;
-							}
-
-							fmt::throw_exception("AU decoding error (handle=0x%x, seq_id=%d, cmd_id=%d, error=0x%x): %s", handle, cmd->seq_id, cmd->id, ret, utils::av_error_to_string(ret));
-						}
-
-#if LIBAVCODEC_VERSION_INT < AV_VERSION_INT(60, 31, 102)
-						const int ticks_per_frame = ctx->ticks_per_frame;
-#else
-						const int ticks_per_frame = (codec_desc->props & AV_CODEC_PROP_FIELDS) ? 2 : 1;
-#endif
-
-#if LIBAVUTIL_VERSION_INT < AV_VERSION_INT(58, 29, 100)
-						const bool is_interlaced = frame->interlaced_frame != 0;
-#else
-						const bool is_interlaced = !!(frame->flags & AV_FRAME_FLAG_INTERLACED);
-#endif
-
-						if (is_interlaced)
+						if (frame.pic->interlaced)
 						{
 							// NPEB01838, NPUB31260
 							cellVdec.todo("Interlaced frames not supported (handle=0x%x, seq_id=%d, cmd_id=%d)", handle, cmd->seq_id, cmd->id);
 						}
 
-						if (frame->repeat_pict)
+						// The stamps of the AU the picture came from
+						const au_stamps& st = au_stamp[frame.pic->tag % au_stamps_count];
+						const bool st_valid = st.cmd_id == frame.pic->tag;
+
+						if (st_valid && st.pts != umax)
 						{
-							fmt::throw_exception("Repeated frames not supported (handle=0x%x, seq_id=%d, cmd_id=%d, repear_pict=0x%x)", handle, cmd->seq_id, cmd->id, frame->repeat_pict);
+							next_pts = st.pts;
 						}
 
-						if (frame->pts != smin)
+						if (st_valid && st.dts != umax)
 						{
-							next_pts = frame->pts;
-						}
-
-						if (frame->pkt_dts != smin)
-						{
-							next_dts = frame->pkt_dts;
+							next_dts = st.dts;
 						}
 
 						frame.pts = next_pts;
 						frame.dts = next_dts;
-						frame.userdata = reinterpret_cast<u64>(frame->opaque);
+						frame.userdata = st_valid ? st.userdata : 0;
 						frame.attr = attr;
 
 						u64 amend = 0;
+						u32 fr_num = 0, fr_den = 0;
 
 						if (frc_set)
 						{
@@ -582,34 +511,24 @@ struct vdec_context final
 
 							frame.frc = frc_set;
 						}
-						else if (ctx->time_base.den && ctx->time_base.num)
+						else if (vdc_framerate(dec, &fr_num, &fr_den) == 0)
 						{
-							const auto freq = 1. * ctx->time_base.den / ctx->time_base.num / ticks_per_frame;
+							const auto freq = fr_num / static_cast<f64>(fr_den);
 
 							frame.frc = freq_to_framerate_code(freq);
 							if (frame.frc)
 							{
-								amend = u64{90000} * ctx->time_base.num * ticks_per_frame / ctx->time_base.den;
-							}
-						}
-						else if (ctx->framerate.den && ctx->framerate.num)
-						{
-							const auto freq = ctx->framerate.num / static_cast<f64>(ctx->framerate.den);
-
-							frame.frc = freq_to_framerate_code(freq);
-							if (frame.frc)
-							{
-								amend = u64{90000} * ctx->framerate.den / ctx->framerate.num;
+								amend = u64{90000} * fr_den / fr_num;
 							}
 						}
 
 						if (amend == 0 || frame.frc == 0)
 						{
-							if (log_time_base.den != ctx->time_base.den || log_time_base.num != ctx->time_base.num || log_framerate.den != ctx->framerate.den || log_framerate.num != ctx->framerate.num)
+							if (log_framerate_num != fr_num || log_framerate_den != fr_den)
 							{
-								cellVdec.error("Invalid frequency (handle=0x%x, seq_id=%d, cmd_id=%d, timebase=%d/%d, tpf=%d framerate=%d/%d)", handle, cmd->seq_id, cmd->id, ctx->time_base.num, ctx->time_base.den, ticks_per_frame, ctx->framerate.num, ctx->framerate.den);
-								log_time_base = ctx->time_base;
-								log_framerate = ctx->framerate;
+								cellVdec.error("Invalid frequency (handle=0x%x, seq_id=%d, cmd_id=%d, framerate=%d/%d)", handle, cmd->seq_id, cmd->id, fr_num, fr_den);
+								log_framerate_num = fr_num;
+								log_framerate_den = fr_den;
 							}
 
 							// Hack
@@ -620,15 +539,9 @@ struct vdec_context final
 						next_pts += amend;
 						next_dts += amend;
 
-						cellVdec.trace("Got picture (handle=0x%x, seq_id=%d, cmd_id=%d, pts=0x%llx[0x%llx], dts=0x%llx[0x%llx])", handle, cmd->seq_id, cmd->id, frame.pts, frame->pts, frame.dts, frame->pkt_dts);
+						cellVdec.trace("Got picture (handle=0x%x, seq_id=%d, cmd_id=%d, pts=0x%llx, dts=0x%llx, au=%d)", handle, cmd->seq_id, cmd->id, frame.pts, frame.dts, frame.pic->tag);
 
 						decoded_frames.push_back(std::move(frame));
-					}
-
-					if (skipped_au_count && !decoded_frames.empty())
-					{
-						cellVdec.warning("Decoder output resumed after %d skipped AUs (handle=0x%x, seq_id=%d, cmd_id=%d)", skipped_au_count, handle, cmd->seq_id, cmd->id);
-						skipped_au_count = 0;
 					}
 				}
 
@@ -732,7 +645,7 @@ struct vdec_context final
 	}
 };
 
-// Frees the FFmpeg decoders of closed contexts on a host thread.
+// Frees the decoders of closed contexts on a host thread.
 // Freeing a decoder takes milliseconds, which would otherwise delay the guest thread closing it.
 struct vdec_context_reaper
 {
@@ -1882,76 +1795,29 @@ error_code cellVdecGetPictureExt(ppu_thread& ppu, u32 handle, vm::cptr<CellVdecP
 
 	if (outBuff)
 	{
-		const int w = frame->width;
-		const int h = frame->height;
-
-		AVPixelFormat out_f = AV_PIX_FMT_YUV420P;
-
-		thread_local std::vector<u8> alpha_plane;
-		thread_local u8 alpha = 0;
-		bool use_alpha = false;
+		const vdc_pic* pic = frame.pic.get();
+		int out_f = VDC_OUT_YUV420;
 
 		switch (const u32 type = format->formatType)
 		{
-		case CELL_VDEC_PICFMT_ARGB32_ILV: out_f = AV_PIX_FMT_ARGB; use_alpha = true; break;
-		case CELL_VDEC_PICFMT_RGBA32_ILV: out_f = AV_PIX_FMT_RGBA; use_alpha = true; break;
-		case CELL_VDEC_PICFMT_UYVY422_ILV: out_f = AV_PIX_FMT_UYVY422; break;
-		case CELL_VDEC_PICFMT_YUV420_PLANAR: out_f = AV_PIX_FMT_YUV420P; break;
+		case CELL_VDEC_PICFMT_ARGB32_ILV: out_f = VDC_OUT_ARGB; break;
+		case CELL_VDEC_PICFMT_RGBA32_ILV: out_f = VDC_OUT_RGBA; break;
+		case CELL_VDEC_PICFMT_UYVY422_ILV: out_f = VDC_OUT_UYVY; break;
+		case CELL_VDEC_PICFMT_YUV420_PLANAR: out_f = VDC_OUT_YUV420; break;
 		default:
 		{
 			fmt::throw_exception("cellVdecGetPictureExt: Unknown formatType (handle=0x%x, seq_id=%d, cmd_id=%d, type=%d)", handle, frame.seq_id, frame.cmd_id, type);
 		}
 		}
 
-		// TODO: color matrix
-
-		if (use_alpha && (alpha != format->alpha || static_cast<s32>(alpha_plane.size()) != w * h))
-		{
-			alpha = format->alpha;
-			alpha_plane.resize(w * h, alpha);
-			std::memset(alpha_plane.data(), format->alpha, alpha_plane.size());
-		}
-
-		AVPixelFormat in_f = AV_PIX_FMT_YUV420P;
-
-		switch (frame->format)
-		{
-		case AV_PIX_FMT_YUVJ420P:
-			cellVdec.error("cellVdecGetPictureExt: experimental AVPixelFormat (handle=0x%x, seq_id=%d, cmd_id=%d, format=%d). This may cause suboptimal video quality.", handle, frame.seq_id, frame.cmd_id, frame->format);
-			[[fallthrough]];
-		case AV_PIX_FMT_YUV420P:
-			in_f = false ? AV_PIX_FMT_YUVA420P : static_cast<AVPixelFormat>(frame->format);
-			break;
-		default:
-			fmt::throw_exception("cellVdecGetPictureExt: Unknown frame format (%d)", frame->format);
-		}
-
-		cellVdec.trace("cellVdecGetPictureExt: handle=0x%x, seq_id=%d, cmd_id=%d, w=%d, h=%d, frameFormat=%d, formatType=%d, in_f=%d, out_f=%d, use_alpha=%d, alpha=%d, colorMatrixType=%d", handle, frame.seq_id, frame.cmd_id, w, h, frame->format, format->formatType, +in_f, +out_f, use_alpha, format->alpha, format->colorMatrixType);
-
-		vdec->sws = sws_getCachedContext(vdec->sws, w, h, in_f, w, h, out_f, SWS_POINT, nullptr, nullptr, nullptr);
-
-		const u8* in_data[4] = { frame->data[0], frame->data[1], frame->data[2], use_alpha ? alpha_plane.data() : nullptr };
-		const int in_line[4] = { frame->linesize[0], frame->linesize[1], frame->linesize[2], w * 1 };
-		u8* out_data[4] = { outBuff.get_ptr() };
-		int out_line[4] = { w * 4 }; // RGBA32 or ARGB32
+		cellVdec.trace("cellVdecGetPictureExt: handle=0x%x, seq_id=%d, cmd_id=%d, w=%d, h=%d, formatType=%d, alpha=%d, colorMatrixType=%d", handle, frame.seq_id, frame.cmd_id, pic->width, pic->height, format->formatType, format->alpha, format->colorMatrixType);
 
 		// TODO:
 		// It's possible that we need to align the pitch to 128 here.
 		// PS HOME seems to rely on this somehow in certain cases.
 
-		if (!use_alpha)
-		{
-			// YUV420P or UYVY422
-			out_data[1] = out_data[0] + w * h;
-			out_data[2] = out_data[0] + w * h * 5 / 4;
-
-			if (const int ret = av_image_fill_linesizes(out_line, out_f, w); ret < 0)
-			{
-				fmt::throw_exception("cellVdecGetPictureExt: av_image_fill_linesizes failed (handle=0x%x, seq_id=%d, cmd_id=%d, ret=0x%x): %s", handle, frame.seq_id, frame.cmd_id, ret, utils::av_error_to_string(ret));
-			}
-		}
-
-		sws_scale(vdec->sws, in_data, in_line, 0, h, out_data, out_line);
+		// RGB in the matrix the game asks for, broadcast range
+		vdc_convert(outBuff.get_ptr(), pic, out_f, format->alpha, format->colorMatrixType == CELL_VDEC_COLOR_MATRIX_TYPE_BT709);
 	}
 
 	return CELL_OK;
@@ -2015,7 +1881,7 @@ error_code cellVdecGetPicItem(ppu_thread& ppu, u32 handle, vm::pptr<CellVdecPicI
 		} picInfo;
 	};
 
-	s32 pict_type = AV_PICTURE_TYPE_NONE;
+	s32 pict_type = VDC_PIC_UNKNOWN;
 	s32 frame_width{};
 	s32 frame_height{};
 	u64 seq_id{};
@@ -2034,10 +1900,10 @@ error_code cellVdecGetPicItem(ppu_thread& ppu, u32 handle, vm::pptr<CellVdecPicI
 			if (!picture.pic_item_received)
 			{
 				picture.pic_item_received = true;
-				ensure(picture.avf);
-				pict_type = picture.avf->pict_type;
-				frame_width = picture.avf->width;
-				frame_height = picture.avf->height;
+				ensure(picture.pic);
+				pict_type = picture.pic->type;
+				frame_width = picture.pic->width;
+				frame_height = picture.pic->height;
 				seq_id = picture.seq_id;
 				cmd_id = picture.cmd_id;
 				pts = picture.pts;
@@ -2068,9 +1934,7 @@ error_code cellVdecGetPicItem(ppu_thread& ppu, u32 handle, vm::pptr<CellVdecPicI
 
 	info->codecType = vdec->type;
 	info->startAddr = 0x00000123; // invalid value (no address for picture)
-	const int buffer_size = av_image_get_buffer_size(vdec->ctx->pix_fmt, vdec->ctx->width, vdec->ctx->height, 1);
-	ensure(buffer_size >= 0);
-	info->size = utils::align<u32>(buffer_size, 128);
+	info->size = utils::align<u32>(static_cast<u32>(vdc_picture_size(vdec->dec)), 128);
 	info->auNum = 1;
 	info->auPts[0].lower = static_cast<u32>(pts);
 	info->auPts[0].upper = static_cast<u32>(pts >> 32);
@@ -2097,9 +1961,9 @@ error_code cellVdecGetPicItem(ppu_thread& ppu, u32 handle, vm::pptr<CellVdecPicI
 
 		switch (pict_type)
 		{
-		case AV_PICTURE_TYPE_I: avc->pictureType[0] = CELL_VDEC_AVC_PCT_I; break;
-		case AV_PICTURE_TYPE_P: avc->pictureType[0] = CELL_VDEC_AVC_PCT_P; break;
-		case AV_PICTURE_TYPE_B: avc->pictureType[0] = CELL_VDEC_AVC_PCT_B; break;
+		case VDC_PIC_I: avc->pictureType[0] = CELL_VDEC_AVC_PCT_I; break;
+		case VDC_PIC_P: avc->pictureType[0] = CELL_VDEC_AVC_PCT_P; break;
+		case VDC_PIC_B: avc->pictureType[0] = CELL_VDEC_AVC_PCT_B; break;
 		default:
 		{
 			avc->pictureType[0] = CELL_VDEC_AVC_PCT_UNKNOWN;
@@ -2156,9 +2020,9 @@ error_code cellVdecGetPicItem(ppu_thread& ppu, u32 handle, vm::pptr<CellVdecPicI
 
 		switch (pict_type)
 		{
-		case AV_PICTURE_TYPE_I: dvx->pictureType = CELL_VDEC_DIVX_VCT_I; break;
-		case AV_PICTURE_TYPE_P: dvx->pictureType = CELL_VDEC_DIVX_VCT_P; break;
-		case AV_PICTURE_TYPE_B: dvx->pictureType = CELL_VDEC_DIVX_VCT_B; break;
+		case VDC_PIC_I: dvx->pictureType = CELL_VDEC_DIVX_VCT_I; break;
+		case VDC_PIC_P: dvx->pictureType = CELL_VDEC_DIVX_VCT_P; break;
+		case VDC_PIC_B: dvx->pictureType = CELL_VDEC_DIVX_VCT_B; break;
 		default: cellVdec.error("cellVdecGetPicItem(DivX): unknown pict_type value (handle=0x%x, seq_id=%d, cmd_id=%d, pct=0x%x)", handle, seq_id, cmd_id, pict_type);
 		}
 
@@ -2215,9 +2079,9 @@ error_code cellVdecGetPicItem(ppu_thread& ppu, u32 handle, vm::pptr<CellVdecPicI
 
 		switch (pict_type)
 		{
-		case AV_PICTURE_TYPE_I: mp2->picture_coding_type[0] = CELL_VDEC_MPEG2_PCT_I; break;
-		case AV_PICTURE_TYPE_P: mp2->picture_coding_type[0] = CELL_VDEC_MPEG2_PCT_P; break;
-		case AV_PICTURE_TYPE_B: mp2->picture_coding_type[0] = CELL_VDEC_MPEG2_PCT_B; break;
+		case VDC_PIC_I: mp2->picture_coding_type[0] = CELL_VDEC_MPEG2_PCT_I; break;
+		case VDC_PIC_P: mp2->picture_coding_type[0] = CELL_VDEC_MPEG2_PCT_P; break;
+		case VDC_PIC_B: mp2->picture_coding_type[0] = CELL_VDEC_MPEG2_PCT_B; break;
 		default: cellVdec.error("cellVdecGetPicItem(MPEG2): unknown pict_type value (handle=0x%x, seq_id=%d, cmd_id=%d, pct=0x%x)", handle, seq_id, cmd_id, pict_type);
 		}
 
@@ -2333,10 +2197,6 @@ error_code cellVdecSetPts(u32 handle, vm::ptr<void> unk)
 
 DECLARE(ppu_module_manager::cellVdec)("libvdec", []()
 {
-#if LIBAVCODEC_VERSION_INT < AV_VERSION_INT(58, 10, 100)
-	avcodec_register_all();
-#endif
-
 	REG_VAR(libvdec, _cell_vdec_prx_ver); // 0x085a7ecb
 
 	REG_FUNC(libvdec, cellVdecQueryAttr);

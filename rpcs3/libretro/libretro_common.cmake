@@ -26,9 +26,12 @@ add_library(libretro_common STATIC
     ${LIBRETRO_COMMON_DIR}/formats/atrac3p/ratrac3p.c
     ${LIBRETRO_COMMON_DIR}/formats/dds/rdds.c
     ${LIBRETRO_COMMON_DIR}/formats/gif/rgif.c
+    ${LIBRETRO_COMMON_DIR}/formats/h264/rh264.c
     ${LIBRETRO_COMMON_DIR}/formats/image/image_yuv_blit.c
     ${LIBRETRO_COMMON_DIR}/formats/jpeg/rjpeg.c
     ${LIBRETRO_COMMON_DIR}/formats/json/rjson.c
+    ${LIBRETRO_COMMON_DIR}/formats/mpeg1/rmpeg1_video.c
+    ${LIBRETRO_COMMON_DIR}/formats/mpeg4/rmpeg4_video.c
     ${LIBRETRO_COMMON_DIR}/formats/png/rpng.c
     ${LIBRETRO_COMMON_DIR}/formats/png/rpng_rows.c
     ${LIBRETRO_COMMON_DIR}/formats/xml/rxml.c

@@ -16,7 +16,7 @@ LRC_STD  := -std=gnu99
 # as libretro_common.cmake builds it: net_http over its own TLS client
 LRC_DEFS := -DHAVE_SSL -DHAVE_RETROSSL -DHAVE_CRYPTO
 
-TESTS := test_zstd test_deflate test_rxml test_png_rows test_images test_jpg_rows test_http test_bcn test_tls_duplex test_yaml test_font test_np2 test_rsx_scale test_vpost test_atracx
+TESTS := test_zstd test_deflate test_rxml test_png_rows test_images test_jpg_rows test_http test_bcn test_tls_duplex test_yaml test_font test_np2 test_rsx_scale test_vpost test_atracx test_vdec
 
 test_zstd_LRC := \
 	$(LRC)/encodings/encoding_rzstd.c \
@@ -286,6 +286,23 @@ obj/test_atracx.o: test_atracx.c test_common.h ../../Emu/Cell/Modules/cellAtracX
 test_atracx: obj/test_atracx.o obj/cellAtracXdec_pcm.o $(call lrc_objs,$(test_atracx_LRC))
 	$(CC) $(SANITIZE) -o $@ $^ $(LDFLAGS) $(LDLIBS)
 
+# cellVdec's decoders and conversions; rinflate for the gzipped references
+test_vdec_LRC := \
+	$(LRC)/formats/h264/rh264.c \
+	$(LRC)/formats/mpeg1/rmpeg1_video.c \
+	$(LRC)/formats/mpeg4/rmpeg4_video.c \
+	$(LRC)/formats/image/image_yuv_blit.c \
+	$(test_deflate_LRC)
+
+obj/cellVdec_codec.o: ../../Emu/Cell/Modules/cellVdec_codec.c ../../Emu/Cell/Modules/cellVdec_codec.h
+	@mkdir -p $(@D)
+	$(CC) $(CFLAGS) $(TEST_STD) $(SANITIZE) -c -o $@ $<
+
+obj/test_vdec.o: test_vdec.c test_common.h ../../Emu/Cell/Modules/cellVdec_codec.h
+
+test_vdec: obj/test_vdec.o obj/cellVdec_codec.o $(call lrc_objs,$(sort $(test_vdec_LRC)))
+	$(CC) $(SANITIZE) -o $@ $^ $(LDFLAGS) $(LDLIBS) -lpthread
+
 # Each test also writes what the new code produces, for the reference
 # tools to read back
 check: all
@@ -306,6 +323,7 @@ check: all
 	./test_rsx_scale fixtures
 	./test_vpost fixtures
 	./test_atracx fixtures
+	./test_vdec fixtures
 
 clean:
 	rm -rf obj $(TESTS) *_out.*

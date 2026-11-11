@@ -325,6 +325,7 @@ target_sources(rpcs3_emu PRIVATE
     Cell/Modules/cellUsbpspcm.cpp
     Cell/Modules/cellUserInfo.cpp
     Cell/Modules/cellVdec.cpp
+    Cell/Modules/cellVdec_codec.c
     Cell/Modules/cellVideoExport.cpp
     Cell/Modules/cellVideoOut.cpp
     Cell/Modules/cellVideoPlayerUtility.cpp

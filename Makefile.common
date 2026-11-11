@@ -28,9 +28,12 @@ SOURCES_LRC := \
 	$(CORE_DIR)/rpcs3/libretro/libretro-common/formats/atrac3p/ratrac3p.c \
 	$(CORE_DIR)/rpcs3/libretro/libretro-common/formats/dds/rdds.c \
 	$(CORE_DIR)/rpcs3/libretro/libretro-common/formats/gif/rgif.c \
+	$(CORE_DIR)/rpcs3/libretro/libretro-common/formats/h264/rh264.c \
 	$(CORE_DIR)/rpcs3/libretro/libretro-common/formats/image/image_yuv_blit.c \
 	$(CORE_DIR)/rpcs3/libretro/libretro-common/formats/jpeg/rjpeg.c \
 	$(CORE_DIR)/rpcs3/libretro/libretro-common/formats/json/rjson.c \
+	$(CORE_DIR)/rpcs3/libretro/libretro-common/formats/mpeg1/rmpeg1_video.c \
+	$(CORE_DIR)/rpcs3/libretro/libretro-common/formats/mpeg4/rmpeg4_video.c \
 	$(CORE_DIR)/rpcs3/libretro/libretro-common/formats/png/rpng.c \
 	$(CORE_DIR)/rpcs3/libretro/libretro-common/formats/png/rpng_rows.c \
 	$(CORE_DIR)/rpcs3/libretro/libretro-common/formats/xml/rxml.c \
@@ -319,6 +322,7 @@ SOURCES_RPCS3 := \
 	$(CORE_DIR)/rpcs3/Emu/Cell/Modules/cellUsbpspcm.cpp \
 	$(CORE_DIR)/rpcs3/Emu/Cell/Modules/cellUserInfo.cpp \
 	$(CORE_DIR)/rpcs3/Emu/Cell/Modules/cellVdec.cpp \
+	$(CORE_DIR)/rpcs3/Emu/Cell/Modules/cellVdec_codec.c \
 	$(CORE_DIR)/rpcs3/Emu/Cell/Modules/cellVideoExport.cpp \
 	$(CORE_DIR)/rpcs3/Emu/Cell/Modules/cellVideoOut.cpp \
 	$(CORE_DIR)/rpcs3/Emu/Cell/Modules/cellVideoPlayerUtility.cpp \
