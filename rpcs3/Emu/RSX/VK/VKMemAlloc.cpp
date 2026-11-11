@@ -55,6 +55,11 @@ private:
 #pragma GCC diagnostic ignored "-Wsuggest-attribute=noreturn"
 #endif
 #endif
+// VMA takes the Vulkan functions from volk's pointers (VulkanAPI.h) as
+// they are when the allocator is made, after the instance is loaded
+#define VMA_STATIC_VULKAN_FUNCTIONS 1
+#define VMA_DYNAMIC_VULKAN_FUNCTIONS 0
+#include "VulkanAPI.h"
 #include <vk_mem_alloc.h>
 #if defined(_MSC_VER) && !defined(__clang__)
 #pragma warning(pop)

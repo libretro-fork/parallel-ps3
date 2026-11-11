@@ -21,7 +21,14 @@
 #pragma warning( disable : 4005 )
 #endif
 
+// The functions are volk's pointers, loaded at run time (vk::load_vulkan):
+// the core links no Vulkan library. VK_NO_PROTOTYPES comes from the build,
+// so that every vulkan.h included anywhere leaves the names to volk.
+#ifndef VK_NO_PROTOTYPES
+#define VK_NO_PROTOTYPES
+#endif
 #include <vulkan/vulkan.h>
+#include <volk.h>
 
 #ifdef _MSC_VER
 #pragma warning(pop)
@@ -55,6 +62,16 @@ constexpr VkStructureType VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_UNIFORM_BUFFE
 
 #define DECLARE_VK_FUNCTION_HEADER 1
 #include "VKProcTable.h"
+
+namespace vk
+{
+	// The Vulkan loader, opened at run time (vulkan-1.dll, libvulkan.so.1,
+	// MoltenVK), unless the frontend's vkGetInstanceProcAddr was given
+	bool load_vulkan();
+	void load_vulkan(PFN_vkGetInstanceProcAddr get_instance_proc_addr);
+	// The instance's functions, after it is created or adopted
+	void load_vulkan_instance(VkInstance instance);
+}
 
 namespace vk
 {

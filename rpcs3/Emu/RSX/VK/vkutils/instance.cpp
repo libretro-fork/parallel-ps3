@@ -73,6 +73,7 @@ namespace vk
 	{
 		m_instance = handle;
 		m_owned = false;
+		load_vulkan_instance(handle);
 		// The frontend asks for the Vulkan version the core's application
 		// info names (1.2), so the physical device queries need no extension.
 		extensions_loaded = true;
@@ -101,6 +102,12 @@ namespace vk
 #endif
 	bool instance::create(const char* app_name, bool fast)
 	{
+		// No loader, no driver
+		if (!load_vulkan())
+		{
+			return false;
+		}
+
 		// Initialize a vulkan instance
 		VkApplicationInfo app = {};
 
@@ -239,6 +246,7 @@ namespace vk
 			return false;
 		}
 
+		load_vulkan_instance(m_instance);
 		return true;
 	}
 #ifdef __clang__

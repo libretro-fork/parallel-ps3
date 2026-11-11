@@ -92,7 +92,7 @@ jobs:
         run: |
           cd "${{ env.BUILD_ARTIFACTSTAGINGDIRECTORY }}"
           readelf -d parallel_ps3_libretro_linux_${{ matrix.arch }}.so | grep NEEDED
-          if readelf -d parallel_ps3_libretro_linux_${{ matrix.arch }}.so | grep -qE 'NEEDED.*(libGLEW|libopencv)'; then
+          if readelf -d parallel_ps3_libretro_linux_${{ matrix.arch }}.so | grep -qE 'NEEDED.*(libGLEW|libopencv|libvulkan)'; then
             echo "::error::the core still needs a library the build image provided but a user's system will not"
             exit 1
           fi
@@ -170,10 +170,6 @@ jobs:
             mingw-w64-clang-x86_64-nasm
             mingw-w64-clang-x86_64-pkgconf
             mingw-w64-clang-x86_64-opencv
-            mingw-w64-clang-x86_64-glew
-            mingw-w64-clang-x86_64-vulkan
-            mingw-w64-clang-x86_64-vulkan-headers
-            mingw-w64-clang-x86_64-vulkan-loader
             base-devel
             git
             p7zip
@@ -337,8 +333,8 @@ jobs:
     # As upstream's macOS build, with LLVM's own clang rather than Apple's:
     # Apple clang does not take fmt::throw_exception's [[noreturn]] constructor
     # as the end of a function, and -Werror=return-type fails all over. Clang,
-    # the LLVM the core links and GLEW from Homebrew, the prebuilt ffmpeg,
-    # and Vulkan through Homebrew's MoltenVK.
+    # the LLVM the core links from Homebrew, the prebuilt ffmpeg, and Vulkan
+    # through the MoltenVK RetroArch carries, opened at run time.
     # Each architecture on its own runner, so Homebrew's libraries are its own.
     name: libretro core macos-${{ matrix.arch }} (experimental)
     runs-on: ${{ matrix.runner }}
@@ -361,7 +357,7 @@ jobs:
 
       - name: Dependencies
         run: |
-          brew install ninja llvm@21 glew molten-vk vulkan-headers >/dev/null
+          brew install ninja llvm@21 >/dev/null
           echo "LLVM=$(brew --prefix llvm@21)" >> $GITHUB_ENV
           echo "BREW=$(brew --prefix)" >> $GITHUB_ENV
 
@@ -379,10 +375,7 @@ jobs:
             -DUSE_NATIVE_INSTRUCTIONS=OFF -DUSE_PRECOMPILED_HEADERS=OFF \
             -DUSE_SYSTEM_FFMPEG=OFF \
             -DUSE_SDL=OFF -DUSE_FAUDIO=OFF -DUSE_DISCORD_RPC=OFF \
-            -DUSE_SYSTEM_OPENCV=OFF -DUSE_LTO=OFF \
-            -DUSE_SYSTEM_MVK=ON \
-            -DVulkan_INCLUDE_DIR=$BREW/include \
-            -DVulkan_LIBRARY=$BREW/lib/libMoltenVK.dylib
+            -DUSE_SYSTEM_OPENCV=OFF -DUSE_LTO=OFF
 
       - name: Build
         run: cmake --build build --target rpcs3_libretro
@@ -394,11 +387,10 @@ jobs:
           CORE=artifacts/parallel_ps3_libretro_macos_${{ matrix.arch }}.dylib
           cp "$f" $CORE
           strip -x $CORE
-          # Nothing from Homebrew at its own path: MoltenVK is the one
-          # RetroArch carries in its Frameworks, and zstd (LLVM's) goes next to
-          # the core
-          MVK=$(otool -L $CORE | awk '/libMoltenVK/ {print $1}')
-          [ -n "$MVK" ] && install_name_tool -change "$MVK" @rpath/libMoltenVK.dylib $CORE
+          # Nothing from Homebrew at its own path: zstd (LLVM's) goes next
+          # to the core. MoltenVK is not linked: volk opens the one RetroArch
+          # carries at run time
+          if otool -L $CORE | grep -q -i 'vulkan\|MoltenVK'; then echo "the core links Vulkan"; exit 1; fi
           ZSTD=$(otool -L $CORE | awk '/libzstd/ {print $1}')
           if [ -n "$ZSTD" ]; then
             # One per architecture, named after it, so the two never meet

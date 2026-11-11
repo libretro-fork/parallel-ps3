@@ -2367,11 +2367,16 @@ static bool vk_own_device_possible(std::string& error)
 }
 
 static bool vk_create_device(struct retro_vulkan_context* context, VkInstance instance, VkPhysicalDevice gpu,
-    VkSurfaceKHR surface, PFN_vkGetInstanceProcAddr /*get_instance_proc_addr*/,
+    VkSurfaceKHR surface, PFN_vkGetInstanceProcAddr get_instance_proc_addr,
     const char** required_device_extensions, unsigned num_required_device_extensions,
     const char** /*required_device_layers*/, unsigned /*num_required_device_layers*/,
     const VkPhysicalDeviceFeatures* required_features)
 {
+    // Vulkan's functions from the frontend's loader, for its instance
+    if (get_instance_proc_addr)
+        vk::load_vulkan(get_instance_proc_addr);
+    else if (!vk::load_vulkan())
+        return false;
     vk::instance& inst = vk::libretro::shared_instance();
     inst.adopt(instance);
     std::vector<vk::physical_device>& gpus = inst.enumerate_devices();

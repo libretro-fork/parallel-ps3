@@ -6,13 +6,10 @@
 # the libretro buildbot runs: it has no Windows machine with a toolchain new
 # enough for RPCS3, only Linux runners.
 #
-# clang64 has LLVM, GLEW and the Vulkan loader as packages; a cross toolchain
-# has none of them, so they are made here:
-# - LLVM from its submodule (BUILD_LLVM), the way the Android build gets it;
-# - GLEW from its release source, as a static library;
-# - the Vulkan headers from Khronos, and an import library for vulkan-1.dll
-#   made from the loader's .def file - the core links the loader that comes
-#   with the GPU driver, it does not carry one.
+# clang64 has LLVM as a package; a cross toolchain does not, so it is built
+# here from its submodule (BUILD_LLVM), the way the Android build gets it.
+# The Vulkan headers come from the tree and the loader that comes with the
+# GPU driver is opened at run time (volk); GLEW is not used on Windows.
 # ffmpeg is the prebuilt ffmpeg-mingw the build fetches by itself, and OpenCV
 # is left out, as it is optional.
 #
@@ -101,30 +98,6 @@ if [ ! -d "$DEPS/src/ittapi" ]; then
     done
 fi
 
-# Vulkan headers and the vulkan-1 import library.
-if [ ! -f "$DEPS/lib/libvulkan-1.a" ]; then
-    git clone --quiet --depth 1 -b v1.4.321 https://github.com/KhronosGroup/Vulkan-Headers.git "$DEPS/src/Vulkan-Headers"
-    cp -r "$DEPS/src/Vulkan-Headers/include/vulkan" "$DEPS/src/Vulkan-Headers/include/vk_video" "$DEPS/include/"
-    git clone --quiet --depth 1 -b v1.4.321 https://github.com/KhronosGroup/Vulkan-Loader.git "$DEPS/src/Vulkan-Loader"
-    llvm-dlltool -m i386:x86-64 -d "$DEPS/src/Vulkan-Loader/loader/vulkan-1.def" -D vulkan-1.dll -l "$DEPS/lib/libvulkan-1.a"
-fi
-
-# GLEW, static. The release tarball carries the generated sources; the git
-# repository does not.
-if [ ! -f "$DEPS/lib/libglew32.a" ]; then
-    mkdir -p "$DEPS/src"
-    curl -sSL https://github.com/nigels-com/glew/releases/download/glew-2.2.0/glew-2.2.0.tgz | tar -xz -C "$DEPS/src"
-    cmake -S "$DEPS/src/glew-2.2.0/build/cmake" -B "$DEPS/src/glew-build" -G Ninja \
-        -DCMAKE_TOOLCHAIN_FILE="$DEPS/toolchain.cmake" \
-        -DCMAKE_BUILD_TYPE=Release \
-        -DCMAKE_INSTALL_PREFIX="$DEPS" \
-        -DBUILD_UTILS=OFF \
-        -DBUILD_SHARED_LIBS=OFF \
-        -DCMAKE_POLICY_VERSION_MINIMUM=3.5
-    cmake --build "$DEPS/src/glew-build" -j "$JOBS"
-    cmake --install "$DEPS/src/glew-build"
-fi
-
 cmake -S . -B build -G Ninja                           \
     -DCMAKE_TOOLCHAIN_FILE="$DEPS/toolchain.cmake"     \
     -DCMAKE_BUILD_TYPE=Release                         \
@@ -144,11 +117,7 @@ cmake -S . -B build -G Ninja                           \
     -DOpenGL_GL_PREFERENCE=LEGACY                      \
     -DWITH_LLVM=ON                                     \
     -DBUILD_LLVM=ON                                    \
-    -DITTAPI_SOURCE_DIR="$DEPS/src"                    \
-    -DGLEW_INCLUDE_DIR="$DEPS/include"                 \
-    -DGLEW_STATIC_ARCHIVE="$DEPS/lib/libglew32.a"      \
-    -DVulkan_INCLUDE_DIR="$DEPS/include"               \
-    -DVulkan_LIBRARY="$DEPS/lib/libvulkan-1.a"
+    -DITTAPI_SOURCE_DIR="$DEPS/src"
 
 # -k 0 under KEEP_GOING=1, so a trial run reports every error, not the first.
 cmake --build build --target rpcs3_libretro -j "$JOBS" -- ${KEEP_GOING:+-k 0}
@@ -158,6 +127,6 @@ CORE=build/bin/parallel_ps3_libretro.dll
 test -f "$CORE"
 llvm-strip --strip-unneeded "$CORE"
 ls -la "$CORE"
-# What the DLL needs at load time: Windows' own DLLs, vulkan-1 and opengl32,
-# nothing else.
+# What the DLL needs at load time: Windows' own DLLs and opengl32, nothing
+# else (vulkan-1 is opened at run time).
 llvm-readobj --coff-imports "$CORE" | grep 'Name:' | sort -u

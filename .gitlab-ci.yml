@@ -102,7 +102,7 @@ libretro-build-linux-aarch64:
 # Windows in. The buildbot's own Windows images cannot build RPCS3: MXE's gcc
 # is not a toolchain RPCS3 supports, and MSVC 2019 16.8 is too old for its C++.
 # .ci/build-windows-cross-libretro.sh makes what clang64 would provide as
-# packages (LLVM, GLEW, the Vulkan headers and import library).
+# packages (LLVM).
 libretro-build-windows-x64:
   extends:
     - .libretro-windows-cmake-x86_64

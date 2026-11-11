@@ -10,6 +10,21 @@ namespace vk
 {
 	const render_device* get_current_renderer();
 
+	bool load_vulkan()
+	{
+		return vkGetInstanceProcAddr || volkInitialize() == VK_SUCCESS;
+	}
+
+	void load_vulkan(PFN_vkGetInstanceProcAddr get_instance_proc_addr)
+	{
+		volkInitializeCustom(get_instance_proc_addr);
+	}
+
+	void load_vulkan_instance(VkInstance instance)
+	{
+		volkLoadInstance(instance);
+	}
+
 	void init()
 	{
 		auto pdev = get_current_renderer();

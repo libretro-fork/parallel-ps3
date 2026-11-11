@@ -71,7 +71,7 @@ include Makefile.common
 HOST_CC ?= cc
 PKG_CONFIG ?= pkg-config
 
-DEFINES := -DLIBRETRO_CORE -DHAVE_VULKAN -DAL_LIBTYPE_STATIC
+DEFINES := -DLIBRETRO_CORE -DHAVE_VULKAN -DVK_NO_PROTOTYPES -DAL_LIBTYPE_STATIC
 LIBS    :=
 
 # Unix
@@ -84,17 +84,18 @@ ifeq ($(platform), unix)
    OS_RPCS3    := $(SOURCES_RPCS3_GL)
    OS_LIBRETRO := $(SOURCES_LIBRETRO_GL)
    # As rpcs3/CMakeLists.txt has it, on Linux only (on Windows it is a type)
-   DEFINES += -DGLEW_STATIC -DDATADIR=\"/usr/local/share/rpcs3\"
+   DEFINES += -DGLEW_STATIC -DGLEW_NO_GLU -DDATADIR=\"/usr/local/share/rpcs3\"
    FLAGS_GLSLANG += -DGLSLANG_OSINCLUDE_UNIX
    FLAGS_LIBUSB  += -DPLATFORM_POSIX=1 -DHAVE_CLOCK_GETTIME
    # The GL renderer's X11 parts, as the CMake build has them when X11 and
    # GLVND's libOpenGL are found
    ifeq ($(shell $(PKG_CONFIG) --exists x11 && echo yes),yes)
       DEFINES += -DHAVE_X11
+      FLAGS_VOLK += -DVK_USE_PLATFORM_XLIB_KHR
       OS_LIBRETRO += $(SOURCES_LIBRETRO_X11)
    endif
-   # GLEW statically, so the core does not need one libGLEW.so by soname
-   GLEW_LIBS ?= -Wl,-Bstatic -lGLEW -Wl,-Bdynamic
+   # GLEW from the tree, for the OpenGL renderer
+   OS_GLEW := $(SOURCES_GLEW)
    ifeq ($(shell $(PKG_CONFIG) --exists opengl && echo yes),yes)
       GL_LIBS ?= -lOpenGL
    else
@@ -103,10 +104,8 @@ ifeq ($(platform), unix)
    ifeq ($(shell $(PKG_CONFIG) --exists egl && echo yes),yes)
       GL_LIBS += -lEGL
    endif
-   VULKAN_LIBS ?= -lvulkan
-   LIBS += $(GLEW_LIBS) $(GL_LIBS) $(VULKAN_LIBS) -ldl -lrt -lpthread -lm
+   LIBS += $(GL_LIBS) -ldl -lrt -lpthread -lm
    FFMPEG_OS := linux
-   INSTALL_HINT := on Debian and Ubuntu: sudo apt install libvulkan-dev libglew-dev
 
 # OS X
 else ifeq ($(platform), osx)
@@ -122,43 +121,37 @@ else ifeq ($(platform), osx)
    FLAGS_LIBUSB  += -DPLATFORM_POSIX=1 -DHAVE_CLOCK_GETTIME
    # RtMidi's own default on macOS: CoreMIDI
    FLAGS_RTMIDI  += -D__MACOSX_CORE__
-   # Vulkan through MoltenVK
-   VULKAN_LIBS ?= -lMoltenVK
-   LIBS += $(VULKAN_LIBS) -liconv -framework CoreVideo -framework Foundation \
+   # Vulkan through MoltenVK, which volk opens at run time
+   FLAGS_VOLK += -DVK_USE_PLATFORM_METAL_EXT
+   LIBS += -liconv -framework CoreVideo -framework Foundation \
       -framework IOKit -framework Security -framework QuartzCore -framework Metal -framework AppKit \
       -framework CoreMIDI -framework CoreAudio
    ifeq ($(IS_ARM64),1)
       ARCH_FLAGS := -march=armv8.4-a
    endif
    FFMPEG_OS := macos
-   INSTALL_HINT := with Homebrew: brew install vulkan-headers molten-vk, with its include and lib folders in CPPFLAGS and LDFLAGS
 
 # Windows (MinGW-w64)
 else ifneq (,$(findstring win,$(platform)))
    TARGET  := $(TARGET_NAME)_libretro.dll
-   # Statically, so the DLL needs Windows' own DLLs, vulkan-1 and opengl32
-   # and nothing else; RETRO_API's dllexport is what it exports
+   # Statically, so the DLL needs Windows' own DLLs and opengl32 and nothing
+   # else (volk opens vulkan-1.dll at run time); RETRO_API's dllexport is
+   # what it exports
    SHARED  := -shared -static -static-libgcc -static-libstdc++ -Wl,--no-undefined
    OS_GLSLANG  := $(SOURCES_GLSLANG_WINDOWS)
    OS_LIBUSB   := $(SOURCES_LIBUSB_WINDOWS)
    OS_RPCS3    := $(SOURCES_RPCS3_GL)
    OS_LIBRETRO := $(SOURCES_LIBRETRO_GL)
-   DEFINES += -DUNICODE -D_UNICODE -D_WIN32_WINNT=0x0A00 -DGLEW_STATIC
+   DEFINES += -DUNICODE -D_UNICODE -D_WIN32_WINNT=0x0A00
+   FLAGS_VOLK += -DVK_USE_PLATFORM_WIN32_KHR
    FLAGS_GLSLANG += -DGLSLANG_OSINCLUDE_WIN32
    FLAGS_LIBUSB  += -DPLATFORM_WINDOWS=1
    # RtMidi's own default on Windows: Windows multimedia MIDI (winmm)
    FLAGS_RTMIDI  += -D__WINDOWS_MM__
-   # MinGW has vulkan-1 as an import library only (libvulkan-1.dll.a),
-   # which a -static link passes over: that one dynamically
-   VULKAN_LIBS ?= -Wl,-Bdynamic -lvulkan-1 -Wl,-Bstatic
-   GLEW_LIBS ?= -lglew32
-   LIBS += $(GLEW_LIBS) $(VULKAN_LIBS) -lopengl32 -lws2_32 -liphlpapi -lwinmm -lpsapi -lgdi32 \
+   LIBS += -lopengl32 -lws2_32 -liphlpapi -lwinmm -lpsapi -lgdi32 \
       -lsetupapi -ldbghelp -lpdh -lbcrypt -lole32 -loleaut32 -luuid -lshlwapi \
       -lstrmiids -luser32 -lwinpthread
    FFMPEG_OS := mingw
-   ifneq ($(MINGW_PACKAGE_PREFIX),)
-      INSTALL_HINT := in this MSYS2 shell: pacman -S --needed $(MINGW_PACKAGE_PREFIX)-vulkan-headers $(MINGW_PACKAGE_PREFIX)-vulkan-loader $(MINGW_PACKAGE_PREFIX)-glew
-   endif
 else
    $(error platform $(platform) is not one this Makefile builds for: unix, osx or win)
 endif
@@ -317,30 +310,6 @@ FLAGS_RPCS3 := -std=gnu++23 -fno-exceptions -fstack-protector $(ARCH_FLAGS) \
 FLAGS_LIBRETRO := $(FLAGS_RPCS3) $(INCLUDES_LIBRETRO) -fexceptions -Wno-error=old-style-cast \
 	-DRPCS3_LIBRETRO_VERSION='"$(LIBRETRO_VERSION)"'
 
-# The system's headers the core is built against, looked for before
-# anything is built rather than found missing by the first file that
-# includes one; and their libraries
-NEED_HEADERS := vulkan/vulkan.h
-NEED_LIBS    := $(VULKAN_LIBS) $(if $(filter unix win,$(platform)),$(GLEW_LIBS))
-ifneq (,$(findstring win,$(platform)))
-   NEED_HEADERS += GL/glew.h
-else ifeq ($(platform),unix)
-   NEED_HEADERS += GL/glew.h
-else
-   NEED_LIBS := $(VULKAN_LIBS)
-endif
-ifeq ($(filter clean,$(MAKECMDGOALS)),)
-   MISSING := $(foreach h,$(NEED_HEADERS),$(if $(shell printf '\043include <$(h)>\n' | \
-      $(CXX) $(CPPFLAGS) $(DEFINES) $(INCLUDES_RPCS3) -E -x c++ - >/dev/null 2>&1 && echo y),,$(h)))
-   MISSING += $(foreach l,$(filter -l%,$(NEED_LIBS)),$(if $(shell printf 'int main(void){return 0;}\n' | \
-      $(CC) -x c - -o .link-probe $(LDFLAGS) $(if $(findstring win,$(platform)),-static) \
-      $(foreach x,$(NEED_LIBS),$(if $(filter -l%,$(x)),$(filter $(l),$(x)),$(x))) >/dev/null 2>&1 && echo y; \
-      rm -f .link-probe .link-probe.exe),,$(l)))
-   ifneq ($(strip $(MISSING)),)
-      $(error not found: $(strip $(MISSING)); $(if $(INSTALL_HINT),install them $(INSTALL_HINT),install the Vulkan headers and loader and GLEW))
-   endif
-endif
-
 # The C files among RPCS3's sources (C89 modules) with C flags, not C++'s
 FLAGS_RPCS3_C := -std=gnu99 $(ARCH_FLAGS) $(DEFINES) $(INCLUDES_RPCS3) -Wall
 
@@ -353,11 +322,13 @@ OBJ_GLSLANG  := $(call objs,$(SOURCES_GLSLANG) $(OS_GLSLANG))
 OBJ_ASMJIT   := $(call objs,$(SOURCES_ASMJIT))
 OBJ_RTMIDI   := $(call objs,$(SOURCES_RTMIDI))
 OBJ_FUSION   := $(call objs,$(SOURCES_FUSION))
+OBJ_VOLK     := $(call objs,$(SOURCES_VOLK))
+OBJ_GLEW     := $(call objs,$(OS_GLEW))
 OBJ_LIBRETRO := $(call objs,$(SOURCES_LIBRETRO) $(SOURCES_GENERATED) $(OS_LIBRETRO))
 OBJ_RPCS3    := $(call objs,$(SOURCES_RPCS3) $(OS_RPCS3))
 
 OBJECTS := $(OBJ_LRC) $(OBJ_LIBUSB) $(OBJ_GLSLANG) $(OBJ_ASMJIT) $(OBJ_RTMIDI) $(OBJ_FUSION) \
-	$(OBJ_RPCS3) $(OBJ_LIBRETRO)
+	$(OBJ_VOLK) $(OBJ_GLEW) $(OBJ_RPCS3) $(OBJ_LIBRETRO)
 
 $(OBJ_LRC):      FLAGS := $(FLAGS_LRC)
 $(OBJ_LIBUSB):   FLAGS := $(FLAGS_LIBUSB)
@@ -365,8 +336,12 @@ $(OBJ_GLSLANG):  FLAGS := $(FLAGS_GLSLANG)
 $(OBJ_ASMJIT):   FLAGS := $(FLAGS_ASMJIT)
 $(OBJ_RTMIDI):   FLAGS := $(FLAGS_RTMIDI)
 $(OBJ_FUSION):   FLAGS := $(FLAGS_FUSION)
+$(OBJ_VOLK):     FLAGS := $(FLAGS_VOLK)
 $(OBJ_RPCS3):    FLAGS := $(FLAGS_RPCS3)
 $(call objs,$(filter %.c,$(SOURCES_RPCS3) $(OS_RPCS3))): FLAGS := $(FLAGS_RPCS3_C)
+ifneq ($(OBJ_GLEW),)
+$(OBJ_GLEW):     FLAGS := $(FLAGS_GLEW)
+endif
 $(OBJ_LIBRETRO): FLAGS := $(FLAGS_LIBRETRO)
 
 # Built without RTTI, as LLVM is (rpcs3/Emu/CMakeLists.txt)
@@ -381,7 +356,7 @@ $(CORE_DIR)/rpcs3/rpcs3_version.o: $(CORE_DIR)/rpcs3/git-version.h
 # the fake toolchains in LLVM's clang tests, and delete them.
 OBJ_DIRS := $(sort $(dir \
 	$(SOURCES_LRC) $(SOURCES_ASMJIT) $(SOURCES_GLSLANG) $(SOURCES_LIBUSB) $(SOURCES_RTMIDI) \
-	$(SOURCES_FUSION) $(SOURCES_RPCS3) $(SOURCES_RPCS3_GL) $(SOURCES_LIBRETRO) \
+	$(SOURCES_FUSION) $(SOURCES_VOLK) $(SOURCES_GLEW) $(SOURCES_RPCS3) $(SOURCES_RPCS3_GL) $(SOURCES_LIBRETRO) \
 	$(SOURCES_GLSLANG_UNIX) $(SOURCES_GLSLANG_WINDOWS) $(SOURCES_LIBUSB_LINUX) \
 	$(SOURCES_LIBUSB_DARWIN) $(SOURCES_LIBUSB_WINDOWS) $(SOURCES_RPCS3_AARCH64) \
 	$(SOURCES_RPCS3_DARWIN) $(SOURCES_LIBRETRO_GL) $(SOURCES_LIBRETRO_NOGL) \
@@ -420,7 +395,9 @@ ARCHIVES := \
 	$(CORE_DIR)/libasmjit.a \
 	$(CORE_DIR)/libusb.a \
 	$(CORE_DIR)/librtmidi.a \
-	$(CORE_DIR)/libfusion.a
+	$(CORE_DIR)/libfusion.a \
+	$(CORE_DIR)/libvolk.a \
+	$(if $(OBJ_GLEW),$(CORE_DIR)/libglew.a)
 
 $(CORE_DIR)/librpcs3_emu.a: $(OBJ_RPCS3)
 $(CORE_DIR)/liblibretro_common.a: $(OBJ_LRC)
@@ -429,6 +406,8 @@ $(CORE_DIR)/libasmjit.a: $(OBJ_ASMJIT)
 $(CORE_DIR)/libusb.a: $(OBJ_LIBUSB)
 $(CORE_DIR)/librtmidi.a: $(OBJ_RTMIDI)
 $(CORE_DIR)/libfusion.a: $(OBJ_FUSION)
+$(CORE_DIR)/libvolk.a: $(OBJ_VOLK)
+$(CORE_DIR)/libglew.a: $(OBJ_GLEW)
 
 $(ARCHIVES):
 	$(SAY) AR $@

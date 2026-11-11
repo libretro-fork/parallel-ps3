@@ -6,11 +6,9 @@
 # LLVM is linked statically, so the core is a single file with nothing to
 # place beside it.
 #
-# GLEW is linked statically. find_package(GLEW) otherwise hands back the
-# shared libGLEW.so.2.2 from the build image, and the finished core then needs
-# that exact soname on whatever machine it lands on - the first person to try
-# this build could not load it for that reason. A core should carry what is
-# not part of a normal system.
+# GLEW, the Vulkan headers and volk come from the tree (3rdparty/glew,
+# 3rdparty/Vulkan-Headers, 3rdparty/volk): GLEW is compiled into the core, so
+# it needs no libGLEW.so by soname, and Vulkan is loaded at run time.
 #
 # TLS (RPCN, the clans server) is libretro-common's own client, and HTTP
 # (UPnP, the clans server) its net_http: no wolfSSL and no libcurl, whose
@@ -71,7 +69,6 @@ cmake ..                                               \
     -DUSE_DISCORD_RPC=OFF                              \
     -DOpenGL_GL_PREFERENCE=LEGACY                      \
     -DCMAKE_DISABLE_FIND_PACKAGE_Wayland=ON            \
-    -DGLEW_USE_STATIC_LIBS=ON                          \
     -DLLVM_DIR=/opt/llvm/lib/cmake/llvm                \
     -DSTATIC_LINK_LLVM=ON                              \
     -G Ninja

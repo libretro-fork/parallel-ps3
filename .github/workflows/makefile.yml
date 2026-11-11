@@ -43,25 +43,22 @@ jobs:
       # as LTO bitcode, which GNU ld cannot link; 22's are plain objects.)
       - name: Dependencies
         run: |
-          sudo apt-get install -y -q libglew-dev libvulkan-dev libx11-dev libegl-dev libgl-dev zlib1g-dev unzip >/dev/null
+          sudo apt-get install -y -q libx11-dev libegl-dev libgl-dev zlib1g-dev unzip >/dev/null
           mkdir -p "$RUNNER_TEMP/llvm"
           curl -fsSL https://github.com/llvm/llvm-project/releases/download/llvmorg-22.1.0/LLVM-22.1.0-Linux-X64.tar.xz |
             tar -xJ -C "$RUNNER_TEMP/llvm" --strip-components=1 --wildcards \
               '*/bin/llvm-config' '*/include/llvm/*' '*/include/llvm-c/*' '*/lib/libLLVM*.a'
           echo "LLVM_CONFIG=$RUNNER_TEMP/llvm/bin/llvm-config" >> "$GITHUB_ENV"
 
-      # A system header or library that is not there stops make before
-      # anything is built, naming it and what to install
-      - name: Missing dependencies
-        run: |
-          for arg in VULKAN_LIBS=-lnotthere NEED_HEADERS=vulkan/notthere.h; do
-            if make -n "$arg" LLVM_CONFIG="$LLVM_CONFIG" > deps.log 2>&1; then cat deps.log; exit 1; fi
-            grep -q "not found: .*notthere.*apt install" deps.log || { cat deps.log; exit 1; }
-          done
-          make -n LLVM_CONFIG="$LLVM_CONFIG" > /dev/null
-
       - name: Build
         run: make -j"$(nproc)" LLVM_CONFIG="$LLVM_CONFIG"
+
+      # Nothing to install for Vulkan or GLEW, and nothing of theirs needed
+      # by the core: GLEW is compiled in, Vulkan opened at run time
+      - name: Libraries
+        run: |
+          readelf -d parallel_ps3_libretro.so | grep NEEDED
+          if readelf -d parallel_ps3_libretro.so | grep -qE 'NEEDED.*(libvulkan|libGLEW)'; then exit 1; fi
 
       - name: Load
         run: make check LLVM_CONFIG="$LLVM_CONFIG"

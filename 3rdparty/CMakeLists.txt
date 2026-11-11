@@ -95,57 +95,51 @@ else()
 endif()
 
 
-# Vulkan
+# Vulkan: Khronos' headers and volk from the tree. volk loads the functions
+# at run time, from the frontend's vkGetInstanceProcAddr or the system's
+# loader (vulkan-1.dll, libvulkan.so.1, MoltenVK), so nothing is linked and
+# nothing has to be installed to build.
 set(VULKAN_TARGET 3rdparty_dummy_lib)
 if(USE_VULKAN)
-	if(APPLE)
-		if(USE_SYSTEM_MVK)
-			message(STATUS "RPCS3: Using system MoltenVK")
-		else()
-			message(STATUS "RPCS3: MoltenVK submodule")
-
-			execute_process(COMMAND "${CMAKE_COMMAND}" -G "${CMAKE_GENERATOR}" .
-				WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/MoltenVK"
-			)
-			execute_process(COMMAND "${CMAKE_COMMAND}" --build .
-				WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/MoltenVK"
-			)
-
-			add_library(moltenvk_lib SHARED IMPORTED)
-			add_dependencies(moltenvk_lib moltenvk)
-			set_target_properties(moltenvk_lib
-				PROPERTIES IMPORTED_LOCATION "{Vulkan_LIBRARY}"
-			)
-
-			set(VULKAN_SDK "${CMAKE_CURRENT_SOURCE_DIR}/MoltenVK/MoltenVK/MoltenVK")
-			set(VK_ICD_FILENAMES "${CMAKE_CURRENT_SOURCE_DIR}/MoltenVK/MoltenVK/MoltenVK/icd/MoltenVK_icd.json")
-			set(Vulkan_INCLUDE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/MoltenVK/MoltenVK/MoltenVK/include")
-			set(Vulkan_LIBRARY "${CMAKE_CURRENT_SOURCE_DIR}/MoltenVK/MoltenVK/Build/Products/Release/dynamic/libMoltenVK.dylib")
-			set(Vulkan_TOOLS "${CMAKE_CURRENT_SOURCE_DIR}/MoltenVK/MoltenVK/Build/Products/Release")
-		endif()
-	endif()
-
-	find_package(Vulkan)
-	if(VULKAN_FOUND)
-		add_library(3rdparty_vulkan INTERFACE)
-		target_compile_definitions(3rdparty_vulkan INTERFACE -DHAVE_VULKAN)
-		target_link_libraries(3rdparty_vulkan INTERFACE Vulkan::Vulkan)
-
-		if(UNIX AND NOT APPLE AND NOT ANDROID)
-			find_package(Wayland)
-			if (WAYLAND_FOUND)
-				target_include_directories(3rdparty_vulkan
-					SYSTEM INTERFACE ${WAYLAND_INCLUDE_DIR})
-			endif()
-		endif()
-
-		set(VULKAN_TARGET 3rdparty_vulkan)
+	add_library(3rdparty_volk STATIC volk/volk.c)
+	set_property(TARGET 3rdparty_volk PROPERTY POSITION_INDEPENDENT_CODE ON)
+	target_include_directories(3rdparty_volk SYSTEM PUBLIC Vulkan-Headers/include volk)
+	target_compile_definitions(3rdparty_volk PUBLIC VK_NO_PROTOTYPES)
+	if(WIN32)
+		target_compile_definitions(3rdparty_volk PRIVATE VK_USE_PLATFORM_WIN32_KHR)
+	elseif(APPLE)
+		target_compile_definitions(3rdparty_volk PRIVATE VK_USE_PLATFORM_METAL_EXT)
+	elseif(ANDROID)
+		target_compile_definitions(3rdparty_volk PRIVATE VK_USE_PLATFORM_ANDROID_KHR)
 	else()
-		message(WARNING "USE_VULKAN was enabled, but libvulkan was not found. RPCS3 will be compiled without Vulkan support.")
-		if(APPLE)
-			message(FATAL_ERROR "To build without Vulkan support on macOS, please disable USE_VULKAN.")
+		find_package(X11)
+		if(X11_FOUND)
+			target_compile_definitions(3rdparty_volk PRIVATE VK_USE_PLATFORM_XLIB_KHR)
+			target_include_directories(3rdparty_volk PRIVATE ${X11_INCLUDE_DIR})
+		endif()
+		find_package(Wayland)
+		if(WAYLAND_FOUND)
+			target_compile_definitions(3rdparty_volk PRIVATE VK_USE_PLATFORM_WAYLAND_KHR)
+			target_include_directories(3rdparty_volk PRIVATE ${WAYLAND_INCLUDE_DIR})
 		endif()
 	endif()
+	if(NOT WIN32)
+		target_link_libraries(3rdparty_volk PRIVATE ${CMAKE_DL_LIBS})
+	endif()
+
+	add_library(3rdparty_vulkan INTERFACE)
+	target_compile_definitions(3rdparty_vulkan INTERFACE -DHAVE_VULKAN)
+	target_link_libraries(3rdparty_vulkan INTERFACE 3rdparty_volk)
+
+	if(UNIX AND NOT APPLE AND NOT ANDROID)
+		find_package(Wayland)
+		if (WAYLAND_FOUND)
+			target_include_directories(3rdparty_vulkan
+				SYSTEM INTERFACE ${WAYLAND_INCLUDE_DIR})
+		endif()
+	endif()
+
+	set(VULKAN_TARGET 3rdparty_vulkan)
 endif()
 
 # AsmJit
@@ -204,30 +198,21 @@ if(NOT ANDROID OR USE_SYSTEM_FFMPEG)
 endif()
 
 
-# GLEW
-add_library(3rdparty_glew INTERFACE)
-if(NOT MSVC AND NOT ANDROID AND NOT APPLE)
-	# A libretro core is dropped into a frontend on a machine nobody here
-	# chose, so it must not go out needing libGLEW.so.2.2 by soname -
-	# distributions disagree about that one, and the core then fails to load
-	# with nothing but a dynamic linker error to go on. Setting
-	# GLEW_USE_STATIC_LIBS is not enough on its own: FindGLEW honours it only
-	# in some versions and quietly hands back the shared target in the rest,
-	# which is what happened to the first build that went out. So look the
-	# archive up directly and say in the configure log which one was taken.
-	set(GLEW_USE_STATIC_LIBS ON)
-	find_package(GLEW REQUIRED)
-	find_library(GLEW_STATIC_ARCHIVE NAMES libGLEW.a libglew.a)
-	if(GLEW_STATIC_ARCHIVE)
-		message(STATUS "GLEW: linking statically against ${GLEW_STATIC_ARCHIVE}")
-		target_link_libraries(3rdparty_glew INTERFACE ${GLEW_STATIC_ARCHIVE})
-		# The archive is a bare path, so its headers do not come along with it.
-		target_include_directories(3rdparty_glew INTERFACE ${GLEW_INCLUDE_DIRS})
-		target_compile_definitions(3rdparty_glew INTERFACE GLEW_STATIC)
-	else()
-		message(STATUS "GLEW: no static archive found, linking the shared library")
-		target_link_libraries(3rdparty_glew INTERFACE GLEW::GLEW)
+# GLEW, from the tree, for the OpenGL renderer on Linux and the BSDs (on
+# Windows it loads its functions itself; Android and macOS have no GL
+# renderer). Compiled into the core: nothing to install, no libGLEW.so to
+# need by soname.
+if(UNIX AND NOT APPLE AND NOT ANDROID)
+	add_library(3rdparty_glew STATIC glew/src/glew.c)
+	target_include_directories(3rdparty_glew SYSTEM PUBLIC glew/include)
+	target_compile_definitions(3rdparty_glew PUBLIC GLEW_STATIC GLEW_NO_GLU)
+	find_package(X11)
+	if(X11_FOUND)
+		target_include_directories(3rdparty_glew PRIVATE ${X11_INCLUDE_DIR})
 	endif()
+	set_property(TARGET 3rdparty_glew PROPERTY POSITION_INDEPENDENT_CODE ON)
+else()
+	add_library(3rdparty_glew INTERFACE)
 endif()
 
 
