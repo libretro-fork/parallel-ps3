@@ -413,9 +413,7 @@ namespace utils
 			m_thread.reset();
 		}
 
-		std::scoped_lock lock(m_video_mtx, m_audio_mtx);
-		m_frames_to_encode.clear();
-		m_samples_to_encode.clear();
+		clear_queues();
 		has_error = false;
 		m_flush = false;
 		m_paused = false;
@@ -494,26 +492,13 @@ namespace utils
 			s64 last_video_pts = -1;
 			u64 audio_written = 0; // frames, silence included
 
+			// Its buffer goes back to the producer with the next frame
+			encoder_frame frame_data;
+
 			while ((thread_ctrl::state() != thread_state::aborting || m_flush) && !has_error)
 			{
 				// Fetch video frame
-				encoder_frame frame_data;
-				bool got_frame = false;
-				{
-					m_video_mtx.lock();
-
-					if (m_frames_to_encode.empty())
-					{
-						m_video_mtx.unlock();
-					}
-					else
-					{
-						frame_data = std::move(m_frames_to_encode.front());
-						m_frames_to_encode.pop_front();
-						m_video_mtx.unlock();
-						got_frame = true;
-					}
-				}
+				const bool got_frame = pop_frame(frame_data);
 
 				if (got_frame)
 				{
@@ -542,57 +527,44 @@ namespace utils
 				}
 
 				// Fetch audio sample
-				encoder_sample sample_data;
-				bool got_sample = false;
-				{
-					m_audio_mtx.lock();
-
-					if (m_samples_to_encode.empty())
-					{
-						m_audio_mtx.unlock();
-					}
-					else
-					{
-						sample_data = std::move(m_samples_to_encode.front());
-						m_samples_to_encode.pop_front();
-						m_audio_mtx.unlock();
-						got_sample = true;
-					}
-				}
+				const encoder_sample* const sample = peek_sample();
+				const bool got_sample = sample != nullptr;
 
 				if (got_sample)
 				{
-					if (sample_data.channels != m_channels)
+					if (sample->channels != m_channels)
 					{
-						media_log.error("video_encoder: Audio sample channel count %d does not match the recording's %d", sample_data.channels, m_channels);
+						media_log.error("video_encoder: Audio sample channel count %d does not match the recording's %d", sample->channels, m_channels);
 						has_error = true;
 						break;
 					}
 
 					// Where this block starts, in frames
-					const s64 pts = get_audio_pts(sample_data.timestamp_us);
+					const s64 pts = get_audio_pts(sample->timestamp_us);
 					const u64 start = static_cast<u64>(std::max<s64>(pts, 0)) * m_samples_per_block;
 
 					// We need to skip this block if its time is already written.
 					if (start < audio_written)
 					{
-						media_log.trace("video_encoder: skipping sample. written=%d, pts=%d, timestamp_us=%d", audio_written, pts, sample_data.timestamp_us);
+						media_log.trace("video_encoder: skipping sample. written=%d, pts=%d, timestamp_us=%d", audio_written, pts, sample->timestamp_us);
 					}
 					else
 					{
 						// Silence to fill the gap, then the samples
 						if ((start > audio_written && !me_audio(enc, nullptr, start - audio_written)) ||
-							!me_audio(enc, reinterpret_cast<const f32*>(sample_data.data.data()), sample_data.sample_count))
+							!me_audio(enc, sample->data.data(), sample->sample_count))
 						{
 							media_log.error("video_encoder: Could not write audio");
 							has_error = true;
 							break;
 						}
 
-						audio_written = start + sample_data.sample_count;
+						audio_written = start + sample->sample_count;
 						m_last_audio_pts = static_cast<s64>(audio_written / m_samples_per_block);
 					}
+					release_sample();
 				}
+
 
 				if (!got_frame && !got_sample)
 				{

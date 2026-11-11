@@ -75,6 +75,7 @@ add_library(libretro_common STATIC
     ${LIBRETRO_COMMON_DIR}/net/net_socket.c
     ${LIBRETRO_COMMON_DIR}/net/net_socket_ssl_retro.c
     ${LIBRETRO_COMMON_DIR}/net/net_upnp.c
+    ${LIBRETRO_COMMON_DIR}/queues/retro_spsc.c
     ${LIBRETRO_COMMON_DIR}/streams/file_stream.c
     ${LIBRETRO_COMMON_DIR}/streams/trans_stream.c
     ${LIBRETRO_COMMON_DIR}/streams/trans_stream_deflate.c

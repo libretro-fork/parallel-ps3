@@ -176,11 +176,9 @@ public:
 	{
 		cellRec.notice("Stopping video sink. flush=%d", flush);
 
-		std::scoped_lock lock(m_video_mtx, m_audio_mtx);
 		m_flush = flush;
 		m_paused = false;
-		m_frames_to_encode.clear();
-		m_samples_to_encode.clear();
+		clear_queues();
 		has_error = false;
 	}
 
@@ -188,7 +186,6 @@ public:
 	{
 		cellRec.notice("Pausing video sink. flush=%d", flush);
 
-		std::scoped_lock lock(m_video_mtx, m_audio_mtx);
 		m_flush = flush;
 		m_paused = true;
 	}
@@ -197,37 +194,8 @@ public:
 	{
 		cellRec.notice("Resuming video sink");
 
-		std::scoped_lock lock(m_video_mtx, m_audio_mtx);
 		m_flush = false;
 		m_paused = false;
-	}
-
-	encoder_frame get_frame()
-	{
-		std::lock_guard lock_video(m_video_mtx);
-
-		if (!m_frames_to_encode.empty())
-		{
-			encoder_frame frame = std::move(m_frames_to_encode.front());
-			m_frames_to_encode.pop_front();
-			return frame;
-		}
-
-		return {};
-	}
-
-	encoder_sample get_sample()
-	{
-		std::lock_guard lock(m_audio_mtx);
-
-		if (!m_samples_to_encode.empty())
-		{
-			encoder_sample block = std::move(m_samples_to_encode.front());
-			m_samples_to_encode.pop_front();
-			return block;
-		}
-
-		return {};
 	}
 };
 
@@ -613,6 +581,10 @@ void rec_info::start_video_provider()
 		audio_block buffer_internal{}; // for cellAudio input
 		s64 last_video_pts = -1;
 		s64 last_audio_pts = -1;
+		// Buffers that go round between this thread, the sinks and the ring:
+		// none is allocated for each frame once they have their size
+		std::vector<u8> frame_buffer;              // the game's frames
+		utils::video_sink::encoder_frame rsx_frame; // the renderer's
 
 		cellRec.notice("video_provider_thread: use_ring_buffer=%d, video_ringbuffer_size=%d, audio_ringbuffer_size=%d, ring_sec=%d, frame_size=%d, use_internal_video=%d, use_external_audio=%d, use_internal_audio=%d", use_ring_buffer, video_ringbuffer.size(), audio_ringbuffer.size(), param.ring_sec, frame_size, encoder->use_internal_video, use_external_audio, encoder->use_internal_audio);
 
@@ -671,9 +643,10 @@ void rec_info::start_video_provider()
 						else
 						{
 							// The video frames originate from cellRec and are pushed to the encoder immediately.
-							std::vector<u8> frame(frame_size);
-							std::memcpy(frame.data(), video_input_buffer.get_ptr(), frame.size());
-							encoder->add_frame(frame, input_format.pitch, input_format.width, input_format.height, input_format.pixel_format, timestamp_ms);
+							// The buffer that comes back is one the encoder is done with.
+							frame_buffer.resize(frame_size);
+							std::memcpy(frame_buffer.data(), video_input_buffer.get_ptr(), frame_buffer.size());
+							encoder->add_frame(frame_buffer, input_format.pitch, input_format.width, input_format.height, input_format.pixel_format, timestamp_ms);
 						}
 					}
 
@@ -683,15 +656,20 @@ void rec_info::start_video_provider()
 			else if (sink)
 			{
 				// The video frames originate from our render pipeline.
-				utils::video_sink::encoder_frame frame = sink->get_frame();
+				utils::video_sink::encoder_frame& frame = rsx_frame;
 
-				if (const s64 pts = encoder->get_pts(frame.timestamp_ms); pts > last_video_pts && !frame.data.empty())
+				if (!sink->pop_frame(frame))
+				{
+					// None yet
+				}
+				else if (const s64 pts = encoder->get_pts(frame.timestamp_ms); pts > last_video_pts && !frame.data.empty())
 				{
 					if (use_ring_buffer)
 					{
 						// The video frames originate from our render pipeline and are stored in a ringbuffer.
+						// The frame it replaces gives its buffer to the next one.
 						frame.pts = pts;
-						video_ringbuffer[next_video_ring_pos()] = std::move(frame);
+						std::swap(video_ringbuffer[next_video_ring_pos()], frame);
 						video_ring_frame_count++;
 					}
 					else
@@ -731,10 +709,12 @@ void rec_info::start_video_provider()
 			if (sink && use_internal_audio)
 			{
 				// The audio samples originate from cellAudio and are stored in a ringbuffer.
-				utils::video_sink::encoder_sample sample = sink->get_sample();
+				const utils::video_sink::encoder_sample* const block = sink->peek_sample();
 
-				if (!sample.data.empty() && sample.channels >= channels && sample.sample_count >= CELL_REC_AUDIO_BLOCK_SAMPLES)
+				if (block && block->channels >= channels && block->sample_count >= CELL_REC_AUDIO_BLOCK_SAMPLES)
 				{
+					const utils::video_sink::encoder_sample& sample = *block;
+
 					s64 pts = encoder->get_audio_pts(sample.timestamp_us);
 
 					// Each encoder_sample can have more than one block
@@ -742,7 +722,7 @@ void rec_info::start_video_provider()
 					{
 						if (pts > last_audio_pts)
 						{
-							const f32* src = reinterpret_cast<const f32*>(&sample.data[i * sample.channels * sizeof(f32)]);
+							const f32* src = &sample.data[static_cast<usz>(i) * sample.channels];
 
 							// Copy the new samples to the internal buffer if we need them for volume mixing below.
 							// Otherwise copy them directly to the external buffer which is used for output later.
@@ -784,6 +764,12 @@ void rec_info::start_video_provider()
 						//pts++;
 					}
 				}
+			}
+
+			if (sink && use_internal_audio)
+			{
+				// Done with the block (a sink holds one at a time)
+				sink->release_sample();
 			}
 
 			if (got_new_samples)
@@ -834,7 +820,8 @@ void rec_info::stop_video_provider(bool flush)
 	{
 		cellRec.notice("Flushing video ringbuffer.");
 
-		// Fill encoder with data from ringbuffer
+		// Fill encoder with data from ringbuffer, waiting for its slots: this
+		// runs at the close, which waits for the encoder to finish anyway
 		// TODO: ideally the encoder should do this on the fly and overwrite old frames in the file.
 		ensure(encoder);
 		encoder->encode();
@@ -856,7 +843,7 @@ void rec_info::stop_video_provider(bool flush)
 				const usz pos = (video_start_offset + frame) % video_ringbuffer.size();
 				utils::video_sink::encoder_frame& frame_data = video_ringbuffer[pos];
 				const usz timestamp_ms = encoder->get_timestamp_ms(frame_data.pts - video_start_pts);
-				encoder->add_frame(frame_data.data, frame_data.pitch, frame_data.width, frame_data.height, frame_data.pixel_format, timestamp_ms);
+				encoder->add_frame(frame_data.data, frame_data.pitch, frame_data.width, frame_data.height, frame_data.pixel_format, timestamp_ms, true);
 
 				// Increase sync timestamp
 				sync_timestamp_us = timestamp_ms * 1000;
@@ -875,7 +862,7 @@ void rec_info::stop_video_provider(bool flush)
 					break;
 				}
 
-				encoder->add_audio_samples(sample_block.block.data(), CELL_REC_AUDIO_BLOCK_SAMPLES, channels, timestamp_us);
+				encoder->add_audio_samples(sample_block.block.data(), CELL_REC_AUDIO_BLOCK_SAMPLES, channels, timestamp_us, true);
 				block++;
 			}
 		}

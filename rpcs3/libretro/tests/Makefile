@@ -18,7 +18,7 @@ LRC_DEFS := -DHAVE_SSL -DHAVE_RETROSSL -DHAVE_CRYPTO \
 	-DHAVE_RWAV -DHAVE_RFLAC -DHAVE_RVORBIS -DHAVE_ROPUS -DHAVE_RMP3 -DHAVE_RAAC \
 	-DHAVE_RMP4 -DHAVE_RAC3 -DHAVE_RWMA -DHAVE_RWEBM -DHAVE_RATRAC3 -DHAVE_RATRAC3P
 
-TESTS := test_zstd test_deflate test_rxml test_png_rows test_images test_jpg_rows test_http test_bcn test_tls_duplex test_yaml test_font test_np2 test_rsx_scale test_vpost test_atracx test_vdec test_media test_record test_config_database
+TESTS := test_zstd test_deflate test_rxml test_png_rows test_images test_jpg_rows test_http test_bcn test_tls_duplex test_yaml test_font test_np2 test_rsx_scale test_vpost test_atracx test_vdec test_media test_record test_config_database test_video_sink test_video_sink_tsan
 
 test_zstd_LRC := \
 	$(LRC)/encodings/encoding_rzstd.c \
@@ -389,6 +389,16 @@ obj/test_config_database.o: test_config_database.c test_common.h ../config_datab
 
 test_config_database: obj/test_config_database.o obj/config_database.o $(call lrc_objs,$(sort $(test_config_database_LRC)))
 	$(CC) $(SANITIZE) -o $@ $^ $(LDFLAGS) $(LDLIBS)
+# cellRec's lock-free queues (util/video_sink.h) on retro_spsc; again
+# under ThreadSanitizer, which needs the ring built with it too
+VIDEO_SINK_DEPS := test_video_sink.cpp ../../util/video_sink.h $(LRC)/queues/retro_spsc.c $(LRC)/include/retro_spsc.h $(LRC)/include/retro_atomic.h
+VIDEO_SINK_FLAGS := -std=c++20 -O1 -g -Wall -Wextra -I../.. -I$(LRC)/include
+
+test_video_sink: $(VIDEO_SINK_DEPS)
+	$(CXX) $(VIDEO_SINK_FLAGS) $(SANITIZE) -o $@ test_video_sink.cpp -x c -std=gnu99 $(LRC)/queues/retro_spsc.c -x none -lpthread
+
+test_video_sink_tsan: $(VIDEO_SINK_DEPS)
+	$(CXX) $(VIDEO_SINK_FLAGS) -fsanitize=thread -o $@ test_video_sink.cpp -x c -std=gnu99 $(LRC)/queues/retro_spsc.c -x none -lpthread
 
 # Each test also writes what the new code produces, for the reference
 # tools to read back
@@ -414,6 +424,8 @@ check: all
 	./test_media fixtures
 	./rec_check.sh rec_out
 	./test_config_database ../config_database.dat
+	./test_video_sink
+	./test_video_sink_tsan
 
 clean:
 	rm -rf obj $(TESTS) *_out.* rec_out

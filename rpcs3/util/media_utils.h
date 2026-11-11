@@ -2,11 +2,13 @@
 
 #include "Utilities/StrUtil.h"
 #include "Utilities/Thread.h"
+#include "Utilities/mutex.h"
 #include "util/video_sink.h"
 #include "Emu/Cell/Modules/cellMusic.h"
 
 #include <unordered_map>
 #include <deque>
+#include <mutex>
 
 struct md_audio;
 

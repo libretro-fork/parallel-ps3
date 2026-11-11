@@ -6,6 +6,8 @@
 
 #include "util/media_encode.h"
 
+#include <thread>
+
 LOG_CHANNEL(media_log, "Media");
 
 atomic_t<recording_mode> g_recording_mode = recording_mode::stopped;
@@ -28,6 +30,29 @@ void fmt_class_string<recording_mode>::format(std::string& out, u64 arg)
 
 namespace utils
 {
+	video_provider::sink_use::sink_use(video_provider& o, retro_atomic_int_t& u)
+		: owner(o), users(u)
+	{
+		// Counted in before the pointer is read: set_video_sink() either sees
+		// the count, or this sees the pointer it published
+		retro_atomic_fetch_add_seq_cst_int(&users, 1);
+		sink = static_cast<video_sink*>(retro_atomic_load_acquire_ptr(&owner.m_sink));
+	}
+
+	video_provider::sink_use::~sink_use()
+	{
+		retro_atomic_fetch_sub_int(&users, 1);
+	}
+
+	video_provider::video_provider()
+	{
+		retro_atomic_ptr_init(&m_sink, nullptr);
+		retro_atomic_int_init(&m_video_users, 0);
+		retro_atomic_int_init(&m_audio_users, 0);
+		retro_atomic_size_init(&m_generation, 0);
+		retro_atomic_size_init(&m_pause_time_us, 0);
+	}
+
 	video_provider::~video_provider()
 	{
 		g_recording_mode = recording_mode::stopped;
@@ -44,8 +69,6 @@ namespace utils
 			return false;
 		}
 
-		std::scoped_lock lock(m_video_mutex, m_audio_mutex);
-
 		if (m_video_sink)
 		{
 			// cell has preference
@@ -54,23 +77,42 @@ namespace utils
 				media_log.warning("video_provider: cannot set video sink with type %s if type %s is active", type, m_type);
 				return false;
 			}
-
-			if (m_type != type || m_video_sink != sink)
-			{
-				media_log.warning("video_provider: stopping current video sink of type %s", m_type);
-				m_video_sink->stop();
-			}
 		}
+
+		const std::shared_ptr<video_sink> old = m_video_sink;
+		const recording_mode old_type = m_type;
 
 		m_type = sink ? type : recording_mode::stopped;
 		m_video_sink = sink;
+		// A new sink, or none: the times handed over start again
+		if (sink != old || !sink)
+			retro_atomic_fetch_add_size(&m_generation, 1);
+		retro_atomic_store_release_ptr(&m_sink, sink.get());
 		m_active = (m_type != recording_mode::stopped);
 
 		if (!m_active)
 		{
-			m_last_video_pts_incoming = -1;
-			m_last_audio_pts_incoming = -1;
 			m_start_time_us.store(umax);
+		}
+
+		if (old && (old_type != type || old != sink))
+		{
+			// A sink replaced goes out of use first: the renderer and
+			// cellAudio may still be handing it a frame or a block they took
+			// up before the new one was published. This is the PPU thread's;
+			// neither of theirs waits. One kept is stopped as it is: its
+			// queues clear without stopping either side.
+			if (old != sink)
+			{
+				while (retro_atomic_fetch_add_seq_cst_int(&m_video_users, 0) != 0 ||
+					retro_atomic_fetch_add_seq_cst_int(&m_audio_users, 0) != 0)
+				{
+					std::this_thread::yield();
+				}
+			}
+
+			media_log.warning("video_provider: stopping current video sink of type %s", old_type);
+			old->stop();
 		}
 
 		return true;
@@ -78,13 +120,12 @@ namespace utils
 
 	void video_provider::set_pause_time_us(usz pause_time_us)
 	{
-		std::scoped_lock lock(m_video_mutex, m_audio_mutex);
-		m_pause_time_us = pause_time_us;
+		retro_atomic_store_release_size(&m_pause_time_us, pause_time_us);
 	}
 
-	recording_mode video_provider::check_mode()
+	recording_mode video_provider::check_mode(video_sink& sink)
 	{
-		if (!m_video_sink || m_video_sink->has_error)
+		if (sink.has_error)
 		{
 			g_recording_mode = recording_mode::stopped;
 
@@ -109,18 +150,25 @@ namespace utils
 			return false;
 		}
 
-		std::lock_guard lock_video(m_video_mutex);
+		const sink_use use(*this, m_video_users);
 
-		if (!m_video_sink || !m_video_sink->use_internal_video)
+		if (!use.sink || !use.sink->use_internal_video)
 		{
 			return false;
 		}
 
-		const usz elapsed_us = get_system_time() - m_start_time_us;
-		ensure(elapsed_us >= m_pause_time_us);
+		if (const usz gen = retro_atomic_load_acquire_size(&m_generation); gen != m_video_generation)
+		{
+			m_video_generation = gen;
+			m_last_video_pts_incoming = -1;
+		}
 
-		const usz timestamp_ms = (elapsed_us - m_pause_time_us) / 1000;
-		const s64 pts = m_video_sink->get_pts(timestamp_ms);
+		const usz pause_time_us = retro_atomic_load_acquire_size(&m_pause_time_us);
+		const usz elapsed_us = get_system_time() - m_start_time_us;
+		ensure(elapsed_us >= pause_time_us);
+
+		const usz timestamp_ms = (elapsed_us - pause_time_us) / 1000;
+		const s64 pts = use.sink->get_pts(timestamp_ms);
 		return pts > m_last_video_pts_incoming;
 	}
 
@@ -131,11 +179,17 @@ namespace utils
 			return;
 		}
 
-		std::lock_guard lock_video(m_video_mutex);
+		const sink_use use(*this, m_video_users);
 
-		if (check_mode() == recording_mode::stopped)
+		if (!use.sink || check_mode(*use.sink) == recording_mode::stopped)
 		{
 			return;
+		}
+
+		if (const usz gen = retro_atomic_load_acquire_size(&m_generation); gen != m_video_generation)
+		{
+			m_video_generation = gen;
+			m_last_video_pts_incoming = -1;
 		}
 
 		const u64 current_time_us = get_system_time();
@@ -146,11 +200,12 @@ namespace utils
 		}
 
 		// Calculate presentation timestamp.
+		const usz pause_time_us = retro_atomic_load_acquire_size(&m_pause_time_us);
 		const usz elapsed_us = current_time_us - m_start_time_us;
-		ensure(elapsed_us >= m_pause_time_us);
+		ensure(elapsed_us >= pause_time_us);
 
-		const usz timestamp_ms = (elapsed_us - m_pause_time_us) / 1000;
-		const s64 pts = m_video_sink->get_pts(timestamp_ms);
+		const usz timestamp_ms = (elapsed_us - pause_time_us) / 1000;
+		const s64 pts = use.sink->get_pts(timestamp_ms);
 
 		// We can just skip this frame if it has the same timestamp.
 		if (pts <= m_last_video_pts_incoming)
@@ -158,7 +213,7 @@ namespace utils
 			return;
 		}
 
-		if (m_video_sink->add_frame(data, pitch, width, height, is_bgra ? ME_PIXEL_BGRA : ME_PIXEL_RGBA, timestamp_ms))
+		if (use.sink->add_frame(data, pitch, width, height, is_bgra ? ME_PIXEL_BGRA : ME_PIXEL_RGBA, timestamp_ms))
 		{
 			m_last_video_pts_incoming = pts;
 		}
@@ -171,16 +226,22 @@ namespace utils
 			return;
 		}
 
-		std::lock_guard lock_audio(m_audio_mutex);
+		const sink_use use(*this, m_audio_users);
 
-		if (!m_video_sink || !m_video_sink->use_internal_audio)
+		if (!use.sink || !use.sink->use_internal_audio)
 		{
 			return;
 		}
 
-		if (check_mode() == recording_mode::stopped)
+		if (check_mode(*use.sink) == recording_mode::stopped)
 		{
 			return;
+		}
+
+		if (const usz gen = retro_atomic_load_acquire_size(&m_generation); gen != m_audio_generation)
+		{
+			m_audio_generation = gen;
+			m_last_audio_pts_incoming = -1;
 		}
 
 		const u64 current_time_us = get_system_time();
@@ -191,11 +252,12 @@ namespace utils
 		}
 
 		// Calculate presentation timestamp.
+		const usz pause_time_us = retro_atomic_load_acquire_size(&m_pause_time_us);
 		const usz elapsed_us = current_time_us - m_start_time_us;
-		ensure(elapsed_us >= m_pause_time_us);
+		ensure(elapsed_us >= pause_time_us);
 
-		const usz timestamp_us = elapsed_us - m_pause_time_us;
-		const s64 pts = m_video_sink->get_audio_pts(timestamp_us);
+		const usz timestamp_us = elapsed_us - pause_time_us;
+		const s64 pts = use.sink->get_audio_pts(timestamp_us);
 
 		// We can just skip this sample if it has the same timestamp.
 		if (pts <= m_last_audio_pts_incoming)
@@ -203,7 +265,7 @@ namespace utils
 			return;
 		}
 
-		if (m_video_sink->add_audio_samples(buf, sample_count, channels, timestamp_us))
+		if (use.sink->add_audio_samples(buf, sample_count, channels, timestamp_us))
 		{
 			m_last_audio_pts_incoming = pts;
 		}
