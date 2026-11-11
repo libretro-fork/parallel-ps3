@@ -332,20 +332,34 @@ $(addprefix $(CORE_DIR)/,rpcs3/Emu/Cell/PPUTranslator.o Utilities/JITLLVM.o Util
 # rpcs3_version.cpp reads git-version.h
 $(CORE_DIR)/rpcs3/rpcs3_version.o: $(CORE_DIR)/rpcs3/git-version.h
 
+# Where the build writes objects: the folders of its sources, on every
+# platform, and nothing else. A search of the whole tree would also find
+# the *.o and *.d files that are data in other projects' trees, such as
+# the fake toolchains in LLVM's clang tests, and delete them.
+OBJ_DIRS := $(sort $(dir \
+	$(SOURCES_LRC) $(SOURCES_ASMJIT) $(SOURCES_GLSLANG) $(SOURCES_LIBUSB) $(SOURCES_RTMIDI) \
+	$(SOURCES_FUSION) $(SOURCES_RPCS3) $(SOURCES_RPCS3_GL) $(SOURCES_LIBRETRO) \
+	$(SOURCES_GLSLANG_UNIX) $(SOURCES_GLSLANG_WINDOWS) $(SOURCES_LIBUSB_LINUX) \
+	$(SOURCES_LIBUSB_DARWIN) $(SOURCES_LIBUSB_WINDOWS) $(SOURCES_RPCS3_AARCH64) \
+	$(SOURCES_RPCS3_DARWIN) $(SOURCES_LIBRETRO_GL) $(SOURCES_LIBRETRO_NOGL) \
+	$(SOURCES_LIBRETRO_X11) $(SOURCES_GENERATED) $(CORE_DIR)/rpcs3/libretro/tests/x.cpp))
+REMOVE_OBJECTS = find $(OBJ_DIRS) -maxdepth 1 -type f \( -name '*.o' -o -name '*.d' \) -delete 2>/dev/null
+
 # Objects are written next to their sources, and their names do not say
 # which toolchain made them: a build for another platform or processor in
 # the same checkout clears the last one's first, at parse time, before make
-# reads their dependency files.
+# reads their dependency files. Not for `make clean`, which removes them all.
 BUILD_TAG := $(CC)|$(CXX)|$(platform)|$(arch)|$(HAVE_LLVM)|$(if $(filter 1,$(HAVE_LLVM)),$(shell $(LLVM_CONFIG) --version))|$(SYSTEM_FFMPEG)|$(DEBUG)|$(LTO)
+ifeq ($(filter clean,$(MAKECMDGOALS)),)
 BUILD_TAG_STATUS := $(shell \
 	if [ ! -f .build-tag ] || [ "`cat .build-tag 2>/dev/null`" != "$(BUILD_TAG)" ]; then \
 		if [ -f .build-tag ]; then \
-			find . -name '*.o' -not -path './build*' -delete; \
-			find . -name '*.d' -not -path './build*' -delete; \
+			$(REMOVE_OBJECTS); \
 			echo cleaned; \
 		fi; \
 		echo "$(BUILD_TAG)" > .build-tag; \
 	fi)
+endif
 ifeq ($(BUILD_TAG_STATUS),cleaned)
    $(info toolchain changed, removed objects from the previous build)
 endif
@@ -475,8 +489,7 @@ check: $(TARGET) $(SAVESTATE_TEST)
 -include $(OBJECTS:.o=.d) $(OBJ_SAVESTATE_TEST:.o=.d)
 
 clean:
-	@find . -name '*.o' -not -path './build*' -not -path './3rdparty/llvm/*' -delete
-	@find . -name '*.d' -not -path './build*' -not -path './3rdparty/llvm/*' -delete
+	-@$(REMOVE_OBJECTS)
 	rm -rf $(TARGET) $(ARCHIVES) $(GEN_DIR) .build-tag
 
 FORCE:
