@@ -757,8 +757,11 @@ FLAGS_LIBUSB  := -std=gnu99 -fvisibility=hidden -w \
 FLAGS_GLSLANG := -std=c++17 -fno-rtti -fno-exceptions -w -DENABLE_OPT=0 -DENABLE_SPIRV \
 	-I$(CORE_DIR)/3rdparty/glslang/glslang \
 	-I$(CORE_DIR)/rpcs3/libretro/make/include
-FLAGS_ASMJIT  := -std=gnu++20 -w -isystem $(CORE_DIR)/3rdparty/asmjit/asmjit/src
-FLAGS_RTMIDI  := -std=c++11 -w -DRTMIDI_EXPORT -I$(CORE_DIR)/3rdparty/rtmidi/rtmidi
+# asmjit and RtMidi are linked into the core, not their own DLLs: without
+# ASMJIT_STATIC, and with RtMidi's RTMIDI_EXPORT, a Windows core exports their
+# classes along with its retro_* functions
+FLAGS_ASMJIT  := -std=gnu++20 -w -DASMJIT_STATIC -isystem $(CORE_DIR)/3rdparty/asmjit/asmjit/src
+FLAGS_RTMIDI  := -std=c++11 -w -I$(CORE_DIR)/3rdparty/rtmidi/rtmidi
 FLAGS_FUSION  := -w -I$(CORE_DIR)/3rdparty/fusion/fusion/Fusion
 
 # RPCS3 itself (rpcs3_emu) and the core's own files (rpcs3_libretro)

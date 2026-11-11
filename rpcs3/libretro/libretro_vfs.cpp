@@ -10,6 +10,8 @@
 #ifdef _WIN32
 #include <io.h>
 #include <direct.h>
+#include <sys/types.h>
+#include <sys/stat.h> // _stat64, _S_IFREG: not brought in by libstdc++'s headers
 #define mkdir(path, mode) _mkdir(path)
 #else
 #include <unistd.h>

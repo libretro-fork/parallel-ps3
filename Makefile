@@ -71,7 +71,7 @@ include Makefile.common
 HOST_CC ?= cc
 PKG_CONFIG ?= pkg-config
 
-DEFINES := -DLIBRETRO_CORE -DHAVE_VULKAN -DAL_LIBTYPE_STATIC -DDATADIR=\"/usr/local/share/rpcs3\"
+DEFINES := -DLIBRETRO_CORE -DHAVE_VULKAN -DAL_LIBTYPE_STATIC -DASMJIT_STATIC
 LIBS    :=
 
 # Unix
@@ -83,7 +83,8 @@ ifeq ($(platform), unix)
    OS_LIBUSB   := $(SOURCES_LIBUSB_LINUX)
    OS_RPCS3    := $(SOURCES_RPCS3_GL)
    OS_LIBRETRO := $(SOURCES_LIBRETRO_GL)
-   DEFINES += -DGLEW_STATIC
+   # As rpcs3/CMakeLists.txt has it, on Linux only (on Windows it is a type)
+   DEFINES += -DGLEW_STATIC -DDATADIR=\"/usr/local/share/rpcs3\"
    FLAGS_GLSLANG += -DGLSLANG_OSINCLUDE_UNIX
    FLAGS_LIBUSB  += -DPLATFORM_POSIX=1 -DHAVE_CLOCK_GETTIME
    # The GL renderer's X11 parts, as the CMake build has them when X11 and
@@ -117,10 +118,13 @@ else ifeq ($(platform), osx)
    DEFINES += -DLIBRETRO_NO_GL -DHAVE_CLOCK_GETTIME
    FLAGS_GLSLANG += -DGLSLANG_OSINCLUDE_UNIX
    FLAGS_LIBUSB  += -DPLATFORM_POSIX=1 -DHAVE_CLOCK_GETTIME
+   # RtMidi's own default on macOS: CoreMIDI
+   FLAGS_RTMIDI  += -D__MACOSX_CORE__
    # Vulkan through MoltenVK
    VULKAN_LIBS ?= -lMoltenVK
    LIBS += $(VULKAN_LIBS) -liconv -framework CoreVideo -framework Foundation \
-      -framework IOKit -framework Security -framework QuartzCore -framework Metal -framework AppKit
+      -framework IOKit -framework Security -framework QuartzCore -framework Metal -framework AppKit \
+      -framework CoreMIDI -framework CoreAudio
    ifeq ($(IS_ARM64),1)
       ARCH_FLAGS := -march=armv8.4-a
    endif
@@ -129,19 +133,23 @@ else ifeq ($(platform), osx)
 # Windows (MinGW-w64)
 else ifneq (,$(findstring win,$(platform)))
    TARGET  := $(TARGET_NAME)_libretro.dll
-   SHARED  := -shared -static-libgcc -static-libstdc++ -Wl,--no-undefined \
-      -Wl,--version-script=$(CORE_DIR)/rpcs3/libretro/make/link.T
+   # Statically, so the DLL needs Windows' own DLLs, vulkan-1 and opengl32
+   # and nothing else; RETRO_API's dllexport is what it exports
+   SHARED  := -shared -static -static-libgcc -static-libstdc++ -Wl,--no-undefined
    OS_GLSLANG  := $(SOURCES_GLSLANG_WINDOWS)
    OS_LIBUSB   := $(SOURCES_LIBUSB_WINDOWS)
    OS_RPCS3    := $(SOURCES_RPCS3_GL)
    OS_LIBRETRO := $(SOURCES_LIBRETRO_GL)
-   DEFINES += -DUNICODE -D_UNICODE -D_WIN32_WINNT=0x0A00
+   DEFINES += -DUNICODE -D_UNICODE -D_WIN32_WINNT=0x0A00 -DGLEW_STATIC
    FLAGS_GLSLANG += -DGLSLANG_OSINCLUDE_WIN32
    FLAGS_LIBUSB  += -DPLATFORM_WINDOWS=1
+   # RtMidi's own default on Windows: Windows multimedia MIDI (winmm)
+   FLAGS_RTMIDI  += -D__WINDOWS_MM__
    VULKAN_LIBS ?= -lvulkan-1
-   LIBS += $(VULKAN_LIBS) -lopengl32 -lws2_32 -liphlpapi -lwinmm -lpsapi -lgdi32 \
+   GLEW_LIBS ?= -lglew32
+   LIBS += $(GLEW_LIBS) $(VULKAN_LIBS) -lopengl32 -lws2_32 -liphlpapi -lwinmm -lpsapi -lgdi32 \
       -lsetupapi -ldbghelp -lpdh -lbcrypt -lole32 -loleaut32 -luuid -lshlwapi \
-      -lstrmiids -luser32 -Wl,-Bstatic -lwinpthread -Wl,-Bdynamic
+      -lstrmiids -luser32 -lwinpthread
    FFMPEG_OS := mingw
 else
    $(error platform $(platform) is not one this Makefile builds for: unix, osx or win)
@@ -251,7 +259,12 @@ endif
 
 # Everything the core exports is its retro_* entry points (link.T); the
 # rest is hidden, as the CMake build hides it with --exclude-libs
-COMMON := $(OPT) $(fpic) -fvisibility=hidden -pthread -MMD -MP
+# Extra include paths and the like come in through CPPFLAGS, as a cross build
+# needs them (.ci/build-windows-cross-libretro.sh's -idirafter)
+ifeq (,$(findstring win,$(platform)))
+   VISIBILITY := -fvisibility=hidden
+endif
+COMMON = $(OPT) $(fpic) $(VISIBILITY) -pthread -MMD -MP $(CPPFLAGS)
 
 FLAGS_RPCS3 := -std=gnu++23 -fno-exceptions -fstack-protector $(ARCH_FLAGS) \
 	$(DEFINES) $(INCLUDES_RPCS3) $(FFMPEG_INC) $(LLVM_INC) $(WARNINGS_RPCS3)
