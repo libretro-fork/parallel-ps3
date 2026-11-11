@@ -343,7 +343,8 @@ OBJ_DIRS := $(sort $(dir \
 	$(SOURCES_LIBUSB_DARWIN) $(SOURCES_LIBUSB_WINDOWS) $(SOURCES_RPCS3_AARCH64) \
 	$(SOURCES_RPCS3_DARWIN) $(SOURCES_LIBRETRO_GL) $(SOURCES_LIBRETRO_NOGL) \
 	$(SOURCES_LIBRETRO_X11) $(SOURCES_GENERATED) $(CORE_DIR)/rpcs3/libretro/tests/x.cpp))
-REMOVE_OBJECTS = find $(OBJ_DIRS) -maxdepth 1 -type f \( -name '*.o' -o -name '*.d' \) -delete 2>/dev/null
+# Those that are there: a generated one goes with `make clean`
+REMOVE_OBJECTS = $(if $(wildcard $(OBJ_DIRS)),find $(wildcard $(OBJ_DIRS)) -maxdepth 1 -type f \( -name '*.o' -o -name '*.d' \) -delete,true)
 
 # Objects are written next to their sources, and their names do not say
 # which toolchain made them: a build for another platform or processor in
@@ -489,7 +490,7 @@ check: $(TARGET) $(SAVESTATE_TEST)
 -include $(OBJECTS:.o=.d) $(OBJ_SAVESTATE_TEST:.o=.d)
 
 clean:
-	-@$(REMOVE_OBJECTS)
+	@$(REMOVE_OBJECTS)
 	rm -rf $(TARGET) $(ARCHIVES) $(GEN_DIR) .build-tag
 
 FORCE:

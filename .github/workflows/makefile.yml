@@ -55,3 +55,10 @@ jobs:
 
       - name: Load
         run: make check LLVM_CONFIG="$LLVM_CONFIG"
+
+      # Twice: the second finds the generated folder gone, and must still
+      # succeed without an error from make
+      - name: Clean
+        run: |
+          for i in 1 2; do make clean LLVM_CONFIG="$LLVM_CONFIG" 2>&1 | tee clean.log; ! grep -q 'Error' clean.log; done
+          test -z "$(find Utilities rpcs3/Emu -maxdepth 1 -name '*.o' | head -1)"
