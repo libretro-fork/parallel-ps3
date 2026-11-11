@@ -3,10 +3,13 @@
 #include "libretro_audio.h"
 #include "libretro_core.h"
 
+#include <audio/conversion/float_to_s16.h>
+
 #include <algorithm>
 #include <cstring>
 #include <chrono>
 #include <bit>
+#include <thread>
 
 LOG_CHANNEL(libretro_audio_log, "LibretroAudio");
 
@@ -98,9 +101,10 @@ void libretro_audio_process(retro_audio_sample_batch_t audio_batch_cb)
     static constexpr double PAUSE_SECONDS = 0.1;
     static constexpr double MAX_FRAMES_PER_RUN = SAMPLE_RATE * PAUSE_SECONDS;
     static constexpr size_t FRAMES_PER_BATCH = 512;
-    alignas(16) int16_t buffer[FRAMES_PER_BATCH * 8]; // up to 7.1; 16-byte aligned for SIMD
-    const u32 channels = s_audio_backend->get_channels();
-    const unsigned mask = speaker_mask(s_audio_backend->get_channel_layout(), channels);
+    // retro_run's alone: the game's samples as the callback gives them, and
+    // as s16 for a frontend that takes no floats. Up to 7.1.
+    alignas(64) static union { float f32[FRAMES_PER_BATCH * 8]; int16_t s16[FRAMES_PER_BATCH * 8]; } s_raw;
+    alignas(64) static int16_t s_s16[FRAMES_PER_BATCH * 8];
 
     static std::chrono::steady_clock::time_point s_last_run;
     static double s_owed = 0.0; // fractional frames carried to the next run
@@ -139,13 +143,31 @@ void libretro_audio_process(retro_audio_sample_batch_t audio_batch_cb)
     while (remaining > 0)
     {
         const size_t want = std::min(remaining, FRAMES_PER_BATCH);
-        const size_t frames = s_audio_backend->GetSamples(buffer, want);
+        bool is_float = false;
+        u32 channels = 2;
+        audio_channel_layout layout = audio_channel_layout::automatic;
+        const size_t frames = s_audio_backend->GetSamples(&s_raw, want, &is_float, &channels, &layout);
         if (frames > 0)
         {
-            if (s_multi_available)
-                s_multi.batch_int16(buffer, frames, channels, mask);
-            else if (channels == 2)
-                audio_batch_cb(buffer, frames);
+            const unsigned mask = speaker_mask(layout, channels);
+            if (is_float && s_multi_available && s_multi.batch_float)
+            {
+                // As the game made them: no conversion, no copy
+                s_multi.batch_float(s_raw.f32, frames, channels, mask);
+            }
+            else
+            {
+                const int16_t* s16 = s_raw.s16;
+                if (is_float)
+                {
+                    convert_float_to_s16(s_s16, s_raw.f32, frames * channels);
+                    s16 = s_s16;
+                }
+                if (s_multi_available)
+                    s_multi.batch_int16(s16, frames, channels, mask);
+                else if (channels == 2)
+                    audio_batch_cb(s16, frames);
+            }
         }
         remaining -= frames;
         if (frames < want)
@@ -162,6 +184,8 @@ void libretro_audio_process(retro_audio_sample_batch_t audio_batch_cb)
 
 LibretroAudioBackend::LibretroAudioBackend()
 {
+    retro_atomic_int_init(&m_access, 0);
+    convert_float_to_s16_init_simd();
     s_audio_backend = this;
 }
 
@@ -172,15 +196,28 @@ LibretroAudioBackend::~LibretroAudioBackend()
         s_audio_backend = nullptr;
 }
 
+// cellAudio's thread: the callbacks and the format to itself, once retro_run
+// is out of a pull. Opening, closing and setting a callback are rare.
+void LibretroAudioBackend::begin_exclusive()
+{
+    while (!retro_atomic_cas_int(&m_access, 0, 2))
+        std::this_thread::yield();
+}
+
+void LibretroAudioBackend::end_exclusive()
+{
+    retro_atomic_store_release_int(&m_access, 0);
+}
+
 bool LibretroAudioBackend::Open(std::string_view dev_id, AudioFreq freq, AudioSampleSize sample_size, AudioChannelCnt ch_cnt, audio_channel_layout layout)
 {
     (void)dev_id;
 
-    std::lock_guard lock(m_mutex);
+    begin_exclusive();
 
     // Set base class members - use what the config passes us
     // DO NOT force S16 here - let the config control this via raw.convert_to_s16
-    // We handle float->s16 conversion ourselves in GetSamples() if needed
+    // Floats go to the frontend as they are when it takes them, else as s16
     m_sampling_rate = freq;
     m_sample_size = sample_size;  // Accept what config gives us (usually FLOAT)
     // As many channels as the game configured, up to 8 when the frontend
@@ -188,40 +225,31 @@ bool LibretroAudioBackend::Open(std::string_view dev_id, AudioFreq freq, AudioSa
     // fit the game's to the device
     setup_channel_layout(static_cast<u32>(ch_cnt), libretro_audio_multi_available() ? 8 : 2, layout, libretro_audio_log);
 
-    // Ring buffer for ~500ms of audio - larger buffer reduces stutter
-    // At 48kHz stereo float = 48000 * 2 * 4 * 0.5 = 192KB
-    const size_t bytes_per_second = static_cast<size_t>(freq) * m_channels * get_sample_size();
-    m_ring_buffer_bytes.resize(bytes_per_second / 2, 0);  // 500ms buffer
-    m_ring_read_pos = 0;
-    m_ring_write_pos = 0;
-    m_ring_size = 0;
-
     m_initialized = true;
+    end_exclusive();
     return true;
 }
 
 void LibretroAudioBackend::Close()
 {
-    std::lock_guard lock(m_mutex);
-
+    begin_exclusive();
     m_playing = false;
     m_initialized = false;
-    m_ring_buffer_bytes.clear();
-    m_ring_read_pos = 0;
-    m_ring_write_pos = 0;
-    m_ring_size = 0;
+    end_exclusive();
 }
 
 void LibretroAudioBackend::SetWriteCallback(std::function<u32(u32, void*)> cb)
 {
-    std::lock_guard lock(m_mutex);
+    begin_exclusive();
     m_write_callback = std::move(cb);
+    end_exclusive();
 }
 
 void LibretroAudioBackend::SetStateCallback(std::function<void(AudioStateEvent)> cb)
 {
-    std::lock_guard lock(m_mutex);
+    begin_exclusive();
     m_state_callback = std::move(cb);
+    end_exclusive();
 }
 
 f64 LibretroAudioBackend::GetCallbackFrameLen()
@@ -246,109 +274,31 @@ void LibretroAudioBackend::Pause()
     m_playing = false;
 }
 
-size_t LibretroAudioBackend::GetSamples(int16_t* buffer, size_t max_frames)
+size_t LibretroAudioBackend::GetSamples(void* out, size_t max_frames, bool* is_float, u32* channels, audio_channel_layout* layout)
 {
     if (!m_playing || !m_initialized)
         return 0;
 
-    // Use timed lock to avoid skipping frames but also avoid deadlock
-    // 2ms timeout is long enough to avoid most contention but short enough to not block retro_run
-    std::unique_lock lock(m_mutex, std::defer_lock);
-    if (!lock.try_lock_for(std::chrono::milliseconds(2)))
+    // Never waits: while cellAudio's thread is setting things up, this run
+    // gives nothing and the time is owed to the next
+    if (!retro_atomic_cas_int(&m_access, 0, 1))
         return 0;
 
-    const u32 sample_size = get_sample_size();  // 4 for float, 2 for s16
-    const u32 channels = get_channels();
-    const bool is_float = (m_sample_size == AudioSampleSize::FLOAT);
-    const size_t bytes_per_frame = channels * sample_size;
+    size_t frames = 0;
+    const u32 ch = get_channels();
+    const size_t bytes_per_frame = static_cast<size_t>(ch) * get_sample_size();
 
-    // Aggressively fill our ring buffer from the emulator's audio callback
-    // Pull multiple times to ensure buffer stays full
-    if (m_write_callback)
+    if (m_initialized && m_write_callback && ch && ch <= 8)
     {
-        static constexpr size_t PULL_FRAMES = 2048;
-        const size_t pull_bytes = PULL_FRAMES * bytes_per_frame;
-        alignas(16) u8 temp_buffer[PULL_FRAMES * 8 * sizeof(float)]; // up to 7.1
-
-        // Pull only what this call is about to hand out. The callback always
-        // delivers - it pads with silence - so filling the whole ring put up to
-        // half a second of audio between the game and the speakers.
-        const size_t wanted_bytes = max_frames * bytes_per_frame;
-        for (int pulls = 0; pulls < 4 && m_ring_size < wanted_bytes; pulls++)
-        {
-            const size_t free_space = m_ring_buffer_bytes.size() - m_ring_size;
-            if (free_space < pull_bytes)
-                break;
-
-            const u32 bytes_written = m_write_callback(static_cast<u32>(pull_bytes), temp_buffer);
-            if (bytes_written == 0)
-                break;
-
-            // Push to ring buffer - use memcpy for efficiency when possible
-            if (m_ring_write_pos + bytes_written <= m_ring_buffer_bytes.size())
-            {
-                // Contiguous write
-                std::memcpy(&m_ring_buffer_bytes[m_ring_write_pos], temp_buffer, bytes_written);
-                m_ring_write_pos += bytes_written;
-                if (m_ring_write_pos >= m_ring_buffer_bytes.size())
-                    m_ring_write_pos = 0;
-            }
-            else
-            {
-                // Wrap-around write
-                const size_t first_part = m_ring_buffer_bytes.size() - m_ring_write_pos;
-                std::memcpy(&m_ring_buffer_bytes[m_ring_write_pos], temp_buffer, first_part);
-                std::memcpy(&m_ring_buffer_bytes[0], temp_buffer + first_part, bytes_written - first_part);
-                m_ring_write_pos = bytes_written - first_part;
-            }
-            m_ring_size += bytes_written;
-        }
+        // Exactly what is due, straight from cellAudio's ring; it pads a
+        // short one with silence, as it does for a sound card
+        const u32 bytes = m_write_callback(static_cast<u32>(max_frames * bytes_per_frame), out);
+        frames = bytes / bytes_per_frame;
+        *is_float = m_sample_size == AudioSampleSize::FLOAT;
+        *channels = ch;
+        *layout = get_channel_layout();
     }
 
-    // Calculate how many frames we can provide
-    const size_t frames_available = std::min(max_frames, m_ring_size / bytes_per_frame);
-
-    if (frames_available == 0)
-        return 0;
-
-    const size_t bytes_to_read = frames_available * bytes_per_frame;
-
-    // Read from ring buffer into a contiguous temp buffer for easier processing
-    alignas(16) u8 read_buffer[2048 * 8 * sizeof(float)]; // up to 7.1
-    if (m_ring_read_pos + bytes_to_read <= m_ring_buffer_bytes.size())
-    {
-        // Contiguous read
-        std::memcpy(read_buffer, &m_ring_buffer_bytes[m_ring_read_pos], bytes_to_read);
-        m_ring_read_pos += bytes_to_read;
-        if (m_ring_read_pos >= m_ring_buffer_bytes.size())
-            m_ring_read_pos = 0;
-    }
-    else
-    {
-        // Wrap-around read
-        const size_t first_part = m_ring_buffer_bytes.size() - m_ring_read_pos;
-        std::memcpy(read_buffer, &m_ring_buffer_bytes[m_ring_read_pos], first_part);
-        std::memcpy(read_buffer + first_part, &m_ring_buffer_bytes[0], bytes_to_read - first_part);
-        m_ring_read_pos = bytes_to_read - first_part;
-    }
-    m_ring_size -= bytes_to_read;
-
-    // Convert to s16 for libretro
-    if (is_float)
-    {
-        const float* src = reinterpret_cast<const float*>(read_buffer);
-        const size_t total_samples = frames_available * channels;
-        for (size_t i = 0; i < total_samples; i++)
-        {
-            float sample = std::clamp(src[i], -1.0f, 1.0f);
-            buffer[i] = static_cast<int16_t>(sample * 32767.0f);
-        }
-    }
-    else
-    {
-        // Already s16, just copy
-        std::memcpy(buffer, read_buffer, bytes_to_read);
-    }
-
-    return frames_available;
+    retro_atomic_store_release_int(&m_access, 0);
+    return frames;
 }

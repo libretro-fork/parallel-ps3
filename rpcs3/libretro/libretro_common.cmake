@@ -5,6 +5,7 @@
 set(LIBRETRO_COMMON_DIR ${CMAKE_CURRENT_LIST_DIR}/libretro-common)
 
 add_library(libretro_common STATIC
+    ${LIBRETRO_COMMON_DIR}/audio/conversion/float_to_s16.c
     ${LIBRETRO_COMMON_DIR}/audio/conversion/float_to_ulaw.c
     ${LIBRETRO_COMMON_DIR}/audio/resampler/drivers/sinc_resampler.c
     ${LIBRETRO_COMMON_DIR}/compat/compat_posix_string.c

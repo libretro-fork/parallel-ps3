@@ -3,8 +3,8 @@
 #include "Emu/Audio/AudioBackend.h"
 #include "libretro.h"
 
-#include <vector>
-#include <mutex>
+#include <retro_atomic.h>
+
 #include <atomic>
 
 // Multi-channel audio (RetroArch since 10 September 2026), from the current
@@ -39,20 +39,23 @@ bool libretro_audio_multi_available();
 // Process and send audio to libretro frontend
 void libretro_audio_process(retro_audio_sample_batch_t audio_batch_cb);
 
-// LibretroAudioBackend - AudioBackend implementation for libretro
-// Uses a ring buffer to decouple emulator audio production from libretro consumption
+// LibretroAudioBackend - AudioBackend implementation for libretro. Nothing
+// is buffered here: retro_run pulls what is due straight from cellAudio's
+// ring (the write callback) into the buffer it hands the frontend.
 class LibretroAudioBackend : public AudioBackend
 {
 private:
-    std::timed_mutex m_mutex;  // timed_mutex for try_lock_for support
     std::atomic<bool> m_playing{false};
     std::atomic<bool> m_initialized{false};
 
-    // Ring buffer for audio data (stored as bytes to handle float or s16)
-    std::vector<u8> m_ring_buffer_bytes;
-    size_t m_ring_read_pos = 0;
-    size_t m_ring_write_pos = 0;
-    size_t m_ring_size = 0;  // Current number of bytes in buffer
+    // Who is using the callbacks and the format: 1 while retro_run pulls,
+    // 2 while cellAudio's thread opens, closes or sets them. retro_run never
+    // waits for it - it pulls nothing that run and the time is owed to the
+    // next - and the other side waits only out of a pull.
+    retro_atomic_int_t m_access;
+
+    void begin_exclusive();
+    void end_exclusive();
 
     // Note: We use the base class m_sampling_rate, m_sample_size, m_channels, m_layout
     // DO NOT shadow them here or audio format detection will break!
@@ -78,9 +81,11 @@ public:
 
     bool Initialized() override { return m_initialized; }
 
-    // Called by libretro_audio_process to get audio data (non-blocking)
-    // Handles float->s16 conversion internally if needed
-    size_t GetSamples(int16_t* buffer, size_t max_frames);
+    // retro_run's: up to @max_frames frames of the game's audio into @out
+    // (room for max_frames of eight floats), in the backend's format - floats
+    // when *@is_float, s16 otherwise - and @channels and @layout as they are
+    // for them; the frames given, 0 when there is nothing to give this run
+    size_t GetSamples(void* out, size_t max_frames, bool* is_float, u32* channels, audio_channel_layout* layout);
 };
 
 // Global audio backend instance access

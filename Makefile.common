@@ -7,6 +7,7 @@
 CORE_DIR ?= .
 
 SOURCES_LRC := \
+	$(CORE_DIR)/rpcs3/libretro/libretro-common/audio/conversion/float_to_s16.c \
 	$(CORE_DIR)/rpcs3/libretro/libretro-common/audio/conversion/float_to_ulaw.c \
 	$(CORE_DIR)/rpcs3/libretro/libretro-common/audio/resampler/drivers/sinc_resampler.c \
 	$(CORE_DIR)/rpcs3/libretro/libretro-common/compat/compat_posix_string.c \

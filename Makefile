@@ -605,6 +605,15 @@ $(PATCHES_TEST): $(OBJ_PATCHES_TEST) $(OBJ_LIBRETRO) $(ARCHIVES)
 	$(SAY) LINK $@
 	$(Q)$(CXX) -o $@ $(OBJ_PATCHES_TEST) $(OBJ_LIBRETRO) $(GROUP_START) $(ARCHIVES) $(GROUP_END) $(LDFLAGS) $(LIBS)
 
+# The game's audio to the frontend (libretro_audio.cpp), linked the same way
+AUDIO_TEST := $(GEN_DIR)/test_audio_frontend
+OBJ_AUDIO_TEST := $(CORE_DIR)/rpcs3/libretro/tests/test_audio_frontend.o
+$(OBJ_AUDIO_TEST): FLAGS := $(FLAGS_LIBRETRO)
+
+$(AUDIO_TEST): $(OBJ_AUDIO_TEST) $(OBJ_LIBRETRO) $(ARCHIVES)
+	$(SAY) LINK $@
+	$(Q)$(CXX) -o $@ $(OBJ_AUDIO_TEST) $(OBJ_LIBRETRO) $(GROUP_START) $(ARCHIVES) $(GROUP_END) $(LDFLAGS) $(LIBS)
+
 # LLVM, as the core is built with it, compiling and running code through
 # RPCS3's JIT; only when the core has LLVM
 LLVM_JIT_TEST := $(if $(filter 1,$(HAVE_LLVM)),$(GEN_DIR)/test_llvm_jit)
@@ -616,15 +625,16 @@ $(GEN_DIR)/test_llvm_jit: $(OBJ_LLVM_JIT_TEST) $(OBJ_LIBRETRO) $(ARCHIVES)
 	$(SAY) LINK $@
 	$(Q)$(CXX) -o $@ $(OBJ_LLVM_JIT_TEST) $(OBJ_LIBRETRO) $(GROUP_START) $(ARCHIVES) $(GROUP_END) $(LDFLAGS) $(LIBS)
 
-check: $(TARGET) $(SAVESTATE_TEST) $(DECODERS_TEST) $(PATCHES_TEST) $(LLVM_JIT_TEST)
+check: $(TARGET) $(SAVESTATE_TEST) $(DECODERS_TEST) $(PATCHES_TEST) $(AUDIO_TEST) $(LLVM_JIT_TEST)
 	$(HOST_CC) -O2 -o $(GEN_DIR)/load_test $(CORE_DIR)/rpcs3/libretro/make/load_test.c -ldl
 	$(GEN_DIR)/load_test ./$(TARGET)
 	$(SAVESTATE_TEST)
 	$(DECODERS_TEST)
 	$(PATCHES_TEST)
+	$(AUDIO_TEST)
 	$(if $(LLVM_JIT_TEST),$(LLVM_JIT_TEST))
 
--include $(OBJECTS:.o=.d) $(OBJ_SAVESTATE_TEST:.o=.d) $(OBJ_DECODERS_TEST:.o=.d) $(OBJ_PATCHES_TEST:.o=.d) $(OBJ_LLVM_JIT_TEST:.o=.d)
+-include $(OBJECTS:.o=.d) $(OBJ_SAVESTATE_TEST:.o=.d) $(OBJ_DECODERS_TEST:.o=.d) $(OBJ_PATCHES_TEST:.o=.d) $(OBJ_AUDIO_TEST:.o=.d) $(OBJ_LLVM_JIT_TEST:.o=.d)
 
 clean:
 	@$(REMOVE_OBJECTS)
