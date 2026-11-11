@@ -767,6 +767,7 @@ SOURCES_LIBRETRO := \
 	$(CORE_DIR)/rpcs3/libretro/libretro_pad_handler.cpp \
 	$(CORE_DIR)/rpcs3/libretro/libretro_patch_manager.cpp \
 	$(CORE_DIR)/rpcs3/libretro/libretro_vfs.cpp \
+	$(CORE_DIR)/rpcs3/libretro/vblank_list.c \
 	$(CORE_DIR)/rpcs3/rpcs3_version.cpp
 
 # The files that are not on every platform

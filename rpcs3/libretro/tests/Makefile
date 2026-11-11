@@ -18,7 +18,7 @@ LRC_DEFS := -DHAVE_SSL -DHAVE_RETROSSL -DHAVE_CRYPTO \
 	-DHAVE_RWAV -DHAVE_RFLAC -DHAVE_RVORBIS -DHAVE_ROPUS -DHAVE_RMP3 -DHAVE_RAAC \
 	-DHAVE_RMP4 -DHAVE_RAC3 -DHAVE_RWMA -DHAVE_RWEBM -DHAVE_RATRAC3 -DHAVE_RATRAC3P
 
-TESTS := test_zstd test_deflate test_rxml test_png_rows test_images test_jpg_rows test_http test_bcn test_tls_duplex test_yaml test_font test_np2 test_rsx_scale test_vpost test_atracx test_vdec test_media test_record test_config_database test_video_sink test_video_sink_tsan
+TESTS := test_zstd test_deflate test_rxml test_png_rows test_images test_jpg_rows test_http test_bcn test_tls_duplex test_yaml test_font test_np2 test_rsx_scale test_vpost test_atracx test_vdec test_media test_record test_config_database test_vblank_list test_video_sink test_video_sink_tsan
 
 test_zstd_LRC := \
 	$(LRC)/encodings/encoding_rzstd.c \
@@ -389,6 +389,16 @@ obj/test_config_database.o: test_config_database.c test_common.h ../config_datab
 
 test_config_database: obj/test_config_database.o obj/config_database.o $(call lrc_objs,$(sort $(test_config_database_LRC)))
 	$(CC) $(SANITIZE) -o $@ $^ $(LDFLAGS) $(LDLIBS)
+# VBlank Frequency "From List": the block of vblank_unlock.txt a game is in
+obj/vblank_list.o: ../vblank_list.c ../vblank_list.h
+	@mkdir -p $(@D)
+	$(CC) $(CFLAGS) $(TEST_STD) $(SANITIZE) -c -o $@ $<
+
+obj/test_vblank_list.o: test_vblank_list.c test_common.h ../vblank_list.h
+
+test_vblank_list: obj/test_vblank_list.o obj/vblank_list.o
+	$(CC) $(SANITIZE) -o $@ $^ $(LDFLAGS) $(LDLIBS)
+
 # cellRec's lock-free queues (util/video_sink.h) on retro_spsc; again
 # under ThreadSanitizer, which needs the ring built with it too
 VIDEO_SINK_DEPS := test_video_sink.cpp ../../util/video_sink.h $(LRC)/queues/retro_spsc.c $(LRC)/include/retro_spsc.h $(LRC)/include/retro_atomic.h
@@ -424,6 +434,7 @@ check: all
 	./test_media fixtures
 	./rec_check.sh rec_out
 	./test_config_database ../config_database.dat
+	./test_vblank_list ../vblank_unlock.txt
 	./test_video_sink
 	./test_video_sink_tsan
 

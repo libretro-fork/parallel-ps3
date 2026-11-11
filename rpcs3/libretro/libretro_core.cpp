@@ -59,6 +59,7 @@
 #include <cstring>
 #include "libretro_localized_strings.h"
 #include "config_database.h"
+#include "vblank_list.h"
 #include "Emu/Audio/audio_device_enumerator.h"
 #include "Emu/RSX/RSXThread.h"
 #include "Input/pad_thread.h"
@@ -604,22 +605,8 @@ static u32 vblank_unlock_block(const std::string& serial)
     if (!file)
         return 0;
 
-    u32 block = 0;
-    std::istringstream lines(file.to_string());
-    for (std::string line; std::getline(lines, line);)
-    {
-        if (const usz comment = line.find('#'); comment != umax)
-            line.erase(comment);
-        const usz first = line.find_first_not_of(" \t\r");
-        if (first == umax)
-            continue;
-        line = line.substr(first, line.find_last_not_of(" \t\r") - first + 1);
-        if (line.front() == '[')
-            block = line.starts_with("[30") ? 30 : line.starts_with("[60") ? 60 : 0;
-        else if (block && line == serial)
-            return block;
-    }
-    return 0;
+    const std::string text = file.to_string();
+    return vblank_list_block(text.data(), text.size(), serial.c_str());
 }
 
 // Disk Cache Size: RPCS3's own disk cache limit (dev_hdd1/caches, the oldest
