@@ -25,6 +25,7 @@ add_library(libretro_common STATIC
     ${LIBRETRO_COMMON_DIR}/file/retro_dirent.c
     ${LIBRETRO_COMMON_DIR}/formats/dds/rdds.c
     ${LIBRETRO_COMMON_DIR}/formats/gif/rgif.c
+    ${LIBRETRO_COMMON_DIR}/formats/image/image_yuv_blit.c
     ${LIBRETRO_COMMON_DIR}/formats/jpeg/rjpeg.c
     ${LIBRETRO_COMMON_DIR}/formats/json/rjson.c
     ${LIBRETRO_COMMON_DIR}/formats/png/rpng.c

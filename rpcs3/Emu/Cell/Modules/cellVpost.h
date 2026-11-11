@@ -1,22 +1,6 @@
 #pragma once
 
-#ifdef _MSC_VER
-#pragma warning(push, 0)
-#else
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wall"
-#pragma GCC diagnostic ignored "-Wextra"
-#pragma GCC diagnostic ignored "-Wold-style-cast"
-#endif
-extern "C"
-{
-#include "libswscale/swscale.h"
-}
-#ifdef _MSC_VER
-#pragma warning(pop)
-#else
-#pragma GCC diagnostic pop
-#endif
+#include "cellVpost_conv.h"
 
 // Error Codes
 enum CellVpostError : u32
@@ -344,7 +328,8 @@ public:
 
 	const bool to_rgba;
 
-	SwsContext* sws{};
+	// the conversion and its memory, kept from picture to picture
+	vpost_conv* conv = vpost_conv_new();
 
 	VpostInstance(bool rgba)
 		: to_rgba(rgba)
@@ -353,6 +338,6 @@ public:
 
 	~VpostInstance()
 	{
-		sws_freeContext(sws);
+		vpost_conv_free(conv);
 	}
 };

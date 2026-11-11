@@ -16,7 +16,7 @@ LRC_STD  := -std=gnu99
 # as libretro_common.cmake builds it: net_http over its own TLS client
 LRC_DEFS := -DHAVE_SSL -DHAVE_RETROSSL -DHAVE_CRYPTO
 
-TESTS := test_zstd test_deflate test_rxml test_png_rows test_images test_jpg_rows test_http test_bcn test_tls_duplex test_yaml test_font test_np2 test_rsx_scale
+TESTS := test_zstd test_deflate test_rxml test_png_rows test_images test_jpg_rows test_http test_bcn test_tls_duplex test_yaml test_font test_np2 test_rsx_scale test_vpost
 
 test_zstd_LRC := \
 	$(LRC)/encodings/encoding_rzstd.c \
@@ -260,6 +260,20 @@ obj/test_rsx_scale.o: test_rsx_scale.c test_common.h ../../Emu/RSX/Utils/rsx_sca
 test_rsx_scale: obj/test_rsx_scale.o obj/rsx_scale.o $(call lrc_objs,$(sort $(test_rsx_scale_LRC)))
 	$(CC) $(SANITIZE) -o $@ $^ $(LDFLAGS) -Wl,--wrap=malloc,--wrap=calloc,--wrap=realloc $(LDLIBS)
 
+# cellVpost's YUV to RGBA, on image_yuv_blit and the scaler
+test_vpost_LRC := \
+	$(LRC)/formats/image/image_yuv_blit.c \
+	$(test_rsx_scale_LRC)
+
+obj/cellVpost_conv.o: ../../Emu/Cell/Modules/cellVpost_conv.c ../../Emu/Cell/Modules/cellVpost_conv.h
+	@mkdir -p $(@D)
+	$(CC) $(CFLAGS) $(TEST_STD) $(SANITIZE) -c -o $@ $<
+
+obj/test_vpost.o: test_vpost.c test_common.h ../../Emu/Cell/Modules/cellVpost_conv.h
+
+test_vpost: obj/test_vpost.o obj/cellVpost_conv.o $(call lrc_objs,$(sort $(test_vpost_LRC)))
+	$(CC) $(SANITIZE) -o $@ $^ $(LDFLAGS) -Wl,--wrap=malloc,--wrap=calloc,--wrap=realloc $(LDLIBS)
+
 # Each test also writes what the new code produces, for the reference
 # tools to read back
 check: all
@@ -278,6 +292,7 @@ check: all
 	./test_font fixtures
 	./test_np2 fixtures
 	./test_rsx_scale fixtures
+	./test_vpost fixtures
 
 clean:
 	rm -rf obj $(TESTS) *_out.*

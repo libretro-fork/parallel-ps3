@@ -330,6 +330,7 @@ target_sources(rpcs3_emu PRIVATE
     Cell/Modules/cellVideoUpload.cpp
     Cell/Modules/cellVoice.cpp
     Cell/Modules/cellVpost.cpp
+    Cell/Modules/cellVpost_conv.c
     Cell/Modules/cellWebBrowser.cpp
     Cell/Modules/HLE_PATCHES.cpp
     Cell/Modules/libad_async.cpp

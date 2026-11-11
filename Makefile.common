@@ -27,6 +27,7 @@ SOURCES_LRC := \
 	$(CORE_DIR)/rpcs3/libretro/libretro-common/file/retro_dirent.c \
 	$(CORE_DIR)/rpcs3/libretro/libretro-common/formats/dds/rdds.c \
 	$(CORE_DIR)/rpcs3/libretro/libretro-common/formats/gif/rgif.c \
+	$(CORE_DIR)/rpcs3/libretro/libretro-common/formats/image/image_yuv_blit.c \
 	$(CORE_DIR)/rpcs3/libretro/libretro-common/formats/jpeg/rjpeg.c \
 	$(CORE_DIR)/rpcs3/libretro/libretro-common/formats/json/rjson.c \
 	$(CORE_DIR)/rpcs3/libretro/libretro-common/formats/png/rpng.c \
@@ -322,6 +323,7 @@ SOURCES_RPCS3 := \
 	$(CORE_DIR)/rpcs3/Emu/Cell/Modules/cellVideoUpload.cpp \
 	$(CORE_DIR)/rpcs3/Emu/Cell/Modules/cellVoice.cpp \
 	$(CORE_DIR)/rpcs3/Emu/Cell/Modules/cellVpost.cpp \
+	$(CORE_DIR)/rpcs3/Emu/Cell/Modules/cellVpost_conv.c \
 	$(CORE_DIR)/rpcs3/Emu/Cell/Modules/cellWebBrowser.cpp \
 	$(CORE_DIR)/rpcs3/Emu/Cell/Modules/cell_FreeType2.cpp \
 	$(CORE_DIR)/rpcs3/Emu/Cell/Modules/libad_async.cpp \

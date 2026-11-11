@@ -2,24 +2,6 @@
 #include "Emu/IdManager.h"
 #include "Emu/Cell/PPUModule.h"
 
-#ifdef _MSC_VER
-#pragma warning(push, 0)
-#else
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wall"
-#pragma GCC diagnostic ignored "-Wextra"
-#pragma GCC diagnostic ignored "-Wold-style-cast"
-#endif
-extern "C"
-{
-#include "libswscale/swscale.h"
-}
-#ifdef _MSC_VER
-#pragma warning(pop)
-#else
-#pragma GCC diagnostic pop
-#endif
-
 #include "cellVpost.h"
 
 LOG_CHANNEL(cellVpost);
@@ -270,27 +252,12 @@ error_code cellVpostExec(u32 handle, vm::cptr<u8> inPicBuff, vm::cptr<CellVpostC
 	picInfo->reserved1 = 0;
 	picInfo->reserved2 = 0;
 
-	//u64 stamp0 = get_guest_system_time();
-	std::unique_ptr<u8[]> pA(new u8[w*h]);
+	// YUV 4:2:0 to RGBA in the matrix and range the game names, scaled
+	// bilinear, with its alpha
+	vpost_conv_exec(vpost->conv, outPicBuff.get_ptr(), ow, oh, inPicBuff.get_ptr(), w, h,
+		ctrlParam->inQuantRange == CELL_VPOST_QUANT_RANGE_FULL,
+		ctrlParam->inColorMatrix == CELL_VPOST_COLOR_MATRIX_BT709, ctrlParam->outAlpha);
 
-	memset(pA.get(), ctrlParam->outAlpha, w*h);
-
-	//u64 stamp1 = get_guest_system_time();
-
-	vpost->sws = sws_getCachedContext(vpost->sws, w, h, AV_PIX_FMT_YUVA420P, ow, oh, AV_PIX_FMT_RGBA, SWS_BILINEAR, nullptr, nullptr, nullptr);
-
-	//u64 stamp2 = get_guest_system_time();
-
-	const u8* in_data[4] = { &inPicBuff[0], &inPicBuff[w * h], &inPicBuff[w * h * 5 / 4], pA.get() };
-	int ws = w;
-	int in_line[4] = { ws, ws/2, ws/2, ws };
-	u8* out_data[4] = { outPicBuff.get_ptr(), nullptr, nullptr, nullptr };
-	int out_line[4] = { static_cast<int>(ow * 4), 0, 0, 0 };
-
-	sws_scale(vpost->sws, in_data, in_line, 0, h, out_data, out_line);
-
-	//ConLog.Write("cellVpostExec() perf (access=%d, getContext=%d, scale=%d, finalize=%d)",
-		//stamp1 - stamp0, stamp2 - stamp1, stamp3 - stamp2, get_guest_system_time() - stamp3);
 	return CELL_OK;
 }
 
