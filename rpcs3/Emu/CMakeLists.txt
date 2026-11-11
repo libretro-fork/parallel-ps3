@@ -285,6 +285,7 @@ target_sources(rpcs3_emu PRIVATE
     Cell/Modules/cellPhotoExport.cpp
     Cell/Modules/cellPhotoImport.cpp
     Cell/Modules/cellPngDec.cpp
+    Cell/Modules/cellJpgDec_rows.c
     Cell/Modules/cellPngDec_rows.c
     Cell/Modules/cellPngEnc.cpp
     Cell/Modules/cellPrint.cpp

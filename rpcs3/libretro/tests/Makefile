@@ -16,7 +16,7 @@ LRC_STD  := -std=gnu99
 # as libretro_common.cmake builds it: net_http over its own TLS client
 LRC_DEFS := -DHAVE_SSL -DHAVE_RETROSSL -DHAVE_CRYPTO
 
-TESTS := test_zstd test_deflate test_rxml test_png_rows test_images test_http test_bcn test_tls_duplex test_yaml test_font test_np2
+TESTS := test_zstd test_deflate test_rxml test_png_rows test_images test_jpg_rows test_http test_bcn test_tls_duplex test_yaml test_font test_np2
 
 test_zstd_LRC := \
 	$(LRC)/encodings/encoding_rzstd.c \
@@ -166,6 +166,23 @@ obj/stb_impl.o: stb_impl.c $(STB)/stb_image.h
 test_images: obj/test_images.o obj/stb_impl.o $(call lrc_objs,$(test_images_LRC))
 	$(CC) $(SANITIZE) -o $@ $^ $(LDFLAGS) $(LDLIBS)
 
+# cellJpgDec's decode; its allocations counted by wrapping malloc
+test_jpg_rows_LRC := \
+	$(LRC)/formats/jpeg/rjpeg.c \
+	$(LRC)/features/features_cpu.c \
+	$(LRC)/compat/compat_strl.c
+
+obj/cellJpgDec_rows.o: ../../Emu/Cell/Modules/cellJpgDec_rows.c ../../Emu/Cell/Modules/cellJpgDec_rows.h
+	@mkdir -p $(@D)
+	$(CC) $(CFLAGS) $(TEST_STD) $(SANITIZE) -c -o $@ $<
+
+obj/test_jpg_rows.o: test_jpg_rows.c ../../Emu/Cell/Modules/cellJpgDec_rows.h $(STB)/stb_image.h
+	@mkdir -p $(@D)
+	$(CC) $(CFLAGS) $(LRC_STD) -I$(STB) $(SANITIZE) -c -o $@ $<
+
+test_jpg_rows: obj/test_jpg_rows.o obj/cellJpgDec_rows.o obj/stb_impl.o $(call lrc_objs,$(sort $(test_jpg_rows_LRC)))
+	$(CC) $(SANITIZE) -o $@ $^ $(LDFLAGS) -Wl,--wrap=malloc,--wrap=calloc $(LDLIBS)
+
 obj/test_http.o: test_http.c
 	@mkdir -p $(@D)
 	$(CC) $(CFLAGS) $(LRC_STD) $(SANITIZE) -c -o $@ $<
@@ -235,6 +252,7 @@ check: all
 	./test_rxml
 	./test_png_rows
 	./test_images
+	./test_jpg_rows
 	./test_http
 	./test_bcn
 	./tls_duplex_test.sh ./test_tls_duplex

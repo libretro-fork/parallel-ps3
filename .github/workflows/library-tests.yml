@@ -8,6 +8,7 @@ on:
     paths:
       - 'rpcs3/libretro/libretro-common/**'
       - 'rpcs3/libretro/tests/**'
+      - 'rpcs3/Emu/Cell/Modules/cellJpgDec_rows.*'
       - 'rpcs3/Emu/Cell/Modules/cellPngDec_rows.*'
       - 'rpcs3/Emu/RSX/Overlays/overlay_font_pack.h'
       - 'rpcs3/Emu/NP/pb_wire.h'
@@ -17,6 +18,7 @@ on:
     paths:
       - 'rpcs3/libretro/libretro-common/**'
       - 'rpcs3/libretro/tests/**'
+      - 'rpcs3/Emu/Cell/Modules/cellJpgDec_rows.*'
       - 'rpcs3/Emu/Cell/Modules/cellPngDec_rows.*'
       - 'rpcs3/Emu/RSX/Overlays/overlay_font_pack.h'
       - 'rpcs3/Emu/NP/pb_wire.h'

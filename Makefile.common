@@ -273,6 +273,7 @@ SOURCES_RPCS3 := \
 	$(CORE_DIR)/rpcs3/Emu/Cell/Modules/cellPhotoExport.cpp \
 	$(CORE_DIR)/rpcs3/Emu/Cell/Modules/cellPhotoImport.cpp \
 	$(CORE_DIR)/rpcs3/Emu/Cell/Modules/cellPngDec.cpp \
+	$(CORE_DIR)/rpcs3/Emu/Cell/Modules/cellJpgDec_rows.c \
 	$(CORE_DIR)/rpcs3/Emu/Cell/Modules/cellPngDec_rows.c \
 	$(CORE_DIR)/rpcs3/Emu/Cell/Modules/cellPngEnc.cpp \
 	$(CORE_DIR)/rpcs3/Emu/Cell/Modules/cellPrint.cpp \
