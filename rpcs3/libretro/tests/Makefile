@@ -18,7 +18,7 @@ LRC_DEFS := -DHAVE_SSL -DHAVE_RETROSSL -DHAVE_CRYPTO \
 	-DHAVE_RWAV -DHAVE_RFLAC -DHAVE_RVORBIS -DHAVE_ROPUS -DHAVE_RMP3 -DHAVE_RAAC \
 	-DHAVE_RMP4 -DHAVE_RAC3 -DHAVE_RWMA -DHAVE_RWEBM -DHAVE_RATRAC3 -DHAVE_RATRAC3P
 
-TESTS := test_zstd test_deflate test_rxml test_png_rows test_images test_jpg_rows test_http test_bcn test_tls_duplex test_yaml test_font test_np2 test_rsx_scale test_vpost test_atracx test_vdec test_media test_record
+TESTS := test_zstd test_deflate test_rxml test_png_rows test_images test_jpg_rows test_http test_bcn test_tls_duplex test_yaml test_font test_np2 test_rsx_scale test_vpost test_atracx test_vdec test_media test_record test_config_database
 
 test_zstd_LRC := \
 	$(LRC)/encodings/encoding_rzstd.c \
@@ -374,6 +374,22 @@ obj/test_record.o: test_record.c test_common.h ../../util/media_encode.h ../../u
 test_record: obj/test_record.o obj/media_encode.o obj/media_decode.o $(call lrc_objs,$(sort $(test_record_LRC)))
 	$(CC) $(SANITIZE) -o $@ $^ $(LDFLAGS) $(LDLIBS) -lpthread
 
+# the per-game settings database's lookup, against every entry of the copy
+# the core carries
+test_config_database_LRC := \
+	$(LRC)/formats/json/rjson.c \
+	$(LRC)/string/rstrtod.c \
+	$(LRC)/compat/compat_strl.c
+
+obj/config_database.o: ../config_database.c ../config_database.h
+	@mkdir -p $(@D)
+	$(CC) $(CFLAGS) $(TEST_STD) $(SANITIZE) -c -o $@ $<
+
+obj/test_config_database.o: test_config_database.c test_common.h ../config_database.h
+
+test_config_database: obj/test_config_database.o obj/config_database.o $(call lrc_objs,$(sort $(test_config_database_LRC)))
+	$(CC) $(SANITIZE) -o $@ $^ $(LDFLAGS) $(LDLIBS)
+
 # Each test also writes what the new code produces, for the reference
 # tools to read back
 check: all
@@ -397,6 +413,7 @@ check: all
 	./test_vdec fixtures
 	./test_media fixtures
 	./rec_check.sh rec_out
+	./test_config_database ../config_database.dat
 
 clean:
 	rm -rf obj $(TESTS) *_out.* rec_out

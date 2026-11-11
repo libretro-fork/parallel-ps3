@@ -385,6 +385,7 @@ ifneq ($(OBJ_GLEW),)
 $(OBJ_GLEW):     FLAGS := $(FLAGS_GLEW)
 endif
 $(OBJ_LIBRETRO): FLAGS := $(FLAGS_LIBRETRO)
+$(call objs,$(filter %.c,$(SOURCES_LIBRETRO) $(OS_LIBRETRO))): FLAGS := $(FLAGS_RPCS3_C)
 
 # Built without RTTI, as LLVM is (rpcs3/Emu/CMakeLists.txt)
 $(addprefix $(CORE_DIR)/,rpcs3/Emu/Cell/PPUTranslator.o Utilities/JITLLVM.o Utilities/JITASM.o): FLAGS += -fno-rtti
