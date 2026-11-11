@@ -1,5 +1,6 @@
-# The core without CMake: make, a compiler, and for the default build
-# llvm-config, GLEW and the Vulkan loader. What it builds is what the CMake
+# The core without CMake: make and a compiler. LLVM is built from the
+# 3rdparty/llvm submodule into the core, GLEW and the Vulkan headers are in
+# the tree. What it builds is what the CMake
 # build (BUILD_LIBRETRO_CORE_ONLY, as .ci/build-libretro.sh configures it)
 # builds, from the same sources with the same flags: Makefile.common has
 # the lists.
@@ -8,6 +9,8 @@
 #   make platform=osx                   macOS (arm64 or x86_64)
 #   make platform=win                   Windows, with MinGW-w64
 #   make HAVE_LLVM=0                    without the LLVM recompilers
+#   make SYSTEM_LLVM=1                  the system's LLVM (llvm-config, 21 or
+#                                       newer) instead of the submodule's
 #   make EMBED_PATCHES=0                without downloading patch.yml
 #   make DEBUG=1                        -O0 -g
 #   make check                          the core, loaded as a frontend loads it
@@ -15,7 +18,8 @@
 # Objects are written next to their sources; `make clean` removes them.
 
 DEBUG          ?= 0
-HAVE_LLVM      ?= auto
+HAVE_LLVM      ?= 1
+SYSTEM_LLVM    ?= 0
 LLVM_CONFIG    ?= llvm-config
 LLVM_STATIC    ?= 1
 EMBED_PATCHES  ?= 1
@@ -166,8 +170,19 @@ else
    WARNINGS_RPCS3 += $(WARNINGS_GCC)
 endif
 
-# LLVM, for the PPU and SPU recompilers: when llvm-config is there, unless
-# HAVE_LLVM=0; linked statically, so the core is one file
+# LLVM, for the PPU and SPU recompilers. By default the LLVM the core needs is
+# built from the 3rdparty/llvm submodule (fetched the first time when it is
+# not there) and linked into the core: nothing to install. The lists it is
+# built from, and the headers LLVM's configuration would write, are in
+# rpcs3/libretro/make/llvm. SYSTEM_LLVM=1 takes the system's through
+# llvm-config instead; HAVE_LLVM=0 builds without the recompilers.
+ifeq ($(HAVE_LLVM),auto)
+   override HAVE_LLVM := 1
+endif
+ifeq ($(HAVE_LLVM),0)
+   override SYSTEM_LLVM := 0
+endif
+
 # The JIT code uses LLVM 21's interfaces (the CI images have 22.1)
 LLVM_MIN := 21
 
@@ -193,7 +208,7 @@ else
    LLVM_FOR := -linux
 endif
 
-ifneq ($(HAVE_LLVM),0)
+ifeq ($(SYSTEM_LLVM),1)
    LLVM_MAJOR := $(shell $(LLVM_CONFIG) --version 2>/dev/null | cut -d. -f1)
    LLVM_HOST  := $(shell $(LLVM_CONFIG) --host-target 2>/dev/null)
    ifeq ($(LLVM_MAJOR),)
@@ -203,16 +218,9 @@ ifneq ($(HAVE_LLVM),0)
    else ifneq ($(shell [ $(LLVM_MAJOR) -ge $(LLVM_MIN) ] && echo yes),yes)
       LLVM_NO := $(LLVM_CONFIG) is LLVM $(LLVM_MAJOR); $(LLVM_MIN) or newer is needed
    endif
-   ifeq ($(HAVE_LLVM)$(LLVM_NO),auto)
-      HAVE_LLVM := 1
-   else ifeq ($(HAVE_LLVM),auto)
-      $(warning $(LLVM_NO): building without the LLVM recompilers - games run on the PPU interpreter and ASMJIT, many times slower)
-      HAVE_LLVM := 0
-   else ifneq ($(LLVM_NO),)
-      $(error HAVE_LLVM=1, but $(LLVM_NO))
+   ifneq ($(LLVM_NO),)
+      $(error SYSTEM_LLVM=1, but $(LLVM_NO))
    endif
-endif
-ifeq ($(HAVE_LLVM),1)
    LLVM_COMPONENTS := core executionengine mcjit passes
    # The profilers' JIT listeners on Linux, where this LLVM has them
    LLVM_HAS := $(shell $(LLVM_CONFIG) --components)
@@ -246,6 +254,69 @@ ifeq ($(HAVE_LLVM),1)
       endif
    endif
    LIBS      := $(LLVM_LIBS) $(LIBS)
+endif
+
+
+ifeq ($(HAVE_LLVM)$(SYSTEM_LLVM),10)
+   LLVM_SRC := $(CORE_DIR)/3rdparty/llvm/llvm/llvm
+   ifeq ($(wildcard $(LLVM_SRC)/CMakeLists.txt),)
+      $(info Fetching the LLVM submodule (3rdparty/llvm/llvm) once: it is a large download)
+      LLVM_FETCH := $(shell git -C $(CORE_DIR) submodule update --init --depth 1 3rdparty/llvm/llvm >&2 && echo ok)
+      ifneq ($(LLVM_FETCH),ok)
+         $(error 3rdparty/llvm/llvm is missing and could not be fetched: run git submodule update --init 3rdparty/llvm/llvm, or build with HAVE_LLVM=0)
+      endif
+   endif
+
+   # The system and processor LLVM is built for, and those of the machine
+   # that runs the build, for TableGen
+   LLVM_OS   := $(if $(findstring win,$(platform)),windows,$(if $(filter osx,$(platform)),darwin,linux))
+   LLVM_ARCH := $(if $(filter 1,$(IS_ARM64)),aarch64,x86)
+   HOST_UNAME := $(shell uname -s 2>/dev/null)
+   HOST_OS   := $(if $(filter MINGW% MSYS% CYGWIN%,$(HOST_UNAME)),windows,$(if $(filter Darwin,$(HOST_UNAME)),darwin,linux))
+   HOST_ARCH := $(if $(filter aarch64 arm64,$(shell uname -m 2>/dev/null)),aarch64,x86)
+   HOST_EXE  := $(if $(filter windows,$(HOST_OS)),.exe)
+   HOST_CXX  ?= $(if $(filter $(LLVM_OS)-$(LLVM_ARCH),$(HOST_OS)-$(HOST_ARCH)),$(CXX),c++)
+
+   LLVM_OUT      := $(GEN_DIR)/llvm
+   LLVM_GEN      := $(LLVM_OUT)/gen
+   LLVM_OBJ      := $(LLVM_OUT)/$(LLVM_OS)-$(LLVM_ARCH)
+   LLVM_HOST_OBJ := $(LLVM_OUT)/host-$(HOST_OS)-$(HOST_ARCH)
+   LLVM_MIN_TBLGEN := $(LLVM_HOST_OBJ)/llvm-min-tblgen$(HOST_EXE)
+   LLVM_TBLGEN     := $(LLVM_HOST_OBJ)/llvm-tblgen$(HOST_EXE)
+   LLVM_CFG        := $(CORE_DIR)/rpcs3/libretro/make/llvm/include
+   LLVM_CONFIG_INC      = $(LLVM_CFG)/$(LLVM_OS) -I$(LLVM_CFG)/$(LLVM_ARCH) -I$(LLVM_CFG)/common
+   LLVM_HOST_CONFIG_INC = $(LLVM_CFG)/$(HOST_OS) -I$(LLVM_CFG)/$(HOST_ARCH) -I$(LLVM_CFG)/common
+
+   llvm_objs = $(patsubst $(LLVM_SRC)/%,$(1)/%.o,$(2))
+   include $(CORE_DIR)/rpcs3/libretro/make/llvm/llvm.mk
+
+   # The core's components (3rdparty/llvm/CMakeLists.txt): the common ones,
+   # the target, and the perf listener on Linux
+   LLVM_SET  := $(if $(filter 1,$(IS_ARM64)),AARCH64,X86)
+   LLVM_SRCS := $(LLVM_LIB_COMMON_SRCS) $(LLVM_LIB_$(LLVM_SET)_SRCS) \
+      $(if $(filter linux,$(LLVM_OS)),$(LLVM_LIB_PERFJITEVENTS_SRCS))
+   LLVM_OBJS := $(call llvm_objs,$(LLVM_OBJ),$(LLVM_SRCS))
+   LLVM_TBLGEN_OUT := $(LLVM_TBLGEN_COMMON) $(LLVM_TBLGEN_$(LLVM_SET))
+   LLVM_MIN_OBJS := $(call llvm_objs,$(LLVM_HOST_OBJ),$(LLVM_LLVM_MIN_TBLGEN_SRCS))
+   LLVM_TBLGEN_OBJS := $(call llvm_objs,$(LLVM_HOST_OBJ),$(LLVM_LLVM_TBLGEN_SRCS))
+   LLVM_ARCHIVE := $(CORE_DIR)/libllvm.a
+
+   # As LLVM's release builds compile it
+   llvm_defs = $(if $(filter linux,$(1)),-D_GNU_SOURCE,$(if $(filter windows,$(1)),-D_FILE_OFFSET_BITS=64))
+   LLVM_CXXFLAGS := -std=c++17 -O2 -DNDEBUG -fno-exceptions -fno-rtti -funwind-tables \
+      -fvisibility-inlines-hidden -ffunction-sections -fdata-sections -w -pthread $(fpic) $(VISIBILITY) $(ARCH_FLAGS)
+   LLVM_CFLAGS   := -O2 -DNDEBUG -ffunction-sections -fdata-sections -w $(fpic) $(VISIBILITY) $(ARCH_FLAGS)
+   LLVM_HOST_CXXFLAGS := -std=c++17 -O2 -DNDEBUG -fno-exceptions -fno-rtti -w -pthread
+   LLVM_HOST_LIBS := $(if $(filter windows,$(HOST_OS)),-lpsapi -lshell32 -lole32 -luuid -ladvapi32 -lws2_32 -lntdll,$(if $(filter darwin,$(HOST_OS)),,-lpthread -ldl -lm))
+
+   $(LLVM_MIN_OBJS) $(LLVM_TBLGEN_OBJS): LLVM_CONFIG_INC = $(LLVM_HOST_CONFIG_INC)
+   # llvm-tblgen's own sources include what llvm-min-tblgen writes
+   $(filter-out $(LLVM_MIN_OBJS),$(LLVM_TBLGEN_OBJS)): | $(LLVM_TBLGEN_TOOL)
+
+   DEFINES   += -DLLVM_AVAILABLE -D__STDC_CONSTANT_MACROS -D__STDC_FORMAT_MACROS -D__STDC_LIMIT_MACROS
+   LLVM_INC  := -isystem $(LLVM_SRC)/include -isystem $(LLVM_GEN)/include \
+      -isystem $(LLVM_CFG)/$(LLVM_OS) -isystem $(LLVM_CFG)/$(LLVM_ARCH) -isystem $(LLVM_CFG)/common
+   LIBS      := $(if $(filter windows,$(LLVM_OS)),-lpsapi -lshell32 -lole32 -luuid -ladvapi32 -lws2_32 -lntdll) $(LIBS)
 endif
 
 # The version: upstream's build this code is merged up to, and this commit
@@ -339,7 +410,7 @@ REMOVE_OBJECTS = $(if $(wildcard $(OBJ_DIRS)),find $(wildcard $(OBJ_DIRS)) -maxd
 # which toolchain made them: a build for another platform or processor in
 # the same checkout clears the last one's first, at parse time, before make
 # reads their dependency files. Not for `make clean`, which removes them all.
-BUILD_TAG := $(CC)|$(CXX)|$(platform)|$(arch)|$(HAVE_LLVM)|$(if $(filter 1,$(HAVE_LLVM)),$(shell $(LLVM_CONFIG) --version))|$(DEBUG)|$(LTO)
+BUILD_TAG := $(CC)|$(CXX)|$(platform)|$(arch)|$(HAVE_LLVM)|$(SYSTEM_LLVM)|$(if $(filter 1,$(SYSTEM_LLVM)),$(shell $(LLVM_CONFIG) --version))|$(DEBUG)|$(LTO)
 ifeq ($(filter clean,$(MAKECMDGOALS)),)
 BUILD_TAG_STATUS := $(shell \
 	if [ ! -f .build-tag ] || [ "`cat .build-tag 2>/dev/null`" != "$(BUILD_TAG)" ]; then \
@@ -368,7 +439,8 @@ ARCHIVES := \
 	$(CORE_DIR)/librtmidi.a \
 	$(CORE_DIR)/libfusion.a \
 	$(CORE_DIR)/libvolk.a \
-	$(if $(OBJ_GLEW),$(CORE_DIR)/libglew.a)
+	$(if $(OBJ_GLEW),$(CORE_DIR)/libglew.a) \
+	$(LLVM_ARCHIVE)
 
 $(CORE_DIR)/librpcs3_emu.a: $(OBJ_RPCS3)
 $(CORE_DIR)/liblibretro_common.a: $(OBJ_LRC)
@@ -380,10 +452,54 @@ $(CORE_DIR)/libfusion.a: $(OBJ_FUSION)
 $(CORE_DIR)/libvolk.a: $(OBJ_VOLK)
 $(CORE_DIR)/libglew.a: $(OBJ_GLEW)
 
-$(ARCHIVES):
+$(filter-out $(LLVM_ARCHIVE),$(ARCHIVES)):
 	$(SAY) AR $@
 	$(Q)rm -f $@
 	$(Q)$(AR) rcs $@ $^
+
+ifneq ($(LLVM_ARCHIVE),)
+# ---- LLVM, from the submodule ----
+
+# Its objects through a list, too many for a command line on Windows
+$(LLVM_ARCHIVE): $(LLVM_OBJS)
+	$(SAY) AR $@
+	$(Q)rm -f $@
+	$(file >$@.list,$^)
+	$(Q)$(AR) rcs $@ @$@.list
+	$(Q)rm -f $@.list
+
+$(LLVM_OBJ)/%.cpp.o: $(LLVM_SRC)/%.cpp | $(LLVM_TBLGEN_OUT)
+	@mkdir -p $(@D)
+	$(SAY) CXX $<
+	$(Q)$(CXX) -c -o $@ $< $(LLVM_CXXFLAGS) $(call llvm_defs,$(LLVM_OS)) $(LLVM_CPPFLAGS) $(CPPFLAGS)
+
+$(LLVM_OBJ)/%.c.o: $(LLVM_SRC)/%.c | $(LLVM_TBLGEN_OUT)
+	@mkdir -p $(@D)
+	$(SAY) CC $<
+	$(Q)$(CC) -c -o $@ $< $(LLVM_CFLAGS) $(call llvm_defs,$(LLVM_OS)) $(LLVM_CPPFLAGS) $(CPPFLAGS)
+
+# TableGen, for the machine that runs the build
+$(LLVM_HOST_OBJ)/%.cpp.o: $(LLVM_SRC)/%.cpp
+	@mkdir -p $(@D)
+	$(SAY) HOSTCXX $<
+	$(Q)$(HOST_CXX) -c -o $@ $< $(LLVM_HOST_CXXFLAGS) $(call llvm_defs,$(HOST_OS)) $(LLVM_CPPFLAGS)
+
+$(LLVM_HOST_OBJ)/%.c.o: $(LLVM_SRC)/%.c
+	@mkdir -p $(@D)
+	$(SAY) HOSTCC $<
+	$(Q)$(HOST_CC) -c -o $@ $< -O2 -DNDEBUG -w $(call llvm_defs,$(HOST_OS)) $(LLVM_CPPFLAGS)
+
+$(LLVM_MIN_TBLGEN): $(LLVM_MIN_OBJS)
+	$(SAY) LINK $@
+	$(Q)$(HOST_CXX) -o $@ $^ -pthread $(LLVM_HOST_LIBS)
+
+$(LLVM_TBLGEN): $(LLVM_TBLGEN_OBJS)
+	$(SAY) LINK $@
+	$(Q)$(HOST_CXX) -o $@ $^ -pthread $(LLVM_HOST_LIBS)
+
+# The core's own sources include LLVM's generated headers
+$(OBJ_RPCS3) $(OBJ_LIBRETRO): | $(LLVM_TBLGEN_OUT)
+endif
 
 ifneq ($(platform),osx)
    GROUP_START := -Wl,--start-group
@@ -478,13 +594,25 @@ $(DECODERS_TEST): $(OBJ_DECODERS_TEST) $(OBJ_LIBRETRO) $(ARCHIVES)
 	$(SAY) LINK $@
 	$(Q)$(CXX) -o $@ $(OBJ_DECODERS_TEST) $(OBJ_LIBRETRO) $(GROUP_START) $(ARCHIVES) $(GROUP_END) $(LDFLAGS) $(LIBS)
 
-check: $(TARGET) $(SAVESTATE_TEST) $(DECODERS_TEST)
+# LLVM, as the core is built with it, compiling and running code through
+# RPCS3's JIT; only when the core has LLVM
+LLVM_JIT_TEST := $(if $(filter 1,$(HAVE_LLVM)),$(GEN_DIR)/test_llvm_jit)
+OBJ_LLVM_JIT_TEST := $(CORE_DIR)/rpcs3/libretro/tests/test_llvm_jit.o
+$(OBJ_LLVM_JIT_TEST): FLAGS := $(FLAGS_LIBRETRO)
+$(OBJ_LLVM_JIT_TEST): | $(LLVM_TBLGEN_OUT)
+
+$(GEN_DIR)/test_llvm_jit: $(OBJ_LLVM_JIT_TEST) $(OBJ_LIBRETRO) $(ARCHIVES)
+	$(SAY) LINK $@
+	$(Q)$(CXX) -o $@ $(OBJ_LLVM_JIT_TEST) $(OBJ_LIBRETRO) $(GROUP_START) $(ARCHIVES) $(GROUP_END) $(LDFLAGS) $(LIBS)
+
+check: $(TARGET) $(SAVESTATE_TEST) $(DECODERS_TEST) $(LLVM_JIT_TEST)
 	$(HOST_CC) -O2 -o $(GEN_DIR)/load_test $(CORE_DIR)/rpcs3/libretro/make/load_test.c -ldl
 	$(GEN_DIR)/load_test ./$(TARGET)
 	$(SAVESTATE_TEST)
 	$(DECODERS_TEST)
+	$(if $(LLVM_JIT_TEST),$(LLVM_JIT_TEST))
 
--include $(OBJECTS:.o=.d) $(OBJ_SAVESTATE_TEST:.o=.d) $(OBJ_DECODERS_TEST:.o=.d)
+-include $(OBJECTS:.o=.d) $(OBJ_SAVESTATE_TEST:.o=.d) $(OBJ_DECODERS_TEST:.o=.d) $(OBJ_LLVM_JIT_TEST:.o=.d)
 
 clean:
 	@$(REMOVE_OBJECTS)

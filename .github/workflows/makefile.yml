@@ -1,7 +1,7 @@
 name: Makefile build
 
 # The core built with the Makefile instead of CMake (Linux x86_64, GCC, LLVM
-# 22 linked statically as on the CI images), then
+# built from the submodule into the core), then
 # loaded with every symbol resolved and asked what it is, and in-memory save
 # states written and read through RPCS3's serializer (make check).
 on:
@@ -10,6 +10,7 @@ on:
       - 'Makefile'
       - 'Makefile.common'
       - 'rpcs3/libretro/make/**'
+      - '.gitmodules'
       - 'rpcs3/libretro/tests/test_savestate_memory.cpp'
       - 'rpcs3/libretro/tests/test_decoders.cpp'
       - 'rpcs3/Emu/savestate_utils.*'
@@ -21,6 +22,7 @@ on:
       - 'Makefile'
       - 'Makefile.common'
       - 'rpcs3/libretro/make/**'
+      - '.gitmodules'
       - 'rpcs3/libretro/tests/test_savestate_memory.cpp'
       - 'rpcs3/libretro/tests/test_decoders.cpp'
       - 'rpcs3/Emu/savestate_utils.*'
@@ -36,7 +38,7 @@ jobs:
     # (test_decoders), where a game stopped at its first PPU module
     name: Makefile build (Linux x86_64${{ matrix.llvm == '0' && ', no LLVM' || '' }})
     runs-on: ubuntu-24.04
-    timeout-minutes: 45
+    timeout-minutes: 150
     strategy:
       fail-fast: false
       matrix:
@@ -48,24 +50,26 @@ jobs:
       - name: Submodules
         run: git submodule -q update --init --depth 1 $(awk '/path/ && !/llvm/ && !/opencv/ && !/libsdl-org/ { print $3 }' .gitmodules)
 
-      # The JIT code needs LLVM 21 or newer, which Ubuntu 24.04 does not
-      # have: LLVM's own release, of which only llvm-config, the headers and
-      # the static libraries are unpacked. (21's release has some libraries
-      # as LTO bitcode, which GNU ld cannot link; 22's are plain objects.)
       - name: Dependencies
         run: sudo apt-get install -y -q libx11-dev libegl-dev libgl-dev zlib1g-dev unzip >/dev/null
 
-      - name: LLVM
+      # LLVM from the submodule, built by the Makefile into the core. Its
+      # objects and TableGen's output are kept between runs: they change only
+      # with the submodule or the lists and headers they are built from.
+      - name: LLVM submodule
         if: matrix.llvm == '1'
-        run: |
-          mkdir -p "$RUNNER_TEMP/llvm"
-          curl -fsSL https://github.com/llvm/llvm-project/releases/download/llvmorg-22.1.0/LLVM-22.1.0-Linux-X64.tar.xz |
-            tar -xJ -C "$RUNNER_TEMP/llvm" --strip-components=1 --wildcards \
-              '*/bin/llvm-config' '*/include/llvm/*' '*/include/llvm-c/*' '*/lib/libLLVM*.a'
-          echo "LLVM_CONFIG=$RUNNER_TEMP/llvm/bin/llvm-config" >> "$GITHUB_ENV"
+        run: git submodule -q update --init --depth 1 3rdparty/llvm/llvm
+
+      - name: LLVM objects
+        if: matrix.llvm == '1'
+        uses: actions/cache@v4
+        with:
+          path: rpcs3/libretro/generated/llvm
+          key: llvm-objects-${{ hashFiles('.gitmodules', 'rpcs3/libretro/make/llvm/**') }}-${{ github.sha }}
+          restore-keys: llvm-objects-${{ hashFiles('.gitmodules', 'rpcs3/libretro/make/llvm/**') }}-
 
       - name: Build
-        run: make -j"$(nproc)" HAVE_LLVM=${{ matrix.llvm }} LLVM_CONFIG="${LLVM_CONFIG:-llvm-config}"
+        run: make -j"$(nproc)" HAVE_LLVM=${{ matrix.llvm }}
 
       # Nothing to install for Vulkan or GLEW, and nothing of theirs needed
       # by the core: GLEW is compiled in, Vulkan opened at run time
@@ -75,11 +79,11 @@ jobs:
           if readelf -d parallel_ps3_libretro.so | grep -qE 'NEEDED.*(libvulkan|libGLEW)'; then exit 1; fi
 
       - name: Load
-        run: make check HAVE_LLVM=${{ matrix.llvm }} LLVM_CONFIG="${LLVM_CONFIG:-llvm-config}"
+        run: make check HAVE_LLVM=${{ matrix.llvm }}
 
       # Twice: the second finds the generated folder gone, and must still
       # succeed without an error from make
       - name: Clean
         run: |
-          for i in 1 2; do make clean HAVE_LLVM=${{ matrix.llvm }} LLVM_CONFIG="${LLVM_CONFIG:-llvm-config}" 2>&1 | tee clean.log; ! grep -q 'Error' clean.log; done
+          for i in 1 2; do make clean HAVE_LLVM=${{ matrix.llvm }} 2>&1 | tee clean.log; ! grep -q 'Error' clean.log; done
           test -z "$(find Utilities rpcs3/Emu -maxdepth 1 -name '*.o' | head -1)"
