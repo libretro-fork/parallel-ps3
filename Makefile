@@ -25,7 +25,7 @@ EMBED_PATCHES  ?= 1
 LTO            ?= 0
 
 CORE_DIR := .
-TARGET_NAME := rpcs3
+TARGET_NAME := parallel_ps3
 
 # ECHO=1 (or E=1) prints each command in full
 ifeq ($(ECHO),1)

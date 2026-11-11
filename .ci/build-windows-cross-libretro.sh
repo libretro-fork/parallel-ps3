@@ -154,7 +154,7 @@ cmake -S . -B build -G Ninja                           \
 cmake --build build --target rpcs3_libretro -j "$JOBS" -- ${KEEP_GOING:+-k 0}
 
 # Runtime output (a DLL counts as one) goes to bin/, see CMAKE_RUNTIME_OUTPUT_DIRECTORY.
-CORE=build/bin/rpcs3_libretro.dll
+CORE=build/bin/parallel_ps3_libretro.dll
 test -f "$CORE"
 llvm-strip --strip-unneeded "$CORE"
 ls -la "$CORE"

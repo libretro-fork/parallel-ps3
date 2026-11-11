@@ -44,7 +44,7 @@ add_library(rpcs3_libretro SHARED
 
 # Set output name without 'lib' prefix on non-Windows
 set_target_properties(rpcs3_libretro PROPERTIES
-    OUTPUT_NAME "rpcs3_libretro"
+    OUTPUT_NAME "parallel_ps3_libretro"
     PREFIX ""
 )
 

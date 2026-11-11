@@ -19,7 +19,7 @@
 # ARCH is arm64 or x86_64 (default: the machine's); the x86_64 slice is
 # cross-built on Apple Silicon, as the buildbot runs it. Expects to run from
 # the top of the source tree, with the submodule URLs already pointing at
-# GitHub (see .gitlab-ci.yml). The core ends up as ./rpcs3_libretro.dylib.
+# GitHub (see .gitlab-ci.yml). The core ends up as ./parallel_ps3_libretro.dylib.
 
 ARCH="${ARCH:-$(uname -m)}"
 case "$ARCH" in
@@ -170,7 +170,7 @@ awk '/^  -$/ { if (failed) printf "%s", entry; entry = ""; failed = 0 }
 # -k 0 under KEEP_GOING=1, so a trial run reports every error, not the first.
 cmake --build build --target rpcs3_libretro -j "$JOBS" -- ${KEEP_GOING:+-k 0}
 
-CORE=rpcs3_libretro.dylib
+CORE=parallel_ps3_libretro.dylib
 cp "$(find build -name $CORE | head -1)" $CORE
 strip -x $CORE
 LINKED_MVK=$(otool -L $CORE | awk '/libMoltenVK/ {print $1}')

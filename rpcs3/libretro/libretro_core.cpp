@@ -1109,7 +1109,7 @@ static std::string lrcore_build_crash_log_path()
     {
         base = ".";
     }
-    return base + "/rpcs3_libretro_crash.log";
+    return base + "/parallel_ps3_libretro_crash.log";
 }
 
 static void lrcore_write_crash_report(const std::string& header, const std::vector<std::string>& lines)

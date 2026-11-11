@@ -39,5 +39,5 @@ jobs:
 
       - uses: actions/upload-artifact@main
         with:
-          name: rpcs3_libretro-macos-${{ matrix.arch }}-preflight
-          path: rpcs3_libretro.dylib
+          name: parallel_ps3_libretro-macos-${{ matrix.arch }}-preflight
+          path: parallel_ps3_libretro.dylib

@@ -28,7 +28,7 @@
   variables:
     # The jobs fetch the submodules themselves, LLVM only where it is built.
     GIT_SUBMODULE_STRATEGY: none
-    CORENAME: rpcs3
+    CORENAME: parallel_ps3
     EXTRA_PATH: rpcs3/libretro
 
 # .gitmodules is upstream's, and upstream gives its submodules URLs relative to

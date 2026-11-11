@@ -109,7 +109,7 @@ ninja rpcs3_libretro
 
 cd ..
 mkdir -p artifacts
-find build -name 'rpcs3_libretro.dll' -exec cp {} artifacts/rpcs3_libretro.dll \;
+find build -name 'parallel_ps3_libretro.dll' -exec cp {} artifacts/parallel_ps3_libretro.dll \;
 ls -la artifacts
 
 # Strip, as the Linux and Android cores are: unstripped, the DLL carried the
@@ -118,14 +118,14 @@ ls -la artifacts
 if [ "${KEEP_SYMBOLS:-0}" = "1" ]; then
     echo "KEEP_SYMBOLS=1: leaving the symbols in the DLL"
 else
-    echo "before: $(stat -c %s artifacts/rpcs3_libretro.dll) bytes"
-    llvm-strip --strip-unneeded artifacts/rpcs3_libretro.dll
-    echo "after:  $(stat -c %s artifacts/rpcs3_libretro.dll) bytes"
+    echo "before: $(stat -c %s artifacts/parallel_ps3_libretro.dll) bytes"
+    llvm-strip --strip-unneeded artifacts/parallel_ps3_libretro.dll
+    echo "after:  $(stat -c %s artifacts/parallel_ps3_libretro.dll) bytes"
 fi
 
 # Fail here rather than on a tester's machine: anything the DLL imports beyond
 # Windows itself, the Vulkan loader and OpenGL is a DLL nobody will have.
-llvm-objdump -p artifacts/rpcs3_libretro.dll | awk '/DLL Name:/ { print $3 }' | sort -u > imports.txt
+llvm-objdump -p artifacts/parallel_ps3_libretro.dll | awk '/DLL Name:/ { print $3 }' | sort -u > imports.txt
 cat imports.txt
 if grep -viE '^(api-ms-win-crt-.*|kernel32|user32|gdi32|advapi32|shell32|ole32|oleaut32|ws2_32|iphlpapi|bcrypt|crypt32|pdh|dbghelp|ntdll|winmm|secur32|shlwapi|version|setupapi|opengl32|vulkan-1)\.dll$' imports.txt; then
     echo "The core imports DLLs that are not part of Windows (above)."

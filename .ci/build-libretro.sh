@@ -78,7 +78,7 @@ cmake ..                                               \
 
 ninja rpcs3_libretro
 
-CORE=rpcs3/libretro/rpcs3_libretro.so
+CORE=rpcs3/libretro/parallel_ps3_libretro.so
 test -f "$CORE"
 
 mkdir -p "$ARTDIR"
@@ -89,6 +89,6 @@ cp "$CORE" "$ARTDIR/"
 if [ "${KEEP_SYMBOLS:-0}" = "1" ]; then
     echo "KEEP_SYMBOLS=1: leaving the symbol table in the core"
 else
-    "${STRIP_BINARY:-strip}" --strip-unneeded "$ARTDIR/rpcs3_libretro.so" || true
+    "${STRIP_BINARY:-strip}" --strip-unneeded "$ARTDIR/parallel_ps3_libretro.so" || true
 fi
 ls -la "$ARTDIR"

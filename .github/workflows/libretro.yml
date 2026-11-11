@@ -80,7 +80,7 @@ jobs:
       - name: Name the core after the architecture it is for
         run: |
           cd "${{ env.BUILD_ARTIFACTSTAGINGDIRECTORY }}"
-          mv rpcs3_libretro.so rpcs3_libretro_linux_${{ matrix.arch }}.so
+          mv parallel_ps3_libretro.so parallel_ps3_libretro_linux_${{ matrix.arch }}.so
 
       # A core is loaded by a frontend on a machine nobody here picked, so what
       # it needs by soname decides whether it loads at all. The first build to
@@ -91,8 +91,8 @@ jobs:
       - name: Report what the core needs at load time
         run: |
           cd "${{ env.BUILD_ARTIFACTSTAGINGDIRECTORY }}"
-          readelf -d rpcs3_libretro_linux_${{ matrix.arch }}.so | grep NEEDED
-          if readelf -d rpcs3_libretro_linux_${{ matrix.arch }}.so | grep -qE 'NEEDED.*(libGLEW|libopencv)'; then
+          readelf -d parallel_ps3_libretro_linux_${{ matrix.arch }}.so | grep NEEDED
+          if readelf -d parallel_ps3_libretro_linux_${{ matrix.arch }}.so | grep -qE 'NEEDED.*(libGLEW|libopencv)'; then
             echo "::error::the core still needs a library the build image provided but a user's system will not"
             exit 1
           fi
@@ -100,11 +100,11 @@ jobs:
           # where X11 is not installed. GLX and Xlib are looked up at run time,
           # so none of their libraries may be needed and none of their
           # functions left for the loader to find.
-          if readelf -d rpcs3_libretro_linux_${{ matrix.arch }}.so | grep -qE 'NEEDED.*(libX11|libGLX|libGL\.so|libxcb|libwayland)'; then
+          if readelf -d parallel_ps3_libretro_linux_${{ matrix.arch }}.so | grep -qE 'NEEDED.*(libX11|libGLX|libGL\.so|libxcb|libwayland)'; then
             echo "::error::the core needs an X11 or Wayland library to load"
             exit 1
           fi
-          if nm -D --undefined-only rpcs3_libretro_linux_${{ matrix.arch }}.so | grep -E ' (X[A-Z][a-z]|glX|xcb_|wl_)'; then
+          if nm -D --undefined-only parallel_ps3_libretro_linux_${{ matrix.arch }}.so | grep -E ' (X[A-Z][a-z]|glX|xcb_|wl_)'; then
             echo "::error::the core has X11 functions left for the loader, which libretro_x11_runtime.cpp should define"
             exit 1
           fi
@@ -112,12 +112,12 @@ jobs:
       # The core info file goes with every core: a test build's core can take content types the published .info does
       # not list yet, and the frontend's file browser goes by the .info (NNshi).
       - name: Add the core info file
-        run: cp rpcs3/libretro/rpcs3_libretro.info "${{ env.BUILD_ARTIFACTSTAGINGDIRECTORY }}/"
+        run: cp rpcs3/libretro/parallel_ps3_libretro.info "${{ env.BUILD_ARTIFACTSTAGINGDIRECTORY }}/"
 
       - name: Upload artifacts
         uses: actions/upload-artifact@main
         with:
-          name: rpcs3_libretro-linux-${{ matrix.arch }}
+          name: parallel_ps3_libretro-linux-${{ matrix.arch }}
           path: |
             ${{ env.BUILD_ARTIFACTSTAGINGDIRECTORY }}/*.so
             ${{ env.BUILD_ARTIFACTSTAGINGDIRECTORY }}/*.info
@@ -183,12 +183,12 @@ jobs:
 
       - name: Add the core info file
         shell: bash
-        run: cp rpcs3/libretro/rpcs3_libretro.info artifacts/
+        run: cp rpcs3/libretro/parallel_ps3_libretro.info artifacts/
 
       - name: Upload artifacts
         uses: actions/upload-artifact@main
         with:
-          name: rpcs3_libretro-windows-x86_64
+          name: parallel_ps3_libretro-windows-x86_64
           path: |
             artifacts/*.dll
             artifacts/*.info
@@ -304,7 +304,7 @@ jobs:
       - name: Collect
         run: |
           mkdir -p artifacts
-          find build -name 'rpcs3_libretro.so' -exec cp {} artifacts/rpcs3_libretro_android_${{ matrix.name }}.so \;
+          find build -name 'parallel_ps3_libretro.so' -exec cp {} artifacts/parallel_ps3_libretro_android_${{ matrix.name }}.so \;
           ls -la artifacts
           # A gigabyte of it is debug information. The NDK toolchain file puts
           # -g in the flags for every build type and nothing takes it back out,
@@ -315,18 +315,18 @@ jobs:
           NDK="${ANDROID_NDK_LATEST_HOME:-$ANDROID_NDK_HOME}"
           STRIP="$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-strip"
           if [ ! -x "$STRIP" ]; then STRIP="$(command -v llvm-strip || command -v strip)"; fi
-          echo "before: $(stat -c %s artifacts/rpcs3_libretro_android_${{ matrix.name }}.so) bytes"
-          "$STRIP" --strip-unneeded artifacts/rpcs3_libretro_android_${{ matrix.name }}.so
-          echo "after:  $(stat -c %s artifacts/rpcs3_libretro_android_${{ matrix.name }}.so) bytes"
+          echo "before: $(stat -c %s artifacts/parallel_ps3_libretro_android_${{ matrix.name }}.so) bytes"
+          "$STRIP" --strip-unneeded artifacts/parallel_ps3_libretro_android_${{ matrix.name }}.so
+          echo "after:  $(stat -c %s artifacts/parallel_ps3_libretro_android_${{ matrix.name }}.so) bytes"
           ls -la artifacts
 
       - name: Add the core info file
-        run: cp rpcs3/libretro/rpcs3_libretro.info artifacts/
+        run: cp rpcs3/libretro/parallel_ps3_libretro.info artifacts/
 
       - name: Upload artifacts
         uses: actions/upload-artifact@main
         with:
-          name: rpcs3_libretro-android-${{ matrix.name }}
+          name: parallel_ps3_libretro-android-${{ matrix.name }}
           path: |
             artifacts/*.so
             artifacts/*.info
@@ -390,8 +390,8 @@ jobs:
       - name: Collect
         run: |
           mkdir -p artifacts
-          f=$(find build -name 'rpcs3_libretro.dylib' | head -1)
-          CORE=artifacts/rpcs3_libretro_macos_${{ matrix.arch }}.dylib
+          f=$(find build -name 'parallel_ps3_libretro.dylib' | head -1)
+          CORE=artifacts/parallel_ps3_libretro_macos_${{ matrix.arch }}.dylib
           cp "$f" $CORE
           strip -x $CORE
           # Nothing from Homebrew at its own path: MoltenVK is the one
@@ -410,7 +410,7 @@ jobs:
             codesign -f -s - artifacts/$Z
           fi
           codesign -f -s - $CORE
-          cp rpcs3/libretro/rpcs3_libretro.info artifacts/
+          cp rpcs3/libretro/parallel_ps3_libretro.info artifacts/
           otool -L $CORE
           if otool -L $CORE | grep -q '/opt/homebrew\|/usr/local/'; then echo "still linked to Homebrew"; exit 1; fi
           ls -la artifacts
@@ -418,7 +418,7 @@ jobs:
       - name: Upload artifacts
         uses: actions/upload-artifact@main
         with:
-          name: rpcs3_libretro-macos-${{ matrix.arch }}
+          name: parallel_ps3_libretro-macos-${{ matrix.arch }}
           path: |
             artifacts/*.dylib
             artifacts/*.info
