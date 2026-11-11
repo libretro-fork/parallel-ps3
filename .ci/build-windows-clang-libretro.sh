@@ -14,49 +14,15 @@ git config --global --add safe.directory '*'
 
 # The ones clang64 provides as packages are left out, as is LLVM.
 # shellcheck disable=SC2046
-git submodule -q update --init --depth 1 $(awk '/path/ && !/llvm/ && !/opencv/ && !/ffmpeg/ && !/FAudio/ { print $3 }' .gitmodules)
+git submodule -q update --init --depth 1 $(awk '/path/ && !/llvm/ && !/opencv/ && !/FAudio/ { print $3 }' .gitmodules)
 
 # The core has to be one DLL that needs nothing but Windows and OpenGL (the
 # Vulkan loader is opened at run time, not imported). RetroArch loads it with LoadLibraryW on its full path, so Windows
 # looks for the DLLs it depends on next to retroarch.exe, in System32 and on
 # PATH - never in the cores folder - and a core that links clang64's shared
 # libraries does not load at all: "missing modules" (NNshi). What it pulled in
-# were libc++, ffmpeg's five, zlib and zstd.
-
-# ffmpeg, static, built here: clang64's own static ffmpeg is built against
-# dav1d, x264, libvpx and more, none of which the core wants to carry. With
-# --disable-autodetect nothing outside ffmpeg is picked up, which is also what
-# keeps its link line down to a few Windows libraries.
-#
-# A Windows-style path, so that neither MSYS2's argument conversion nor the
-# native CMake and clang have to make sense of /d/a/...
-FFMPEG_PREFIX="$(cygpath -m "$PWD")/ffmpeg-static"
-if [ ! -f "$FFMPEG_PREFIX/lib/libavcodec.a" ]; then
-    git clone --quiet --depth 1 -b release/7.1 https://github.com/FFmpeg/FFmpeg.git ffmpeg-src
-    (
-        cd ffmpeg-src || exit 1
-        ./configure                                   \
-            --prefix="$FFMPEG_PREFIX"                 \
-            --cc=clang --cxx=clang++                  \
-            --enable-static --disable-shared          \
-            --disable-autodetect                      \
-            --disable-programs --disable-doc          \
-            --disable-avdevice --disable-network
-        make -j"$(nproc)"
-        make install
-    )
-fi
-# PKG_CONFIG_PATH is emptied because MSYS2 sets it to clang64's own
-# pkgconfig directory, which would win with that ffmpeg and its whole
-# dependency tree; and the directory is given in MSYS form, as pkgconf
-# splits a search path on ':' and would cut "D:/..." in two.
-FFMPEG_LIBS="$(PKG_CONFIG_PATH= PKG_CONFIG_LIBDIR="$(cygpath -u "$FFMPEG_PREFIX")/lib/pkgconfig" \
-    pkg-config --static --libs libavformat libavcodec libswscale libswresample libavutil | tr ' ' ';')"
-echo "static ffmpeg: $FFMPEG_LIBS"
-case "$FFMPEG_LIBS" in
-    *ffmpeg-static*) ;;
-    *) echo "pkg-config did not return the static ffmpeg built above"; exit 1 ;;
-esac
+# were libc++, zlib and zstd (and ffmpeg's five, before cellRec moved to
+# libretro-common).
 
 # zlib and zstd come in through LLVM's CMake package, libc++ and libunwind
 # through the compiler driver, and winpthread, each as
@@ -91,9 +57,6 @@ cmake ..                                               \
     -DCMAKE_RANLIB="$RANLIB"                           \
     -DUSE_FAUDIO=OFF                                   \
     -DUSE_SDL=OFF                                      \
-    -DUSE_SYSTEM_FFMPEG=ON                             \
-    -DFFMPEG_INCLUDE_DIR="$FFMPEG_PREFIX/include"      \
-    -DFFMPEG_LIBRARIES="$FFMPEG_LIBS"                  \
     -DUSE_SYSTEM_OPENCV=ON                             \
     -DUSE_SYSTEM_OPENAL=OFF                            \
     -DUSE_DISCORD_RPC=OFF                              \

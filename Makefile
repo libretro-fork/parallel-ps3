@@ -8,8 +8,6 @@
 #   make platform=osx                   macOS (arm64 or x86_64)
 #   make platform=win                   Windows, with MinGW-w64
 #   make HAVE_LLVM=0                    without the LLVM recompilers
-#   make SYSTEM_FFMPEG=1                ffmpeg from pkg-config instead of
-#                                       RPCS3's prebuilt one
 #   make EMBED_PATCHES=0                without downloading patch.yml
 #   make DEBUG=1                        -O0 -g
 #   make check                          the core, loaded as a frontend loads it
@@ -20,7 +18,6 @@ DEBUG          ?= 0
 HAVE_LLVM      ?= auto
 LLVM_CONFIG    ?= llvm-config
 LLVM_STATIC    ?= 1
-SYSTEM_FFMPEG  ?= 0
 EMBED_PATCHES  ?= 1
 LTO            ?= 0
 
@@ -105,7 +102,6 @@ ifeq ($(platform), unix)
       GL_LIBS += -lEGL
    endif
    LIBS += $(GL_LIBS) -ldl -lrt -lpthread -lm
-   FFMPEG_OS := linux
 
 # OS X
 else ifeq ($(platform), osx)
@@ -123,13 +119,12 @@ else ifeq ($(platform), osx)
    FLAGS_RTMIDI  += -D__MACOSX_CORE__
    # Vulkan through MoltenVK, which volk opens at run time
    FLAGS_VOLK += -DVK_USE_PLATFORM_METAL_EXT
-   LIBS += -liconv -framework CoreVideo -framework Foundation \
+   LIBS += -liconv -framework CoreFoundation -framework Foundation \
       -framework IOKit -framework Security -framework QuartzCore -framework Metal -framework AppKit \
       -framework CoreMIDI -framework CoreAudio
    ifeq ($(IS_ARM64),1)
       ARCH_FLAGS := -march=armv8.4-a
    endif
-   FFMPEG_OS := macos
 
 # Windows (MinGW-w64)
 else ifneq (,$(findstring win,$(platform)))
@@ -151,7 +146,6 @@ else ifneq (,$(findstring win,$(platform)))
    LIBS += -lopengl32 -lws2_32 -liphlpapi -lwinmm -lpsapi -lgdi32 \
       -lsetupapi -ldbghelp -lpdh -lbcrypt -lole32 -loleaut32 -luuid -lshlwapi \
       -lstrmiids -luser32 -lwinpthread
-   FFMPEG_OS := mingw
 else
    $(error platform $(platform) is not one this Makefile builds for: unix, osx or win)
 endif
@@ -161,10 +155,8 @@ ifeq ($(IS_ARM64),1)
    ifeq ($(ARCH_FLAGS),)
       ARCH_FLAGS := -march=armv8.1-a
    endif
-   FFMPEG_ARCH := arm64
 else
    ARCH_FLAGS := -msse -msse2 -mcx16
-   FFMPEG_ARCH := x64
 endif
 
 # GCC's warnings, or Clang's
@@ -256,27 +248,6 @@ ifeq ($(HAVE_LLVM),1)
    LIBS      := $(LLVM_LIBS) $(LIBS)
 endif
 
-# ffmpeg: RPCS3's prebuilt one, for the commit of 3rdparty/ffmpeg, as the
-# CMake build downloads it; or the system's
-ifeq ($(SYSTEM_FFMPEG),1)
-   FFMPEG_INC  := $(shell $(PKG_CONFIG) --cflags libavformat libavcodec libavutil libswscale libswresample)
-   FFMPEG_LIBS := $(shell $(PKG_CONFIG) --static --libs libavformat libavcodec libavutil libswscale libswresample)
-   FFMPEG_DEP  :=
-else
-   FFMPEG_INC  := -isystem $(CORE_DIR)/3rdparty/ffmpeg/include
-   FFMPEG_ZIP  := ffmpeg-$(FFMPEG_OS)-$(FFMPEG_ARCH).zip
-   FFMPEG_DIR  := $(CORE_DIR)/3rdparty/ffmpeg/prebuilt/$(FFMPEG_OS)-$(FFMPEG_ARCH)
-   FFMPEG_SHA  := $(shell git -C $(CORE_DIR)/3rdparty/ffmpeg rev-parse --short HEAD 2>/dev/null)
-   FFMPEG_LIBS := $(addprefix $(FFMPEG_DIR)/lib/lib,avformat.a avcodec.a swscale.a swresample.a avutil.a)
-   FFMPEG_DEP  := $(FFMPEG_DIR)/lib/libavcodec.a
-   ifeq ($(platform),osx)
-      FFMPEG_LIBS += -framework CoreServices -framework CoreFoundation -framework AudioUnit \
-         -framework AudioToolbox -framework CoreAudio -framework CoreMedia \
-         -framework VideoToolbox -framework CoreVideo
-   endif
-endif
-LIBS := $(FFMPEG_LIBS) $(LIBS)
-
 # The version: upstream's build this code is merged up to, and this commit
 UPSTREAM_VERSION := $(shell sed -n 's/^RPCS3_VERSION=//p' $(CORE_DIR)/rpcs3/libretro/upstream.version)
 UPSTREAM_COMMIT  := $(shell sed -n 's/^RPCS3_COMMIT=//p' $(CORE_DIR)/rpcs3/libretro/upstream.version)
@@ -306,7 +277,7 @@ endif
 COMMON = $(OPT) $(fpic) $(VISIBILITY) -pthread -MMD -MP $(CPPFLAGS)
 
 FLAGS_RPCS3 := -std=gnu++23 -fno-exceptions -fstack-protector $(ARCH_FLAGS) \
-	$(DEFINES) $(INCLUDES_RPCS3) $(FFMPEG_INC) $(LLVM_INC) $(WARNINGS_RPCS3)
+	$(DEFINES) $(INCLUDES_RPCS3) $(LLVM_INC) $(WARNINGS_RPCS3)
 FLAGS_LIBRETRO := $(FLAGS_RPCS3) $(INCLUDES_LIBRETRO) -fexceptions -Wno-error=old-style-cast \
 	-DRPCS3_LIBRETRO_VERSION='"$(LIBRETRO_VERSION)"'
 
@@ -368,7 +339,7 @@ REMOVE_OBJECTS = $(if $(wildcard $(OBJ_DIRS)),find $(wildcard $(OBJ_DIRS)) -maxd
 # which toolchain made them: a build for another platform or processor in
 # the same checkout clears the last one's first, at parse time, before make
 # reads their dependency files. Not for `make clean`, which removes them all.
-BUILD_TAG := $(CC)|$(CXX)|$(platform)|$(arch)|$(HAVE_LLVM)|$(if $(filter 1,$(HAVE_LLVM)),$(shell $(LLVM_CONFIG) --version))|$(SYSTEM_FFMPEG)|$(DEBUG)|$(LTO)
+BUILD_TAG := $(CC)|$(CXX)|$(platform)|$(arch)|$(HAVE_LLVM)|$(if $(filter 1,$(HAVE_LLVM)),$(shell $(LLVM_CONFIG) --version))|$(DEBUG)|$(LTO)
 ifeq ($(filter clean,$(MAKECMDGOALS)),)
 BUILD_TAG_STATUS := $(shell \
 	if [ ! -f .build-tag ] || [ "`cat .build-tag 2>/dev/null`" != "$(BUILD_TAG)" ]; then \
@@ -419,7 +390,7 @@ ifneq ($(platform),osx)
    GROUP_END   := -Wl,--end-group
 endif
 
-$(TARGET): $(OBJ_LIBRETRO) $(ARCHIVES) $(FFMPEG_DEP)
+$(TARGET): $(OBJ_LIBRETRO) $(ARCHIVES)
 	$(SAY) LINK $@
 	$(Q)$(CXX) -o $@ $(OBJ_LIBRETRO) $(GROUP_START) $(ARCHIVES) $(GROUP_END) $(LDFLAGS) $(fpic) $(SHARED) $(LIBS)
 
@@ -486,13 +457,6 @@ $(CORE_DIR)/rpcs3/git-version.h: FORCE
 	@printf '$(GIT_VERSION_H)' > $@.tmp; \
 	if grep -q 'RPCS3_GIT_VERSION_NO_UPDATE 1' $@ 2>/dev/null || cmp -s $@.tmp $@; then rm -f $@.tmp; else mv $@.tmp $@; fi
 
-# RPCS3's prebuilt ffmpeg
-$(FFMPEG_DIR)/lib/libavcodec.a:
-	@mkdir -p $(FFMPEG_DIR)
-	curl -fL --retry 3 -o $(FFMPEG_DIR)/$(FFMPEG_ZIP) "https://github.com/RPCS3/ffmpeg-core/releases/download/$(FFMPEG_SHA)/$(FFMPEG_ZIP)"
-	cd $(FFMPEG_DIR) && unzip -q -o $(FFMPEG_ZIP) && rm -f $(FFMPEG_ZIP)
-	@touch $@
-
 # The core, loaded with every symbol resolved and asked what it is; and
 # in-memory save states, written and read through RPCS3's serializer by a
 # program linked as the core is
@@ -500,7 +464,7 @@ SAVESTATE_TEST := $(GEN_DIR)/test_savestate_memory
 OBJ_SAVESTATE_TEST := $(CORE_DIR)/rpcs3/libretro/tests/test_savestate_memory.o
 $(OBJ_SAVESTATE_TEST): FLAGS := $(FLAGS_LIBRETRO)
 
-$(SAVESTATE_TEST): $(OBJ_SAVESTATE_TEST) $(OBJ_LIBRETRO) $(ARCHIVES) $(FFMPEG_DEP)
+$(SAVESTATE_TEST): $(OBJ_SAVESTATE_TEST) $(OBJ_LIBRETRO) $(ARCHIVES)
 	$(SAY) LINK $@
 	$(Q)$(CXX) -o $@ $(OBJ_SAVESTATE_TEST) $(OBJ_LIBRETRO) $(GROUP_START) $(ARCHIVES) $(GROUP_END) $(LDFLAGS) $(LIBS)
 

@@ -18,7 +18,7 @@ LRC_DEFS := -DHAVE_SSL -DHAVE_RETROSSL -DHAVE_CRYPTO \
 	-DHAVE_RWAV -DHAVE_RFLAC -DHAVE_RVORBIS -DHAVE_ROPUS -DHAVE_RMP3 -DHAVE_RAAC \
 	-DHAVE_RMP4 -DHAVE_RAC3 -DHAVE_RWMA -DHAVE_RWEBM -DHAVE_RATRAC3 -DHAVE_RATRAC3P
 
-TESTS := test_zstd test_deflate test_rxml test_png_rows test_images test_jpg_rows test_http test_bcn test_tls_duplex test_yaml test_font test_np2 test_rsx_scale test_vpost test_atracx test_vdec test_media
+TESTS := test_zstd test_deflate test_rxml test_png_rows test_images test_jpg_rows test_http test_bcn test_tls_duplex test_yaml test_font test_np2 test_rsx_scale test_vpost test_atracx test_vdec test_media test_record
 
 test_zstd_LRC := \
 	$(LRC)/encodings/encoding_rzstd.c \
@@ -349,6 +349,31 @@ obj/test_media.o: test_media.c test_common.h ../../util/media_decode.h
 test_media: obj/test_media.o obj/media_decode.o $(call lrc_objs,$(sort $(test_media_LRC)))
 	$(CC) $(SANITIZE) -o $@ $^ $(LDFLAGS) $(LDLIBS) -lpthread
 
+# cellRec's recordings: the encoders, the MP4 muxer, the scaler and the
+# RGB to 4:2:0 conversion, and media_decode to read them back
+test_record_LRC := \
+	$(LRC)/formats/mpeg4/rmpeg4_encode.c \
+	$(LRC)/formats/h264/rh264_encode.c \
+	$(LRC)/formats/jpeg/rjpeg_encode.c \
+	$(LRC)/formats/aac/raac_encode.c \
+	$(LRC)/formats/mp4/rmp4_mux.c \
+	$(LRC)/formats/image/image_yuv_blit.c \
+	$(LRC)/audio/conversion/float_to_ulaw.c \
+	$(LRC)/gfx/scaler/pixconv.c \
+	$(LRC)/gfx/scaler/scaler.c \
+	$(LRC)/gfx/scaler/scaler_filter.c \
+	$(LRC)/gfx/scaler/scaler_int.c \
+	$(test_media_LRC)
+
+obj/media_encode.o: ../../util/media_encode.c ../../util/media_encode.h
+	@mkdir -p $(@D)
+	$(CC) $(CFLAGS) $(TEST_STD) $(SANITIZE) -c -o $@ $<
+
+obj/test_record.o: test_record.c test_common.h ../../util/media_encode.h ../../util/media_decode.h
+
+test_record: obj/test_record.o obj/media_encode.o obj/media_decode.o $(call lrc_objs,$(sort $(test_record_LRC)))
+	$(CC) $(SANITIZE) -o $@ $^ $(LDFLAGS) $(LDLIBS) -lpthread
+
 # Each test also writes what the new code produces, for the reference
 # tools to read back
 check: all
@@ -371,8 +396,9 @@ check: all
 	./test_atracx fixtures
 	./test_vdec fixtures
 	./test_media fixtures
+	./rec_check.sh rec_out
 
 clean:
-	rm -rf obj $(TESTS) *_out.*
+	rm -rf obj $(TESTS) *_out.* rec_out
 
 .PHONY: all check clean

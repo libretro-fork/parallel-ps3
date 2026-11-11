@@ -187,12 +187,15 @@ static bool md_probe_audio(const uint8_t *data, size_t len, struct md_info *info
 /* video                                                            */
 /* ---------------------------------------------------------------- */
 
-static int md_fourcc_video(const char *id)
+static int md_fourcc_video(const char *id, unsigned object_type)
 {
    if (!strcmp(id, "avc1") || !strcmp(id, "avc3"))
       return MD_CODEC_AVC;
+   /* mp4v carries any MPEG video, or JPEG: the esds says which */
    if (!strcmp(id, "mp4v"))
-      return MD_CODEC_MPEG4;
+      return object_type == 0x20 || !object_type ? MD_CODEC_MPEG4
+           : object_type >= 0x60 && object_type <= 0x65 ? MD_CODEC_MPEG2
+           : object_type == 0x6A ? MD_CODEC_MPEG1 : MD_CODEC_OTHER;
    if (!strcmp(id, "mp2v") || !strcmp(id, "m2v1"))
       return MD_CODEC_MPEG2;
    return MD_CODEC_OTHER;
@@ -240,7 +243,7 @@ static bool md_probe_mp4(const uint8_t *data, size_t len, struct md_info *info)
       return false;
    }
    info->duration_us   = rmp4_duration_ns(m) / 1000;
-   info->video_codec   = md_fourcc_video(t->codec_id);
+   info->video_codec   = md_fourcc_video(t->codec_id, t->object_type);
    info->video_bitrate = md_mp4_bitrate(m, 0, info->duration_us);
    n = rmp4_num_tracks(m);
    for (i = 1; i < n; i++)

@@ -15,6 +15,7 @@ on:
       - 'rpcs3/Emu/Cell/Modules/cellAtracXdec_pcm.*'
       - 'rpcs3/Emu/Cell/Modules/cellVdec_codec.*'
       - 'rpcs3/util/media_decode.*'
+      - 'rpcs3/util/media_encode.*'
       - 'rpcs3/Emu/RSX/Overlays/overlay_font_pack.h'
       - 'rpcs3/Emu/NP/pb_wire.h'
       - 'rpcs3/Emu/NP/generated/**'
@@ -30,6 +31,7 @@ on:
       - 'rpcs3/Emu/Cell/Modules/cellAtracXdec_pcm.*'
       - 'rpcs3/Emu/Cell/Modules/cellVdec_codec.*'
       - 'rpcs3/util/media_decode.*'
+      - 'rpcs3/util/media_encode.*'
       - 'rpcs3/Emu/RSX/Overlays/overlay_font_pack.h'
       - 'rpcs3/Emu/NP/pb_wire.h'
       - 'rpcs3/Emu/NP/generated/**'
@@ -45,13 +47,14 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@main
 
-      # The reference tools read back what the new code writes. libpng,
+      # The reference tools read back what the new code writes (FFmpeg
+      # cellRec's recordings: rec_check.sh). libpng,
       # the oracle the PNG conversions are checked against, is 1.6.59 as
       # RPCS3 built it, and stb, the oracle for the image decoders and the
       # font rasterizer, the commit RPCS3 pinned: the Makefile fetches them
       # (zlib for libpng)
       - name: Reference tools
-        run: sudo apt-get install -y -q zstd zlib1g-dev
+        run: sudo apt-get update -q && sudo apt-get install -y -q zstd zlib1g-dev ffmpeg
 
       - name: Run
         run: make -C rpcs3/libretro/tests -j"$(nproc)" check

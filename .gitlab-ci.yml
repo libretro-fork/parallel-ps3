@@ -21,7 +21,7 @@
   # The runner reuses its clone, and a submodule whose recorded commit is
   # already checked out there is skipped by a plain `submodule update` even
   # when its files are gone: the jobs on 6 Oct configured against an empty
-  # 3rdparty/ffmpeg and SoundTouch. So the scripts update with --force.
+  # 3rdparty submodules. So the scripts update with --force.
   retry:
     max: 2
     when: script_failure
@@ -120,16 +120,13 @@ libretro-build-windows-x64:
 
 # Android
 #
-# Nothing ships LLVM or ffmpeg for Android, so both are built here. LLVM comes
-# from its submodule (3rdparty/llvm/CMakeLists.txt has the Android branch for
-# it, which picks the AArch64 or the X86 backend) and cannot be left out: the
-# CPU backends use llvm:: types whether or not WITH_LLVM is set. ffmpeg's
-# prebuilts are for Windows, macOS and glibc Linux only, so it is cross-built
-# from source with the NDK, and kept in the GitLab cache between pipelines.
+# Nothing ships LLVM for Android, so it is built here, from its submodule
+# (3rdparty/llvm/CMakeLists.txt has the Android branch for it, which picks the
+# AArch64 or the X86 backend). It cannot be left out: the CPU backends use
+# llvm:: types whether or not WITH_LLVM is set.
 .android-defs:
   variables:
     API_LEVEL: 30
-    FFMPEG_PREFIX: $CI_PROJECT_DIR/ffmpeg-android
     CORE_ARGS: >-
       -DBUILD_LIBRETRO_CORE_ONLY=ON
       -DWITH_LLVM=ON
@@ -142,10 +139,6 @@ libretro-build-windows-x64:
       -DUSE_SYSTEM_OPENCV=OFF
       -DUSE_SYSTEM_SDL=OFF
       -DUSE_SYSTEM_OPENAL=OFF
-      -DUSE_SYSTEM_FFMPEG=ON
-      -DCMAKE_PREFIX_PATH=$CI_PROJECT_DIR/ffmpeg-android
-      -DCMAKE_FIND_ROOT_PATH_MODE_INCLUDE=BOTH
-      -DCMAKE_FIND_ROOT_PATH_MODE_LIBRARY=BOTH
   before_script:
     - export NUMPROC=$(($(nproc)/5))
     - |
@@ -155,31 +148,6 @@ libretro-build-windows-x64:
       fi
     - *submodule-urls
     - git submodule -q update --init --force --depth 1 $(awk '/path/ { print $3 }' .gitmodules)
-    - |
-      TC="$NDK_ROOT/toolchains/llvm/prebuilt/linux-x86_64/bin"
-      if [ -f "$FFMPEG_PREFIX/lib/libavcodec.a" ]; then
-        echo "ffmpeg from the cache"
-      else
-      git clone --quiet --depth 1 -b release/7.1 https://github.com/FFmpeg/FFmpeg.git ffmpeg-src
-      (cd ffmpeg-src && ./configure \
-        --prefix="$FFMPEG_PREFIX" \
-        --target-os=android --arch=$FFMPEG_ARCH --enable-cross-compile \
-        --cc="$TC/$FFMPEG_TRIPLE${API_LEVEL}-clang" \
-        --cxx="$TC/$FFMPEG_TRIPLE${API_LEVEL}-clang++" \
-        --ar="$TC/llvm-ar" --ranlib="$TC/llvm-ranlib" \
-        --nm="$TC/llvm-nm" --strip="$TC/llvm-strip" \
-        --enable-static --disable-shared --enable-pic \
-        --disable-programs --disable-doc --disable-avdevice --disable-network \
-        $FFMPEG_EXTRA \
-        && make -j"$(nproc)" && make install)
-      fi
-    - export PKG_CONFIG_LIBDIR="$FFMPEG_PREFIX/lib/pkgconfig"
-  # The ffmpeg it builds does not change between pipelines; the key names
-  # everything it depends on, so a change to any of them builds it afresh.
-  cache:
-    key: ffmpeg-7.1-android-$ANDROID_ABI-api30-ndk29-asm
-    paths:
-      - ffmpeg-android/
 
 # Android 64-bit (ARM)
 android-arm64-v8a:
@@ -187,23 +155,13 @@ android-arm64-v8a:
     - .libretro-android-cmake-arm64-v8a
     - .core-defs
     - .android-defs
-  variables:
-    FFMPEG_ARCH: aarch64
-    FFMPEG_TRIPLE: aarch64-linux-android
-    FFMPEG_EXTRA: ""
 
 # Android 64-bit (x86)
-#
-# ffmpeg's x86 assembly is built with nasm, which the Android image has had
-# since October 2026.
 android-x86_64:
   extends:
     - .libretro-android-cmake-x86_64
     - .core-defs
     - .android-defs
-  variables:
-    FFMPEG_ARCH: x86_64
-    FFMPEG_TRIPLE: x86_64-linux-android
 
 # macOS
 #

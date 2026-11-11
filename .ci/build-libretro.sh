@@ -64,7 +64,6 @@ cmake ..                                               \
     -DUSE_SDL=OFF                                      \
     -DUSE_FAUDIO=OFF                                   \
     -DUSE_LIBEVDEV=OFF                                 \
-    -DUSE_SYSTEM_FFMPEG=OFF                            \
     -DUSE_SYSTEM_OPENCV=ON                             \
     -DUSE_DISCORD_RPC=OFF                              \
     -DOpenGL_GL_PREFERENCE=LEGACY                      \

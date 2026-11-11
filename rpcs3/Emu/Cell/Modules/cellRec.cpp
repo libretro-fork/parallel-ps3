@@ -13,7 +13,7 @@
 
 extern "C"
 {
-#include <libavutil/pixfmt.h>
+#include "util/media_encode.h"
 }
 
 LOG_CHANNEL(cellRec);
@@ -283,14 +283,13 @@ struct rec_info
 	utils::video_encoder::frame_format output_format{};
 	utils::video_encoder::frame_format input_format{};
 	u32 video_bps = 512000;
-	s32 video_codec_id = 12; // AV_CODEC_ID_MPEG4
-	s32 max_b_frames = 2;
+	s32 video_codec = ME_VIDEO_MPEG4;
 	static constexpr u32 fps = rec_framerate; // Always 30 fps
 
 	// Audio parameters
 	u32 sample_rate = 48000;
 	u32 audio_bps = 64000;
-	s32 audio_codec_id = 86018; // AV_CODEC_ID_AAC
+	s32 audio_codec = ME_AUDIO_AAC;
 	static constexpr u32 channels = rec_channels; // Always 2 channels
 
 	// Recording duration
@@ -379,27 +378,24 @@ void rec_info::set_video_params(s32 video_format)
 		break;
 	}
 
-	max_b_frames = 2;
-
+	// The encoders write no B-frames (H.264 as Constrained Baseline, for
+	// Main Profile too)
 	switch (video_type)
 	{
 	default:
 	case VIDEO_TYPE_MPEG4:
-		video_codec_id = 12; // AV_CODEC_ID_MPEG4
+		video_codec = ME_VIDEO_MPEG4;
 		break;
 	case VIDEO_TYPE_AVC_MP:
-		video_codec_id = 27; // AV_CODEC_ID_H264
-		break;
 	case VIDEO_TYPE_AVC_BL:
-		video_codec_id = 27; // AV_CODEC_ID_H264
-		max_b_frames = 0; // Apparently baseline H264 does not support B-Frames
+		video_codec = ME_VIDEO_H264;
 		break;
 	case VIDEO_TYPE_MJPEG:
-		video_codec_id = 7; // AV_CODEC_ID_MJPEG
+		video_codec = ME_VIDEO_MJPEG;
 		break;
 	case VIDEO_TYPE_M4HD:
 		// TODO: no idea if these are H264 or MPEG4
-		video_codec_id = 12; // AV_CODEC_ID_MPEG4
+		video_codec = ME_VIDEO_MPEG4;
 		break;
 	}
 
@@ -459,7 +455,7 @@ void rec_info::set_video_params(s32 video_format)
 		break;
 	}
 
-	output_format.av_pixel_format = AVPixelFormat::AV_PIX_FMT_YUV420P;
+	output_format.pixel_format = ME_PIXEL_YUV420P;
 	output_format.width = input_format.width;
 	output_format.height = input_format.height;
 	output_format.pitch = input_format.width * 4; // unused
@@ -468,28 +464,28 @@ void rec_info::set_video_params(s32 video_format)
 	{
 	case CELL_REC_PARAM_VIDEO_INPUT_ARGB_4_3:
 	case CELL_REC_PARAM_VIDEO_INPUT_ARGB_16_9:
-		input_format.av_pixel_format = AVPixelFormat::AV_PIX_FMT_ARGB;
+		input_format.pixel_format = ME_PIXEL_ARGB;
 		input_format.pitch = input_format.width * 4;
 		break;
 	case CELL_REC_PARAM_VIDEO_INPUT_RGBA_4_3:
 	case CELL_REC_PARAM_VIDEO_INPUT_RGBA_16_9:
-		input_format.av_pixel_format = AVPixelFormat::AV_PIX_FMT_RGBA;
+		input_format.pixel_format = ME_PIXEL_RGBA;
 		input_format.pitch = input_format.width * 4;
 		break;
 	case CELL_REC_PARAM_VIDEO_INPUT_YUV420PLANAR_16_9:
-		input_format.av_pixel_format = AVPixelFormat::AV_PIX_FMT_YUV420P;
+		input_format.pixel_format = ME_PIXEL_YUV420P;
 		input_format.pitch = input_format.width * 4; // TODO
 		break;
 	case CELL_REC_PARAM_VIDEO_INPUT_DISABLE:
 	default:
-		input_format.av_pixel_format = AVPixelFormat::AV_PIX_FMT_RGBA;
+		input_format.pixel_format = ME_PIXEL_RGBA;
 		input_format.width = 1280;
 		input_format.height = 720;
 		input_format.pitch = input_format.width * 4; // unused
 		break;
 	}
 
-	cellRec.notice("set_video_params: video_format=0x%x, video_type=0x%x, video_quality=0x%x, video_bps=%d, video_codec_id=%d, wide=%d, hd=%d, input_format=%s, output_format=%s", video_format, video_type, video_quality, video_bps, video_codec_id, wide, hd, input_format.to_string(), output_format.to_string());
+	cellRec.notice("set_video_params: video_format=0x%x, video_type=0x%x, video_quality=0x%x, video_bps=%d, video_codec=%d, wide=%d, hd=%d, input_format=%s, output_format=%s", video_format, video_type, video_quality, video_bps, video_codec, wide, hd, input_format.to_string(), output_format.to_string());
 }
 
 void rec_info::set_audio_params(s32 audio_format)
@@ -500,21 +496,20 @@ void rec_info::set_audio_params(s32 audio_format)
 	case CELL_REC_PARAM_AUDIO_FMT_AAC_96K:
 	case CELL_REC_PARAM_AUDIO_FMT_AAC_128K:
 	case CELL_REC_PARAM_AUDIO_FMT_AAC_64K:
-		audio_codec_id = 86018; // AV_CODEC_ID_AAC
+		audio_codec = ME_AUDIO_AAC;
 		break;
 	case CELL_REC_PARAM_AUDIO_FMT_ULAW_384K:
 	case CELL_REC_PARAM_AUDIO_FMT_ULAW_768K:
 		// TODO: no idea what this is
-		audio_codec_id = 65542; // AV_CODEC_ID_PCM_MULAW
+		audio_codec = ME_AUDIO_ULAW;
 		break;
 	case CELL_REC_PARAM_AUDIO_FMT_PCM_384K:
 	case CELL_REC_PARAM_AUDIO_FMT_PCM_768K:
 	case CELL_REC_PARAM_AUDIO_FMT_PCM_1536K:
-		audio_codec_id = 65556; // AV_CODEC_ID_PCM_F32BE
-		//audio_codec_id = 65557; // AV_CODEC_ID_PCM_F32LE // TODO: maybe this one?
+		audio_codec = ME_AUDIO_PCM_F32BE;
 		break;
 	default:
-		audio_codec_id = 86018; // AV_CODEC_ID_AAC
+		audio_codec = ME_AUDIO_AAC;
 		break;
 	}
 
@@ -571,7 +566,7 @@ void rec_info::set_audio_params(s32 audio_format)
 		break;
 	}
 
-	cellRec.notice("set_audio_params: audio_format=0x%x, audio_codec_id=%d, sample_rate=%d, audio_bps=%d", audio_format, audio_codec_id, sample_rate, audio_bps);
+	cellRec.notice("set_audio_params: audio_format=0x%x, audio_codec=%d, sample_rate=%d, audio_bps=%d", audio_format, audio_codec, sample_rate, audio_bps);
 }
 
 void rec_info::start_video_provider()
@@ -667,7 +662,8 @@ void rec_info::start_video_provider()
 							frame_data.pts = pts;
 							frame_data.width = input_format.width;
 							frame_data.height = input_format.height;
-							frame_data.av_pixel_format = input_format.av_pixel_format;
+							frame_data.pitch = input_format.pitch;
+							frame_data.pixel_format = input_format.pixel_format;
 							frame_data.data.resize(frame_size);
 							std::memcpy(frame_data.data.data(), video_input_buffer.get_ptr(), frame_data.data.size());
 							video_ring_frame_count++;
@@ -677,7 +673,7 @@ void rec_info::start_video_provider()
 							// The video frames originate from cellRec and are pushed to the encoder immediately.
 							std::vector<u8> frame(frame_size);
 							std::memcpy(frame.data(), video_input_buffer.get_ptr(), frame.size());
-							encoder->add_frame(frame, input_format.pitch, input_format.width, input_format.height, input_format.av_pixel_format, timestamp_ms);
+							encoder->add_frame(frame, input_format.pitch, input_format.width, input_format.height, input_format.pixel_format, timestamp_ms);
 						}
 					}
 
@@ -701,7 +697,7 @@ void rec_info::start_video_provider()
 					else
 					{
 						// The video frames originate from our render pipeline and are directly encoded by the encoder.
-						encoder->add_frame(frame.data, frame.pitch, frame.width, frame.height, frame.av_pixel_format, frame.timestamp_ms);
+						encoder->add_frame(frame.data, frame.pitch, frame.width, frame.height, frame.pixel_format, frame.timestamp_ms);
 					}
 
 					last_video_pts = pts;
@@ -860,7 +856,7 @@ void rec_info::stop_video_provider(bool flush)
 				const usz pos = (video_start_offset + frame) % video_ringbuffer.size();
 				utils::video_sink::encoder_frame& frame_data = video_ringbuffer[pos];
 				const usz timestamp_ms = encoder->get_timestamp_ms(frame_data.pts - video_start_pts);
-				encoder->add_frame(frame_data.data, frame_data.pitch, frame_data.width, frame_data.height, frame_data.av_pixel_format, timestamp_ms);
+				encoder->add_frame(frame_data.data, frame_data.pitch, frame_data.width, frame_data.height, frame_data.pixel_format, timestamp_ms);
 
 				// Increase sync timestamp
 				sync_timestamp_us = timestamp_ms * 1000;
@@ -1290,11 +1286,11 @@ error_code cellRecOpen(vm::cptr<char> pDirName, vm::cptr<char> pFileName, vm::cp
 	rec.encoder->set_path(vfs::get(rec.param.filename));
 	rec.encoder->set_framerate(rec.fps);
 	rec.encoder->set_video_bitrate(rec.video_bps);
-	rec.encoder->set_video_codec(rec.video_codec_id, "");
+	rec.encoder->set_video_codec(rec.video_codec);
 	rec.encoder->set_sample_rate(rec.sample_rate);
 	rec.encoder->set_audio_channels(rec.channels);
 	rec.encoder->set_audio_bitrate(rec.audio_bps);
-	rec.encoder->set_audio_codec(rec.audio_codec_id, "");
+	rec.encoder->set_audio_codec(rec.audio_codec);
 	rec.encoder->set_output_format(rec.output_format);
 
 	sysutil_register_cb([&rec](ppu_thread& ppu) -> s32

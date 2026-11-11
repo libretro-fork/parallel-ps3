@@ -166,8 +166,6 @@ jobs:
             mingw-w64-clang-x86_64-lld
             mingw-w64-clang-x86_64-ninja
             mingw-w64-clang-x86_64-llvm
-            mingw-w64-clang-x86_64-ffmpeg
-            mingw-w64-clang-x86_64-nasm
             mingw-w64-clang-x86_64-pkgconf
             mingw-w64-clang-x86_64-opencv
             base-devel
@@ -213,15 +211,8 @@ jobs:
         include:
           - name: arm64
             abi: arm64-v8a
-            ffarch: aarch64
-            triple: aarch64-linux-android
-            ffextra: ""
-          # ffmpeg's x86 assembly wants nasm; the C fallbacks do for videos
           - name: x86_64
             abi: x86_64
-            ffarch: x86_64
-            triple: x86_64-linux-android
-            ffextra: --disable-x86asm
     steps:
       - name: Checkout repository
         uses: actions/checkout@main
@@ -239,36 +230,7 @@ jobs:
           git submodule -q update --init --depth 1 \
             $(awk '/path/ { print $3 }' .gitmodules)
 
-      # RPCS3 cannot be built without ffmpeg - the option only chooses between
-      # the system copy and a prebuilt one - and the prebuilts it downloads are
-      # named ffmpeg-windows, ffmpeg-macos and ffmpeg-linux. Android counts as
-      # UNIX, so it would fetch a glibc Linux build and fail to link against
-      # it. Cross-building one is the only way through.
-      - name: Cross-build ffmpeg for Android
-        run: |
-          NDK="${ANDROID_NDK_LATEST_HOME:-$ANDROID_NDK_HOME}"
-          TC="$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin"
-          PREFIX="$PWD/ffmpeg-android"
-          git clone --quiet --depth 1 -b release/7.1 https://github.com/FFmpeg/FFmpeg.git ffmpeg-src
-          cd ffmpeg-src
-          ./configure \
-            --prefix="$PREFIX" \
-            --target-os=android --arch=${{ matrix.ffarch }} --enable-cross-compile \
-            --cc="$TC/${{ matrix.triple }}30-clang" \
-            --cxx="$TC/${{ matrix.triple }}30-clang++" \
-            --ar="$TC/llvm-ar" --ranlib="$TC/llvm-ranlib" \
-            --nm="$TC/llvm-nm" --strip="$TC/llvm-strip" \
-            --enable-static --disable-shared --enable-pic \
-            --disable-programs --disable-doc --disable-avdevice --disable-network \
-            ${{ matrix.ffextra }}
-          make -j"$(nproc)"
-          make install
-          echo "FFMPEG_PREFIX=$PREFIX" >> "$GITHUB_ENV"
-          ls "$PREFIX/lib/pkgconfig"
-
       - name: Configure
-        env:
-          PKG_CONFIG_LIBDIR: ${{ github.workspace }}/ffmpeg-android/lib/pkgconfig
         run: |
           NDK="${ANDROID_NDK_LATEST_HOME:-$ANDROID_NDK_HOME}"
           echo "using NDK at $NDK"
@@ -288,11 +250,7 @@ jobs:
             -DUSE_LTO=OFF \
             -DUSE_SYSTEM_OPENCV=OFF \
             -DUSE_SYSTEM_SDL=OFF \
-            -DUSE_SYSTEM_OPENAL=OFF \
-            -DUSE_SYSTEM_FFMPEG=ON \
-            -DCMAKE_PREFIX_PATH="$FFMPEG_PREFIX" \
-            -DCMAKE_FIND_ROOT_PATH_MODE_INCLUDE=BOTH \
-            -DCMAKE_FIND_ROOT_PATH_MODE_LIBRARY=BOTH
+            -DUSE_SYSTEM_OPENAL=OFF
 
       - name: Build
         run: cmake --build build --target rpcs3_libretro
@@ -333,7 +291,7 @@ jobs:
     # As upstream's macOS build, with LLVM's own clang rather than Apple's:
     # Apple clang does not take fmt::throw_exception's [[noreturn]] constructor
     # as the end of a function, and -Werror=return-type fails all over. Clang,
-    # the LLVM the core links from Homebrew, the prebuilt ffmpeg, and Vulkan
+    # the LLVM the core links from Homebrew, and Vulkan
     # through the MoltenVK RetroArch carries, opened at run time.
     # Each architecture on its own runner, so Homebrew's libraries are its own.
     name: libretro core macos-${{ matrix.arch }} (experimental)
@@ -373,7 +331,6 @@ jobs:
             -DBUILD_LIBRETRO_CORE_ONLY=ON \
             -DWITH_LLVM=ON -DBUILD_LLVM=OFF -DSTATIC_LINK_LLVM=ON -DLLVM_DIR=$LLVM/lib/cmake/llvm \
             -DUSE_NATIVE_INSTRUCTIONS=OFF -DUSE_PRECOMPILED_HEADERS=OFF \
-            -DUSE_SYSTEM_FFMPEG=OFF \
             -DUSE_SDL=OFF -DUSE_FAUDIO=OFF -DUSE_DISCORD_RPC=OFF \
             -DUSE_SYSTEM_OPENCV=OFF -DUSE_LTO=OFF
 

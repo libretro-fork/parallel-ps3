@@ -145,58 +145,6 @@ endif()
 # AsmJit
 add_subdirectory(asmjit EXCLUDE_FROM_ALL)
 
-# FFMPEG
-# The alias further down is created unconditionally, so skipping this block
-# outright leaves "3rdparty::ffmpeg" pointing at a target that was never made
-# and configuration fails - Android has never been configured through here.
-# A system ffmpeg is something the caller has had to provide deliberately, so
-# when there is one, let Android take the same path as everyone else.
-if(NOT ANDROID OR USE_SYSTEM_FFMPEG)
-	add_library(3rdparty_ffmpeg INTERFACE)
-
-	# Select the version of ffmpeg to use, default is builtin
-	if(USE_SYSTEM_FFMPEG)
-		message(STATUS "RPCS3: using shared ffmpeg")
-		find_package(FFMPEG REQUIRED)
-
-		target_include_directories(3rdparty_ffmpeg SYSTEM INTERFACE ${FFMPEG_INCLUDE_DIR})
-		target_link_libraries(3rdparty_ffmpeg INTERFACE ${FFMPEG_LIBRARIES})
-	else()
-		message(STATUS "RPCS3: using builtin ffmpeg")
-		add_subdirectory(ffmpeg EXCLUDE_FROM_ALL)
-		# ffmpeg-core libraries are extracted to CMAKE_BINARY_DIR
-		set(FFMPEG_LIB_DIR "${CMAKE_BINARY_DIR}/3rdparty/ffmpeg/lib")
-
-		if (WIN32)
-			target_link_libraries(3rdparty_ffmpeg INTERFACE "Bcrypt.lib")
-		endif()
-
-		find_library(FFMPEG_LIB_AVFORMAT avformat PATHS ${FFMPEG_LIB_DIR} NO_DEFAULT_PATH)
-		find_library(FFMPEG_LIB_AVCODEC avcodec PATHS ${FFMPEG_LIB_DIR} NO_DEFAULT_PATH)
-		find_library(FFMPEG_LIB_AVUTIL avutil PATHS ${FFMPEG_LIB_DIR} NO_DEFAULT_PATH)
-		find_library(FFMPEG_LIB_SWSCALE swscale PATHS ${FFMPEG_LIB_DIR} NO_DEFAULT_PATH)
-		find_library(FFMPEG_LIB_SWRESAMPLE swresample PATHS ${FFMPEG_LIB_DIR} NO_DEFAULT_PATH)
-
-		if (FFMPEG_LIB_AVFORMAT MATCHES "FFMPEG_LIB_AVFORMAT-NOTFOUND")
-			message(FATAL_ERROR "@#$%! FFMPEG NOT FOUND! ${FFMPEG_LIB_DIR}")
-		endif()
-
-		# Each archive before the ones it uses, avutil last: the linker takes
-		# from an archive only what the ones before it have asked for, and
-		# swscale uses avutil's ff_init_half2float_tables, which avutil before
-		# it left undefined in the core
-		target_link_libraries(3rdparty_ffmpeg
-		INTERFACE
-			${FFMPEG_LIB_AVFORMAT}
-			${FFMPEG_LIB_AVCODEC}
-			${FFMPEG_LIB_SWSCALE}
-			${FFMPEG_LIB_SWRESAMPLE}
-			${FFMPEG_LIB_AVUTIL}
-		)
-		target_include_directories(3rdparty_ffmpeg SYSTEM INTERFACE "ffmpeg/include")
-	endif()
-endif()
-
 
 # GLEW, from the tree, for the OpenGL renderer on Linux and the BSDs (on
 # Windows it loads its functions itself; Android and macOS have no GL
@@ -237,7 +185,6 @@ endif()
 add_library(3rdparty::glslang ALIAS 3rdparty_glslang)
 add_library(3rdparty::opengl ALIAS 3rdparty_opengl)
 add_library(3rdparty::vulkan ALIAS ${VULKAN_TARGET})
-add_library(3rdparty::ffmpeg ALIAS 3rdparty_ffmpeg)
 add_library(3rdparty::glew ALIAS 3rdparty_glew)
 add_library(3rdparty::rtmidi ALIAS rtmidi)
 add_library(3rdparty::opencv ALIAS ${OPENCV_TARGET})

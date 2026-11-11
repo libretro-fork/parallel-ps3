@@ -12,18 +12,6 @@ struct md_audio;
 
 namespace utils
 {
-	std::string av_error_to_string(int error);
-
-	struct ffmpeg_codec
-	{
-		int codec_id{};
-		std::string name;
-		std::string long_name;
-	};
-
-	std::vector<ffmpeg_codec> list_ffmpeg_decoders();
-	std::vector<ffmpeg_codec> list_ffmpeg_encoders();
-
 	struct media_info
 	{
 		std::string path;
@@ -90,6 +78,8 @@ namespace utils
 		std::unique_ptr<named_thread<std::function<void()>>> m_thread;
 	};
 
+	// What cellRec records: util/media_encode on its own thread, fed from
+	// video_sink's queues
 	class video_encoder : public utils::video_sink
 	{
 	public:
@@ -98,16 +88,19 @@ namespace utils
 
 		struct frame_format
 		{
-			s32 av_pixel_format = 0; // NOTE: Make sure this is a valid AVPixelFormat
+			s32 pixel_format = 0; // ME_PIXEL_* (util/media_encode.h)
 			u32 width = 0;
 			u32 height = 0;
 			u32 pitch = 0;
 
 			std::string to_string() const
 			{
-				return fmt::format("{ av_pixel_format=%d, width=%d, height=%d, pitch=%d }", av_pixel_format, width, height, pitch);
+				return fmt::format("{ pixel_format=%d, width=%d, height=%d, pitch=%d }", pixel_format, width, height, pitch);
 			}
 		};
+
+		// The longest recording: the file's index is sized for it
+		static constexpr u32 max_seconds = 4 * 60 * 60;
 
 		std::string path() const;
 		s64 last_video_pts() const;
@@ -116,13 +109,12 @@ namespace utils
 		void set_framerate(u32 framerate);
 		void set_video_bitrate(u32 bitrate);
 		void set_output_format(frame_format format);
-		void set_video_codec(s32 codec_id, std::string_view codec_name);
-		void set_max_b_frames(s32 max_b_frames);
+		void set_video_codec(s32 codec); // ME_VIDEO_*
 		void set_gop_size(s32 gop_size);
 		void set_sample_rate(u32 sample_rate);
 		void set_audio_channels(u32 channels);
 		void set_audio_bitrate(u32 bitrate);
-		void set_audio_codec(s32 codec_id, std::string_view codec_name);
+		void set_audio_codec(s32 codec); // ME_AUDIO_*
 		void pause(bool flush = true) override;
 		void stop(bool flush = true) override;
 		void resume() override;
@@ -139,16 +131,13 @@ namespace utils
 
 		// Video parameters
 		u32 m_video_bitrate_bps = 0;
-		s32 m_video_codec_id = 12; // AV_CODEC_ID_MPEG4
-		std::string m_video_codec_name;
-		s32 m_max_b_frames = 2;
+		s32 m_video_codec = 0; // ME_VIDEO_MPEG4
 		s32 m_gop_size = 12;
 		frame_format m_out_format{};
 
 		// Audio parameters
 		u32 m_channels = 2;
 		u32 m_audio_bitrate_bps = 320000;
-		s32 m_audio_codec_id = 86018; // AV_CODEC_ID_AAC
-		std::string m_audio_codec_name;
+		s32 m_audio_codec = 0; // ME_AUDIO_AAC
 	};
 }

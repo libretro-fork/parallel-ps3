@@ -128,8 +128,8 @@ elseif(UNIX AND NOT APPLE)
     target_link_libraries(rpcs3_libretro PRIVATE Threads::Threads)
 elseif(APPLE)
     target_link_libraries(rpcs3_libretro PRIVATE iconv)
-    # The prebuilt ffmpeg's VideoToolbox hwcontext calls CoreVideo
-    target_link_libraries(rpcs3_libretro PRIVATE "-framework CoreVideo")
+    # file_path.c finds the bundle through CoreFoundation
+    target_link_libraries(rpcs3_libretro PRIVATE "-framework CoreFoundation")
     # sysinfo_darwin.mm asks NSProcessInfo
     target_link_libraries(rpcs3_libretro PRIVATE "-framework Foundation")
 endif()

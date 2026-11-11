@@ -4,10 +4,7 @@
 #include "Emu/Cell/timers.hpp"
 #include "Emu/system_config.h"
 
-extern "C"
-{
-#include <libavutil/pixfmt.h>
-}
+#include "util/media_encode.h"
 
 LOG_CHANNEL(media_log, "Media");
 
@@ -161,7 +158,7 @@ namespace utils
 			return;
 		}
 
-		if (m_video_sink->add_frame(data, pitch, width, height, is_bgra ? AVPixelFormat::AV_PIX_FMT_BGRA : AVPixelFormat::AV_PIX_FMT_RGBA, timestamp_ms))
+		if (m_video_sink->add_frame(data, pitch, width, height, is_bgra ? ME_PIXEL_BGRA : ME_PIXEL_RGBA, timestamp_ms))
 		{
 			m_last_video_pts_incoming = pts;
 		}

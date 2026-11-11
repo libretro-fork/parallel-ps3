@@ -7,6 +7,7 @@
 CORE_DIR ?= .
 
 SOURCES_LRC := \
+	$(CORE_DIR)/rpcs3/libretro/libretro-common/audio/conversion/float_to_ulaw.c \
 	$(CORE_DIR)/rpcs3/libretro/libretro-common/audio/resampler/drivers/sinc_resampler.c \
 	$(CORE_DIR)/rpcs3/libretro/libretro-common/compat/compat_posix_string.c \
 	$(CORE_DIR)/rpcs3/libretro/libretro-common/compat/compat_strcasestr.c \
@@ -27,6 +28,7 @@ SOURCES_LRC := \
 	$(CORE_DIR)/rpcs3/libretro/libretro-common/file/file_path_io.c \
 	$(CORE_DIR)/rpcs3/libretro/libretro-common/file/retro_dirent.c \
 	$(CORE_DIR)/rpcs3/libretro/libretro-common/formats/aac/raac.c \
+	$(CORE_DIR)/rpcs3/libretro/libretro-common/formats/aac/raac_encode.c \
 	$(CORE_DIR)/rpcs3/libretro/libretro-common/formats/ac3/rac3_decode.c \
 	$(CORE_DIR)/rpcs3/libretro/libretro-common/formats/ac3/rac3_frame.c \
 	$(CORE_DIR)/rpcs3/libretro/libretro-common/formats/atrac3/ratrac3.c \
@@ -37,13 +39,17 @@ SOURCES_LRC := \
 	$(CORE_DIR)/rpcs3/libretro/libretro-common/formats/flac/rflac.c \
 	$(CORE_DIR)/rpcs3/libretro/libretro-common/formats/gif/rgif.c \
 	$(CORE_DIR)/rpcs3/libretro/libretro-common/formats/h264/rh264.c \
+	$(CORE_DIR)/rpcs3/libretro/libretro-common/formats/h264/rh264_encode.c \
 	$(CORE_DIR)/rpcs3/libretro/libretro-common/formats/image/image_yuv_blit.c \
 	$(CORE_DIR)/rpcs3/libretro/libretro-common/formats/jpeg/rjpeg.c \
+	$(CORE_DIR)/rpcs3/libretro/libretro-common/formats/jpeg/rjpeg_encode.c \
 	$(CORE_DIR)/rpcs3/libretro/libretro-common/formats/json/rjson.c \
 	$(CORE_DIR)/rpcs3/libretro/libretro-common/formats/mp3/rmp3.c \
 	$(CORE_DIR)/rpcs3/libretro/libretro-common/formats/mp4/rmp4.c \
+	$(CORE_DIR)/rpcs3/libretro/libretro-common/formats/mp4/rmp4_mux.c \
 	$(CORE_DIR)/rpcs3/libretro/libretro-common/formats/mpeg1/rmpeg1_ps.c \
 	$(CORE_DIR)/rpcs3/libretro/libretro-common/formats/mpeg1/rmpeg1_video.c \
+	$(CORE_DIR)/rpcs3/libretro/libretro-common/formats/mpeg4/rmpeg4_encode.c \
 	$(CORE_DIR)/rpcs3/libretro/libretro-common/formats/mpeg4/rmpeg4_video.c \
 	$(CORE_DIR)/rpcs3/libretro/libretro-common/formats/opus/ropus.c \
 	$(CORE_DIR)/rpcs3/libretro/libretro-common/formats/png/rpng.c \
@@ -703,6 +709,7 @@ SOURCES_RPCS3 := \
 	$(CORE_DIR)/rpcs3/util/emu_utils.cpp \
 	$(CORE_DIR)/rpcs3/util/logs.cpp \
 	$(CORE_DIR)/rpcs3/util/media_decode.c \
+	$(CORE_DIR)/rpcs3/util/media_encode.c \
 	$(CORE_DIR)/rpcs3/util/media_utils.cpp \
 	$(CORE_DIR)/rpcs3/util/serialization_ext.cpp \
 	$(CORE_DIR)/rpcs3/util/sysinfo.cpp \

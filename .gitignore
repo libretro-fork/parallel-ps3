@@ -132,5 +132,4 @@ CLAUDE.md
 !/Makefile
 /.build-tag
 /rpcs3/libretro/generated/
-/3rdparty/ffmpeg/prebuilt/
 *.d

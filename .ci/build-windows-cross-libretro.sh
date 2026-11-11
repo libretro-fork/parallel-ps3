@@ -10,8 +10,7 @@
 # here from its submodule (BUILD_LLVM), the way the Android build gets it.
 # The Vulkan headers come from the tree and the loader that comes with the
 # GPU driver is opened at run time (volk); GLEW is not used on Windows.
-# ffmpeg is the prebuilt ffmpeg-mingw the build fetches by itself, and OpenCV
-# is left out, as it is optional.
+# OpenCV is left out, as it is optional.
 #
 # Expects to run from the top of the source tree, with the submodule URLs
 # already pointing at GitHub (see .gitlab-ci.yml).
@@ -109,7 +108,6 @@ cmake -S . -B build -G Ninja                           \
     -DCMAKE_SHARED_LINKER_FLAGS="-static -L$CASE_LIB"  \
     -DUSE_FAUDIO=OFF                                   \
     -DUSE_SDL=OFF                                      \
-    -DUSE_SYSTEM_FFMPEG=OFF                            \
     -DUSE_SYSTEM_OPENCV=OFF                            \
     -DUSE_SYSTEM_OPENAL=OFF                            \
     -DUSE_DISCORD_RPC=OFF                              \

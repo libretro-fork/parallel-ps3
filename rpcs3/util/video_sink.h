@@ -71,8 +71,8 @@ namespace utils
 		struct encoder_frame
 		{
 			encoder_frame() = default;
-			encoder_frame(usz timestamp_ms, u32 pitch, u32 width, u32 height, s32 av_pixel_format, std::vector<u8>&& data)
-				: timestamp_ms(timestamp_ms), pitch(pitch), width(width), height(height), av_pixel_format(av_pixel_format), data(std::move(data))
+			encoder_frame(usz timestamp_ms, u32 pitch, u32 width, u32 height, s32 pixel_format, std::vector<u8>&& data)
+				: timestamp_ms(timestamp_ms), pitch(pitch), width(width), height(height), pixel_format(pixel_format), data(std::move(data))
 			{}
 
 			s64 pts = -1; // Optional
@@ -80,7 +80,7 @@ namespace utils
 			u32 pitch = 0;
 			u32 width = 0;
 			u32 height = 0;
-			s32 av_pixel_format = 0; // NOTE: Make sure this is a valid AVPixelFormat
+			s32 pixel_format = 0; // ME_PIXEL_* (util/media_encode.h)
 			std::vector<u8> data;
 		};
 
@@ -111,7 +111,6 @@ namespace utils
 		atomic_t<bool> m_flush = false;
 		u32 m_framerate = 30;
 		u32 m_sample_rate = 48000;
-		s32 m_sample_format = -1;
 		static constexpr u32 m_samples_per_block = 256;
 	};
 }

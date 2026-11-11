@@ -74,6 +74,7 @@ target_sources(rpcs3_emu PRIVATE
     ../util/console.cpp
     ../util/emu_utils.cpp
     ../util/media_decode.c
+    ../util/media_encode.c
     ../util/media_utils.cpp
     ../util/video_provider.cpp
     ../util/logs.cpp
@@ -677,7 +678,6 @@ target_link_libraries(rpcs3_emu
     PUBLIC
         3rdparty::llvm
         3rdparty::asmjit
-        3rdparty::ffmpeg
         3rdparty::opengl
         3rdparty::vulkan
         3rdparty::glew

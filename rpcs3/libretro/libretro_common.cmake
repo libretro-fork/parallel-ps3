@@ -5,6 +5,7 @@
 set(LIBRETRO_COMMON_DIR ${CMAKE_CURRENT_LIST_DIR}/libretro-common)
 
 add_library(libretro_common STATIC
+    ${LIBRETRO_COMMON_DIR}/audio/conversion/float_to_ulaw.c
     ${LIBRETRO_COMMON_DIR}/audio/resampler/drivers/sinc_resampler.c
     ${LIBRETRO_COMMON_DIR}/compat/compat_posix_string.c
     ${LIBRETRO_COMMON_DIR}/compat/compat_strcasestr.c
@@ -25,6 +26,7 @@ add_library(libretro_common STATIC
     ${LIBRETRO_COMMON_DIR}/file/file_path_io.c
     ${LIBRETRO_COMMON_DIR}/file/retro_dirent.c
     ${LIBRETRO_COMMON_DIR}/formats/aac/raac.c
+    ${LIBRETRO_COMMON_DIR}/formats/aac/raac_encode.c
     ${LIBRETRO_COMMON_DIR}/formats/ac3/rac3_decode.c
     ${LIBRETRO_COMMON_DIR}/formats/ac3/rac3_frame.c
     ${LIBRETRO_COMMON_DIR}/formats/atrac3/ratrac3.c
@@ -35,13 +37,17 @@ add_library(libretro_common STATIC
     ${LIBRETRO_COMMON_DIR}/formats/flac/rflac.c
     ${LIBRETRO_COMMON_DIR}/formats/gif/rgif.c
     ${LIBRETRO_COMMON_DIR}/formats/h264/rh264.c
+    ${LIBRETRO_COMMON_DIR}/formats/h264/rh264_encode.c
     ${LIBRETRO_COMMON_DIR}/formats/image/image_yuv_blit.c
     ${LIBRETRO_COMMON_DIR}/formats/jpeg/rjpeg.c
+    ${LIBRETRO_COMMON_DIR}/formats/jpeg/rjpeg_encode.c
     ${LIBRETRO_COMMON_DIR}/formats/json/rjson.c
     ${LIBRETRO_COMMON_DIR}/formats/mp3/rmp3.c
     ${LIBRETRO_COMMON_DIR}/formats/mp4/rmp4.c
+    ${LIBRETRO_COMMON_DIR}/formats/mp4/rmp4_mux.c
     ${LIBRETRO_COMMON_DIR}/formats/mpeg1/rmpeg1_ps.c
     ${LIBRETRO_COMMON_DIR}/formats/mpeg1/rmpeg1_video.c
+    ${LIBRETRO_COMMON_DIR}/formats/mpeg4/rmpeg4_encode.c
     ${LIBRETRO_COMMON_DIR}/formats/mpeg4/rmpeg4_video.c
     ${LIBRETRO_COMMON_DIR}/formats/opus/ropus.c
     ${LIBRETRO_COMMON_DIR}/formats/png/rpng.c
