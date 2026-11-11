@@ -29,4 +29,12 @@ else()
     set(ANDROID "${RPCS3_RTMIDI_SAVED_ANDROID}")
     unset(RPCS3_RTMIDI_SAVED_ANDROID)
   endif()
+
+  # RtMidi is linked into the core, not a DLL of its own, but its CMake
+  # builds it with RTMIDI_EXPORT, which makes its classes dllexport: a
+  # Windows core then exports them along with its retro_* functions.
+  get_target_property(RPCS3_RTMIDI_DEFS rtmidi COMPILE_DEFINITIONS)
+  list(REMOVE_ITEM RPCS3_RTMIDI_DEFS RTMIDI_EXPORT)
+  set_target_properties(rtmidi PROPERTIES COMPILE_DEFINITIONS "${RPCS3_RTMIDI_DEFS}")
+  unset(RPCS3_RTMIDI_DEFS)
 endif()

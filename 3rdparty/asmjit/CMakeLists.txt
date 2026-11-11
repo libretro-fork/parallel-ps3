@@ -10,6 +10,10 @@ include("${ASMJIT_DIR}/CMakeLists.txt")
 
 add_library(asmjit ${ASMJIT_SRC})
 target_include_directories(asmjit SYSTEM PUBLIC ${ASMJIT_DIR}/src)
+# ASMJIT_STATIC above only tells asmjit's CMake what to build; the compiler
+# has to be told too, for asmjit and the code that uses it, or ASMJIT_API is
+# dllexport and a Windows core exports asmjit's classes with its own
+target_compile_definitions(asmjit PUBLIC ASMJIT_STATIC)
 target_link_libraries(asmjit PRIVATE ${ASMJIT_DEPS})
 
 # ASMJIT should have a option for disabling installing and this wouldnt
