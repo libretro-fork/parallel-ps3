@@ -177,15 +177,46 @@ endif
 # HAVE_LLVM=0; linked statically, so the core is one file
 # The JIT code uses LLVM 21's interfaces (the CI images have 22.1)
 LLVM_MIN := 21
-ifeq ($(HAVE_LLVM),auto)
+
+# In an MSYS2 shell, /usr/bin/llvm-config is MSYS's own LLVM, for the POSIX
+# layer (x86_64-pc-windows-cygnus): its headers are MSYS's /usr/include,
+# which do not go with MinGW's. MinGW's is under $MINGW_PREFIX.
+ifneq (,$(findstring win,$(platform)))
+   ifeq ($(origin LLVM_CONFIG),file)
+      ifneq ($(MINGW_PREFIX),)
+         ifneq ($(wildcard $(MINGW_PREFIX)/bin/llvm-config.exe $(MINGW_PREFIX)/bin/llvm-config),)
+            LLVM_CONFIG := $(MINGW_PREFIX)/bin/llvm-config
+         endif
+      endif
+   endif
+endif
+
+# An LLVM only for the system the core is for: its host triple has to name it
+ifneq (,$(findstring win,$(platform)))
+   LLVM_FOR := -w64- -windows-gnu mingw32
+else ifeq ($(platform),osx)
+   LLVM_FOR := -apple-
+else
+   LLVM_FOR := -linux
+endif
+
+ifneq ($(HAVE_LLVM),0)
    LLVM_MAJOR := $(shell $(LLVM_CONFIG) --version 2>/dev/null | cut -d. -f1)
+   LLVM_HOST  := $(shell $(LLVM_CONFIG) --host-target 2>/dev/null)
    ifeq ($(LLVM_MAJOR),)
-      HAVE_LLVM := 0
-   else ifeq ($(shell [ $(LLVM_MAJOR) -ge $(LLVM_MIN) ] && echo yes),yes)
+      LLVM_NO := $(LLVM_CONFIG) was not found
+   else ifeq ($(strip $(foreach w,$(LLVM_FOR),$(findstring $(w),$(LLVM_HOST)))),)
+      LLVM_NO := $(LLVM_CONFIG) is an LLVM for $(LLVM_HOST), not for a $(platform) core
+   else ifneq ($(shell [ $(LLVM_MAJOR) -ge $(LLVM_MIN) ] && echo yes),yes)
+      LLVM_NO := $(LLVM_CONFIG) is LLVM $(LLVM_MAJOR); $(LLVM_MIN) or newer is needed
+   endif
+   ifeq ($(HAVE_LLVM)$(LLVM_NO),auto)
       HAVE_LLVM := 1
-   else
-      $(warning $(LLVM_CONFIG) is LLVM $(LLVM_MAJOR); $(LLVM_MIN) or newer is needed: building without the LLVM recompilers)
+   else ifeq ($(HAVE_LLVM),auto)
+      $(warning $(LLVM_NO): building without the LLVM recompilers)
       HAVE_LLVM := 0
+   else ifneq ($(LLVM_NO),)
+      $(error HAVE_LLVM=1, but $(LLVM_NO))
    endif
 endif
 ifeq ($(HAVE_LLVM),1)
