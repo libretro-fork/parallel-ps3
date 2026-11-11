@@ -16,7 +16,7 @@ LRC_STD  := -std=gnu99
 # as libretro_common.cmake builds it: net_http over its own TLS client
 LRC_DEFS := -DHAVE_SSL -DHAVE_RETROSSL -DHAVE_CRYPTO
 
-TESTS := test_zstd test_deflate test_rxml test_png_rows test_images test_jpg_rows test_http test_bcn test_tls_duplex test_yaml test_font test_np2 test_rsx_scale test_vpost
+TESTS := test_zstd test_deflate test_rxml test_png_rows test_images test_jpg_rows test_http test_bcn test_tls_duplex test_yaml test_font test_np2 test_rsx_scale test_vpost test_atracx
 
 test_zstd_LRC := \
 	$(LRC)/encodings/encoding_rzstd.c \
@@ -274,6 +274,18 @@ obj/test_vpost.o: test_vpost.c test_common.h ../../Emu/Cell/Modules/cellVpost_co
 test_vpost: obj/test_vpost.o obj/cellVpost_conv.o $(call lrc_objs,$(sort $(test_vpost_LRC)))
 	$(CC) $(SANITIZE) -o $@ $^ $(LDFLAGS) -Wl,--wrap=malloc,--wrap=calloc,--wrap=realloc $(LDLIBS)
 
+# cellAtracXdec's decode: ratrac3p, and the module's output conversion
+test_atracx_LRC := $(LRC)/formats/atrac3p/ratrac3p.c
+
+obj/cellAtracXdec_pcm.o: ../../Emu/Cell/Modules/cellAtracXdec_pcm.c ../../Emu/Cell/Modules/cellAtracXdec_pcm.h
+	@mkdir -p $(@D)
+	$(CC) $(CFLAGS) $(TEST_STD) $(SANITIZE) -c -o $@ $<
+
+obj/test_atracx.o: test_atracx.c test_common.h ../../Emu/Cell/Modules/cellAtracXdec_pcm.h
+
+test_atracx: obj/test_atracx.o obj/cellAtracXdec_pcm.o $(call lrc_objs,$(test_atracx_LRC))
+	$(CC) $(SANITIZE) -o $@ $^ $(LDFLAGS) $(LDLIBS)
+
 # Each test also writes what the new code produces, for the reference
 # tools to read back
 check: all
@@ -293,6 +305,7 @@ check: all
 	./test_np2 fixtures
 	./test_rsx_scale fixtures
 	./test_vpost fixtures
+	./test_atracx fixtures
 
 clean:
 	rm -rf obj $(TESTS) *_out.*

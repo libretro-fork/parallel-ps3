@@ -25,6 +25,7 @@ SOURCES_LRC := \
 	$(CORE_DIR)/rpcs3/libretro/libretro-common/file/file_path.c \
 	$(CORE_DIR)/rpcs3/libretro/libretro-common/file/file_path_io.c \
 	$(CORE_DIR)/rpcs3/libretro/libretro-common/file/retro_dirent.c \
+	$(CORE_DIR)/rpcs3/libretro/libretro-common/formats/atrac3p/ratrac3p.c \
 	$(CORE_DIR)/rpcs3/libretro/libretro-common/formats/dds/rdds.c \
 	$(CORE_DIR)/rpcs3/libretro/libretro-common/formats/gif/rgif.c \
 	$(CORE_DIR)/rpcs3/libretro/libretro-common/formats/image/image_yuv_blit.c \
@@ -229,6 +230,7 @@ SOURCES_RPCS3 := \
 	$(CORE_DIR)/rpcs3/Emu/Cell/Modules/cellAtrac.cpp \
 	$(CORE_DIR)/rpcs3/Emu/Cell/Modules/cellAtracMulti.cpp \
 	$(CORE_DIR)/rpcs3/Emu/Cell/Modules/cellAtracXdec.cpp \
+	$(CORE_DIR)/rpcs3/Emu/Cell/Modules/cellAtracXdec_pcm.c \
 	$(CORE_DIR)/rpcs3/Emu/Cell/Modules/cellAudio.cpp \
 	$(CORE_DIR)/rpcs3/Emu/Cell/Modules/cellAudioOut.cpp \
 	$(CORE_DIR)/rpcs3/Emu/Cell/Modules/cellAuthDialog.cpp \

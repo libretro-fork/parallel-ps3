@@ -1,24 +1,6 @@
 #pragma once
 
-#ifdef _MSC_VER
-#pragma warning(push, 0)
-#else
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wall"
-#pragma GCC diagnostic ignored "-Wextra"
-#pragma GCC diagnostic ignored "-Wold-style-cast"
-#endif
-extern "C"
-{
-#include "libavcodec/avcodec.h"
-}
-
-constexpr int averror_eof = AVERROR_EOF; // Workaround for old-style-cast error
-#ifdef _MSC_VER
-#pragma warning(pop)
-#else
-#pragma GCC diagnostic pop
-#endif
+#include <formats/ratrac3p.h>
 
 #include "cellPamf.h"
 #include "cellAdec.h"
@@ -192,10 +174,10 @@ struct AtracXdecDecoder
 
 	// HLE exclusive
 	b8 config_is_set = false; // For savestates
-	const AVCodec* codec = nullptr;
-	AVCodecContext* ctx = nullptr;
-	AVPacket* packet = nullptr;
-	AVFrame* frame = nullptr;
+	ratrac3p_t* dec = nullptr; // libretro-common's ATRAC3plus decoder, where FFmpeg's codec was
+	u32 cur_channels = 0;       // what it was made for
+	u32 cur_nbytes = 0;
+	u64 hle_reserved[2]{};      // where FFmpeg's packet and frame were
 
 	u8 spurs_stuff[84]; // 120 bytes on LLE, pointers to CellSpurs, CellSpursTaskset, etc.
 
@@ -203,9 +185,8 @@ struct AtracXdecDecoder
 
 	AtracXdecDecoder(vm::ptr<u8> work_mem) : work_mem(work_mem) {}
 
-	void alloc_avcodec();
-	void free_avcodec();
-	void init_avcodec();
+	void free_decoder();
+	void init_decoder();
 
 	error_code set_config_info(u32 sampling_freq, u32 ch_config_idx, u32 nbytes);
 	error_code init_decode(u32 bw_pcm, u32 nch_out);
@@ -289,25 +270,3 @@ constexpr u16 ATXDEC_SAMPLES_PER_FRAME = 0x800;
 constexpr u16 ATXDEC_MAX_FRAME_LENGTH = 0x2000;
 constexpr std::array<u8, 8> ATXDEC_NCH_BLOCKS_MAP = { 0, 1, 1, 2, 3, 4, 5, 5 };
 
-// Expected output channel order
-//  - for 1 to 7 channels: Front Left, Center, Front Right, Rear Left, Rear Right, Rear Center, LFE
-//  - for 8 channels:      Front Left, Front Right, Center, LFE, Rear Left, Rear Right, Side Left, Side Right
-// FFmpeg output
-//  - ver <= 5.1.2: Front Left, Front Right, Center, Rear Left, Rear Right, Rear Center, Side Left, Side Right, LFE
-//  - ver >= 5.1.3: Front Left, Front Right, Center, LFE, Rear Left, Rear Right, Rear Center, Side Left, Side Right
-constexpr u8 ATXDEC_AVCODEC_CH_MAP[7][8] =
-{
-	{ 0 },
-	{ 0, 1 },
-	{ 0, 2, 1 },
-	{ 0, 2, 1, 3 },
-#if LIBAVCODEC_VERSION_INT < AV_VERSION_INT(59, 51, 101)
-	{ 0, 2, 1, 3, 4, 5 },
-	{ 0, 2, 1, 3, 4, 5, 6 },
-	{ 0, 1, 2, 4, 5, 6, 7, 3 }
-#else
-	{ 0, 2, 1, 4, 5, 3 },
-	{ 0, 2, 1, 4, 5, 6, 3 },
-	{ 0, 1, 2, 3, 4, 5, 6, 7 }
-#endif
-};
