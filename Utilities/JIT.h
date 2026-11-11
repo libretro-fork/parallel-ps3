@@ -5,7 +5,9 @@
 
 // Include asmjit with warnings ignored
 #define ASMJIT_EMBED
+#ifndef ASMJIT_STATIC // as the CMake build passes it
 #define ASMJIT_STATIC
+#endif
 #define ASMJIT_BUILD_DEBUG
 #undef Bool
 

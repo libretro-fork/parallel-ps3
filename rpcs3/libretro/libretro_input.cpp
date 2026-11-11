@@ -307,7 +307,7 @@ void libretro_input_set_descriptors(retro_environment_t environ_cb)
         { 0, 0, 0, 0, NULL }
     };
 
-    environ_cb(RETRO_ENVIRONMENT_SET_INPUT_DESCRIPTORS, (void*)desc);
+    environ_cb(RETRO_ENVIRONMENT_SET_INPUT_DESCRIPTORS, const_cast<void*>(static_cast<const void*>(desc)));
 }
 
 // Controller info tells RetroArch what controller types are supported
@@ -332,7 +332,7 @@ void libretro_input_set_controller_info(retro_environment_t environ_cb)
         { NULL, 0 }          // Terminator
     };
 
-    environ_cb(RETRO_ENVIRONMENT_SET_CONTROLLER_INFO, (void*)ports);
+    environ_cb(RETRO_ENVIRONMENT_SET_CONTROLLER_INFO, const_cast<void*>(static_cast<const void*>(ports)));
 }
 
 // Sensor interface for gyro/accelerometer support

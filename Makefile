@@ -71,7 +71,7 @@ include Makefile.common
 HOST_CC ?= cc
 PKG_CONFIG ?= pkg-config
 
-DEFINES := -DLIBRETRO_CORE -DHAVE_VULKAN -DAL_LIBTYPE_STATIC -DASMJIT_STATIC
+DEFINES := -DLIBRETRO_CORE -DHAVE_VULKAN -DAL_LIBTYPE_STATIC
 LIBS    :=
 
 # Unix
@@ -103,8 +103,10 @@ ifeq ($(platform), unix)
    ifeq ($(shell $(PKG_CONFIG) --exists egl && echo yes),yes)
       GL_LIBS += -lEGL
    endif
-   LIBS += $(GLEW_LIBS) $(GL_LIBS) -lvulkan -ldl -lrt -lpthread -lm
+   VULKAN_LIBS ?= -lvulkan
+   LIBS += $(GLEW_LIBS) $(GL_LIBS) $(VULKAN_LIBS) -ldl -lrt -lpthread -lm
    FFMPEG_OS := linux
+   INSTALL_HINT := on Debian and Ubuntu: sudo apt install libvulkan-dev libglew-dev
 
 # OS X
 else ifeq ($(platform), osx)
@@ -129,6 +131,7 @@ else ifeq ($(platform), osx)
       ARCH_FLAGS := -march=armv8.4-a
    endif
    FFMPEG_OS := macos
+   INSTALL_HINT := with Homebrew: brew install vulkan-headers molten-vk, with its include and lib folders in CPPFLAGS and LDFLAGS
 
 # Windows (MinGW-w64)
 else ifneq (,$(findstring win,$(platform)))
@@ -145,12 +148,17 @@ else ifneq (,$(findstring win,$(platform)))
    FLAGS_LIBUSB  += -DPLATFORM_WINDOWS=1
    # RtMidi's own default on Windows: Windows multimedia MIDI (winmm)
    FLAGS_RTMIDI  += -D__WINDOWS_MM__
-   VULKAN_LIBS ?= -lvulkan-1
+   # MinGW has vulkan-1 as an import library only (libvulkan-1.dll.a),
+   # which a -static link passes over: that one dynamically
+   VULKAN_LIBS ?= -Wl,-Bdynamic -lvulkan-1 -Wl,-Bstatic
    GLEW_LIBS ?= -lglew32
    LIBS += $(GLEW_LIBS) $(VULKAN_LIBS) -lopengl32 -lws2_32 -liphlpapi -lwinmm -lpsapi -lgdi32 \
       -lsetupapi -ldbghelp -lpdh -lbcrypt -lole32 -loleaut32 -luuid -lshlwapi \
       -lstrmiids -luser32 -lwinpthread
    FFMPEG_OS := mingw
+   ifneq ($(MINGW_PACKAGE_PREFIX),)
+      INSTALL_HINT := in this MSYS2 shell: pacman -S --needed $(MINGW_PACKAGE_PREFIX)-vulkan-headers $(MINGW_PACKAGE_PREFIX)-vulkan-loader $(MINGW_PACKAGE_PREFIX)-glew
+   endif
 else
    $(error platform $(platform) is not one this Makefile builds for: unix, osx or win)
 endif
@@ -245,7 +253,14 @@ ifeq ($(HAVE_LLVM),1)
    LLVM_LINK := $(if $(filter 1,$(LLVM_STATIC)),--link-static,--link-shared)
    DEFINES   += -DLLVM_AVAILABLE $(filter -D%,$(shell $(LLVM_CONFIG) --cppflags))
    LLVM_INC  := -isystem $(shell $(LLVM_CONFIG) --includedir)
-   LIBS      := $(shell $(LLVM_CONFIG) $(LLVM_LINK) --ldflags --libs $(LLVM_COMPONENTS) --system-libs) $(LIBS)
+   LLVM_LIBS := $(shell $(LLVM_CONFIG) $(LLVM_LINK) --ldflags --libs $(LLVM_COMPONENTS) --system-libs)
+   # The shared one on Windows is an import library, as vulkan-1 is
+   ifneq (,$(findstring win,$(platform)))
+      ifeq ($(LLVM_LINK),--link-shared)
+         LLVM_LIBS := -Wl,-Bdynamic $(LLVM_LIBS) -Wl,-Bstatic
+      endif
+   endif
+   LIBS      := $(LLVM_LIBS) $(LIBS)
 endif
 
 # ffmpeg: RPCS3's prebuilt one, for the commit of 3rdparty/ffmpeg, as the
@@ -302,6 +317,33 @@ FLAGS_RPCS3 := -std=gnu++23 -fno-exceptions -fstack-protector $(ARCH_FLAGS) \
 FLAGS_LIBRETRO := $(FLAGS_RPCS3) $(INCLUDES_LIBRETRO) -fexceptions -Wno-error=old-style-cast \
 	-DRPCS3_LIBRETRO_VERSION='"$(LIBRETRO_VERSION)"'
 
+# The system's headers the core is built against, looked for before
+# anything is built rather than found missing by the first file that
+# includes one; and their libraries
+NEED_HEADERS := vulkan/vulkan.h
+NEED_LIBS    := $(VULKAN_LIBS) $(if $(filter unix win,$(platform)),$(GLEW_LIBS))
+ifneq (,$(findstring win,$(platform)))
+   NEED_HEADERS += GL/glew.h
+else ifeq ($(platform),unix)
+   NEED_HEADERS += GL/glew.h
+else
+   NEED_LIBS := $(VULKAN_LIBS)
+endif
+ifeq ($(filter clean,$(MAKECMDGOALS)),)
+   MISSING := $(foreach h,$(NEED_HEADERS),$(if $(shell printf '\043include <$(h)>\n' | \
+      $(CXX) $(CPPFLAGS) $(DEFINES) $(INCLUDES_RPCS3) -E -x c++ - >/dev/null 2>&1 && echo y),,$(h)))
+   MISSING += $(foreach l,$(filter -l%,$(NEED_LIBS)),$(if $(shell printf 'int main(void){return 0;}\n' | \
+      $(CC) -x c - -o .link-probe $(LDFLAGS) $(if $(findstring win,$(platform)),-static) \
+      $(foreach x,$(NEED_LIBS),$(if $(filter -l%,$(x)),$(filter $(l),$(x)),$(x))) >/dev/null 2>&1 && echo y; \
+      rm -f .link-probe .link-probe.exe),,$(l)))
+   ifneq ($(strip $(MISSING)),)
+      $(error not found: $(strip $(MISSING)); $(if $(INSTALL_HINT),install them $(INSTALL_HINT),install the Vulkan headers and loader and GLEW))
+   endif
+endif
+
+# The C files among RPCS3's sources (C89 modules) with C flags, not C++'s
+FLAGS_RPCS3_C := -std=gnu99 $(ARCH_FLAGS) $(DEFINES) $(INCLUDES_RPCS3) -Wall
+
 # Each library's objects with its own flags
 objs = $(patsubst %.mm,%.o,$(patsubst %.cpp,%.o,$(patsubst %.c,%.o,$(1))))
 
@@ -324,6 +366,7 @@ $(OBJ_ASMJIT):   FLAGS := $(FLAGS_ASMJIT)
 $(OBJ_RTMIDI):   FLAGS := $(FLAGS_RTMIDI)
 $(OBJ_FUSION):   FLAGS := $(FLAGS_FUSION)
 $(OBJ_RPCS3):    FLAGS := $(FLAGS_RPCS3)
+$(call objs,$(filter %.c,$(SOURCES_RPCS3) $(OS_RPCS3))): FLAGS := $(FLAGS_RPCS3_C)
 $(OBJ_LIBRETRO): FLAGS := $(FLAGS_LIBRETRO)
 
 # Built without RTTI, as LLVM is (rpcs3/Emu/CMakeLists.txt)

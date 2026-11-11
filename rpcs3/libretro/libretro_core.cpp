@@ -1089,8 +1089,6 @@ static void init_emu_callbacks();
 static void context_reset();
 static void context_destroy();
 
-static void libretro_apply_core_options();
-
 #ifdef _WIN32
 static void* g_lrcore_vectored_handler = nullptr;
 
@@ -1488,7 +1486,7 @@ static std::string find_firmware_pup()
     // The name as Sony serves it is PS3UPDAT.PUP, but a copy can come in
     // other case (PS3UPDAT.pup, demifiend9), and Linux and Android file
     // systems tell them apart: any case will do
-    for (const std::string dir : { system_dir + "/rpcs3", system_dir, system_dir + "/rpcs3/firmware" })
+    for (const std::string& dir : { system_dir + "/rpcs3", system_dir, system_dir + "/rpcs3/firmware" })
     {
         for (auto&& entry : fs::dir(dir))
         {
@@ -1990,23 +1988,17 @@ void retro_init(void)
                 g_fxo->reset();
             }
 
-            bool ok = false;
+            // A firmware that does not install is reported by the installer;
+            // the boot goes on and fails where it needs it
             try
             {
-                ok = libretro_install_firmware(pup_path, [](int cur, int total)
+                libretro_install_firmware(pup_path, [](int, int)
                 {
 
                 });
             }
-            catch (const std::exception& e)
-            {
-                (void)e;
-                ok = false;
-            }
             catch (...)
             {
-
-                ok = false;
             }
 
 
@@ -2532,7 +2524,7 @@ static void vk_fetch_interface()
     if (environ_cb(RETRO_ENVIRONMENT_GET_HW_RENDER_INTERFACE, &iface) && iface &&
         iface->interface_type == RETRO_HW_RENDER_INTERFACE_VULKAN)
     {
-        s_vk_iface = reinterpret_cast<const struct retro_hw_render_interface_vulkan*>(iface);
+        s_vk_iface = static_cast<const struct retro_hw_render_interface_vulkan*>(static_cast<const void*>(iface));
         vk::libretro::set_queue_lock(s_vk_iface->lock_queue, s_vk_iface->unlock_queue, s_vk_iface->handle);
     }
 }
