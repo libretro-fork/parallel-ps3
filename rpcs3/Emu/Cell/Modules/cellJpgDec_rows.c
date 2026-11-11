@@ -119,6 +119,57 @@ static void jdr_done(void *user, unsigned y, const uint8_t *px)
    }
 }
 
+bool jdr_header(const uint8_t *jpg, size_t len,
+      unsigned *width, unsigned *height, unsigned *components)
+{
+   size_t i = 2;
+
+   if (len < 2 || jpg[0] != 0xFF || jpg[1] != 0xD8)
+      return false;
+
+   for (;;)
+   {
+      unsigned m;
+      size_t   seg;
+
+      if (i >= len || jpg[i] != 0xFF)
+         return false;
+      /* Fill bytes: any number of 0xFF before the marker */
+      while (i < len && jpg[i] == 0xFF)
+         i++;
+      if (i >= len)
+         return false;
+      m = jpg[i++];
+
+      /* Markers without a segment: TEM, RST0 to RST7 */
+      if (m == 0x01 || (m >= 0xD0 && m <= 0xD7))
+         continue;
+      /* A scan, the end, or a second SOI before any frame */
+      if (m == 0xDA || m == 0xD9 || m == 0xD8 || m == 0x00)
+         return false;
+
+      if (len - i < 2)
+         return false;
+      seg = ((size_t)jpg[i] << 8) | jpg[i + 1];
+      if (seg < 2 || seg > len - i)
+         return false;
+
+      /* SOF0 to SOF15, but DHT (C4), JPG (C8) and DAC (CC) */
+      if (m >= 0xC0 && m <= 0xCF && m != 0xC4 && m != 0xC8 && m != 0xCC)
+      {
+         /* length, precision, height, width, components */
+         if (seg < 8)
+            return false;
+         *height     = ((unsigned)jpg[i + 3] << 8) | jpg[i + 4];
+         *width      = ((unsigned)jpg[i + 5] << 8) | jpg[i + 6];
+         *components = jpg[i + 7];
+         return true;
+      }
+
+      i += seg;
+   }
+}
+
 bool jdr_decode(rjpeg_t *dec, const uint8_t *jpg, size_t len,
       uint8_t *out, size_t bytes_per_line, bool bottom_to_top, int space,
       unsigned *width, unsigned *height)

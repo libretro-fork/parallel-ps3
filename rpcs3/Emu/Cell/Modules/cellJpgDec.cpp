@@ -7,7 +7,6 @@
 
 #include "cellJpgDec_rows.h"
 
-#include <span>
 
 #include "Emu/Cell/lv2/sys_fs.h"
 #include "cellJpgDec.h"
@@ -239,48 +238,21 @@ error_code cellJpgDecReadHeader(u32 mainHandle, u32 subHandle, vm::ptr<CellJpgDe
 	const jpg_dec_host_lend host;
 	const u8* const file = jpg_dec_source(*subHandle_data, host ? host.operator->() : nullptr);
 
-	if (!file || fileSize < 10)
+	// The frame header, found by the segments' lengths (cellJpgDec_rows.c).
+	// The module walked them by lengths read wrong (the high byte times
+	// 0xFF, and from the second segment on the marker's code in place of
+	// the low byte), and asked for a JFIF APP0 first, so it refused nearly
+	// every JPEG: a quantization table before the frame, as encoders write
+	// them, sent it past the end; an Exif file was refused outright.
+	unsigned width = 0, height = 0, components = 0;
+
+	if (!file || !jdr_header(file, fileSize, &width, &height, &components))
 	{
 		return CELL_JPGDEC_ERROR_HEADER;
 	}
 
-	// A byte past the file is a broken header, not a crash
-	const auto at = [&](u64 n) -> u8
-	{
-		return n < fileSize ? file[n] : 0;
-	};
-
-	const std::span<const u8> buffer(file, fileSize);
-
-	if (read_from_ptr<le_t<u32>>(buffer, 0) != 0xE0FFD8FF || // Error: Not a valid SOI header
-		read_from_ptr<u32>(buffer, 6) != "JFIF"_u32)   // Error: Not a valid JFIF string
-	{
-		return CELL_JPGDEC_ERROR_HEADER;
-	}
-
-	u32 i = 4;
-
-	u16 block_length = at(i) * 0xFF + at(i + 1);
-
-	while (true)
-	{
-		i += block_length;                                  // Increase the file index to get to the next block
-		if (i + 8 >= fileSize ||                            // Check to protect against segmentation faults
-			file[i] != 0xFF)                                // Check that we are truly at the start of another block
-		{
-			return CELL_JPGDEC_ERROR_HEADER;
-		}
-
-		const u8 next = file[i + 1];
-		if (next == 0xC0)
-			break;                                          // 0xFFC0 is the "Start of frame" marker which contains the file size
-
-		i += 2;                                             // Skip the block marker
-		block_length = at(i) * 0xFF + next;                 // Go to the next block
-	}
-
-	current_info.imageWidth    = file[i + 7] * 0x100 + file[i + 8];
-	current_info.imageHeight   = file[i + 5] * 0x100 + file[i + 6];
+	current_info.imageWidth    = width;
+	current_info.imageHeight   = height;
 	current_info.numComponents = 3; // Unimplemented
 	current_info.colorSpace    = CELL_JPG_RGB;
 

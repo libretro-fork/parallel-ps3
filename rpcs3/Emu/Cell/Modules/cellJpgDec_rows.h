@@ -49,6 +49,22 @@ bool jdr_decode(rjpeg_t *dec, const uint8_t *jpg, size_t len,
       uint8_t *out, size_t bytes_per_line, bool bottom_to_top, int space,
       unsigned *width, unsigned *height);
 
+/**
+ * jdr_header:
+ * @jpg, @len : the file, or as much of it as holds the header
+ *
+ * The frame's size and component count, from its start-of-frame
+ * segment (any of SOF0 to SOF15: baseline, extended, progressive,
+ * lossless, arithmetic), found by walking the segments after SOI by
+ * their lengths - application segments of any kind (JFIF, Exif, Adobe)
+ * and tables passed over, fill bytes before a marker skipped.
+ *
+ * Returns: false if the file does not start with SOI, or reaches a
+ * scan, its end or a broken segment before a frame header.
+ */
+bool jdr_header(const uint8_t *jpg, size_t len,
+      unsigned *width, unsigned *height, unsigned *components);
+
 /* Bytes a pixel of @space, 0 for one written as nothing */
 unsigned jdr_components(int space);
 
