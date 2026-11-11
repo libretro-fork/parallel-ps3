@@ -41,7 +41,7 @@ int main(int argc, char **argv)
    printf("load_test: %s %s, API %u\n", info.library_name ? info.library_name : "?",
          info.library_version ? info.library_version : "?", api_version());
    /* the strings are the core's: looked at before it is closed */
-   ok = info.library_name && !strcmp(info.library_name, "RPCS3") && api_version() == 1;
+   ok = info.library_name && !strcmp(info.library_name, "ParaLLEl PS3") && api_version() == 1;
    dlclose(core);
    return ok ? 0 : 1;
 }
