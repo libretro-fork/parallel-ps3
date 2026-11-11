@@ -4,24 +4,7 @@
 #include "Emu/Cell/Modules/cellVideoOut.h"
 #include "Emu/system_config.h"
 
-#ifdef _MSC_VER
-#pragma warning(push, 0)
-#else
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wall"
-#pragma GCC diagnostic ignored "-Wextra"
-#pragma GCC diagnostic ignored "-Wold-style-cast"
-#pragma GCC diagnostic ignored "-Wstrict-aliasing"
-#endif
-extern "C"
-{
-#include "libswscale/swscale.h"
-}
-#ifdef _MSC_VER
-#pragma warning(pop)
-#else
-#pragma GCC diagnostic pop
-#endif
+#include "image_utils.hpp"
 
 #include "util/sysinfo.hpp"
 
@@ -29,13 +12,20 @@ namespace rsx
 {
 	atomic_t<u64> g_rsx_shared_tag{ 0 };
 
-	void convert_scale_image(u8 *dst, AVPixelFormat dst_format, int dst_width, int dst_height, int dst_pitch,
-		const u8 *src, AVPixelFormat src_format, int src_width, int src_height, int src_pitch, int src_slice_h, bool bilinear)
+	// One scaler a thread, kept from copy to copy: a copy of the size and
+	// formats of the last takes no memory. Freed with the thread.
+	struct rsx_scale_holder
 	{
-		std::unique_ptr<SwsContext, void(*)(SwsContext*)> sws(sws_getContext(src_width, src_height, src_format,
-			dst_width, dst_height, dst_format, bilinear ? SWS_FAST_BILINEAR : SWS_POINT, nullptr, nullptr, nullptr), sws_freeContext);
+		rsx_scale* scale = rsx_scale_new();
+		~rsx_scale_holder() { rsx_scale_free(scale); }
+	};
 
-		sws_scale(sws.get(), &src, &src_pitch, 0, src_slice_h, &dst, &dst_pitch);
+	void convert_scale_image(u8 *dst, rsx_scale_format dst_format, int dst_width, int dst_height, int dst_pitch,
+		const u8 *src, rsx_scale_format src_format, int src_width, int src_height, int src_pitch, int src_slice_h, bool bilinear)
+	{
+		thread_local rsx_scale_holder holder;
+		rsx_scale_image(holder.scale, dst, dst_format, dst_width, dst_height, dst_pitch,
+			src, src_format, src_width, src_height, src_pitch, src_slice_h, bilinear);
 	}
 
 	void clip_image(u8 *dst, const u8 *src, int clip_x, int clip_y, int clip_w, int clip_h, int bpp, int src_pitch, int dst_pitch)

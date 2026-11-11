@@ -35,6 +35,10 @@ SOURCES_LRC := \
 	$(CORE_DIR)/rpcs3/libretro/libretro-common/formats/yaml/ryaml.c \
 	$(CORE_DIR)/rpcs3/libretro/libretro-common/formats/yaml/ryaml_writer.c \
 	$(CORE_DIR)/rpcs3/libretro/libretro-common/gfx/font/rtt.c \
+	$(CORE_DIR)/rpcs3/libretro/libretro-common/gfx/scaler/pixconv.c \
+	$(CORE_DIR)/rpcs3/libretro/libretro-common/gfx/scaler/scaler.c \
+	$(CORE_DIR)/rpcs3/libretro/libretro-common/gfx/scaler/scaler_filter.c \
+	$(CORE_DIR)/rpcs3/libretro/libretro-common/gfx/scaler/scaler_int.c \
 	$(CORE_DIR)/rpcs3/libretro/libretro-common/hash/lrc_hash.c \
 	$(CORE_DIR)/rpcs3/libretro/libretro-common/lists/string_list.c \
 	$(CORE_DIR)/rpcs3/libretro/libretro-common/net/net_compat.c \
@@ -580,6 +584,7 @@ SOURCES_RPCS3 := \
 	$(CORE_DIR)/rpcs3/Emu/RSX/RSXTexture.cpp \
 	$(CORE_DIR)/rpcs3/Emu/RSX/RSXThread.cpp \
 	$(CORE_DIR)/rpcs3/Emu/RSX/RSXZCULL.cpp \
+	$(CORE_DIR)/rpcs3/Emu/RSX/Utils/rsx_scale.c \
 	$(CORE_DIR)/rpcs3/Emu/RSX/Utils/rsx_utils.cpp \
 	$(CORE_DIR)/rpcs3/Emu/RSX/VK/VKAsyncScheduler.cpp \
 	$(CORE_DIR)/rpcs3/Emu/RSX/VK/VKCommandStream.cpp \

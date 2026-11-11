@@ -324,8 +324,8 @@ namespace rsx
 			u16 out_w,
 			u16 out_h,
 			u32 slice_h,
-			AVPixelFormat ffmpeg_src_format,
-			AVPixelFormat ffmpeg_dst_format,
+			rsx_scale_format src_format,
+			rsx_scale_format dst_format,
 			bool need_convert,
 			bool need_clip,
 			bool src_is_modified,
@@ -410,15 +410,15 @@ namespace rsx
 			{
 				temp2.resize(dst.pitch * std::max<u32>(dst.height, dst.clip_height));
 
-				convert_scale_image(temp2.data(), ffmpeg_dst_format, dst.width, dst.height, dst.pitch,
-					src.pixels, ffmpeg_src_format, src.width, src.height, src.pitch, slice_h, interpolate);
+				convert_scale_image(temp2.data(), dst_format, dst.width, dst.height, dst.pitch,
+					src.pixels, src_format, src.width, src.height, src.pitch, slice_h, interpolate);
 
 				clip_image(dst.pixels, temp2.data(), dst.clip_x, dst.clip_y, dst.clip_width, dst.clip_height, dst.bpp, dst.pitch, dst.pitch);
 				return;
 			}
 
-			convert_scale_image(dst.pixels, ffmpeg_dst_format, out_w, out_h, dst.pitch,
-				src.pixels, ffmpeg_src_format, src.width, src.height, src.pitch, slice_h,
+			convert_scale_image(dst.pixels, dst_format, out_w, out_h, dst.pitch,
+				src.pixels, src_format, src.width, src.height, src.pitch, slice_h,
 				interpolate);
 		}
 
@@ -428,8 +428,8 @@ namespace rsx
 			u16 out_w,
 			u16 out_h,
 			u32 slice_h,
-			AVPixelFormat ffmpeg_src_format,
-			AVPixelFormat ffmpeg_dst_format,
+			rsx_scale_format src_format,
+			rsx_scale_format dst_format,
 			bool need_convert,
 			bool need_clip,
 			bool interpolate)
@@ -444,8 +444,8 @@ namespace rsx
 				{
 					temp2.resize(dst.pitch * std::max<u32>(dst.height, dst.clip_height));
 
-					convert_scale_image(temp2.data(), ffmpeg_dst_format, dst.width, dst.height, dst.pitch,
-						src.pixels, ffmpeg_src_format, src.width, src.height, src.pitch, slice_h,
+					convert_scale_image(temp2.data(), dst_format, dst.width, dst.height, dst.pitch,
+						src.pixels, src_format, src.width, src.height, src.pitch, slice_h,
 						interpolate);
 
 					clip_image(temp3.data(), temp2.data(), dst.clip_x, dst.clip_y, dst.clip_width, dst.clip_height, dst.bpp, dst.pitch, dst.pitch);
@@ -460,8 +460,8 @@ namespace rsx
 			{
 				temp3.resize(dst.pitch * out_h);
 
-				convert_scale_image(temp3.data(), ffmpeg_dst_format, out_w, out_h, dst.pitch,
-					src.pixels, ffmpeg_src_format, src.width, src.height, src.pitch, slice_h,
+				convert_scale_image(temp3.data(), dst_format, out_w, out_h, dst.pitch,
+					src.pixels, src_format, src.width, src.height, src.pitch, slice_h,
 					interpolate);
 
 				return temp3;
@@ -617,8 +617,8 @@ namespace rsx
 				src_is_temp = true;
 			}
 
-			const AVPixelFormat in_format = (src.format == rsx::blit_engine::transfer_source_format::r5g6b5) ? AV_PIX_FMT_RGB565BE : AV_PIX_FMT_ARGB;
-			const AVPixelFormat out_format = (dst.format == rsx::blit_engine::transfer_destination_format::r5g6b5) ? AV_PIX_FMT_RGB565BE : AV_PIX_FMT_ARGB;
+			const rsx_scale_format in_format = (src.format == rsx::blit_engine::transfer_source_format::r5g6b5) ? RSX_SCALE_R5G6B5 : RSX_SCALE_A8R8G8B8;
+			const rsx_scale_format out_format = (dst.format == rsx::blit_engine::transfer_destination_format::r5g6b5) ? RSX_SCALE_R5G6B5 : RSX_SCALE_A8R8G8B8;
 
 			const bool need_clip =
 				dst.clip_width != src.width ||

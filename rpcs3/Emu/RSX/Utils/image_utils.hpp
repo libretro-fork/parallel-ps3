@@ -3,10 +3,7 @@
 #include <util/types.hpp>
 #include "algorithm.hpp"
 
-extern "C"
-{
-#include <libavutil/pixfmt.h>
-}
+#include "rsx_scale.h"
 
 namespace rsx
 {
@@ -180,8 +177,10 @@ namespace rsx
 		}
 	}
 
-	void convert_scale_image(u8 *dst, AVPixelFormat dst_format, int dst_width, int dst_height, int dst_pitch,
-		const u8 *src, AVPixelFormat src_format, int src_width, int src_height, int src_pitch, int src_slice_h, bool bilinear);
+	// The blit engine's scaled or converting copy, on the calling thread's
+	// own scaler (rsx_scale.h): the RSX thread's, in practice
+	void convert_scale_image(u8 *dst, rsx_scale_format dst_format, int dst_width, int dst_height, int dst_pitch,
+		const u8 *src, rsx_scale_format src_format, int src_width, int src_height, int src_pitch, int src_slice_h, bool bilinear);
 
 	void clip_image(u8 *dst, const u8 *src, int clip_x, int clip_y, int clip_w, int clip_h, int bpp, int src_pitch, int dst_pitch);
 	void clip_image_may_overlap(u8 *dst, const u8 *src, int clip_x, int clip_y, int clip_w, int clip_h, int bpp, int src_pitch, int dst_pitch, u8* buffer);

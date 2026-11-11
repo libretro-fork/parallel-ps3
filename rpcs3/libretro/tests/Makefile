@@ -16,7 +16,7 @@ LRC_STD  := -std=gnu99
 # as libretro_common.cmake builds it: net_http over its own TLS client
 LRC_DEFS := -DHAVE_SSL -DHAVE_RETROSSL -DHAVE_CRYPTO
 
-TESTS := test_zstd test_deflate test_rxml test_png_rows test_images test_jpg_rows test_http test_bcn test_tls_duplex test_yaml test_font test_np2
+TESTS := test_zstd test_deflate test_rxml test_png_rows test_images test_jpg_rows test_http test_bcn test_tls_duplex test_yaml test_font test_np2 test_rsx_scale
 
 test_zstd_LRC := \
 	$(LRC)/encodings/encoding_rzstd.c \
@@ -242,6 +242,24 @@ test_np2: obj/test_np2.o obj/np2/np2_structs.o $(call lrc_objs,$(test_deflate_LR
 test_bcn: obj/test_bcn.o obj/bcdec_impl.o $(call lrc_objs,$(test_bcn_LRC))
 	$(CC) $(SANITIZE) -o $@ $^ $(LDFLAGS) $(LDLIBS)
 
+# the RSX blit engine's scaled copy, on libretro-common's scaler; its
+# allocations counted by wrapping malloc
+test_rsx_scale_LRC := \
+	$(LRC)/gfx/scaler/pixconv.c \
+	$(LRC)/gfx/scaler/scaler.c \
+	$(LRC)/gfx/scaler/scaler_filter.c \
+	$(LRC)/gfx/scaler/scaler_int.c \
+	$(LRC)/features/features_cpu.c
+
+obj/rsx_scale.o: ../../Emu/RSX/Utils/rsx_scale.c ../../Emu/RSX/Utils/rsx_scale.h
+	@mkdir -p $(@D)
+	$(CC) $(CFLAGS) $(TEST_STD) $(SANITIZE) -c -o $@ $<
+
+obj/test_rsx_scale.o: test_rsx_scale.c test_common.h ../../Emu/RSX/Utils/rsx_scale.h
+
+test_rsx_scale: obj/test_rsx_scale.o obj/rsx_scale.o $(call lrc_objs,$(sort $(test_rsx_scale_LRC)))
+	$(CC) $(SANITIZE) -o $@ $^ $(LDFLAGS) -Wl,--wrap=malloc,--wrap=calloc,--wrap=realloc $(LDLIBS)
+
 # Each test also writes what the new code produces, for the reference
 # tools to read back
 check: all
@@ -259,6 +277,7 @@ check: all
 	./test_yaml fixtures
 	./test_font fixtures
 	./test_np2 fixtures
+	./test_rsx_scale fixtures
 
 clean:
 	rm -rf obj $(TESTS) *_out.*
