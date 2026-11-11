@@ -1,0 +1,52 @@
+name: Makefile build
+
+# The core built with the Makefile instead of CMake (Linux x86_64, GCC, LLVM
+# 22 linked statically as on the CI images, RPCS3's prebuilt ffmpeg), then
+# loaded with every symbol resolved and asked what it is (make check).
+on:
+  push:
+    paths:
+      - 'Makefile'
+      - 'Makefile.common'
+      - 'rpcs3/libretro/make/**'
+      - '**/CMakeLists.txt'
+      - '.github/workflows/makefile.yml'
+  pull_request:
+    paths:
+      - 'Makefile'
+      - 'Makefile.common'
+      - 'rpcs3/libretro/make/**'
+      - '**/CMakeLists.txt'
+      - '.github/workflows/makefile.yml'
+  workflow_dispatch:
+
+jobs:
+  makefile:
+    name: Makefile build (Linux x86_64)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@main
+
+      - name: Submodules
+        run: git submodule -q update --init --depth 1 $(awk '/path/ && !/llvm/ && !/opencv/ && !/libsdl-org/ { print $3 }' .gitmodules)
+
+      # The JIT code needs LLVM 21 or newer, which Ubuntu 24.04 does not
+      # have: LLVM's own release, of which only llvm-config, the headers and
+      # the static libraries are unpacked. (21's release has some libraries
+      # as LTO bitcode, which GNU ld cannot link; 22's are plain objects.)
+      - name: Dependencies
+        run: |
+          sudo apt-get install -y -q libglew-dev libvulkan-dev libx11-dev libegl-dev libgl-dev zlib1g-dev unzip >/dev/null
+          mkdir -p "$RUNNER_TEMP/llvm"
+          curl -fsSL https://github.com/llvm/llvm-project/releases/download/llvmorg-22.1.0/LLVM-22.1.0-Linux-X64.tar.xz |
+            tar -xJ -C "$RUNNER_TEMP/llvm" --strip-components=1 --wildcards \
+              '*/bin/llvm-config' '*/include/llvm/*' '*/include/llvm-c/*' '*/lib/libLLVM*.a'
+          echo "LLVM_CONFIG=$RUNNER_TEMP/llvm/bin/llvm-config" >> "$GITHUB_ENV"
+
+      - name: Build
+        run: make -j"$(nproc)" LLVM_CONFIG="$LLVM_CONFIG"
+
+      - name: Load
+        run: make check LLVM_CONFIG="$LLVM_CONFIG"

@@ -127,3 +127,10 @@ CMakeUserPresets.json
 
 # claude
 CLAUDE.md
+
+# The Makefile build
+!/Makefile
+/.build-tag
+/rpcs3/libretro/generated/
+/3rdparty/ffmpeg/prebuilt/
+*.d
