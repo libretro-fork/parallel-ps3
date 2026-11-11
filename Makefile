@@ -456,12 +456,23 @@ $(FFMPEG_DIR)/lib/libavcodec.a:
 	cd $(FFMPEG_DIR) && unzip -q -o $(FFMPEG_ZIP) && rm -f $(FFMPEG_ZIP)
 	@touch $@
 
-# The core, loaded with every symbol resolved and asked what it is
-check: $(TARGET)
+# The core, loaded with every symbol resolved and asked what it is; and
+# in-memory save states, written and read through RPCS3's serializer by a
+# program linked as the core is
+SAVESTATE_TEST := $(GEN_DIR)/test_savestate_memory
+OBJ_SAVESTATE_TEST := $(CORE_DIR)/rpcs3/libretro/tests/test_savestate_memory.o
+$(OBJ_SAVESTATE_TEST): FLAGS := $(FLAGS_LIBRETRO)
+
+$(SAVESTATE_TEST): $(OBJ_SAVESTATE_TEST) $(OBJ_LIBRETRO) $(ARCHIVES) $(FFMPEG_DEP)
+	$(SAY) LINK $@
+	$(Q)$(CXX) -o $@ $(OBJ_SAVESTATE_TEST) $(OBJ_LIBRETRO) $(GROUP_START) $(ARCHIVES) $(GROUP_END) $(LDFLAGS) $(LIBS)
+
+check: $(TARGET) $(SAVESTATE_TEST)
 	$(HOST_CC) -O2 -o $(GEN_DIR)/load_test $(CORE_DIR)/rpcs3/libretro/make/load_test.c -ldl
 	$(GEN_DIR)/load_test ./$(TARGET)
+	$(SAVESTATE_TEST)
 
--include $(OBJECTS:.o=.d)
+-include $(OBJECTS:.o=.d) $(OBJ_SAVESTATE_TEST:.o=.d)
 
 clean:
 	@find . -name '*.o' -not -path './build*' -not -path './3rdparty/llvm/*' -delete

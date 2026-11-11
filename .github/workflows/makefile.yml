@@ -2,13 +2,16 @@ name: Makefile build
 
 # The core built with the Makefile instead of CMake (Linux x86_64, GCC, LLVM
 # 22 linked statically as on the CI images, RPCS3's prebuilt ffmpeg), then
-# loaded with every symbol resolved and asked what it is (make check).
+# loaded with every symbol resolved and asked what it is, and in-memory save
+# states written and read through RPCS3's serializer (make check).
 on:
   push:
     paths:
       - 'Makefile'
       - 'Makefile.common'
       - 'rpcs3/libretro/make/**'
+      - 'rpcs3/libretro/tests/test_savestate_memory.cpp'
+      - 'rpcs3/Emu/savestate_utils.*'
       - '**/CMakeLists.txt'
       - '.github/workflows/makefile.yml'
   pull_request:
@@ -16,6 +19,8 @@ on:
       - 'Makefile'
       - 'Makefile.common'
       - 'rpcs3/libretro/make/**'
+      - 'rpcs3/libretro/tests/test_savestate_memory.cpp'
+      - 'rpcs3/Emu/savestate_utils.*'
       - '**/CMakeLists.txt'
       - '.github/workflows/makefile.yml'
   workflow_dispatch:
