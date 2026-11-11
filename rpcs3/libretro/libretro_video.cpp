@@ -1,5 +1,6 @@
 #include "stdafx.h"
 #include <atomic>
+#include <retro_atomic.h>
 
 #include "libretro_video.h"
 #include "libretro_core.h"
@@ -192,12 +193,15 @@ static retro_hw_get_proc_address_t s_get_proc_address = nullptr;
 static std::mutex s_video_mutex;
 static bool s_gl_initialized = false;
 
-// Frame synchronization
-static std::mutex s_frame_mutex;
-static std::condition_variable s_frame_cv;
-static std::atomic<bool> s_frame_ready{false};
-static std::atomic<u64> s_frame_count{0};
-static std::atomic<u64> s_last_presented_frame{0};
+// Frames the renderer's thread finished, and the last retro_run showed
+static retro_atomic_size_t s_frame_count;
+static retro_atomic_size_t s_last_presented_frame;
+static const bool s_frame_counts_init = []
+{
+    retro_atomic_size_init(&s_frame_count, 0);
+    retro_atomic_size_init(&s_last_presented_frame, 0);
+    return true;
+}();
 
 static std::atomic<GLsync> s_present_fence{nullptr};
 static std::atomic<u64> s_present_fence_counter{0};
@@ -388,48 +392,19 @@ void libretro_blit_to_frontend()
 
 void libretro_signal_frame_ready()
 {
-    {
-        std::lock_guard<std::mutex> lock(s_frame_mutex);
-        s_frame_ready = true;
-        s_frame_count++;
-    }
-    s_frame_cv.notify_one();
-}
-
-bool libretro_wait_for_frame(u32 timeout_ms)
-{
-    std::unique_lock<std::mutex> lock(s_frame_mutex);
-    if (s_frame_ready.exchange(false))
-    {
-        return true;
-    }
-
-    // timeout_ms=0 means wait indefinitely
-    if (timeout_ms == 0)
-    {
-        s_frame_cv.wait(lock, []{ return s_frame_ready.load(); });
-        s_frame_ready = false;
-        return true;
-    }
-
-    bool result = s_frame_cv.wait_for(lock, std::chrono::milliseconds(timeout_ms), []{ return s_frame_ready.load(); });
-    if (result)
-    {
-        s_frame_ready = false;
-    }
-    return result;
+    retro_atomic_fetch_add_size(&s_frame_count, 1);
 }
 
 // Check if a new frame is available (non-blocking, doesn't consume)
 bool libretro_has_new_frame()
 {
-    return s_frame_count.load() > s_last_presented_frame.load();
+    return retro_atomic_load_acquire_size(&s_frame_count) != retro_atomic_load_acquire_size(&s_last_presented_frame);
 }
 
 // Mark the current frame as presented
 void libretro_mark_frame_presented()
 {
-    s_last_presented_frame = s_frame_count.load();
+    retro_atomic_store_release_size(&s_last_presented_frame, retro_atomic_load_acquire_size(&s_frame_count));
 }
 
 // Clean up GL state before returning control to frontend

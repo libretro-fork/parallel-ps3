@@ -20,9 +20,6 @@ uintptr_t libretro_get_current_framebuffer();
 // Get OpenGL proc address
 void* libretro_get_proc_address(const char* sym);
 
-// Frame synchronization - wait for RSX to complete a frame
-bool libretro_wait_for_frame(u32 timeout_ms = 20);
-
 void libretro_wait_for_present_fence();
 
 // Signal that a frame is ready (called from RSX flip)

@@ -64,7 +64,6 @@ void libretro_video_init(retro_hw_get_current_framebuffer_t, retro_hw_get_proc_a
 void libretro_video_deinit() {}
 uintptr_t libretro_get_current_framebuffer() { return 0; }
 void* libretro_get_proc_address(const char*) { return nullptr; }
-bool libretro_wait_for_frame(u32) { return true; }
 void libretro_wait_for_present_fence() {}
 void libretro_signal_frame_ready() {}
 bool libretro_has_new_frame() { return false; }

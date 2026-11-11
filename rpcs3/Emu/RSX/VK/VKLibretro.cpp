@@ -3,12 +3,13 @@
 #include "vkutils/instance.h"
 #include "vkutils/swapchain.h"
 
+#include <retro_atomic.h>
+
 #include <algorithm>
 #include <chrono>
-#include <condition_variable>
 #include <cstring>
-#include <mutex>
 #include <string>
+#include <thread>
 
 namespace vk::libretro
 {
@@ -27,23 +28,57 @@ namespace vk::libretro
 
 		vk::swapchain_base* s_swapchain = nullptr;
 
-		std::mutex s_frames_mutex;
-		std::condition_variable s_frames_cv;
-		std::vector<u32> s_ready_frames;
+		// The renderer's thread finishes frames, retro_run takes them, and
+		// neither takes a lock or allocates for it: what they share is in
+		// retro_atomics.
+		//
+		// The finished frames waiting, oldest first, in one word: their count
+		// (0 to 2) in the low two bits, then an image index in each of the
+		// next two bytes
+		retro_atomic_int_t s_ready;
 
-		// When retro_run last began or returned, whether one is running now,
-		// and whether it is expected to come again
-		bool s_frontend_attached = false;
-		bool s_frontend_in_run = false;
-		std::chrono::steady_clock::time_point s_frontend_ran{};
+		// When retro_run last began or returned (milliseconds of the steady
+		// clock), whether one is running now, and whether it is expected to
+		// come again
+		retro_atomic_int_t s_frontend_attached;
+		retro_atomic_int_t s_frontend_in_run;
+		retro_atomic_size_t s_frontend_ran_ms;
 
 		// Stepping: the last retro_run came after the frontend had stopped.
 		// Each such run lets the game draw one frame (the credit) and shows
-		// the frame pushed since (s_pushes past s_step_base).
-		bool s_stepping = false;
-		u32 s_step_credits = 0;
-		u64 s_pushes = 0;
-		u64 s_step_base = 0;
+		// the frame pushed since (s_pushes past s_step_base). In one word, so
+		// the renderer sees both change at once: bit 0 stepping, the credits
+		// above it.
+		retro_atomic_int_t s_step;
+		retro_atomic_size_t s_pushes;
+		retro_atomic_size_t s_step_base;
+
+		struct handoff_init
+		{
+			handoff_init()
+			{
+				retro_atomic_int_init(&s_ready, 0);
+				retro_atomic_int_init(&s_frontend_attached, 0);
+				retro_atomic_int_init(&s_frontend_in_run, 0);
+				retro_atomic_size_init(&s_frontend_ran_ms, 0);
+				retro_atomic_int_init(&s_step, 0);
+				retro_atomic_size_init(&s_pushes, 0);
+				retro_atomic_size_init(&s_step_base, 0);
+			}
+		} s_handoff_init;
+
+		usz now_ms()
+		{
+			return static_cast<usz>(std::chrono::duration_cast<std::chrono::milliseconds>(
+				std::chrono::steady_clock::now().time_since_epoch()).count());
+		}
+
+		constexpr int ready_count(int q) { return q & 3; }
+		constexpr u32 ready_at(int q, int i) { return static_cast<u32>((q >> (2 + 8 * i)) & 0xff); }
+		constexpr int ready_of(int count, u32 first, u32 second)
+		{
+			return count | static_cast<int>(first << 2) | static_cast<int>(second << 10);
+		}
 		atomic_t<u32> s_generation{0};
 	}
 
@@ -138,123 +173,131 @@ namespace vk::libretro
 	// 100 ms after which the core's watchdog pauses the emulator again.
 	constexpr auto kStepWait = std::chrono::milliseconds(90);
 
-	// Under s_frames_mutex. Whether a finished flip has to wait before the
-	// game goes on to its next frame.
+	// Whether a finished flip has to wait before the game goes on to its next
+	// frame
 	static bool frontend_stopped()
 	{
-		if (!s_frontend_attached)
+		if (!retro_atomic_load_acquire_int(&s_frontend_attached))
 			return false;
-		if (s_stepping)
-			return s_step_credits == 0;
-		if (s_frontend_in_run)
+		if (const int step = retro_atomic_load_acquire_int(&s_step); step & 1)
+			return (step >> 1) == 0;
+		if (retro_atomic_load_acquire_int(&s_frontend_in_run))
 			return false;
-		return std::chrono::steady_clock::now() - s_frontend_ran > kFrontendRunning;
+		return now_ms() - retro_atomic_load_acquire_size(&s_frontend_ran_ms) > static_cast<usz>(kFrontendRunning.count());
 	}
 
 	void frontend_ran()
 	{
-		{
-			std::lock_guard lock(s_frames_mutex);
-			const auto now = std::chrono::steady_clock::now();
-			s_stepping = s_frontend_attached && now - s_frontend_ran > kFrontendRunning;
-			// one frame of the game for this retro_run, and the frame it
-			// draws is the one to show (take_frame)
-			s_step_credits = s_stepping ? 1 : 0;
-			s_step_base = s_pushes;
-			s_frontend_attached = true;
-			s_frontend_in_run = true;
-			s_frontend_ran = now;
-		}
-		s_frames_cv.notify_all();
+		const usz now = now_ms();
+		const bool stepping = retro_atomic_load_acquire_int(&s_frontend_attached) &&
+			now - retro_atomic_load_acquire_size(&s_frontend_ran_ms) > static_cast<usz>(kFrontendRunning.count());
+		// one frame of the game for this retro_run, and the frame it draws is
+		// the one to show (take_frame)
+		retro_atomic_store_release_size(&s_step_base, retro_atomic_load_acquire_size(&s_pushes));
+		retro_atomic_store_release_int(&s_step, stepping ? (1 | (1 << 1)) : 0);
+		retro_atomic_store_release_size(&s_frontend_ran_ms, now);
+		retro_atomic_store_release_int(&s_frontend_in_run, 1);
+		retro_atomic_store_release_int(&s_frontend_attached, 1);
 	}
 
 	void frontend_returned()
 	{
-		std::lock_guard lock(s_frames_mutex);
-		s_frontend_in_run = false;
-		s_frontend_ran = std::chrono::steady_clock::now();
+		retro_atomic_store_release_size(&s_frontend_ran_ms, now_ms());
+		retro_atomic_store_release_int(&s_frontend_in_run, 0);
 	}
 
 	void frontend_detached()
 	{
-		{
-			std::lock_guard lock(s_frames_mutex);
-			s_frontend_attached = false;
-			s_frontend_in_run = false;
-			s_stepping = false;
-		}
-		s_frames_cv.notify_all();
+		retro_atomic_store_release_int(&s_step, 0);
+		retro_atomic_store_release_int(&s_frontend_in_run, 0);
+		retro_atomic_store_release_int(&s_frontend_attached, 0);
 	}
 
 	void frame_ready(u32 image_index)
 	{
-		std::vector<u32> overtaken;
-		{
-			std::lock_guard lock(s_frames_mutex);
-			s_ready_frames.push_back(image_index);
-			s_pushes++;
-			// the frame a step let the game draw
-			if (s_stepping && s_step_credits > 0)
-				s_step_credits--;
-			while (s_ready_frames.size() > kMaxQueued)
-			{
-				overtaken.push_back(s_ready_frames.front());
-				s_ready_frames.erase(s_ready_frames.begin());
-			}
-		}
-		s_frames_cv.notify_all();
+		ensure(image_index <= 0xff);
 
-		if (auto* swapchain = dynamic_cast<vk::swapchain_LIBRETRO*>(s_swapchain))
-			for (u32 index : overtaken)
-				swapchain->release_image(index);
+		// Queued at the back; past kMaxQueued the oldest is overtaken
+		u32 overtaken = 0;
+		bool overtook = false;
+		for (;;)
+		{
+			const int q = retro_atomic_load_acquire_int(&s_ready);
+			const int count = ready_count(q);
+			overtook = count == static_cast<int>(kMaxQueued);
+			overtaken = ready_at(q, 0);
+			const int next = count == 0 ? ready_of(1, image_index, 0)
+				: count == 1 ? ready_of(2, ready_at(q, 0), image_index)
+				: ready_of(2, ready_at(q, 1), image_index);
+			if (retro_atomic_cas_int(&s_ready, q, next))
+				break;
+		}
+
+		retro_atomic_fetch_add_size(&s_pushes, 1);
+
+		// the frame a step let the game draw
+		for (int step = retro_atomic_load_acquire_int(&s_step); (step & 1) && (step >> 1) > 0;
+			step = retro_atomic_load_acquire_int(&s_step))
+		{
+			if (retro_atomic_cas_int(&s_step, step, step - (1 << 1)))
+				break;
+		}
+
+		if (overtook)
+			if (auto* swapchain = dynamic_cast<vk::swapchain_LIBRETRO*>(s_swapchain))
+				swapchain->release_image(overtaken);
 
 		// The frontend has stopped calling retro_run (paused, in its menu,
 		// stepping frames): the game waits here, its frame handed over, for
 		// the next one. It used to run on until a watchdog paused it 100 ms
 		// later; the frames in between were dropped and Frame Advance let
 		// that many through a step (NNshi: 4-6 frames a step, a skip after
-		// every pause). A step lets exactly one frame through. In slices, so
-		// a stop of the content is noticed.
-		std::unique_lock lock(s_frames_mutex);
+		// every pause). A step lets exactly one frame through. This is the
+		// renderer's thread; retro_run never waits for it.
 		while (frontend_stopped())
-			s_frames_cv.wait_for(lock, std::chrono::milliseconds(5));
+			std::this_thread::sleep_for(std::chrono::milliseconds(1));
 	}
 
 	bool take_frame(u32& image_index)
 	{
-		std::vector<u32> older;
+		// A step shows the frame the game draws in it - with the input
+		// retro_run has just polled - not one finished before it: wait for
+		// that frame (a step only: Frame Advance, or the run after a pause),
+		// and take the newest
+		const bool stepping = retro_atomic_load_acquire_int(&s_step) & 1;
+		if (stepping)
 		{
-			std::unique_lock lock(s_frames_mutex);
-
-			// A step shows the frame the game draws in it - with the input
-			// retro_run has just polled - not one finished before it: wait
-			// for that frame, and take the newest
-			if (s_stepping)
-			{
-				s_frames_cv.wait_for(lock, kStepWait, [] { return s_pushes != s_step_base; });
-				while (s_ready_frames.size() > 1)
-				{
-					older.push_back(s_ready_frames.front());
-					s_ready_frames.erase(s_ready_frames.begin());
-				}
-			}
-
-			if (s_ready_frames.empty())
-				return false;
-			image_index = s_ready_frames.front();
-			s_ready_frames.erase(s_ready_frames.begin());
+			const auto until = std::chrono::steady_clock::now() + kStepWait;
+			const usz base = retro_atomic_load_acquire_size(&s_step_base);
+			while (retro_atomic_load_acquire_size(&s_pushes) == base && std::chrono::steady_clock::now() < until)
+				std::this_thread::sleep_for(std::chrono::microseconds(200));
 		}
 
-		if (auto* swapchain = dynamic_cast<vk::swapchain_LIBRETRO*>(s_swapchain))
-			for (u32 index : older)
-				swapchain->release_image(index);
+		u32 older = 0;
+		bool drop_older = false;
+		for (;;)
+		{
+			const int q = retro_atomic_load_acquire_int(&s_ready);
+			const int count = ready_count(q);
+			if (count == 0)
+				return false;
+			drop_older = stepping && count == 2;
+			image_index = ready_at(q, drop_older ? 1 : 0);
+			older = ready_at(q, 0);
+			const int next = (count == 1 || drop_older) ? 0 : ready_of(1, ready_at(q, 1), 0);
+			if (retro_atomic_cas_int(&s_ready, q, next))
+				break;
+		}
+
+		if (drop_older)
+			if (auto* swapchain = dynamic_cast<vk::swapchain_LIBRETRO*>(s_swapchain))
+				swapchain->release_image(older);
 		return true;
 	}
 
 	void drop_pending_frames()
 	{
-		std::lock_guard lock(s_frames_mutex);
-		s_ready_frames.clear();
+		retro_atomic_store_release_int(&s_ready, 0);
 	}
 
 	u32 image_generation() { return s_generation; }
