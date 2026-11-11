@@ -9,6 +9,7 @@
 #include "cellSearch.h"
 #include "Utilities/StrUtil.h"
 #include "util/media_utils.h"
+#include "util/media_decode.h"
 
 #include <random>
 
@@ -211,7 +212,13 @@ void populate_music_info(CellSearchMusicInfo& info, const utils::media_info& mi,
 
 	info.trackNumber = static_cast<s32>(value);
 	info.size = item.size;
-	info.releasedYear = static_cast<s32>(mi.get_metadata<s64>("date", -1));
+	// The year a date starts with: "2004", or "2004-05-01"
+	info.releasedYear = -1;
+	if (const std::string date = mi.get_metadata<std::string>("date", ""s); date.size() >= 4)
+	{
+		if (s64 year{}; try_to_int64(&year, date.substr(0, 4).c_str(), 0, 9999))
+			info.releasedYear = static_cast<s32>(year);
+	}
 	info.duration = mi.duration_us / 1000; // we need microseconds
 	info.samplingRate = mi.sample_rate;
 	info.bitrate = mi.audio_bitrate_bps;
@@ -222,42 +229,28 @@ void populate_music_info(CellSearchMusicInfo& info, const utils::media_info& mi,
 	info.drmEncrypted = 0; // TODO: Needs to be 1 if it's encrypted
 	info.status = CELL_SEARCH_CONTENTSTATUS_AVAILABLE;
 
-	// Convert AVCodecID to CellSearchCodec
-	switch (mi.audio_av_codec_id)
+	// Convert the codec to CellSearchCodec
+	switch (mi.audio_codec)
 	{
-	case 86017: // AV_CODEC_ID_MP3
+	case MD_CODEC_MP3:
 		info.codec = CELL_SEARCH_CODEC_MP3;
 		break;
-	case 86018: // AV_CODEC_ID_AAC
+	case MD_CODEC_AAC:
 		info.codec = CELL_SEARCH_CODEC_AAC;
 		break;
-	case 86019: // AV_CODEC_ID_AC3
+	case MD_CODEC_AC3:
 		info.codec = CELL_SEARCH_CODEC_AC3;
 		break;
-	case 86023: // AV_CODEC_ID_WMAV1
-	case 86024: // AV_CODEC_ID_WMAV2
+	case MD_CODEC_WMA:
 		info.codec = CELL_SEARCH_CODEC_WMA;
 		break;
-	case 86047: // AV_CODEC_ID_ATRAC3
+	case MD_CODEC_ATRAC3:
 		info.codec = CELL_SEARCH_CODEC_AT3;
 		break;
-	case 86055: // AV_CODEC_ID_ATRAC3P
+	case MD_CODEC_ATRAC3P:
 		info.codec = CELL_SEARCH_CODEC_AT3P;
 		break;
-	case 88078: // AV_CODEC_ID_ATRAC3AL
-	//case 88079: // AV_CODEC_ID_ATRAC3PAL TODO: supported ?
-		info.codec = CELL_SEARCH_CODEC_ATALL;
-		break;
-	// TODO: Find out if any of this works
-	//case 88069: // AV_CODEC_ID_DSD_LSBF
-	//case 88070: // AV_CODEC_ID_DSD_MSBF
-	//case 88071: // AV_CODEC_ID_DSD_LSBF_PLANAR
-	//case 88072: // AV_CODEC_ID_DSD_MSBF_PLANAR
-	//	info.codec = CELL_SEARCH_CODEC_DSD;
-	//	break;
-	//case ???:
-	//	info.codec = CELL_SEARCH_CODEC_WAV;
-	//	break;
+	// TODO: Find out if any of this works (ATRAC Advanced Lossless, DSD, WAV)
 	default:
 		info.codec = CELL_SEARCH_CODEC_UNKNOWN;
 		info.status = CELL_SEARCH_CONTENTSTATUS_NOT_SUPPORTED;
@@ -287,19 +280,19 @@ void populate_video_info(CellSearchVideoInfo& info, const utils::media_info& mi,
 	info.drmEncrypted = 0; // TODO: Needs to be 1 if it's encrypted
 	info.status = CELL_SEARCH_CONTENTSTATUS_AVAILABLE;
 
-	// Convert Video AVCodecID to CellSearchCodec
-	switch (mi.video_av_codec_id)
+	// Convert the video codec to CellSearchCodec
+	switch (mi.video_codec)
 	{
-	case 1: // AV_CODEC_ID_MPEG1VIDEO
+	case MD_CODEC_MPEG1:
 		info.videoCodec = CELL_SEARCH_CODEC_MPEG1;
 		break;
-	case 2: // AV_CODEC_ID_MPEG2VIDEO
+	case MD_CODEC_MPEG2:
 		info.videoCodec = CELL_SEARCH_CODEC_MPEG2;
 		break;
-	case 12: // AV_CODEC_ID_MPEG4
+	case MD_CODEC_MPEG4:
 		info.videoCodec = CELL_SEARCH_CODEC_MPEG4;
 		break;
-	case 27: // AV_CODEC_ID_H264
+	case MD_CODEC_AVC:
 		info.videoCodec = CELL_SEARCH_CODEC_AVC;
 		break;
 	default:
@@ -308,61 +301,31 @@ void populate_video_info(CellSearchVideoInfo& info, const utils::media_info& mi,
 		break;
 	}
 
-	// Convert Audio AVCodecID to CellSearchCodec
-	switch (mi.audio_av_codec_id)
+	// Convert the audio codec to CellSearchCodec
+	switch (mi.audio_codec)
 	{
-	// Let's ignore this due to CELL_SEARCH_CODEC_MPEG1_LAYER3
-	//case 86017: // AV_CODEC_ID_MP3
-	//	info.audioCodec = CELL_SEARCH_CODEC_MP3;
-	//	break;
-	case 86018: // AV_CODEC_ID_AAC
+	case MD_CODEC_AAC:
 		info.audioCodec = CELL_SEARCH_CODEC_AAC;
 		break;
-	case 86019: // AV_CODEC_ID_AC3
+	case MD_CODEC_AC3:
 		info.audioCodec = CELL_SEARCH_CODEC_AC3;
 		break;
-	case 86023: // AV_CODEC_ID_WMAV1
-	case 86024: // AV_CODEC_ID_WMAV2
+	case MD_CODEC_WMA:
 		info.audioCodec = CELL_SEARCH_CODEC_WMA;
 		break;
-	case 86047: // AV_CODEC_ID_ATRAC3
+	case MD_CODEC_ATRAC3:
 		info.audioCodec = CELL_SEARCH_CODEC_AT3;
 		break;
-	case 86055: // AV_CODEC_ID_ATRAC3P
+	case MD_CODEC_ATRAC3P:
 		info.audioCodec = CELL_SEARCH_CODEC_AT3P;
 		break;
-	case 88078: // AV_CODEC_ID_ATRAC3AL
-	//case 88079: // AV_CODEC_ID_ATRAC3PAL TODO: supported ?
-		info.audioCodec = CELL_SEARCH_CODEC_ATALL;
-		break;
-	// TODO: Find out if any of this works
-	//case 88069: // AV_CODEC_ID_DSD_LSBF
-	//case 88070: // AV_CODEC_ID_DSD_MSBF
-	//case 88071: // AV_CODEC_ID_DSD_LSBF_PLANAR
-	//case 88072: // AV_CODEC_ID_DSD_MSBF_PLANAR
-	//	info.audioCodec = CELL_SEARCH_CODEC_DSD;
-	//	break;
-	//case ???:
-	//	info.audioCodec = CELL_SEARCH_CODEC_WAV;
-	//	break;
-	case 86058: // AV_CODEC_ID_MP1
-		info.audioCodec = CELL_SEARCH_CODEC_MPEG1_LAYER1;
-		break;
-	case 86016: // AV_CODEC_ID_MP2
+	case MD_CODEC_MP2:
 		info.audioCodec = CELL_SEARCH_CODEC_MPEG1_LAYER2;
 		break;
-	case 86017: // AV_CODEC_ID_MP3
+	case MD_CODEC_MP3:
 		info.audioCodec = CELL_SEARCH_CODEC_MPEG1_LAYER3;
 		break;
-	//case ???:
-	//	info.audioCodec = CELL_SEARCH_CODEC_MPEG2_LAYER1;
-	//	break;
-	//case ???:
-	//	info.audioCodec = CELL_SEARCH_CODEC_MPEG2_LAYER2;
-	//	break;
-	//case ???:
-	//	info.audioCodec = CELL_SEARCH_CODEC_MPEG2_LAYER3;
-	//	break;
+	// TODO: Find out if any of this works (ATRAC Advanced Lossless, DSD, WAV, MPEG-2 audio)
 	default:
 		info.audioCodec = CELL_SEARCH_CODEC_UNKNOWN;
 		info.status = CELL_SEARCH_CONTENTSTATUS_NOT_SUPPORTED;

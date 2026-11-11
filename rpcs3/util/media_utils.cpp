@@ -1,6 +1,9 @@
 #include "stdafx.h"
 #include "media_utils.h"
+#include "media_decode.h"
 #include "Emu/emu_callbacks.h"
+
+#include <formats/rtags.h>
 
 #include <random>
 #include <thread>
@@ -167,104 +170,52 @@ namespace utils
 		media_info info{};
 		info.path = path;
 
-		if (av_media_type == AVMEDIA_TYPE_UNKNOWN) // Let's use this for image info
+		if (av_media_type == -1) // Let's use this for image info
 		{
 			const bool success = g_emu_callbacks.get_image_info(path, info.sub_type, info.width, info.height, info.orientation);
 			if (!success) media_log.error("get_media_info: failed to get image info for '%s'", path);
 			return { success, std::move(info) };
 		}
 
-		// Only print FFMPEG errors, fatals and panics
-		av_log_set_callback(av_log_callback);
-		av_log_set_level(AV_LOG_ERROR);
-
-		AVDictionary* av_dict_opts = nullptr;
-		if (int err = av_dict_set(&av_dict_opts, "probesize", "96", 0); err < 0)
+		md_file file;
+		if (!md_file_open(&file, path.c_str()))
 		{
-			media_log.error("get_media_info: av_dict_set: returned with error=%d='%s'", err, av_error_to_string(err));
+			media_log.notice("get_media_info: could not open file '%s'", path);
 			return { false, std::move(info) };
 		}
 
-		AVFormatContext* av_format_ctx = avformat_alloc_context();
-
-		// Open input file
-		if (int err = avformat_open_input(&av_format_ctx, path.c_str(), nullptr, &av_dict_opts); err < 0)
+		md_info mi;
+		if (!md_probe(file.data, file.len, av_media_type == 0, &mi))
 		{
-			// Failed to open file
-			av_dict_free(&av_dict_opts);
-			avformat_free_context(av_format_ctx);
-			media_log.notice("get_media_info: avformat_open_input: could not open file. error=%d='%s' file='%s'", err, av_error_to_string(err), path);
-			return { false, std::move(info) };
-		}
-		av_dict_free(&av_dict_opts);
-
-		// Find stream information
-		if (int err = avformat_find_stream_info(av_format_ctx, nullptr); err < 0)
-		{
-			// Failed to load stream information
-			avformat_close_input(&av_format_ctx);
-			media_log.notice("get_media_info: avformat_find_stream_info: could not load stream information. error=%d='%s' file='%s'", err, av_error_to_string(err), path);
+			md_file_close(&file);
+			media_log.notice("get_media_info: '%s' is not a %s file read here", path, av_media_type == 0 ? "video" : "music");
 			return { false, std::move(info) };
 		}
 
-		// Derive first stream id and type from avformat context.
-		// We are only interested in the first matching stream for now.
-		int audio_stream_index = -1;
-		int video_stream_index = -1;
-		for (uint i = 0; i < av_format_ctx->nb_streams; i++)
+		info.audio_codec = mi.audio_codec;
+		info.video_codec = mi.video_codec;
+		info.audio_bitrate_bps = mi.audio_bitrate;
+		info.video_bitrate_bps = mi.video_bitrate;
+		info.sample_rate = mi.sample_rate;
+		info.duration_us = mi.duration_us;
+
+		// The tags, under the keys FFmpeg gave them
+		static const struct { rtags_field field; const char* key; } tags[] =
 		{
-			switch (av_format_ctx->streams[i]->codecpar->codec_type)
+			{ RTAGS_TITLE, "title" }, { RTAGS_ARTIST, "artist" }, { RTAGS_ALBUM, "album" },
+			{ RTAGS_GENRE, "genre" }, { RTAGS_TRACK, "track" }, { RTAGS_DISC, "disc" },
+			{ RTAGS_DATE, "date" },
+		};
+		char value[1024];
+		for (const auto& tag : tags)
+		{
+			if (rtags_get(file.data, file.len, tag.field, value, sizeof(value)))
 			{
-			case AVMEDIA_TYPE_AUDIO:
-				if (audio_stream_index < 0)
-					audio_stream_index = i;
-				break;
-			case AVMEDIA_TYPE_VIDEO:
-				if (video_stream_index < 0)
-					video_stream_index = i;
-				break;
-			default:
-				break;
+				info.metadata[tag.key] = value;
 			}
 		}
 
-		// Abort if there is no natching stream or if the stream isn't the first one
-		if ((av_media_type == AVMEDIA_TYPE_AUDIO && audio_stream_index != 0) ||
-			(av_media_type == AVMEDIA_TYPE_VIDEO && video_stream_index != 0))
-		{
-			// Failed to find a stream
-			avformat_close_input(&av_format_ctx);
-			media_log.notice("get_media_info: Failed to match stream of type %d in file='%s'", av_media_type, path);
-			return { false, std::move(info) };
-		}
-
-		// Get video info if available
-		if (video_stream_index >= 0)
-		{
-			const AVStream* stream = av_format_ctx->streams[video_stream_index];
-			info.video_av_codec_id = stream->codecpar->codec_id;
-			info.video_bitrate_bps = static_cast<s32>(stream->codecpar->bit_rate);
-		}
-
-		// Get audio info if available
-		if (audio_stream_index >= 0)
-		{
-			const AVStream* stream = av_format_ctx->streams[audio_stream_index];
-			info.audio_av_codec_id = stream->codecpar->codec_id;
-			info.audio_bitrate_bps = static_cast<s32>(stream->codecpar->bit_rate);
-			info.sample_rate = stream->codecpar->sample_rate;
-		}
-
-		info.duration_us = av_format_ctx->duration;
-
-		AVDictionaryEntry* tag = nullptr;
-		while ((tag = av_dict_get(av_format_ctx->metadata, "", tag, AV_DICT_IGNORE_SUFFIX)))
-		{
-			info.metadata[tag->key] = tag->value;
-		}
-
-		avformat_close_input(&av_format_ctx);
-
+		md_file_close(&file);
 		return { true, std::move(info) };
 	}
 
@@ -539,12 +490,14 @@ namespace utils
 	}
 
 	audio_decoder::audio_decoder()
+		: m_md(md_audio_new()), m_pcm(MD_READ_MIN * 2)
 	{
 	}
 
 	audio_decoder::~audio_decoder()
 	{
 		stop();
+		md_audio_free(m_md);
 	}
 
 	void audio_decoder::set_context(music_selection_context&& context)
@@ -596,286 +549,70 @@ namespace utils
 		{
 			media_log.notice("audio_decoder: decoding %s", path);
 
-			// Only print FFMPEG errors, fatals and panics
-			av_log_set_callback(av_log_callback);
-			av_log_set_level(AV_LOG_ERROR);
-
-			scoped_av av;
-
-			// Get format from audio file
-			av.format_context = avformat_alloc_context();
-			if (int err = avformat_open_input(&av.format_context, path.c_str(), nullptr, nullptr); err < 0)
+			md_file file;
+			if (!m_md || !md_file_open(&file, path.c_str()))
 			{
-				media_log.error("audio_decoder: Could not open file '%s'. Error: %d='%s'", path, err, av_error_to_string(err));
-				has_error = true;
-				return;
-			}
-			if (int err = avformat_find_stream_info(av.format_context, nullptr); err < 0)
-			{
-				media_log.error("audio_decoder: Could not retrieve stream info from file '%s'. Error: %d='%s'", path, err, av_error_to_string(err));
+				media_log.error("audio_decoder: Could not open file '%s'", path);
 				has_error = true;
 				return;
 			}
 
-			// Find the first audio stream
-			AVStream* stream = nullptr;
-			unsigned int stream_index;
-			for (stream_index = 0; stream_index < av.format_context->nb_streams; stream_index++)
+			// Any format audio_transfer plays, folded to stereo, at 48 kHz
+			if (!md_audio_open(m_md, file.data, file.len))
 			{
-				if (av.format_context->streams[stream_index]->codecpar->codec_type == AVMEDIA_TYPE_AUDIO)
-				{
-					stream = av.format_context->streams[stream_index];
-					break;
-				}
-			}
-			if (!stream)
-			{
-				media_log.error("audio_decoder: Could not retrieve audio stream from file '%s'", path);
+				media_log.error("audio_decoder: '%s' is not in a format that can be played", path);
+				md_file_close(&file);
 				has_error = true;
 				return;
 			}
 
-			// Find decoder
-			av.audio.codec = avcodec_find_decoder(stream->codecpar->codec_id);
-			if (!av.audio.codec)
-			{
-				media_log.error("audio_decoder: Failed to find decoder for stream #%u in file '%s'", stream_index, path);
-				has_error = true;
-				return;
-			}
-
-			// Allocate context
-			av.audio.context = avcodec_alloc_context3(av.audio.codec);
-			if (!av.audio.context)
-			{
-				media_log.error("audio_decoder: Failed to allocate context for stream #%u in file '%s'", stream_index, path);
-				has_error = true;
-				return;
-			}
-
-			// Open decoder
-			if (int err = avcodec_open2(av.audio.context, av.audio.codec, nullptr); err < 0)
-			{
-				media_log.error("audio_decoder: Failed to open decoder for stream #%u in file '%s'. Error: %d='%s'", stream_index, path, err, av_error_to_string(err));
-				has_error = true;
-				return;
-			}
-
-			const int dst_channels = 2;
-			const AVChannelLayout dst_channel_layout = AV_CHANNEL_LAYOUT_STEREO;
-			const AVSampleFormat dst_format = AV_SAMPLE_FMT_FLT;
-
-			const int set_err = swr_alloc_set_opts2(&av.swr, &dst_channel_layout, dst_format,
-				sample_rate, &stream->codecpar->ch_layout,
-				static_cast<AVSampleFormat>(stream->codecpar->format),
-				stream->codecpar->sample_rate, 0, nullptr);
-			if (set_err < 0)
-			{
-				media_log.error("audio_decoder: Failed to set resampler options: Error: %d='%s'", set_err, av_error_to_string(set_err));
-				has_error = true;
-				return;
-			}
-
-			if (!av.swr)
-			{
-				media_log.error("audio_decoder: Failed to allocate resampler for stream #%u in file '%s'", stream_index, path);
-				has_error = true;
-				return;
-			}
-
-			if (int err = swr_init(av.swr); err < 0 || !swr_is_initialized(av.swr))
-			{
-				media_log.error("audio_decoder: Resampler has not been properly initialized: %d='%s'", err, av_error_to_string(err));
-				has_error = true;
-				return;
-			}
-
-			// Prepare to read data
-			av.audio.frame = av_frame_alloc();
-			if (!av.audio.frame)
-			{
-				media_log.error("audio_decoder: Error allocating the frame");
-				has_error = true;
-				return;
-			}
-
-			AVPacket* packet = av_packet_alloc();
-			if (!packet)
-			{
-				media_log.error("audio_decoder: Error allocating the packet");
-				has_error = true;
-				return;
-			}
-
-			std::unique_ptr<AVPacket, decltype(free_packet)> packet_(packet);
-			bool is_first_error = true;
-			s64 last_timestamp_ms = 0;
-
-			const int in_rate = stream->codecpar->sample_rate;
-			const AVRational time_base = stream->time_base;
-			const int bytes_per_sample = dst_channels * static_cast<int>(sizeof(f32));
+			constexpr u64 bytes_per_frame = 2 * sizeof(f32);
 
 			// A whole track ends up in our data, so reserve it in one go instead of letting it grow piecewise.
-			if (const s64 duration = av.format_context->duration; duration > 0)
+			if (const u64 frames = md_audio_frames(m_md))
 			{
 				constexpr u64 max_reserve = 256 * 1024 * 1024; // Don't trust the header blindly
-				const u64 expected_size = static_cast<u64>(av_rescale(duration, sample_rate * bytes_per_sample, AV_TIME_BASE));
-
 				std::scoped_lock lock(m_mtx);
-				data.reserve(std::min<u64>(expected_size, max_reserve));
+				data.reserve(std::min<u64>(frames * bytes_per_frame, max_reserve));
 			}
 
-			// The output buffer is reused by every frame. Only its size may grow.
-			const auto free_av_buffer = [](u8* buf) { av_free(buf); };
-			std::unique_ptr<u8, decltype(free_av_buffer)> buffer(nullptr, free_av_buffer);
-			int buffer_samples = 0;
-
-			// Resamples the given frame and appends the result to our data.
-			// Pass a null frame in order to flush the samples that are still pending in the resampler.
-			const auto resample_and_append = [&](const AVFrame* frame) -> bool
+			while (thread_ctrl::state() != thread_state::aborting)
 			{
-				const int in_samples = frame ? frame->nb_samples : 0;
-
-				// The resampler buffers samples internally, so we also have to make room for the ones that are still pending.
-				// Otherwise they pile up and we lose the tail of the track whenever the file's sample rate differs from ours.
-				const int out_samples = in_rate > 0
-					? static_cast<int>(av_rescale_rnd(swr_get_delay(av.swr, in_rate) + in_samples, sample_rate, in_rate, AV_ROUND_UP))
-					: in_samples;
-
-				if (out_samples <= 0)
+				u64 timestamp_ms = 0;
+				const usz frames = md_audio_read(m_md, m_pcm.data(), m_pcm.size() / 2, &timestamp_ms);
+				if (!frames)
 				{
-					return true;
+					break;
 				}
 
-				if (out_samples > buffer_samples)
-				{
-					u8* new_buffer = nullptr;
-					const int align = 0; // Let FFmpeg align the buffer, so the resampler can take its SIMD paths
-					const int buffer_size = av_samples_alloc(&new_buffer, nullptr, dst_channels, out_samples, dst_format, align);
-					if (buffer_size < 0)
-					{
-						media_log.error("audio_decoder: Error allocating buffer: %d='%s'", buffer_size, av_error_to_string(buffer_size));
-						has_error = true;
-						return false;
-					}
-
-					buffer.reset(new_buffer);
-					buffer_samples = out_samples;
-				}
-
-				u8* out_buffer = buffer.get();
-
-				const int frame_count = swr_convert(av.swr, &out_buffer, out_samples, frame ? const_cast<const uint8_t**>(frame->data) : nullptr, in_samples);
-				if (frame_count < 0)
-				{
-					media_log.error("audio_decoder: Error converting frame: %d='%s'", frame_count, av_error_to_string(frame_count));
-					has_error = true;
-					return false;
-				}
-
-				if (frame_count == 0)
-				{
-					// Nothing came out of the resampler yet.
-					return true;
-				}
-
-				// Only the samples that were actually written are valid. The rest of the buffer is left over from previous frames.
-				const u64 size = static_cast<u64>(frame_count) * bytes_per_sample;
-
-				if (frame)
-				{
-					last_timestamp_ms = time_base.den ? (1000 * frame->best_effort_timestamp * time_base.num) / time_base.den : 0;
-				}
+				const u64 size = frames * bytes_per_frame;
+				u8* out = reinterpret_cast<u8*>(m_pcm.data());
 
 				// The format is float 32bit per channel. Swap it in place, so we can append the buffer as-is.
 				if (m_swap_endianness)
 				{
-					copy_samples<f32>(out_buffer, out_buffer, size / sizeof(f32), true);
+					copy_samples<f32>(out, out, frames * 2, true);
 				}
 
-				// Append resampled frames to data
 				{
 					std::scoped_lock lock(m_mtx);
-					data.insert(data.cend(), out_buffer, out_buffer + size);
+					data.insert(data.cend(), out, out + size);
 
-					timestamps_ms.push_back({m_size, last_timestamp_ms});
+					timestamps_ms.push_back({m_size, timestamp_ms});
 					m_size += size;
 				}
 
-				media_log.trace("audio_decoder: decoded frame_count=%d size=%d timestamp_ms=%d", frame_count, size, last_timestamp_ms);
-				return true;
-			};
-
-			// Sends the given packet to the decoder and appends every frame it produces.
-			// Pass a null packet in order to flush the frames that are still pending in the decoder.
-			const auto decode_packet = [&](AVPacket* pkt) -> bool
-			{
-				if (int err = avcodec_send_packet(av.audio.context, pkt); err < 0)
-				{
-					if (!pkt && err == averror_eof)
-					{
-						// The decoder was already flushed.
-						return true;
-					}
-
-					if (is_first_error && pkt)
-					{
-						is_first_error = false;
-
-						if (err == averror_invalid_data)
-						{
-							// Some mp3s contain some invalid data at the beginning of the stream. They work fine if we just ignore them.
-							// So let's skip the first invalid data error. Maybe there is a better way, but let's just roll with it for now.
-							media_log.warning("audio_decoder: Ignoring first error: %d='%s'", err, av_error_to_string(err));
-							return true;
-						}
-					}
-
-					media_log.error("audio_decoder: Queuing error: %d='%s'", err, av_error_to_string(err));
-					has_error = true;
-					return false;
-				}
-
-				while (thread_ctrl::state() != thread_state::aborting)
-				{
-					if (int err = avcodec_receive_frame(av.audio.context, av.audio.frame); err < 0)
-					{
-						if (err == AVERROR(EAGAIN) || err == averror_eof)
-							break;
-
-						media_log.error("audio_decoder: Decoding error: %d='%s'", err, av_error_to_string(err));
-						has_error = true;
-						return false;
-					}
-
-					if (!resample_and_append(av.audio.frame))
-					{
-						return false;
-					}
-				}
-
-				return true;
-			};
-
-			// Iterate through frames
-			while (thread_ctrl::state() != thread_state::aborting && av_read_frame(av.format_context, packet) >= 0)
-			{
-				if (!decode_packet(packet))
-				{
-					return;
-				}
+				media_log.trace("audio_decoder: decoded frame_count=%d size=%d timestamp_ms=%d", frames, size, timestamp_ms);
 			}
 
-			if (thread_ctrl::state() == thread_state::aborting)
+			if (md_audio_failed(m_md))
 			{
-				return;
+				media_log.error("audio_decoder: Decoding error in '%s'", path);
+				has_error = true;
 			}
 
-			// Flush the decoder and the resampler, otherwise we lose the tail of the track.
-			if (!decode_packet(nullptr) || !resample_and_append(nullptr))
-			{
-				return;
-			}
+			md_audio_close(m_md);
+			md_file_close(&file);
 		};
 
 		m_thread = std::make_unique<named_thread<std::function<void()>>>("Music Decode Thread", [this, decode_track]()

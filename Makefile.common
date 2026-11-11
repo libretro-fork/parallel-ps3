@@ -7,6 +7,7 @@
 CORE_DIR ?= .
 
 SOURCES_LRC := \
+	$(CORE_DIR)/rpcs3/libretro/libretro-common/audio/resampler/drivers/sinc_resampler.c \
 	$(CORE_DIR)/rpcs3/libretro/libretro-common/compat/compat_posix_string.c \
 	$(CORE_DIR)/rpcs3/libretro/libretro-common/compat/compat_strcasestr.c \
 	$(CORE_DIR)/rpcs3/libretro/libretro-common/compat/compat_strl.c \
@@ -25,17 +26,34 @@ SOURCES_LRC := \
 	$(CORE_DIR)/rpcs3/libretro/libretro-common/file/file_path.c \
 	$(CORE_DIR)/rpcs3/libretro/libretro-common/file/file_path_io.c \
 	$(CORE_DIR)/rpcs3/libretro/libretro-common/file/retro_dirent.c \
+	$(CORE_DIR)/rpcs3/libretro/libretro-common/formats/aac/raac.c \
+	$(CORE_DIR)/rpcs3/libretro/libretro-common/formats/ac3/rac3_decode.c \
+	$(CORE_DIR)/rpcs3/libretro/libretro-common/formats/ac3/rac3_frame.c \
+	$(CORE_DIR)/rpcs3/libretro/libretro-common/formats/atrac3/ratrac3.c \
 	$(CORE_DIR)/rpcs3/libretro/libretro-common/formats/atrac3p/ratrac3p.c \
+	$(CORE_DIR)/rpcs3/libretro/libretro-common/formats/audio_transfer.c \
 	$(CORE_DIR)/rpcs3/libretro/libretro-common/formats/dds/rdds.c \
+	$(CORE_DIR)/rpcs3/libretro/libretro-common/formats/flac/rflac.c \
 	$(CORE_DIR)/rpcs3/libretro/libretro-common/formats/gif/rgif.c \
 	$(CORE_DIR)/rpcs3/libretro/libretro-common/formats/h264/rh264.c \
 	$(CORE_DIR)/rpcs3/libretro/libretro-common/formats/image/image_yuv_blit.c \
 	$(CORE_DIR)/rpcs3/libretro/libretro-common/formats/jpeg/rjpeg.c \
 	$(CORE_DIR)/rpcs3/libretro/libretro-common/formats/json/rjson.c \
+	$(CORE_DIR)/rpcs3/libretro/libretro-common/formats/mp3/rmp3.c \
+	$(CORE_DIR)/rpcs3/libretro/libretro-common/formats/mp4/rmp4.c \
+	$(CORE_DIR)/rpcs3/libretro/libretro-common/formats/mpeg1/rmpeg1_ps.c \
 	$(CORE_DIR)/rpcs3/libretro/libretro-common/formats/mpeg1/rmpeg1_video.c \
 	$(CORE_DIR)/rpcs3/libretro/libretro-common/formats/mpeg4/rmpeg4_video.c \
+	$(CORE_DIR)/rpcs3/libretro/libretro-common/formats/opus/ropus.c \
 	$(CORE_DIR)/rpcs3/libretro/libretro-common/formats/png/rpng.c \
 	$(CORE_DIR)/rpcs3/libretro/libretro-common/formats/png/rpng_rows.c \
+	$(CORE_DIR)/rpcs3/libretro/libretro-common/formats/tags/rtags.c \
+	$(CORE_DIR)/rpcs3/libretro/libretro-common/formats/vorbis/rvorbis.c \
+	$(CORE_DIR)/rpcs3/libretro/libretro-common/formats/wav/rwav.c \
+	$(CORE_DIR)/rpcs3/libretro/libretro-common/formats/webm/rwebm.c \
+	$(CORE_DIR)/rpcs3/libretro/libretro-common/formats/wma/rwma_pro.c \
+	$(CORE_DIR)/rpcs3/libretro/libretro-common/formats/wma/rwma_standard.c \
+	$(CORE_DIR)/rpcs3/libretro/libretro-common/formats/wma/rwma_stream.c \
 	$(CORE_DIR)/rpcs3/libretro/libretro-common/formats/xml/rxml.c \
 	$(CORE_DIR)/rpcs3/libretro/libretro-common/formats/yaml/ryaml.c \
 	$(CORE_DIR)/rpcs3/libretro/libretro-common/formats/yaml/ryaml_writer.c \
@@ -46,6 +64,7 @@ SOURCES_LRC := \
 	$(CORE_DIR)/rpcs3/libretro/libretro-common/gfx/scaler/scaler_int.c \
 	$(CORE_DIR)/rpcs3/libretro/libretro-common/hash/lrc_hash.c \
 	$(CORE_DIR)/rpcs3/libretro/libretro-common/lists/string_list.c \
+	$(CORE_DIR)/rpcs3/libretro/libretro-common/memmap/memalign.c \
 	$(CORE_DIR)/rpcs3/libretro/libretro-common/net/net_compat.c \
 	$(CORE_DIR)/rpcs3/libretro/libretro-common/net/net_http.c \
 	$(CORE_DIR)/rpcs3/libretro/libretro-common/net/net_socket.c \
@@ -682,6 +701,7 @@ SOURCES_RPCS3 := \
 	$(CORE_DIR)/rpcs3/util/dyn_lib.cpp \
 	$(CORE_DIR)/rpcs3/util/emu_utils.cpp \
 	$(CORE_DIR)/rpcs3/util/logs.cpp \
+	$(CORE_DIR)/rpcs3/util/media_decode.c \
 	$(CORE_DIR)/rpcs3/util/media_utils.cpp \
 	$(CORE_DIR)/rpcs3/util/serialization_ext.cpp \
 	$(CORE_DIR)/rpcs3/util/sysinfo.cpp \
@@ -766,6 +786,8 @@ SOURCES_GENERATED := \
 
 # Per-library flags, as each library's CMake target has them
 FLAGS_LRC     := -std=gnu99 -DHAVE_SSL -DHAVE_RETROSSL -DHAVE_CRYPTO \
+	-DHAVE_RWAV -DHAVE_RFLAC -DHAVE_RVORBIS -DHAVE_ROPUS -DHAVE_RMP3 -DHAVE_RAAC \
+	-DHAVE_RMP4 -DHAVE_RAC3 -DHAVE_RWMA -DHAVE_RWEBM -DHAVE_RATRAC3 -DHAVE_RATRAC3P \
 	-I$(CORE_DIR)/rpcs3/libretro/libretro-common/include
 FLAGS_LIBUSB  := -std=gnu99 -fvisibility=hidden -w \
 	-I$(CORE_DIR)/rpcs3/libretro/make/libusb \

@@ -8,6 +8,8 @@
 #include <unordered_map>
 #include <deque>
 
+struct md_audio;
+
 namespace utils
 {
 	std::string av_error_to_string(int error);
@@ -27,12 +29,12 @@ namespace utils
 		std::string path;
 		std::string sub_type; // The sub type if available (png, jpg...)
 
-		s32 audio_av_codec_id = 0; // 0 = AV_CODEC_ID_NONE
-		s32 video_av_codec_id = 0; // 0 = AV_CODEC_ID_NONE
+		s32 audio_codec = 0; // MD_CODEC_* (util/media_decode.h), 0 = none
+		s32 video_codec = 0; // MD_CODEC_* (util/media_decode.h), 0 = none
 		s32 audio_bitrate_bps = 0; // Bit rate in bit/s
 		s32 video_bitrate_bps = 0; // Bit rate in bit/s
 		s32 sample_rate = 0; // Samples per second
-		s64 duration_us = 0; // in AV_TIME_BASE fractional seconds (= microseconds)
+		s64 duration_us = 0; // in microseconds
 		s32 width = 0;  // Width if available
 		s32 height = 0; // Height if available
 		s32 orientation = 0; // Orientation if available (= CellSearchOrientation)
@@ -44,6 +46,7 @@ namespace utils
 		T get_metadata(const std::string& key, const T& def) const;
 	};
 
+	// av_media_type: 0 a video file, 1 a music file, -1 an image
 	std::pair<bool, media_info> get_media_info(const std::string& path, s32 av_media_type);
 
 	template <typename D>
@@ -82,6 +85,8 @@ namespace utils
 	private:
 		bool m_swap_endianness = false;
 		music_selection_context m_context{};
+		md_audio* m_md = nullptr; // the decoder, opened over each track in turn
+		std::vector<f32> m_pcm;   // what it hands over, before it goes into data
 		std::unique_ptr<named_thread<std::function<void()>>> m_thread;
 	};
 

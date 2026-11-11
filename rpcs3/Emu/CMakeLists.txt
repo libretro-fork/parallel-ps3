@@ -73,6 +73,7 @@ target_sources(rpcs3_emu PRIVATE
     ../util/atomic.cpp
     ../util/console.cpp
     ../util/emu_utils.cpp
+    ../util/media_decode.c
     ../util/media_utils.cpp
     ../util/video_provider.cpp
     ../util/logs.cpp

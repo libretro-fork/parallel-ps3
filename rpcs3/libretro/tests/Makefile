@@ -14,9 +14,11 @@ LDLIBS   += -lm
 TEST_STD := -std=c89 -Wdeclaration-after-statement
 LRC_STD  := -std=gnu99
 # as libretro_common.cmake builds it: net_http over its own TLS client
-LRC_DEFS := -DHAVE_SSL -DHAVE_RETROSSL -DHAVE_CRYPTO
+LRC_DEFS := -DHAVE_SSL -DHAVE_RETROSSL -DHAVE_CRYPTO \
+	-DHAVE_RWAV -DHAVE_RFLAC -DHAVE_RVORBIS -DHAVE_ROPUS -DHAVE_RMP3 -DHAVE_RAAC \
+	-DHAVE_RMP4 -DHAVE_RAC3 -DHAVE_RWMA -DHAVE_RWEBM -DHAVE_RATRAC3 -DHAVE_RATRAC3P
 
-TESTS := test_zstd test_deflate test_rxml test_png_rows test_images test_jpg_rows test_http test_bcn test_tls_duplex test_yaml test_font test_np2 test_rsx_scale test_vpost test_atracx test_vdec
+TESTS := test_zstd test_deflate test_rxml test_png_rows test_images test_jpg_rows test_http test_bcn test_tls_duplex test_yaml test_font test_np2 test_rsx_scale test_vpost test_atracx test_vdec test_media
 
 test_zstd_LRC := \
 	$(LRC)/encodings/encoding_rzstd.c \
@@ -303,6 +305,49 @@ obj/test_vdec.o: test_vdec.c test_common.h ../../Emu/Cell/Modules/cellVdec_codec
 test_vdec: obj/test_vdec.o obj/cellVdec_codec.o $(call lrc_objs,$(sort $(test_vdec_LRC)))
 	$(CC) $(SANITIZE) -o $@ $^ $(LDFLAGS) $(LDLIBS) -lpthread
 
+# cellSearch's listings and cellMusicDecode's playback: audio_transfer and
+# its decoders, rtags, the containers, the sinc resampler, filestream
+test_media_LRC := \
+	$(LRC)/formats/audio_transfer.c \
+	$(LRC)/formats/wav/rwav.c \
+	$(LRC)/formats/flac/rflac.c \
+	$(LRC)/formats/vorbis/rvorbis.c \
+	$(LRC)/formats/opus/ropus.c \
+	$(LRC)/formats/mp3/rmp3.c \
+	$(LRC)/formats/aac/raac.c \
+	$(LRC)/formats/mp4/rmp4.c \
+	$(LRC)/formats/ac3/rac3_frame.c \
+	$(LRC)/formats/ac3/rac3_decode.c \
+	$(LRC)/formats/wma/rwma_standard.c \
+	$(LRC)/formats/wma/rwma_pro.c \
+	$(LRC)/formats/wma/rwma_stream.c \
+	$(LRC)/formats/atrac3/ratrac3.c \
+	$(LRC)/formats/atrac3p/ratrac3p.c \
+	$(LRC)/formats/tags/rtags.c \
+	$(LRC)/formats/webm/rwebm.c \
+	$(LRC)/formats/mpeg1/rmpeg1_ps.c \
+	$(LRC)/audio/resampler/drivers/sinc_resampler.c \
+	$(LRC)/memmap/memalign.c \
+	$(LRC)/streams/file_stream.c \
+	$(LRC)/vfs/vfs_implementation.c \
+	$(LRC)/file/file_path.c \
+	$(LRC)/compat/compat_strcasestr.c \
+	$(LRC)/compat/fopen_utf8.c \
+	$(LRC)/encodings/encoding_utf.c \
+	$(LRC)/string/stdstring.c \
+	$(LRC)/string/rstrtod.c \
+	$(LRC)/file/file_path_io.c \
+	$(test_deflate_LRC)
+
+obj/media_decode.o: ../../util/media_decode.c ../../util/media_decode.h
+	@mkdir -p $(@D)
+	$(CC) $(CFLAGS) $(TEST_STD) $(SANITIZE) -c -o $@ $<
+
+obj/test_media.o: test_media.c test_common.h ../../util/media_decode.h
+
+test_media: obj/test_media.o obj/media_decode.o $(call lrc_objs,$(sort $(test_media_LRC)))
+	$(CC) $(SANITIZE) -o $@ $^ $(LDFLAGS) $(LDLIBS) -lpthread
+
 # Each test also writes what the new code produces, for the reference
 # tools to read back
 check: all
@@ -324,6 +369,7 @@ check: all
 	./test_vpost fixtures
 	./test_atracx fixtures
 	./test_vdec fixtures
+	./test_media fixtures
 
 clean:
 	rm -rf obj $(TESTS) *_out.*
