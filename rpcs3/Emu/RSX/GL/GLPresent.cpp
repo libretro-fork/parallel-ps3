@@ -3,9 +3,7 @@
 #include "GLGSRender.h"
 #include "GLHelpers.h"
 #include "GLTextureCache.h"
-#if defined(LIBRETRO_CORE)
 #include "libretro/libretro_video.h"
-#endif
 #include "upscalers/fsr_pass.h"
 #include "upscalers/bilinear_pass.hpp"
 #include "upscalers/nearest_pass.hpp"
@@ -23,11 +21,7 @@ LOG_CHANNEL(screenshot_log, "SCREENSHOT");
 extern atomic_t<bool> g_user_asked_for_screenshot;
 extern atomic_t<recording_mode> g_recording_mode;
 
-#if defined(LIBRETRO_CORE)
 #ifndef RPCS3_LIBRETRO_RSX_PRESENT_TRACE
-#define RPCS3_LIBRETRO_RSX_PRESENT_TRACE 0
-#endif
-#else
 #define RPCS3_LIBRETRO_RSX_PRESENT_TRACE 0
 #endif
 
@@ -46,7 +40,6 @@ static inline unsigned long long lrrsx_present_tid_hash()
 	#define LRRSX_PRESENT_ERR(...)    do { } while (0)
 #endif
 
-#if defined(LIBRETRO_CORE)
 static inline void libretro_bind_hw_fbo()
 {
 	// CRITICAL FIX: FBOs are NOT shared between OpenGL contexts!
@@ -71,7 +64,6 @@ static inline void libretro_bind_hw_fbo()
 			rsx_log.error("libretro: the renderer's FBO 0x%x is not complete (status 0x%x)", fbo, static_cast<u32>(fb_status));
 	}
 }
-#endif
 
 namespace gl
 {
@@ -327,11 +319,7 @@ void GLGSRender::flip(const rsx::display_flip_info_t& info)
 	gl_state.disable(GL_SCISSOR_TEST);
 
 	// Enable drawing to window backbuffer
-	#if defined(LIBRETRO_CORE)
 	libretro_bind_hw_fbo();
-	#else
-	gl::screen.bind();
-	#endif
 
 	gl::texture* image_to_flip = nullptr;
 	gl::texture* image_to_flip2 = nullptr;
@@ -410,13 +398,11 @@ void GLGSRender::flip(const rsx::display_flip_info_t& info)
 		update_swap_interval();
 	}
 
-#if defined(LIBRETRO_CORE)
 	// The core's window is the shared texture handed to the frontend. Size it
 	// to the picture - which carries the resolution scale - before it is used
 	// below as the area to draw into.
 	if (image_to_flip && buffer_width && buffer_height)
 		libretro_ensure_render_size(static_cast<int>(buffer_width), static_cast<int>(buffer_height));
-#endif
 
 	// Get window state
 	const int width = m_frame->client_width();
@@ -440,12 +426,8 @@ void GLGSRender::flip(const rsx::display_flip_info_t& info)
 	{
 		// Clear the window background to opaque black
 		gl_state.clear_color(0, 0, 0, 255);
-		#if defined(LIBRETRO_CORE)
 		libretro_bind_hw_fbo();
 		glClear(GL_COLOR_BUFFER_BIT);
-		#else
-		gl::screen.clear(gl::buffers::color);
-		#endif
 	}
 
 	if (m_overlay_manager && m_overlay_manager->has_dirty())
@@ -478,13 +460,7 @@ void GLGSRender::flip(const rsx::display_flip_info_t& info)
 				target = dst->id();
 			}
 			else
-			{
-				#if defined(LIBRETRO_CORE)
 				libretro_bind_hw_fbo();
-				#else
-				gl::screen.bind();
-				#endif
-			}
 
 			// Lock to avoid modification during run-update chain
 			std::lock_guard lock(*m_overlay_manager);
@@ -500,7 +476,6 @@ void GLGSRender::flip(const rsx::display_flip_info_t& info)
 
 	if (image_to_flip)
 	{
-#if defined(LIBRETRO_CORE)
 		// The surface a title flips can be larger than the buffer it shows -
 		// GT5 draws its 1280x720 frame into a 2048x1080 render target. Upstream
 		// takes only the buffer's area of it through the upscaler's source
@@ -522,7 +497,6 @@ void GLGSRender::flip(const rsx::display_flip_info_t& info)
 			gl::g_hw_blitter->copy_image(cmd, image_to_flip, s_crop_tex.get(), crop_offset, crop_offset, size3u{ crop_width, crop_height, 1 });
 			image_to_flip = s_crop_tex.get();
 		}
-#endif
 		const bool user_asked_for_screenshot = g_user_asked_for_screenshot.exchange(false);
 
 		if (user_asked_for_screenshot || (g_recording_mode != recording_mode::stopped && m_frame->can_consume_frame()))
@@ -612,14 +586,6 @@ void GLGSRender::flip(const rsx::display_flip_info_t& info)
 
 		// LIBRETRO_CORE: Never use UPSCALE_AND_COMMIT path - it blits to gl::screen instead of our FBO
 		// We must always go through the else branch which calls libretro_bind_hw_fbo()
-		#if !defined(LIBRETRO_CORE)
-		if (!backbuffer_has_alpha && use_full_rgb_range_output && rsx::fcmp(avconfig.gamma, 1.f) && !avconfig.stereo_enabled)
-		{
-			// Blit source image to the screen
-			m_upscaler->scale_output(cmd, image_to_flip, screen_area, aspect_ratio.flipped_vertical(), UPSCALE_AND_COMMIT | UPSCALE_DEFAULT_VIEW);
-		}
-		else
-		#endif
 		{
 			const f32 gamma = avconfig.gamma;
 			const bool limited_range = !use_full_rgb_range_output;
@@ -635,11 +601,7 @@ void GLGSRender::flip(const rsx::display_flip_info_t& info)
 				}
 			}
 
-			#if defined(LIBRETRO_CORE)
 			libretro_bind_hw_fbo();
-			#else
-			gl::screen.bind();
-			#endif
 			m_video_output_pass.run(cmd, areau(aspect_ratio), images.map(FN(x ? x->id() : GL_NONE)), gamma, limited_range, avconfig.stereo_enabled, filter);
 		}
 	}
@@ -718,11 +680,9 @@ void GLGSRender::flip(const rsx::display_flip_info_t& info)
 		m_vis_buffer.remove();
 	}
 
-#if defined(LIBRETRO_CORE)
 	// Ensure all GPU commands are submitted before signaling frame ready to libretro
 	// Without this, RetroArch may present incomplete/partial frames
 	glFlush();
-#endif
 
 	m_frame->flip(m_context);
 	rsx::thread::flip(info);

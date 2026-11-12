@@ -175,25 +175,17 @@ std::vector<version_entry> get_savestate_versioning_data(fs::file&& file, std::s
 	return ver_data;
 }
 
-#ifdef LIBRETRO_CORE
 std::vector<u8>* g_memory_savestate = nullptr;
-#endif
 
 std::shared_ptr<utils::serial> make_savestate_reader(const std::string& path)
 {
 	std::shared_ptr<utils::serial> ar;
 
-#ifdef LIBRETRO_CORE
 	// Read from the core's buffer, not copied
 	fs::file save = path == memory_savestate_path && g_memory_savestate ? fs::make_stream<std::vector<u8>&>(*g_memory_savestate) : fs::file{path, fs::isfile + fs::read};
-#else
-	fs::file save{path, fs::isfile + fs::read};
-#endif
 
 	if (!save)
-	{
 		return ar;
-	}
 
 	if (path.ends_with(".SAVESTAT") && save.size() >= 8 && save.read<u64>() == "RPCS3SAV"_u64)
 	{

@@ -1,7 +1,5 @@
 #include "device.h"
-#ifdef LIBRETRO_CORE
 #include "../VKLibretro.h"
-#endif
 #include "instance.h"
 #include "util/logs.hpp"
 #include "Emu/system_config.h"
@@ -633,7 +631,6 @@ namespace vk
 		enabled_features.shaderStorageBufferArrayDynamicIndexing = VK_TRUE;
 
 		// Optionally disable unsupported stuff
-#ifdef LIBRETRO_CORE
 		// Phone GPUs lack some of what desktop ones all have, and asking for a
 		// feature the device does not have fails vkCreateDevice outright
 		// (VK_ERROR_FEATURE_NOT_PRESENT on Android, sco); without these RPCS3
@@ -650,7 +647,6 @@ namespace vk
 				*wanted = VK_FALSE;
 			}
 		}
-#endif
 		if (!pgpu->features.fullDrawIndexUint32)
 		{
 			// There's really nothing we can do about PS3 draw indices, just pray your GPU doesn't crash.
@@ -740,11 +736,9 @@ namespace vk
 			enabled_features.logicOp = VK_FALSE;
 		}
 
-#ifdef LIBRETRO_CORE
 		// With the core's hardware Vulkan context the frontend presents from
 		// this device as well, and says what it needs of it.
 		vk::libretro::apply_frontend_requirements(requested_extensions, enabled_features);
-#endif
 
 		VkDeviceCreateInfo device = {};
 		device.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
@@ -868,7 +862,6 @@ namespace vk
 			device.pNext = &provoking_vertex_info;
 		}
 
-#ifdef LIBRETRO_CORE
 		// Through the frontend's wrapper when it gave one (context negotiation
 		// v2): it adds what it needs of the device to what is asked here
 		if (vk::libretro::create_device_wrapped(*pgpu, &device, &dev))
@@ -880,7 +873,6 @@ namespace vk
 			}
 		}
 		else
-#endif
 		if (auto error = vkCreateDevice(*pgpu, &device, nullptr, &dev))
 		{
 			dump_debug_info(requested_extensions, enabled_features);
@@ -935,10 +927,8 @@ namespace vk
 				m_allocator.reset();
 			}
 
-#ifdef LIBRETRO_CORE
 			// The frontend's device: it destroys it itself, after destroy_device.
 			if (!vk::libretro::is_frontend_device(dev))
-#endif
 			vkDestroyDevice(dev, nullptr);
 			dev = nullptr;
 			memory_map = {};

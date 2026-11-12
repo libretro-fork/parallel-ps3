@@ -308,13 +308,10 @@ OPENGL_PROC(PFNGLINSERTEVENTMARKEREXTPROC, InsertEventMarkerEXT);
 
 WGL_PROC(PFNWGLSWAPINTERVALEXTPROC, SwapIntervalEXT);
 
-#if !defined(__GNUG__) || defined(__MINGW32__) || defined(LIBRETRO_CORE)
 OPENGL_PROC(PFNGLBLENDCOLORPROC, BlendColor);
 OPENGL_PROC(PFNGLBLENDEQUATIONPROC, BlendEquation);
 OPENGL_PROC(PFNGLACTIVETEXTUREPROC, ActiveTexture);
-#endif
 
-#ifdef LIBRETRO_CORE
 // OpenGL 1.0 and 1.1, which elsewhere are the system GL library's own
 // functions: the core has them through the frontend like the rest
 OPENGL_PROC(PFNGLCULLFACEPROC, CullFace);
@@ -380,4 +377,3 @@ OPENGL_PROC(PFNGLDELETETEXTURESPROC, DeleteTextures);
 OPENGL_PROC(PFNGLGENTEXTURESPROC, GenTextures);
 OPENGL_PROC(PFNGLISTEXTUREPROC, IsTexture);
 OPENGL_PROC(PFNGLDRAWPIXELSPROC, DrawPixels);
-#endif

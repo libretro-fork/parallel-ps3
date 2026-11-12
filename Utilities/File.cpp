@@ -13,13 +13,10 @@
 #include "util/coro.hpp"
 
 // Libretro VFS integration
-#ifdef LIBRETRO_CORE
 #include "rpcs3/libretro/libretro_vfs.h"
-#endif
 
 using namespace std::literals::string_literals;
 
-#ifdef LIBRETRO_CORE
 // Set by the core to <system>/rpcs3/ as soon as the frontend has named its
 // system directory. RPCS3 otherwise keeps its config and caches next to the
 // executable on Windows - which in a core is retroarch.exe, so config/, cache/,
@@ -27,7 +24,6 @@ using namespace std::literals::string_literals;
 // ~/.config and ~/.cache elsewhere. Checked on every call rather than cached,
 // so a call made before the core knows the directory does not pin the old one.
 std::string g_libretro_config_dir;
-#endif
 
 #ifdef ANDROID
 std::string g_android_executable_dir;
@@ -977,21 +973,13 @@ shared_ptr<fs::device_base> fs::device_manager::set_device(const std::string& na
 
 shared_ptr<fs::device_base> fs::get_virtual_device(const std::string& path)
 {
-#ifdef LIBRETRO_CORE
 	// The frontend's URIs (Android's saf://) go to its VFS whole: stat,
 	// directories and files
 	if (libretro_vfs::is_uri(path))
-	{
 		return libretro_vfs::get_uri_device();
-	}
-#endif
-
 	// Every virtual device path must have specific name at the beginning
 	if (path.starts_with("/vfsv0_") && path.size() >= 8 + 22 && path[29] == '_' && path.find_first_of('/', 1) > 29)
-	{
 		return get_device_manager().get_device(path);
-	}
-
 	return null_ptr;
 }
 
@@ -1697,27 +1685,20 @@ bool fs::copy_file(const std::string& from, const std::string& to, bool overwrit
 {
 	const auto device = get_virtual_device(from);
 
-#ifdef LIBRETRO_CORE
 	// To or from the frontend's VFS: read and written through it
 	if (libretro_vfs::is_uri(from) || libretro_vfs::is_uri(to))
 	{
 		fs::file src(from);
 		if (!src)
-		{
 			return false;
-		}
 
 		bs_t<fs::open_mode> dst_mode = fs::write + fs::create + fs::trunc;
 		if (!overwrite)
-		{
 			dst_mode += fs::excl;
-		}
 
 		fs::file dst(to, dst_mode);
 		if (!dst)
-		{
 			return false;
-		}
 
 		std::vector<u8> buf(1 << 20);
 		while (const u64 n = src.read(buf.data(), buf.size()))
@@ -1730,12 +1711,9 @@ bool fs::copy_file(const std::string& from, const std::string& to, bool overwrit
 		}
 		return true;
 	}
-#endif
 
 	if (device != get_virtual_device(to) || device) // TODO
-	{
 		fmt::throw_exception("fs::copy_file() for virtual devices not implemented.\nFrom: %s\nTo: %s", from, to);
-	}
 
 #ifdef _WIN32
 	if (!CopyFileW(to_wchar(from).get(), to_wchar(to).get(), !overwrite))
@@ -2014,7 +1992,6 @@ fs::file::file(const std::string& path, bs_t<open_mode> mode)
 		return;
 	}
 
-#ifdef LIBRETRO_CORE
 	// Try libretro VFS first for all file operations
 	if (libretro_vfs::is_vfs_available())
 	{
@@ -2055,7 +2032,6 @@ fs::file::file(const std::string& path, bs_t<open_mode> mode)
 		}
 		// VFS failed, fall through to native I/O
 	}
-#endif
 
 #ifdef _WIN32
 	DWORD access = 0;
@@ -2619,7 +2595,6 @@ std::string fs::get_executable_dir()
 
 const std::string& fs::get_config_dir([[maybe_unused]] bool get_config_subdirectory)
 {
-#ifdef LIBRETRO_CORE
 	if (!g_libretro_config_dir.empty())
 	{
 #ifdef _WIN32
@@ -2634,7 +2609,6 @@ const std::string& fs::get_config_dir([[maybe_unused]] bool get_config_subdirect
 #endif
 		return g_libretro_config_dir;
 	}
-#endif
 #ifdef ANDROID
 	return g_android_config_dir;
 #else
@@ -2733,11 +2707,9 @@ const std::string& fs::get_config_dir([[maybe_unused]] bool get_config_subdirect
 
 const std::string& fs::get_cache_dir()
 {
-#ifdef LIBRETRO_CORE
 	// One directory for both, as RPCS3 already does on Windows.
 	if (!g_libretro_config_dir.empty())
 		return g_libretro_config_dir;
-#endif
 #ifdef ANDROID
 	return g_android_cache_dir;
 #else
@@ -2780,13 +2752,11 @@ const std::string& fs::get_cache_dir()
 
 const std::string& fs::get_log_dir()
 {
-#ifdef LIBRETRO_CORE
 	if (!g_libretro_config_dir.empty())
 	{
 		static const std::string dir = g_libretro_config_dir + "log/";
 		return dir;
 	}
-#endif
 #ifdef _WIN32
 	static const std::string s_dir = fs::get_config_dir() + "log/";
 	return s_dir;

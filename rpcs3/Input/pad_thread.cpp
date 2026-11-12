@@ -422,7 +422,6 @@ void pad_thread::update_ignore_input()
 	}
 }
 
-#ifdef LIBRETRO_CORE
 void pad_thread::frontend_update(u32 connected_devices)
 {
 	// Native overlays (message dialogs, the save data list) ignore the pads
@@ -430,13 +429,10 @@ void pad_thread::frontend_update(u32 connected_devices)
 	retro_atomic_store_release_int(&m_info.now_connect_, static_cast<int>(connected_devices + static_cast<u32>(retro_atomic_load_acquire_int(&num_ldd_pad))));
 
 	if (Emu.IsRunning())
-	{
 		update_pad_states();
-	}
 
 	update_ignore_input();
 }
-#endif
 
 void pad_thread::update_pad_states()
 {

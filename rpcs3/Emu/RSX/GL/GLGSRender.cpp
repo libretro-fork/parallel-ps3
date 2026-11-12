@@ -11,11 +11,7 @@
 #include <functional>
 #include <thread>
 
-#if defined(LIBRETRO_CORE)
 #ifndef RPCS3_LIBRETRO_GLGS_TRACE
-#define RPCS3_LIBRETRO_GLGS_TRACE 0
-#endif
-#else
 #define RPCS3_LIBRETRO_GLGS_TRACE 0
 #endif
 

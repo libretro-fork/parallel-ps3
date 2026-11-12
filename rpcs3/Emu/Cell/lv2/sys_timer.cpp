@@ -124,11 +124,9 @@ void lv2_timer_thread::operator()()
 		{
 			// Scale time
 			sleep_time = std::min(sleep_time, u64{umax} / 100) * 100 / g_cfg.core.clocks_scale;
-#ifdef LIBRETRO_CORE
 			// The guest's time until the next timer: waited for at the pace
 			// retro_run comes
 			sleep_time = libretro_guest_wait_as_host(sleep_time);
-#endif
 		}
 
 		thread_ctrl::wait_for(sleep_time);

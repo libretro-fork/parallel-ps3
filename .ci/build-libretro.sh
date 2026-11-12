@@ -44,9 +44,7 @@ export LINKER_FLAG="-fuse-ld=${LINKER}"
 # own do not belong here - and each of them is a library the core would then
 # name in NEEDED. libSDL3, libopenal and libevdev are all absent from the
 # freedesktop runtime the RetroArch flatpak is built on, which is why a core
-# that links them does not load there at all (reported on Bazzite). SDL goes
-# with USE_SDL, FAudio with it (FAudio needs SDL3), libevdev with USE_LIBEVDEV,
-# and OpenAL through BUILD_LIBRETRO_CORE_ONLY in 3rdparty/CMakeLists.txt.
+# that links them does not load there at all (reported on Bazzite).
 cmake ..                                               \
     -DCMAKE_BUILD_TYPE=Release                         \
     -DBUILD_LIBRETRO_CORE_ONLY=ON                      \
@@ -55,11 +53,8 @@ cmake ..                                               \
     -DCMAKE_EXE_LINKER_FLAGS="${LINKER_FLAG}"          \
     -DCMAKE_MODULE_LINKER_FLAGS="${LINKER_FLAG}"       \
     -DCMAKE_SHARED_LINKER_FLAGS="${LINKER_FLAG}"       \
-    -DUSE_SDL=OFF                                      \
-    -DUSE_FAUDIO=OFF                                   \
     -DUSE_LIBEVDEV=OFF                                 \
     -DUSE_SYSTEM_OPENCV=ON                             \
-    -DUSE_DISCORD_RPC=OFF                              \
     -DLLVM_DIR=/opt/llvm/lib/cmake/llvm                \
     -DSTATIC_LINK_LLVM=ON                              \
     -G Ninja

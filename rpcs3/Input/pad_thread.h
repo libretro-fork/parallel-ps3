@@ -65,12 +65,10 @@ protected:
 
 public:
 	void apply_copilots();
-#ifdef LIBRETRO_CORE
 	// The libretro core drives its handler from retro_run instead of running
 	// this thread; this is the rest of what the thread's loop does after the
 	// handlers were processed.
 	void frontend_update(u32 connected_devices);
-#endif
 
 private:
 	void update_pad_states();

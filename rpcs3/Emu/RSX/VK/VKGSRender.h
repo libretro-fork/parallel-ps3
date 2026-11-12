@@ -196,7 +196,6 @@ private:
 
 	std::unique_ptr<vk::image> m_overlay_recording_img;
 
-#ifdef LIBRETRO_CORE
 	// The libretro core without a hardware context reads every finished frame
 	// back. One buffer per frame context, kept rather than allocated per frame,
 	// and with a deferred readback filled by one frame's commands and handed
@@ -227,7 +226,6 @@ private:
 	}
 
 	void libretro_deliver_readback(vk::frame_context_t* ctx);
-#endif
 
 	//Vertex layout
 	rsx::vertex_input_layout m_vertex_layout;

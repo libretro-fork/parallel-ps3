@@ -3,9 +3,7 @@
 #include "VKResourceManager.h"
 #include "vkutils/descriptors.h"
 #include "vkutils/sync.h"
-#ifdef LIBRETRO_CORE
 #include "VKLibretro.h"
-#endif
 
 #include "Emu/IdManager.h"
 #include "Emu/RSX/RSXOffload.h"
@@ -20,18 +18,14 @@ namespace vk
 	void acquire_global_submit_lock()
 	{
 		g_submit_mutex.lock();
-#ifdef LIBRETRO_CORE
 		// With the libretro core's hardware Vulkan context the frontend
 		// submits to the same queue from its own thread.
 		vk::libretro::lock_queue();
-#endif
 	}
 
 	void release_global_submit_lock()
 	{
-#ifdef LIBRETRO_CORE
 		vk::libretro::unlock_queue();
-#endif
 		g_submit_mutex.unlock();
 	}
 

@@ -8,9 +8,7 @@
 #include "VKCommonPipelineLayout.h"
 #include "VKCompute.h"
 #include "VKGSRender.h"
-#ifdef LIBRETRO_CORE
 #include "VKLibretro.h"
-#endif
 #include "VKHelpers.h"
 #include "VKRenderPass.h"
 #include "VKResourceManager.h"
@@ -414,7 +412,6 @@ VKGSRender::VKGSRender(utils::serial* ar) noexcept : GSRender(ar)
 	g_fxo->need<vk::driver_manager_thread>();
 
 	bool shared_device = false;
-#ifdef LIBRETRO_CORE
 	if (vk::libretro::hw_present())
 	{
 		// The instance is the frontend's and the device and swapchain were made
@@ -429,7 +426,6 @@ VKGSRender::VKGSRender(utils::serial* ar) noexcept : GSRender(ar)
 		m_swapchain.reset(shared);
 		shared_device = true;
 	}
-#endif
 
 	if (!shared_device)
 	{
@@ -903,10 +899,8 @@ VKGSRender::~VKGSRender()
 	m_texture_cache.destroy();
 
 	m_overlay_recording_img.reset();
-#ifdef LIBRETRO_CORE
 	for (auto& readback : m_libretro_readback)
 		readback = {};
-#endif
 	m_stencil_mirror_sampler.reset();
 
 	// Queries
@@ -927,7 +921,6 @@ VKGSRender::~VKGSRender()
 	vk::destroy_global_resources();
 
 	// Device handles/contexts
-#ifdef LIBRETRO_CORE
 	if (vk::libretro::hw_present() && m_swapchain.get() == vk::libretro::shared_swapchain())
 	{
 		// The libretro core's hardware context: the swapchain and its device
@@ -942,10 +935,7 @@ VKGSRender::~VKGSRender()
 		m_swapchain.release();
 	}
 	else
-#endif
-	{
 		m_swapchain->destroy();
-	}
 	m_instance.destroy();
 
 #if defined(HAVE_X11) && defined(HAVE_VULKAN)

@@ -80,9 +80,7 @@ std::string g_cfg_defaults;
 
 atomic_t<u64> g_watchdog_hold_ctr{0};
 
-#ifdef LIBRETRO_CORE
 atomic_t<u32> g_libretro_events{0};
-#endif
 
 extern bool ppu_load_exec(const ppu_exec_object&, bool virtual_load, const std::string&, utils::serial* = nullptr);
 extern void spu_load_exec(const spu_exec_object&);
@@ -3752,10 +3750,6 @@ void Emulator::Kill(bool allow_autoexit, bool savestate, savestate_stage* save_s
 	{
 		// Notify progress dialog that we are going to stop emulation
 		g_system_progress_stopping = continuous_savestate_mode ? system_progress_stop_state::stop_state_continuous_savestate : system_progress_stop_state::stop_state_stopping;
-#ifndef LIBRETRO_CORE
-		// (A frame in the core comes from retro_run, not from waiting here)
-		std::this_thread::sleep_for(30ms); // Enough for one frame to be rendered
-#endif
 	}
 
 	// Signal threads
@@ -3786,84 +3780,21 @@ void Emulator::Kill(bool allow_autoexit, bool savestate, savestate_stage* save_s
 	*join_thread = make_ptr(new named_thread("Emulation Join Thread"sv, [join_thread, reset_emu_state, savestate, allow_autoexit, save_stage = save_stage ? *save_stage : savestate_stage{}, return_to_big_picture_mode, this]() mutable
 	{
 		fs::pending_file file;
-#ifdef LIBRETRO_CORE
 		// The savestate into the core's buffer instead of a file, when it
 		// asked for that
 		fs::file memory_file;
 		std::vector<u8>* const memory_state = g_memory_savestate;
-#endif
 
 		auto verbose_message = std::make_shared<atomic_ptr<std::string>>();
 		auto init_mtx = std::make_shared<stx::init_mutex>();
 		auto join_ended = std::make_shared<bool>(false);
 		auto to_ar = std::make_shared<atomic_ptr<utils::serial>>();
 
-#ifndef LIBRETRO_CORE
-		// (The core has nothing to report a slow stop or a savestate's progress
-		// to, and this only looks every 5 ms to tell it)
-		auto stop_watchdog = make_ptr(new named_thread("Stop Watchdog"sv,
-			[to_ar, init_mtx, join_ended, verbose_message, this]()
-		{
-			const auto closed_sucessfully = std::make_shared<atomic_t<bool>>(false);
-
-			bool is_being_held_longer = false;
-
-			for (int i = 0; !*join_ended && thread_ctrl::state() != thread_state::aborting; i++)
-			{
-				if (g_watchdog_hold_ctr)
-				{
-					is_being_held_longer = true;
-				}
-
-				// We don't need accurate timekeeping, using clocks may interfere with debugging
-				if (i >= (is_being_held_longer ? 5000 : 2000))
-				{
-					// Total amount of waiting: about 10s
-					g_emu_callbacks.on_emulation_stop_no_response(closed_sucessfully, is_being_held_longer ? 25 : 10);
-
-					while (thread_ctrl::state() != thread_state::aborting)
-					{
-						thread_ctrl::wait_for(5'000);
-					}
-
-					break;
-				}
-
-				thread_ctrl::wait_for(5'000);
-			}
-
-			while (thread_ctrl::state() != thread_state::aborting)
-			{
-				if (auto ar_ptr = to_ar->load())
-				{
-					// Total amount of waiting: about 10s
-					if (g_cfg.savestate.suspend_emu)
-					{
-						g_emu_callbacks.on_save_state_progress(closed_sucessfully, ar_ptr, verbose_message.get(), init_mtx);
-					}
-
-					while (thread_ctrl::state() != thread_state::aborting)
-					{
-						thread_ctrl::wait_for(5'000);
-					}
-
-					break;
-				}
-
-				thread_ctrl::wait_for(5'000);
-			}
-
-			*closed_sucessfully = true;
-		}));
-#endif
-
 		// Join threads
 		for (const auto& [type, data] : *g_fxo)
 		{
 			if (type.thread_op)
-			{
 				type.thread_op(data, thread_state::finished);
-			}
 		}
 
 		for (const auto& spu : save_stage.paused_spus)
@@ -3902,7 +3833,6 @@ void Emulator::Kill(bool allow_autoexit, bool savestate, savestate_stage* save_s
 			*verbose_message = stx::make_single<std::string>(text);
 		};
 
-#ifdef LIBRETRO_CORE
 		if (savestate && memory_state)
 		{
 			path = memory_savestate_path;
@@ -3917,9 +3847,6 @@ void Emulator::Kill(bool allow_autoexit, bool savestate, savestate_stage* save_s
 		}
 
 		while (savestate && !memory_state)
-#else
-		while (savestate)
-#endif
 		{
 			set_progress_message("Creating File");
 
@@ -4150,7 +4077,6 @@ void Emulator::Kill(bool allow_autoexit, bool savestate, savestate_stage* save_s
 				reset.set_init();
 			}
 
-#ifdef LIBRETRO_CORE
 			if (memory_state)
 			{
 				sys_log.success("Saved savestate in memory (size=0x%x (%d MiB), time_to_save=%gs)", memory_state->size(), utils::aligned_div<u64>(memory_state->size(), 1u << 20), (get_system_time() - start_time) / 1000000.);
@@ -4159,7 +4085,6 @@ void Emulator::Kill(bool allow_autoexit, bool savestate, savestate_stage* save_s
 				m_path = path;
 			}
 			else
-#endif
 			if (!file.commit() || !fs::get_stat(path, file_stat))
 			{
 				sys_log.error("Failed to write savestate to file! (path='%s', %s)", path, fs::g_tls_error);
@@ -4331,9 +4256,6 @@ void Emulator::Kill(bool allow_autoexit, bool savestate, savestate_stage* save_s
 
 		// Final termination from main thread (move the last ownership of join thread in order to destroy it)
 		CallFromMainThread([join_thread = std::move(join_thread), reset_emu_state, verbose_message,
-#ifndef LIBRETRO_CORE
-			stop_watchdog,
-#endif
 			init_mtx, allow_autoexit, return_to_big_picture_mode, this]()
 		{
 			cpu_thread::cleanup();
@@ -4346,9 +4268,6 @@ void Emulator::Kill(bool allow_autoexit, bool savestate, savestate_stage* save_s
 
 			vm::close();
 
-#ifndef LIBRETRO_CORE
-			*stop_watchdog = thread_state::finished;
-#endif
 			static_cast<void>(init_mtx->reset());
 
 			jit_runtime::finalize();

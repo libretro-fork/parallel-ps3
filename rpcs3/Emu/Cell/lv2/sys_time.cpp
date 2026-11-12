@@ -12,7 +12,6 @@
 u64 g_timebase_offs{};
 static u64 systemtime_offset;
 
-#ifdef LIBRETRO_CORE
 #include <algorithm>
 #include <retro_atomic.h>
 
@@ -163,7 +162,6 @@ static u64 host_to_slaved_time(u64 time)
 	const u64 grant_us = c.grant / freq * 1000000ull + c.grant % freq * 1000000ull / freq;
 	return std::min<u64>(time - static_cast<u64>(lag_us), grant_us);
 }
-#endif
 
 #ifndef __linux__
 #include "util/asm.hpp"
@@ -307,11 +305,7 @@ u64 get_timebased_time()
 {
 	if (u64 freq = utils::get_tsc_freq())
 	{
-#ifdef LIBRETRO_CORE
 		const u64 tsc = slaved_tsc(utils::get_tsc());
-#else
-		const u64 tsc = utils::get_tsc();
-#endif
 
 #if _MSC_VER
 		const u64 result = static_cast<u64>(u128_from_mul(tsc, g_timebase_freq) / freq) * g_cfg.core.clocks_scale / 100u;
@@ -409,11 +403,7 @@ u64 get_system_time()
 // As get_system_time but obeys Clocks scaling setting
 u64 get_guest_system_time(u64 time)
 {
-#ifdef LIBRETRO_CORE
 	const u64 result = (time != umax ? host_to_slaved_time(time) : get_slaved_system_time()) * g_cfg.core.clocks_scale / 100;
-#else
-	const u64 result = (time != umax ? time : get_system_time()) * g_cfg.core.clocks_scale / 100;
-#endif
 	return result - systemtime_offset;
 }
 

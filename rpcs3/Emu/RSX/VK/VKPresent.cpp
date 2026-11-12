@@ -1,11 +1,7 @@
 #include "stdafx.h"
-#ifdef LIBRETRO_CORE
 #include "libretro/libretro_sw_frames.h"
-#endif
 #include "VKGSRender.h"
-#ifdef LIBRETRO_CORE
 #include "VKLibretro.h"
-#endif
 #include "vkutils/buffer_object.h"
 #include "vkutils/memory.h"
 #include "Emu/RSX/Overlays/overlay_manager.h"
@@ -94,17 +90,13 @@ bool VKGSRender::reinitialize_swapchain()
 	vkDeviceWaitIdle(*m_device);
 	vk::release_global_submit_lock();
 
-#ifdef LIBRETRO_CORE
 	// The images are about to be made anew; the frontend's are among them.
 	if (vk::libretro::hw_present())
 		vk::libretro::new_image_generation();
-#endif
 
 	// Clean the FBO caches
 	for (u32 i = 0; i < m_swapchain->get_swap_image_count(); ++i)
-	{
 		vk::remove_framebuffers_with_image(m_swapchain->get_image(i));
-	}
 
 	// Reset frame context storage
 	for (auto& ctx : m_frame_context_storage)
@@ -167,7 +159,6 @@ void VKGSRender::present(vk::frame_context_t *ctx)
 {
 	ensure(ctx->present_image != umax);
 
-#ifdef LIBRETRO_CORE
 	// The image stays taken until the frontend has shown it; which one it was
 	// is needed once the frame has finished, and present_image is reset below.
 	if (vk::libretro::hw_present())
@@ -175,7 +166,6 @@ void VKGSRender::present(vk::frame_context_t *ctx)
 		if (auto* readback = libretro_readback_for(ctx))
 			readback->hw_image = ctx->present_image;
 	}
-#endif
 
 	// Partial CS flush
 	ctx->swap_command_buffer->flush();
@@ -248,7 +238,6 @@ void VKGSRender::queue_swap_request()
 		m_swapchain->end_frame(*m_current_command_buffer, m_current_frame->present_image);
 		close_and_submit_command_buffer();
 	}
-#ifdef LIBRETRO_CORE
 	else if (dynamic_cast<vk::swapchain_LIBRETRO*>(m_swapchain.get()))
 	{
 		// The libretro swapchain hands out images without signalling the
@@ -258,7 +247,6 @@ void VKGSRender::queue_swap_request()
 		// (ozzfreak: one frame, then a black screen and a hang on exit).
 		close_and_submit_command_buffer();
 	}
-#endif
 	else
 	{
 		close_and_submit_command_buffer(nullptr,
@@ -279,7 +267,6 @@ void VKGSRender::queue_swap_request()
 	advance_queued_frames();
 }
 
-#ifdef LIBRETRO_CORE
 void VKGSRender::libretro_deliver_readback(vk::frame_context_t* ctx)
 {
 	auto* readback = libretro_readback_for(ctx);
@@ -311,7 +298,6 @@ void VKGSRender::libretro_deliver_readback(vk::frame_context_t* ctx)
 		sw_frames_end(readback->width, readback->height, readback->width * 4);
 	}
 }
-#endif
 
 void VKGSRender::frame_context_cleanup(vk::frame_context_t *ctx)
 {
@@ -319,16 +305,11 @@ void VKGSRender::frame_context_cleanup(vk::frame_context_t *ctx)
 
 	// Perform hard swap here
 	const bool frame_finished = ctx->swap_command_buffer->wait(FRAME_PRESENT_TIMEOUT) == VK_SUCCESS;
+	// Lost surface/device, release swapchain
 	if (!frame_finished)
-	{
-		// Lost surface/device, release swapchain
 		swapchain_unavailable = true;
-	}
-#ifdef LIBRETRO_CORE
 	else
-	{
 		libretro_deliver_readback(ctx);
-	}
 
 	if (auto* readback = libretro_readback_for(ctx))
 	{
@@ -345,7 +326,6 @@ void VKGSRender::frame_context_cleanup(vk::frame_context_t *ctx)
 			readback->hw_image = umax;
 		}
 	}
-#endif
 
 	// Resource cleanup.
 	{
@@ -728,7 +708,6 @@ void VKGSRender::flip(const rsx::display_flip_info_t& info)
 	ensure(m_current_frame->swap_command_buffer == nullptr);
 
 	u64 timeout = m_swapchain->get_swap_image_count() <= 2? 0ull: 100000000ull;
-#ifdef LIBRETRO_CORE
 	// The libretro swapchain only gets an image back when its frame is
 	// presented. If that never happens this loop spins on one core forever,
 	// which is what a Linux/RADV user saw (ozzfreak): say what is held, and
@@ -736,7 +715,6 @@ void VKGSRender::flip(const rsx::display_flip_info_t& info)
 	auto* libretro_swapchain = dynamic_cast<vk::swapchain_LIBRETRO*>(m_swapchain.get());
 	const u64 acquire_start = get_system_time();
 	bool acquire_reported = false;
-#endif
 	while (VkResult status = m_swapchain->acquire_next_swapchain_image(m_current_frame->acquire_signal_semaphore, timeout, &m_current_frame->present_image))
 	{
 		switch (status)
@@ -744,7 +722,6 @@ void VKGSRender::flip(const rsx::display_flip_info_t& info)
 		case VK_TIMEOUT:
 		case VK_NOT_READY:
 		{
-#ifdef LIBRETRO_CORE
 			if (libretro_swapchain)
 			{
 				const u64 waited = get_system_time() - acquire_start;
@@ -767,7 +744,6 @@ void VKGSRender::flip(const rsx::display_flip_info_t& info)
 					libretro_swapchain->release_all_images();
 				}
 			}
-#endif
 			// In some cases, after a fullscreen switch, the driver only allows N-1 images to be acquirable, where N = number of available swap images.
 			// This means that any acquired images have to be released
 			// before acquireNextImage can return successfully. This is despite the driver reporting 2 swap chain images available
@@ -853,7 +829,6 @@ void VKGSRender::flip(const rsx::display_flip_info_t& info)
 	{
 		const usz sshot_size = buffer_height * buffer_width * 4;
 
-#ifdef LIBRETRO_CORE
 		// A frame for the frontend reuses its frame context's buffer: at
 		// 250% that is some 23 MB, which was allocated and freed every flip.
 		const auto make_readback_buffer = [&]()
@@ -872,10 +847,6 @@ void VKGSRender::flip(const rsx::display_flip_info_t& info)
 			temp_vkbuf = make_readback_buffer();
 
 		vk::buffer& sshot_vkbuf = readback ? *readback->buffer : *temp_vkbuf;
-#else
-		vk::buffer sshot_vkbuf(*m_device, utils::align(sshot_size, 0x100000), m_device->get_memory_mapping().host_visible_coherent,
-			VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, VK_BUFFER_USAGE_TRANSFER_DST_BIT, 0, VMM_ALLOCATION_POOL_UNDEFINED);
-#endif
 
 		VkBufferImageCopy copy_info{};
 		copy_info.bufferOffset = 0;
@@ -942,7 +913,6 @@ void VKGSRender::flip(const rsx::display_flip_info_t& info)
 		vk::copy_image_to_buffer(*m_current_command_buffer, image_to_copy, &sshot_vkbuf, copy_info);
 		image_to_copy->pop_layout(*m_current_command_buffer);
 
-#ifdef LIBRETRO_CORE
 		// Deferred: the copy runs with the rest of this frame, and
 		// frame_context_cleanup hands the pixels over once it has. The
 		// immediate path below waits here for the GPU to go idle, so the
@@ -956,7 +926,6 @@ void VKGSRender::flip(const rsx::display_flip_info_t& info)
 			readback->pending = true;
 		}
 		else
-#endif
 		{
 			flush_command_queue(true);
 			const auto src = sshot_vkbuf.map(0, sshot_size);

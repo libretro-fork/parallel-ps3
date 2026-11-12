@@ -244,8 +244,6 @@ jobs:
             -DBUILD_LLVM=ON \
             -DUSE_NATIVE_INSTRUCTIONS=OFF \
             -DUSE_PRECOMPILED_HEADERS=OFF \
-            -DUSE_SDL=OFF \
-            -DUSE_DISCORD_RPC=OFF \
             -DUSE_LTO=OFF \
             -DUSE_SYSTEM_OPENCV=OFF \
             -DUSE_SYSTEM_SDL=OFF \
@@ -330,7 +328,6 @@ jobs:
             -DBUILD_LIBRETRO_CORE_ONLY=ON \
             -DWITH_LLVM=ON -DBUILD_LLVM=OFF -DSTATIC_LINK_LLVM=ON -DLLVM_DIR=$LLVM/lib/cmake/llvm \
             -DUSE_NATIVE_INSTRUCTIONS=OFF -DUSE_PRECOMPILED_HEADERS=OFF \
-            -DUSE_SDL=OFF -DUSE_FAUDIO=OFF -DUSE_DISCORD_RPC=OFF \
             -DUSE_SYSTEM_OPENCV=OFF -DUSE_LTO=OFF
 
       - name: Build

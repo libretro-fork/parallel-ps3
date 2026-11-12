@@ -100,7 +100,6 @@ namespace vk
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wold-style-cast"
 #endif
-#ifdef LIBRETRO_CORE
 	bool instance::create_wrapped(const VkApplicationInfo* app, VkInstance (*wrapper)(void* opaque, const VkInstanceCreateInfo* info), void* opaque)
 	{
 		m_wrap_app = app;
@@ -112,7 +111,6 @@ namespace vk
 		m_wrapper_opaque = nullptr;
 		return ok;
 	}
-#endif
 
 	bool instance::create(const char* app_name, bool fast)
 	{
@@ -152,13 +150,8 @@ namespace vk
 			extensions_loaded = true;
 			supported_extensions support(supported_extensions::instance);
 
-#ifndef LIBRETRO_CORE
-			extensions.push_back(VK_KHR_SURFACE_EXTENSION_NAME);
-#endif
 			if (support.is_supported(VK_EXT_DEBUG_REPORT_EXTENSION_NAME))
-			{
 				extensions.push_back(VK_EXT_DEBUG_REPORT_EXTENSION_NAME);
-			}
 
 #ifdef __APPLE__
 			extensions.push_back(VK_KHR_PORTABILITY_ENUMERATION_EXTENSION_NAME);
@@ -179,53 +172,12 @@ namespace vk
 			}
 #endif
 
-#ifndef LIBRETRO_CORE
-			if (support.is_supported(VK_KHR_GET_SURFACE_CAPABILITIES_2_EXTENSION_NAME))
-			{
-				extensions.push_back(VK_KHR_GET_SURFACE_CAPABILITIES_2_EXTENSION_NAME);
-			}
-#endif
-
 			if (g_cfg.video.renderdoc_compatiblity && support.is_supported(VK_EXT_DEBUG_UTILS_EXTENSION_NAME))
 			{
 				extensions.push_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
 			}
 
-#if defined(LIBRETRO_CORE)
 			// No surface: the frontend presents
-#elif defined(_WIN32)
-			extensions.push_back(VK_KHR_WIN32_SURFACE_EXTENSION_NAME);
-#elif defined(__APPLE__)
-			extensions.push_back(VK_EXT_METAL_SURFACE_EXTENSION_NAME);
-#else
-			bool found_surface_ext = false;
-#ifdef HAVE_X11
-			if (support.is_supported(VK_KHR_XLIB_SURFACE_EXTENSION_NAME))
-			{
-				extensions.push_back(VK_KHR_XLIB_SURFACE_EXTENSION_NAME);
-				found_surface_ext = true;
-			}
-#endif
-#ifdef HAVE_WAYLAND
-			if (support.is_supported(VK_KHR_WAYLAND_SURFACE_EXTENSION_NAME))
-			{
-				extensions.push_back(VK_KHR_WAYLAND_SURFACE_EXTENSION_NAME);
-				found_surface_ext = true;
-			}
-#endif //(WAYLAND)
-#ifdef ANDROID
-			if (support.is_supported(VK_KHR_ANDROID_SURFACE_EXTENSION_NAME))
-			{
-				extensions.push_back(VK_KHR_ANDROID_SURFACE_EXTENSION_NAME);
-				found_surface_ext = true;
-			}
-#endif
-			if (!found_surface_ext)
-			{
-				rsx_log.error("Could not find a supported Vulkan surface extension");
-				return 0;
-			}
-#endif //(WIN32, __APPLE__)
 			if (g_cfg.video.debug_output)
 				layers.push_back("VK_LAYER_KHRONOS_validation");
 		}
@@ -256,7 +208,6 @@ namespace vk
 		instance_info.flags |= VK_INSTANCE_CREATE_ENUMERATE_PORTABILITY_BIT_KHR;
 #endif
 
-#ifdef LIBRETRO_CORE
 		if (m_wrapper)
 		{
 			// The application as the core named it to the frontend
@@ -281,7 +232,6 @@ namespace vk
 			m_owned = false;
 		}
 		else
-#endif
 		if (VkResult result = vkCreateInstance(&instance_info, nullptr, &m_instance); result != VK_SUCCESS)
 		{
 			if (result == VK_ERROR_LAYER_NOT_PRESENT)
@@ -356,7 +306,6 @@ namespace vk
 		// no hardware context, and then no surface either: nothing is
 		// presented in that mode - the finished frame leaves through
 		// GSFrameBase::present_frame - so the swapchain is the headless one.
-#ifdef LIBRETRO_CORE
 		{
 			rsx_log.notice("Vulkan: no surface to present to, using the headless swapchain");
 
@@ -383,120 +332,5 @@ namespace vk
 			swapchain->create(window_handle);
 			return swapchain;
 		}
-#else
-
-		WSI_config surface_config
-		{
-			.supports_automatic_wm_reports = true
-		};
-		m_surface = make_WSI_surface(m_instance, window_handle, &surface_config);
-
-		u32 device_queues = dev.get_queue_count();
-		std::vector<VkBool32> supports_present(device_queues, VK_FALSE);
-		bool present_possible = true;
-
-		for (u32 index = 0; index < device_queues; index++)
-		{
-			vkGetPhysicalDeviceSurfaceSupportKHR(dev, index, m_surface, &supports_present[index]);
-		}
-
-		u32 graphics_queue_idx = -1;
-		u32 present_queue_idx = -1;
-		u32 transfer_queue_idx = -1;
-
-		auto test_queue_family = [&](u32 index, u32 desired_flags)
-			{
-				if (const auto flags = dev.get_queue_properties(index).queueFlags;
-					(flags & desired_flags) == desired_flags)
-				{
-					return true;
-				}
-
-				return false;
-			};
-
-		for (u32 i = 0; i < device_queues; ++i)
-		{
-			// 1. Test for a present queue possibly one that also supports present
-			if (present_queue_idx == umax && supports_present[i])
-			{
-				present_queue_idx = i;
-				if (test_queue_family(i, VK_QUEUE_GRAPHICS_BIT | VK_QUEUE_COMPUTE_BIT))
-				{
-					graphics_queue_idx = i;
-				}
-			}
-			// 2. Check for graphics support
-			else if (graphics_queue_idx == umax && test_queue_family(i, VK_QUEUE_GRAPHICS_BIT | VK_QUEUE_COMPUTE_BIT))
-			{
-				graphics_queue_idx = i;
-				if (supports_present[i])
-				{
-					present_queue_idx = i;
-				}
-			}
-			// 3. Check if transfer + compute is available
-			else if (transfer_queue_idx == umax && test_queue_family(i, VK_QUEUE_COMPUTE_BIT | VK_QUEUE_TRANSFER_BIT))
-			{
-				transfer_queue_idx = i;
-			}
-		}
-
-		if (graphics_queue_idx == umax)
-		{
-			rsx_log.fatal("Failed to find a suitable graphics queue");
-			return nullptr;
-		}
-
-		if (graphics_queue_idx != present_queue_idx)
-		{
-			// Separate graphics and present, use headless fallback
-			present_possible = false;
-		}
-
-		if (!present_possible)
-		{
-			//Native(sw) swapchain
-			rsx_log.error("It is not possible for the currently selected GPU to present to the window (Likely caused by NVIDIA driver running the current display)");
-			rsx_log.warning("Falling back to software present support (native windowing API)");
-			auto swapchain = new swapchain_NATIVE(dev, -1, graphics_queue_idx, transfer_queue_idx);
-			swapchain->create(window_handle);
-			return swapchain;
-		}
-
-		// Get the list of VkFormat's that are supported:
-		u32 formatCount;
-		CHECK_RESULT(vkGetPhysicalDeviceSurfaceFormatsKHR(dev, m_surface, &formatCount, nullptr));
-
-		std::vector<VkSurfaceFormatKHR> surfFormats(formatCount);
-		CHECK_RESULT(vkGetPhysicalDeviceSurfaceFormatsKHR(dev, m_surface, &formatCount, surfFormats.data()));
-
-		VkFormat format;
-		VkColorSpaceKHR color_space;
-
-		if (formatCount == 1 && surfFormats[0].format == VK_FORMAT_UNDEFINED)
-		{
-			format = VK_FORMAT_B8G8R8A8_UNORM;
-		}
-		else
-		{
-			if (!formatCount) fmt::throw_exception("Format count is zero!");
-			format = surfFormats[0].format;
-
-			//Prefer BGRA8_UNORM to avoid sRGB compression (RADV)
-			for (auto& surface_format : surfFormats)
-			{
-				if (surface_format.format == VK_FORMAT_B8G8R8A8_UNORM)
-				{
-					format = VK_FORMAT_B8G8R8A8_UNORM;
-					break;
-				}
-			}
-		}
-
-		color_space = surfFormats[0].colorSpace;
-
-		return new swapchain_WSI(dev, present_queue_idx, graphics_queue_idx, transfer_queue_idx, format, m_surface, color_space, !surface_config.supports_automatic_wm_reports);
-#endif
 	}
 }

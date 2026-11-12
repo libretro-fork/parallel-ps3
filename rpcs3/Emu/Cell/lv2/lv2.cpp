@@ -2158,12 +2158,8 @@ waitpkg_func static void __tpause(u32 cycles, u32 cstate)
 
 u64 lv2_obj::deadline_left(u64 end_time)
 {
-#ifdef LIBRETRO_CORE
 	// The guest's clock itself, not the host's time taken as it
 	const u64 now = get_guest_system_time();
-#else
-	const u64 now = get_guest_system_time(get_system_time());
-#endif
 	return end_time > now ? end_time - now : 0;
 }
 
@@ -2171,12 +2167,8 @@ bool lv2_obj::wait_timeout(u64 usec, ppu_thread* cpu, bool scale, bool is_usleep
 {
 	static_assert(u64{umax} / max_timeout >= 100, "max timeout is not valid for scaling");
 
-#ifdef LIBRETRO_CORE
 	// The time waited is the guest's, which stops with retro_run
 	const u64 slaved_start = get_slaved_system_time();
-#else
-	const u64 start_time = get_system_time();
-#endif
 
 	if (cpu)
 	{
@@ -2185,9 +2177,7 @@ bool lv2_obj::wait_timeout(u64 usec, ppu_thread* cpu, bool scale, bool is_usleep
 			usec = deadline_left(end_time);
 
 			if (!usec)
-			{
 				return true;
-			}
 
 			scale = true;
 		}
@@ -2237,10 +2227,8 @@ bool lv2_obj::wait_timeout(u64 usec, ppu_thread* cpu, bool scale, bool is_usleep
 		}
 
 		u64 remaining = usec - passed;
-#ifdef LIBRETRO_CORE
 		// Left of the guest's time: waited for at the pace retro_run comes
 		remaining = libretro_guest_wait_as_host(remaining);
-#endif
 #ifdef __linux__
 		// NOTE: Assumption that timer initialization has succeeded
 		constexpr u64 host_min_quantum = 10;
@@ -2290,11 +2278,7 @@ bool lv2_obj::wait_timeout(u64 usec, ppu_thread* cpu, bool scale, bool is_usleep
 			}
 		}
 
-#ifdef LIBRETRO_CORE
 		passed = get_slaved_system_time() - slaved_start;
-#else
-		passed = get_system_time() - start_time;
-#endif
 	}
 
 	return true;

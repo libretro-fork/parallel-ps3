@@ -624,12 +624,10 @@ bool logs::file_writer::flush(u64 bufv)
 		{
 			rdeflate_set_in(m_zs, m_fptr.get() + out_index, size);
 
-#ifdef LIBRETRO_CORE
 			// Every write complete in the file: testers send the .gz, and
 			// after a crash or a kill the last block, with whatever went
 			// wrong in it, was otherwise never written out
 			rdeflate_flush(m_zs);
-#endif
 
 			// Until the input is taken and the output has room left
 			while (true)

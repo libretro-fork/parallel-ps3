@@ -43,9 +43,7 @@ atomic_t<bool> g_user_asked_for_recording = false;
 atomic_t<bool> g_user_asked_for_screenshot = false;
 atomic_t<bool> g_user_asked_for_frame_capture = false;
 atomic_t<bool> g_disable_frame_limit = false;
-#ifdef LIBRETRO_CORE
 atomic_t<u32> g_libretro_vblank_requests = 0;
-#endif
 rsx::frame_trace_data frame_debug;
 rsx::frame_capture_data frame_capture;
 
@@ -1066,13 +1064,8 @@ namespace rsx
 		}
 		else
 		{
-#ifdef LIBRETRO_CORE
 			// VBlank is posted by retro_run now: the guest's clock now
-			(void)post_event_time;
 			sys_rsx_context_attribute(0x55555555, 0xFED, 1, get_guest_system_time(), 0, 0);
-#else
-			sys_rsx_context_attribute(0x55555555, 0xFED, 1, get_guest_system_time(post_event_time), 0, 0);
-#endif
 		}
 	}
 
@@ -1176,26 +1169,11 @@ namespace rsx
 
 		g_fxo->get<vblank_thread>().set_thread(std::shared_ptr<named_thread<std::function<void()>>>(new named_thread<std::function<void()>>("VBlank Thread"sv, [this]() -> void
 		{
-#ifdef LIBRETRO_CORE
 			u32 frontend_vblanks = g_libretro_vblank_requests; // wraps; only compared for equality
-#else
-#ifdef __linux__
-			constexpr u32 host_min_quantum = 10;
-#else
-			constexpr u32 host_min_quantum = 500;
-#endif
-			u64 start_time = get_system_time();
-
-			u64 vblank_rate = g_cfg.video.vblank_rate;
-			u64 vblank_period = 1'000'000 + u64{g_cfg.video.vblank_ntsc.get()} * 1000;
-
-			u64 local_vblank_count = 0;
-#endif
 
 			// TODO: exit condition
 			while (!is_stopped() && !unsent_gcm_events && thread_ctrl::state() != thread_state::aborting)
 			{
-#ifdef LIBRETRO_CORE
 				// VBLANK on the frontend's clock, and on nothing else: one per
 				// retro_run. The game makes exactly one frame per frame the
 				// frontend shows, and fast-forward, slow motion and pausing
@@ -1222,67 +1200,6 @@ namespace rsx
 					}
 				}
 
-#else
-				// Get current time
-				const u64 current = get_system_time();
-
-				// Calculate the time at which we need to send a new VBLANK signal
-				const u64 post_event_time = start_time + (local_vblank_count + 1) * vblank_period / vblank_rate;
-
-				// Calculate time remaining to that time (0 if we passed it)
-				const u64 wait_for = current >= post_event_time ? 0 : post_event_time - current;
-
-#ifdef __linux__
-				const u64 wait_sleep = wait_for;
-#else
-				// Substract host operating system min sleep quantom to get sleep time
-				const u64 wait_sleep = wait_for - u64{wait_for >= host_min_quantum} * host_min_quantum;
-#endif
-
-				if (!wait_for)
-				{
-					{
-						local_vblank_count++;
-
-						if (local_vblank_count == vblank_rate)
-						{
-							// Advance start_time to the moment of the current VBLANK
-							// Which is the last VBLANK event in this period
-							// This is in order for multiplication by ratio above to use only small numbers
-							start_time += vblank_period;
-							local_vblank_count = 0;
-
-							// We have a rare chance to update settings without losing precision whenever local_vblank_count is 0
-							vblank_rate = g_cfg.video.vblank_rate;
-							vblank_period = 1'000'000 + u64{g_cfg.video.vblank_ntsc.get()} * 1000;
-						}
-
-						post_vblank_event(post_event_time);
-					}
-				}
-				else if (wait_sleep)
-				{
-					thread_ctrl::wait_for(wait_sleep);
-				}
-				else if (wait_for >= host_min_quantum / 3 * 2)
-				{
-					std::this_thread::yield();
-				}
-
-				if (Emu.IsPaused())
-				{
-					// Save the difference before pause
-					start_time = get_system_time() - start_time;
-
-					while (Emu.IsPaused() && !is_stopped())
-					{
-						thread_ctrl::wait_for(5'000);
-					}
-
-					// Restore difference
-					start_time = get_system_time() - start_time;
-				}
-#endif
 			}
 		})));
 

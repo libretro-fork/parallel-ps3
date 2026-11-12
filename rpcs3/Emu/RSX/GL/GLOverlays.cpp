@@ -8,11 +8,7 @@
 #include <functional>
 #include <thread>
 
-#if defined(LIBRETRO_CORE)
 #ifndef RPCS3_LIBRETRO_GL_OVERLAY_TRACE
-#define RPCS3_LIBRETRO_GL_OVERLAY_TRACE 0
-#endif
-#else
 #define RPCS3_LIBRETRO_GL_OVERLAY_TRACE 0
 #endif
 

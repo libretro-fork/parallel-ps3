@@ -148,9 +148,6 @@ cmake -S . -B build -G Ninja $CROSS                    \
     -DLLVM_DIR="$DEPS/llvm/lib/cmake/llvm"             \
     -DUSE_NATIVE_INSTRUCTIONS=OFF                      \
     -DUSE_PRECOMPILED_HEADERS=OFF                      \
-    -DUSE_SDL=OFF                                      \
-    -DUSE_FAUDIO=OFF                                   \
-    -DUSE_DISCORD_RPC=OFF                              \
     -DUSE_SYSTEM_OPENCV=OFF                            \
     -DUSE_LTO=OFF                                      \
     -DUSE_SYSTEM_MVK=ON                                \

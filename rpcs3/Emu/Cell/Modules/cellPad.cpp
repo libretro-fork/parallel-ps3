@@ -1026,7 +1026,6 @@ error_code cellPadGetDataExtra(u32 port_no, vm::ptr<u32> device_type, vm::ptr<Ce
 	return CELL_OK;
 }
 
-#ifdef LIBRETRO_CORE
 static error_code cellPadSetActDirect_impl(u32 port_no, vm::ptr<CellPadActParam> param);
 
 // Calls go to the log with what they asked for and what came of it, so a
@@ -1052,9 +1051,6 @@ error_code cellPadSetActDirect(u32 port_no, vm::ptr<CellPadActParam> param)
 }
 
 static error_code cellPadSetActDirect_impl(u32 port_no, vm::ptr<CellPadActParam> param)
-#else
-error_code cellPadSetActDirect(u32 port_no, vm::ptr<CellPadActParam> param)
-#endif
 {
 	cellPad.trace("cellPadSetActDirect(port_no=%d, param=*0x%x)", port_no, param);
 

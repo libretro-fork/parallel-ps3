@@ -4711,35 +4711,8 @@ public:
 			break;
 		}
 		case SPU_RdDec:
-		{
-#if defined(ARCH_X64) || defined(ARCH_ARM64)
-			// The core's guest clock is retro_run's (get_timebased_time), not the
-			// host's TSC read here inline
-#ifdef LIBRETRO_CORE
-			if (false)
-#else
-			if (utils::get_tsc_freq() && !(g_cfg.core.spu_loop_detection) && (g_cfg.core.clocks_scale == 100))
-#endif
-			{
-				const auto timebase_offs = m_ir->CreateLoad(get_type<u64>(), m_ir->CreateIntToPtr(m_ir->getInt64(reinterpret_cast<u64>(&g_timebase_offs)), get_type<u64*>()));
-				const auto timestamp = m_ir->CreateLoad(get_type<u64>(), spu_ptr(&spu_thread::ch_dec_start_timestamp));
-				const auto dec_value = m_ir->CreateLoad(get_type<u32>(), spu_ptr(&spu_thread::ch_dec_value));
-				const auto tsc = m_ir->CreateCall(get_intrinsic(llvm::Intrinsic::readcyclecounter));
-				const auto tscx = m_ir->CreateMul(m_ir->CreateUDiv(tsc, m_ir->getInt64(utils::get_tsc_freq())), m_ir->getInt64(80000000));
-				const auto tscm = m_ir->CreateUDiv(m_ir->CreateMul(m_ir->CreateURem(tsc, m_ir->getInt64(utils::get_tsc_freq())), m_ir->getInt64(80000000)), m_ir->getInt64(utils::get_tsc_freq()));
-				const auto tsctb = m_ir->CreateSub(m_ir->CreateAdd(tscx, tscm), timebase_offs);
-				const auto frz = m_ir->CreateLoad(get_type<u8>(), spu_ptr(&spu_thread::is_dec_frozen));
-				const auto frzev = m_ir->CreateICmpEQ(frz, m_ir->getInt8(0));
-
-				const auto delta = m_ir->CreateTrunc(m_ir->CreateSub(tsctb, timestamp), get_type<u32>());
-				const auto deltax = m_ir->CreateSelect(frzev, delta, m_ir->getInt32(0));
-				res.value = m_ir->CreateSub(dec_value, deltax);
-				break;
-			}
-#endif
 			res.value = call("spu_read_decrementer", &exec_read_dec, m_thread);
 			break;
-		}
 		case SPU_RdEventMask:
 		{
 			const auto value = m_ir->CreateLoad(get_type<u64>(), spu_ptr(&spu_thread::ch_events));
@@ -5543,27 +5516,7 @@ public:
 		{
 			call("spu_get_events", &exec_get_events, m_thread, m_ir->getInt32(SPU_EVENT_TM));
 
-#if defined(ARCH_X64) || defined(ARCH_ARM64)
-			// The core's guest clock is retro_run's (get_timebased_time), not the
-			// host's TSC read here inline
-#ifdef LIBRETRO_CORE
-			if (false)
-#else
-			if (utils::get_tsc_freq() && !(g_cfg.core.spu_loop_detection) && (g_cfg.core.clocks_scale == 100))
-#endif
-			{
-				const auto timebase_offs = m_ir->CreateLoad(get_type<u64>(), m_ir->CreateIntToPtr(m_ir->getInt64(reinterpret_cast<u64>(&g_timebase_offs)), get_type<u64*>()));
-				const auto tsc = m_ir->CreateCall(get_intrinsic(llvm::Intrinsic::readcyclecounter));
-				const auto tscx = m_ir->CreateMul(m_ir->CreateUDiv(tsc, m_ir->getInt64(utils::get_tsc_freq())), m_ir->getInt64(80000000));
-				const auto tscm = m_ir->CreateUDiv(m_ir->CreateMul(m_ir->CreateURem(tsc, m_ir->getInt64(utils::get_tsc_freq())), m_ir->getInt64(80000000)), m_ir->getInt64(utils::get_tsc_freq()));
-				const auto tsctb = m_ir->CreateSub(m_ir->CreateAdd(tscx, tscm), timebase_offs);
-				m_ir->CreateStore(tsctb, spu_ptr(&spu_thread::ch_dec_start_timestamp));
-			}
-			else
-#endif
-			{
-				m_ir->CreateStore(call("get_timebased_time", &get_timebased_time), spu_ptr(&spu_thread::ch_dec_start_timestamp));
-			}
+			m_ir->CreateStore(call("get_timebased_time", &get_timebased_time), spu_ptr(&spu_thread::ch_dec_start_timestamp));
 
 			m_ir->CreateStore(val.value, spu_ptr(&spu_thread::ch_dec_value));
 			m_ir->CreateStore(m_ir->getInt8(0), spu_ptr(&spu_thread::is_dec_frozen));

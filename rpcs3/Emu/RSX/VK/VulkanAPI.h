@@ -2,21 +2,6 @@
 
 // Configure vulkan.h. The core: no window system's surface, the frontend
 // presents
-#ifdef LIBRETRO_CORE
-#elif defined(_WIN32)
-#define VK_USE_PLATFORM_WIN32_KHR
-#elif defined(__APPLE__)
-#define VK_USE_PLATFORM_METAL_EXT
-#elif defined(ANDROID)
-#define VK_USE_PLATFORM_ANDROID_KHR
-#else
-#if defined(HAVE_X11)
- #define VK_USE_PLATFORM_XLIB_KHR
-#endif
-#if defined(HAVE_WAYLAND)
- #define VK_USE_PLATFORM_WAYLAND_KHR
-#endif
-#endif
 
 #ifdef _MSC_VER
 #pragma warning( push )

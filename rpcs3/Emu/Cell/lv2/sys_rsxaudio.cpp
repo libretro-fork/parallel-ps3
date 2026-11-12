@@ -1945,26 +1945,20 @@ void rsxaudio_backend_thread::reset_service_time()
 void rsxaudio_periodic_tmr::sched_timer()
 {
 	u64 interval = get_rel_next_time();
-#ifdef LIBRETRO_CORE
 	// The guest's time until the next period: waited for at the pace
 	// retro_run comes
 	if (interval != 0 && interval != UINT64_MAX)
 		interval = libretro_guest_wait_as_host(interval);
-#endif
 
 	if (interval == 0)
-	{
 		zero_period = true;
-	}
 	else if (interval == UINT64_MAX)
 	{
 		interval = 0;
 		zero_period = false;
 	}
 	else
-	{
 		zero_period = false;
-	}
 
 #if defined(_WIN32)
 	if (interval)

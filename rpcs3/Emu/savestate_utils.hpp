@@ -37,7 +37,6 @@ struct hle_locks_t
 	bool try_finalize(std::function<bool()> test);
 };
 
-#ifdef LIBRETRO_CORE
 // A savestate kept in memory instead of a file, for the frontend's save
 // states: while set, a savestate the emulator makes is written there (and
 // booting memory_savestate_path reads it from there, where it lies). The
@@ -45,7 +44,6 @@ struct hle_locks_t
 // still reading it.
 extern std::vector<u8>* g_memory_savestate;
 inline const std::string memory_savestate_path = "/libretro/memory.SAVESTAT.zst";
-#endif
 
 std::shared_ptr<utils::serial> make_savestate_reader(const std::string& path);
 bool load_and_check_reserved(utils::serial& ar, usz size);

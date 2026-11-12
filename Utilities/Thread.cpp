@@ -2501,11 +2501,9 @@ static LONG exception_filter(PEXCEPTION_POINTERS pExp) noexcept
 	thread_ctrl::emergency_exit(msg);
 }
 
-#ifdef LIBRETRO_CORE
 // Kept so the core can take them out again before it is unloaded
 static PVOID s_vectored_exception_handler = nullptr;
 static LPTOP_LEVEL_EXCEPTION_FILTER s_previous_exception_filter = nullptr;
-#endif
 
 const bool s_exception_handler_set = []() -> bool
 {
@@ -2515,24 +2513,17 @@ const bool s_exception_handler_set = []() -> bool
 	PVOID handler = AddVectoredExceptionHandler(1, static_cast<PVECTORED_EXCEPTION_HANDLER>(exception_handler));
 #endif
 	if (!handler)
-	{
 		report_fatal_error("AddVectoredExceptionHandler() failed.");
-	}
 
 	LPTOP_LEVEL_EXCEPTION_FILTER previous = SetUnhandledExceptionFilter(static_cast<LPTOP_LEVEL_EXCEPTION_FILTER>(exception_filter));
 	if (!previous)
-	{
 		report_fatal_error("SetUnhandledExceptionFilter() failed.");
-	}
 
-#ifdef LIBRETRO_CORE
 	s_vectored_exception_handler = handler;
 	s_previous_exception_filter = previous;
-#endif
 	return true;
 }();
 
-#ifdef LIBRETRO_CORE
 // The handlers live in this library, and Windows goes on calling them after
 // the frontend has unloaded it: the next exception anywhere in the process -
 // the frontend's own, first-chance ones included - jumps into memory that is
@@ -2564,11 +2555,9 @@ static struct exception_handler_remover
 		thread_ctrl_uninstall_exception_handlers();
 	}
 } s_exception_handler_remover;
-#endif
 
 #else
 
-#ifdef LIBRETRO_CORE
 // The handlers there were before ours (the frontend's, or the system's crash
 // reporter, Android's tombstone): ours go in when the library is loaded and
 // out when it is unloaded, and a fault ours does not handle goes to them, as
@@ -2594,7 +2583,6 @@ static void pass_to_previous(int sig)
 	if (struct ::sigaction* previous = previous_action(sig))
 		::sigaction(sig, previous, nullptr);
 }
-#endif
 
 static void signal_handler([[maybe_unused]] int sig, siginfo_t* info, void* uct) noexcept
 {
@@ -2724,20 +2712,7 @@ static void signal_handler([[maybe_unused]] int sig, siginfo_t* info, void* uct)
 	sys_log.fatal("\n%s", msg);
 	sys_log.notice("\n%s", dump_useful_thread_info());
 	logs::listener::sync_all();
-
-#ifdef LIBRETRO_CORE
 	pass_to_previous(sig);
-	return;
-#else
-	if (IsDebuggerPresent())
-	{
-		// Convert to SIGTRAP
-		raise(SIGTRAP);
-		return;
-	}
-
-	thread_ctrl::emergency_exit(msg);
-#endif
 }
 
 static void sigill_handler([[maybe_unused]] int sig, siginfo_t* info, void* /*uct*/) noexcept
@@ -2750,30 +2725,14 @@ static void sigill_handler([[maybe_unused]] int sig, siginfo_t* info, void* /*uc
 	sys_log.notice("\n%s", dump_useful_thread_info());
 	logs::listener::sync_all();
 
-#ifdef LIBRETRO_CORE
 	pass_to_previous(sig);
-	return;
-#else
-	if (IsDebuggerPresent())
-	{
-		// Convert to SIGTRAP
-		raise(SIGTRAP);
-		return;
-	}
-
-	thread_ctrl::emergency_exit(msg);
-#endif
 }
 
 void sigpipe_signaling_handler(int)
 {
 }
 
-#ifdef LIBRETRO_CORE
 #define LIBRETRO_PREVIOUS(previous) previous
-#else
-#define LIBRETRO_PREVIOUS(previous) NULL
-#endif
 
 const bool s_exception_handler_set = []() -> bool
 {
@@ -2810,14 +2769,11 @@ const bool s_exception_handler_set = []() -> bool
 		std::abort();
 	}
 
-#ifdef LIBRETRO_CORE
 	s_signal_handlers_installed = true;
-#endif
 	std::printf("Debugger: %d\n", +IsDebuggerPresent());
 	return true;
 }();
 
-#ifdef LIBRETRO_CORE
 // Ours out again when the library is unloaded (a static destructor runs at
 // dlclose): left in, the next fault anywhere in the frontend jumps into code
 // that is gone. One replaced since by someone else stays.
@@ -2851,7 +2807,6 @@ static struct exception_handler_remover
 		thread_ctrl_uninstall_exception_handlers();
 	}
 } s_exception_handler_remover;
-#endif
 
 #endif
 
