@@ -522,7 +522,21 @@ check: all
 	@# Nor do the mice: no lock in the handler, none taken by those that read them
 	@if grep -n "shared_mutex\|std::mutex\|lock_guard\|scoped_lock" ../../Emu/Io/MouseHandler.h ../../Emu/Io/MouseHandler.cpp ../libretro_mouse_handler.h ../libretro_mouse_handler.cpp || grep -rn "handler\.mutex\|take_pending()" ../../Emu/Cell/Modules/cellMouse.cpp ../../Emu/Cell/Modules/cellGem.cpp ../../Emu/Io/usio.cpp ../../Emu/Io/GunCon3.cpp ../../Emu/Io/TopShotElite.cpp ../../Emu/Io/TopShotFearmaster.cpp ../../Emu/Io/GameTablet.cpp; then echo "mice: the mouse handler's lock is back - a mouse is a record read whole (AGENTS.md)"; exit 1; else echo "mice: no mouse lock"; fi
 
+# The C89 modules with a NEON path, built for ARM64 and run under emulation
+# (gcc-aarch64-linux-gnu, qemu-user): what the x86 run cannot see of them.
+# The module with the build's own standard for C (gnu99, with which GCC
+# fuses a multiply and an add on ARM unless told otherwise), the test C89.
+ARM64_CC  ?= aarch64-linux-gnu-gcc
+ARM64_RUN ?= qemu-aarch64
+
+check-arm64:
+	@mkdir -p obj
+	$(ARM64_CC) -O3 -std=gnu99 -Wall -I$(LRC)/include -c -o obj/cellAudio_mix.arm64.o ../../Emu/Cell/Modules/cellAudio_mix.c
+	$(ARM64_CC) -O2 $(TEST_STD) -I$(LRC)/include -c -o obj/test_audio_mix.arm64.o test_audio_mix.c
+	$(ARM64_CC) -static -o obj/test_audio_mix.arm64 obj/test_audio_mix.arm64.o obj/cellAudio_mix.arm64.o -lm
+	$(ARM64_RUN) obj/test_audio_mix.arm64
+
 clean:
 	rm -rf obj $(TESTS) *_out.* rec_out
 
-.PHONY: all check clean
+.PHONY: all check check-arm64 clean

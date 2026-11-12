@@ -101,6 +101,12 @@ jobs:
       - name: Run
         run: make -C rpcs3/libretro/tests -j"$(nproc)" check
 
+      # The modules with a NEON path, as ARM64 under emulation
+      - name: ARM64 under emulation
+        run: |
+          sudo apt-get install -y -q --no-install-recommends gcc-aarch64-linux-gnu libc6-dev-arm64-cross qemu-user
+          make -C rpcs3/libretro/tests check-arm64
+
       # The RPCN client's TLS connection, read and written from two threads
       # at once, again under ThreadSanitizer
       - name: TLS duplex under ThreadSanitizer

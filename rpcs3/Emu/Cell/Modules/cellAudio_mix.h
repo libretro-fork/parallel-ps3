@@ -7,7 +7,7 @@
  * each frame is mixed at its own volume, one by one. Once it is there - all
  * of the time but those 13 ms - the volume is one number for the block:
  * the samples are swapped, scaled and added four at a time where the
- * machine has SSE2, with no look at the level a frame.
+ * machine has SSE2 or NEON, with no look at the level a frame.
  *
  * Every sample is the same number the mixer made a frame at a time: a
  * multiply and an add each, in the same order. */

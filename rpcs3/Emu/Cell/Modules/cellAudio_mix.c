@@ -1,5 +1,17 @@
 /* cellAudio's mixer (cellAudio_mix.h). */
 
+/* A multiply and an add stay two operations, never fused into one: a
+ * sample is the same number on every machine and on every path here,
+ * whatever the compiler would make of `a * b + c` left to itself (GCC
+ * fuses it on ARM unless told otherwise). */
+#if defined(__clang__)
+#pragma STDC FP_CONTRACT OFF
+#elif defined(__GNUC__)
+#pragma GCC optimize ("fp-contract=off")
+#elif defined(_MSC_VER)
+#pragma fp_contract(off)
+#endif
+
 #include "cellAudio_mix.h"
 
 #include <string.h>
@@ -9,6 +21,9 @@
 #if defined(__SSE2__) || (defined(_MSC_VER) && (defined(_M_X64) || defined(_M_AMD64)))
 #include <emmintrin.h>
 #define MIX_SSE2 1
+#elif defined(__aarch64__) || defined(_M_ARM64) || defined(__ARM_NEON)
+#include <arm_neon.h>
+#define MIX_NEON 1
 #endif
 
 /* A big-endian float at any address */
@@ -129,6 +144,14 @@ static INLINE void mix_frame(float *out, unsigned out_channels, const unsigned c
    }
 }
 
+#ifdef MIX_NEON
+/* Four big-endian floats */
+static INLINE float32x4_t mix_be4(const unsigned char *p)
+{
+   return vreinterpretq_f32_u8(vrev32q_u8(vld1q_u8(p)));
+}
+#endif
+
 #ifdef MIX_SSE2
 /* Four big-endian floats */
 static INLINE __m128 mix_be4(const unsigned char *p)
@@ -214,6 +237,56 @@ int cell_audio_mix_port(float *out, unsigned out_channels, const void *in,
          lr               = _mm_add_ps(lr, _mm_movehl_ps(bh, bh));      /* + RL/2, + RR/2 */
          lr               = _mm_add_ps(_mm_loadl_pi(_mm_setzero_ps(), (const __m64*)o), lr);
          _mm_storel_pi((__m64*)o, lr);
+      }
+   }
+#endif
+
+#ifdef MIX_NEON
+   /* The same three, a multiply and an add each as a frame at a time has
+    * them (not fused into one) */
+   if (in_channels == 2 && out_channels == 2)
+   {
+      const float32x4_t vm = vdupq_n_f32(m);
+
+      for (; i + 2 <= frames; i += 2)
+      {
+         float *o = out + i * 2;
+         vst1q_f32(o, vaddq_f32(vld1q_f32(o), vmulq_f32(mix_be4(src + i * 8), vm)));
+      }
+   }
+   else if (in_channels == 8 && out_channels == 8 && down == CELL_AUDIO_MIX_7_1)
+   {
+      const float32x4_t vm = vdupq_n_f32(m);
+
+      for (; i < frames; i++)
+      {
+         float *o            = out + i * 8;
+         const float32x4_t a = vmulq_f32(mix_be4(src + i * 32), vm);      /* L R C LFE */
+         const float32x4_t b = vmulq_f32(mix_be4(src + i * 32 + 16), vm); /* SL SR RL RR */
+         /* out 4,5 take the rear pair and 6,7 the side pair */
+         const float32x4_t r = vcombine_f32(vget_high_f32(b), vget_low_f32(b));
+         vst1q_f32(o,     vaddq_f32(vld1q_f32(o), a));
+         vst1q_f32(o + 4, vaddq_f32(vld1q_f32(o + 4), r));
+      }
+   }
+   else if (in_channels == 8 && down == CELL_AUDIO_MIX_STEREO)
+   {
+      const float32x4_t vm   = vdupq_n_f32(m);
+      const float32x2_t k3db = vdup_n_f32(0.707f);
+      const float32x4_t half = vdupq_n_f32(0.5f);
+
+      for (; i < frames; i++)
+      {
+         float *o              = out + i * out_channels;
+         const float32x4_t a   = vmulq_f32(mix_be4(src + i * 32), vm);      /* L R C LFE */
+         const float32x4_t b   = vmulq_f32(mix_be4(src + i * 32 + 16), vm); /* SL SR RL RR */
+         const float32x4_t ah  = vmulq_f32(a, half);
+         const float32x2_t mid = vdup_lane_f32(vget_high_f32(ah), 0);       /* the centre's half, for both */
+         const float32x4_t bh  = vmulq_f32(b, half);                        /* SL/2 SR/2 RL/2 RR/2 */
+         float32x2_t lr        = vadd_f32(vmul_f32(vget_low_f32(a), k3db), mid);
+         lr                    = vadd_f32(lr, vget_low_f32(bh));
+         lr                    = vadd_f32(lr, vget_high_f32(bh));
+         vst1_f32(o, vadd_f32(vld1_f32(o), lr));
       }
    }
 #endif
