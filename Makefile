@@ -539,14 +539,26 @@ $(EMBED): $(CORE_DIR)/rpcs3/libretro/make/embed.c $(EMBED_LRC)
 ICON_DIR   := $(CORE_DIR)/bin/Icons/ui
 ICON_NAMES := $(sort $(patsubst $(ICON_DIR)/%,%,$(wildcard $(ICON_DIR)/*.png $(ICON_DIR)/home/32/*.png)))
 
-$(GEN_DIR)/libretro_ui_icons.cpp: $(EMBED) $(addprefix $(ICON_DIR)/,$(ICON_NAMES))
-	$(EMBED) icons $@ $(ICON_DIR) $(ICON_NAMES)
+# embed rewrites a source only when what it holds changed, so the source can
+# stay older than embed and its inputs; a stamp beside it records the run, and
+# the source follows the stamp. Without it each of these ran on every build -
+# the game patches fetched from rpcs3.net every time.
+EMBED_STAMPS := $(addprefix $(GEN_DIR)/,libretro_ui_icons.stamp libretro_config_database.stamp libretro_vblank_unlock.stamp libretro_patches.stamp)
 
-$(GEN_DIR)/libretro_config_database.cpp: $(EMBED) $(CORE_DIR)/rpcs3/libretro/config_database.dat
-	$(EMBED) bytes $@ g_libretro_config_database g_libretro_config_database_size config_database.dat $(CORE_DIR)/rpcs3/libretro/config_database.dat
+$(GEN_DIR)/%.cpp: $(GEN_DIR)/%.stamp
+	@[ -f $@ ] || { rm -f $<; $(MAKE) $<; }
 
-$(GEN_DIR)/libretro_vblank_unlock.cpp: $(EMBED) $(CORE_DIR)/rpcs3/libretro/vblank_unlock.txt
-	$(EMBED) bytes $@ g_libretro_vblank_unlock g_libretro_vblank_unlock_size vblank_unlock.txt $(CORE_DIR)/rpcs3/libretro/vblank_unlock.txt
+$(GEN_DIR)/libretro_ui_icons.stamp: $(EMBED) $(addprefix $(ICON_DIR)/,$(ICON_NAMES))
+	$(EMBED) icons $(GEN_DIR)/libretro_ui_icons.cpp $(ICON_DIR) $(ICON_NAMES)
+	@touch $@
+
+$(GEN_DIR)/libretro_config_database.stamp: $(EMBED) $(CORE_DIR)/rpcs3/libretro/config_database.dat
+	$(EMBED) bytes $(GEN_DIR)/libretro_config_database.cpp g_libretro_config_database g_libretro_config_database_size config_database.dat $(CORE_DIR)/rpcs3/libretro/config_database.dat
+	@touch $@
+
+$(GEN_DIR)/libretro_vblank_unlock.stamp: $(EMBED) $(CORE_DIR)/rpcs3/libretro/vblank_unlock.txt
+	$(EMBED) bytes $(GEN_DIR)/libretro_vblank_unlock.cpp g_libretro_vblank_unlock g_libretro_vblank_unlock_size vblank_unlock.txt $(CORE_DIR)/rpcs3/libretro/vblank_unlock.txt
+	@touch $@
 
 # RPCS3's game patches for this patch engine, fetched once as the CMake
 # build fetches them at configure time (rpcs3/libretro/embed_patches.cmake):
@@ -554,17 +566,18 @@ $(GEN_DIR)/libretro_vblank_unlock.cpp: $(EMBED) $(CORE_DIR)/rpcs3/libretro/vblan
 # them again.
 PATCH_ENGINE := $(shell sed -n 's/.*patch_engine_version = "\([0-9.]*\)".*/\1/p' $(CORE_DIR)/Utilities/bin_patch.h)
 
-$(GEN_DIR)/libretro_patches.cpp: $(EMBED)
+$(GEN_DIR)/libretro_patches.stamp: $(EMBED)
 ifeq ($(EMBED_PATCHES),1)
 	-curl -fsSL --max-time 60 -o $(GEN_DIR)/patch.json "https://rpcs3.net/compatibility?patch&api=v1&v=$(PATCH_ENGINE)" || rm -f $(GEN_DIR)/patch.json
 	-[ -s $(GEN_DIR)/patch.json ] || curl -fsSL --max-time 60 -o $(GEN_DIR)/patch.yml "https://raw.githubusercontent.com/illusionyy/rpcs3-game-patch/main/patch.yml"
 endif
-	$(EMBED) patch $@ $(PATCH_ENGINE) $(GEN_DIR)/patch.json $(GEN_DIR)/patch.yml
+	$(EMBED) patch $(GEN_DIR)/libretro_patches.cpp $(PATCH_ENGINE) $(GEN_DIR)/patch.json $(GEN_DIR)/patch.yml
 	@rm -f $(GEN_DIR)/patch.json $(GEN_DIR)/patch.yml
+	@touch $@
 
 patches:
-	rm -f $(GEN_DIR)/libretro_patches.cpp
-	$(MAKE) $(GEN_DIR)/libretro_patches.cpp
+	rm -f $(GEN_DIR)/libretro_patches.cpp $(GEN_DIR)/libretro_patches.stamp
+	$(MAKE) $(GEN_DIR)/libretro_patches.stamp
 
 # git-version.h, as rpcs3/git-version.cmake and upstream_version.cmake
 # write it: upstream's build and commit; rewritten only when it changes
@@ -655,6 +668,7 @@ $(GEN_DIR)/test_llvm_jit: $(OBJ_LLVM_JIT_TEST) $(OBJ_LIBRETRO) $(ARCHIVES)
 	$(Q)$(CXX) -o $@ $(OBJ_LLVM_JIT_TEST) $(OBJ_LIBRETRO) $(GROUP_START) $(ARCHIVES) $(GROUP_END) $(LDFLAGS) $(LIBS)
 
 check: $(TARGET) $(SAVESTATE_TEST) $(DECODERS_TEST) $(PATCHES_TEST) $(AUDIO_TEST) $(VK_HANDOFF_TEST) $(PAD_HANDOFF_TEST) $(MOUSE_HANDOFF_TEST) $(LLVM_JIT_TEST)
+	@$(MAKE) -q $(EMBED_STAMPS) || { echo "check: the embedded sources are made again on every build"; exit 1; }
 	$(HOST_CC) -O2 -o $(GEN_DIR)/load_test $(CORE_DIR)/rpcs3/libretro/make/load_test.c -ldl
 	$(GEN_DIR)/load_test ./$(TARGET)
 	$(SAVESTATE_TEST)
