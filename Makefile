@@ -529,6 +529,11 @@ EMBED_STAMPS := $(addprefix $(GEN_DIR)/,libretro_ui_icons.stamp libretro_config_
 $(GEN_DIR)/%.cpp: $(GEN_DIR)/%.stamp
 	@[ -f $@ ] || { rm -f $<; $(MAKE) $<; }
 
+# Kept: made by the chain above, they are intermediates to make, which
+# deleted them at the end of a first build - and the next build, whose .d
+# files name them, made them again and fetched the patches again
+.SECONDARY: $(EMBED_STAMPS:.stamp=.cpp)
+
 $(GEN_DIR)/libretro_ui_icons.stamp: $(EMBED) $(addprefix $(ICON_DIR)/,$(ICON_NAMES))
 	$(EMBED) icons $(GEN_DIR)/libretro_ui_icons.cpp $(ICON_DIR) $(ICON_NAMES)
 	@touch $@
@@ -689,6 +694,7 @@ $(GEN_DIR)/test_llvm_jit: $(OBJ_LLVM_JIT_TEST) $(OBJ_LIBRETRO) $(ARCHIVES)
 
 check: $(TARGET) $(SAVESTATE_TEST) $(DECODERS_TEST) $(PATCHES_TEST) $(AUDIO_TEST) $(VK_HANDOFF_TEST) $(PAD_HANDOFF_TEST) $(MOUSE_HANDOFF_TEST) $(EMU_WAITS_TEST) $(FAILED_BOOT_TEST) $(GUEST_CLOCK_TEST) $(GL_CONTEXTS_TEST) $(LLVM_JIT_TEST)
 	@$(MAKE) -q $(EMBED_STAMPS) || { echo "check: the embedded sources are made again on every build"; exit 1; }
+	@for f in $(EMBED_STAMPS:.stamp=.cpp); do [ -f $$f ] || { echo "check: $$f was deleted after the build"; exit 1; }; done
 	$(HOST_CC) -O2 -o $(GEN_DIR)/load_test $(CORE_DIR)/rpcs3/libretro/make/load_test.c -ldl
 	$(GEN_DIR)/load_test ./$(TARGET)
 	$(SAVESTATE_TEST)
