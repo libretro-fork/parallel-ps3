@@ -4,20 +4,23 @@
 #include "util/atomic.hpp"
 #include <vector>
 
+// Upstream RPCS3's simple_ringbuf, kept here only for the tests to compare
+// against: the core no longer has it (its users are on libretro-common's
+// retro_spsc and libretro_audio_ring).
 // Single reader/writer simple ringbuffer.
-class simple_ringbuf
+class reference_ringbuf
 {
 public:
 
-	simple_ringbuf(u64 size = 0);
-	virtual ~simple_ringbuf();
+	reference_ringbuf(u64 size = 0);
+	virtual ~reference_ringbuf();
 
-	simple_ringbuf(const simple_ringbuf& other);
-	simple_ringbuf& operator=(const simple_ringbuf& other);
+	reference_ringbuf(const reference_ringbuf& other);
+	reference_ringbuf& operator=(const reference_ringbuf& other);
 
 	// Thread unsafe functions.
-	simple_ringbuf(simple_ringbuf&& other);
-	simple_ringbuf& operator=(simple_ringbuf&& other);
+	reference_ringbuf(reference_ringbuf&& other);
+	reference_ringbuf& operator=(reference_ringbuf&& other);
 	void set_buf_size(u64 size);
 
 	// Helper functions

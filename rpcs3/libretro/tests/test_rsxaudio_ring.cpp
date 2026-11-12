@@ -13,6 +13,8 @@
 // - asked for more than is waiting, it gives what there is;
 // - a flush from the writer's side (the backend starting) drops what was
 //   waiting and nothing after it;
+// - sys_uart's two rings (retro_spsc) against the ring they were, the same
+//   bytes and counts through 200000 writes and reads;
 // - with RSXAUDIO_BENCH=1 it is timed: a callback's worth in
 //   and out, against the ring it replaced.
 //
@@ -22,7 +24,8 @@
 #include "stdafx.h"
 #include "Emu/Cell/lv2/sys_rsxaudio.h"
 #include "Emu/Audio/AudioBackend.h"
-#include "Utilities/simple_ringbuf.h"
+#include "Emu/Cell/lv2/sys_uart.h"
+#include "reference_ringbuf.h"
 
 #include <chrono>
 #include <cstdio>
@@ -202,6 +205,40 @@ int main()
 		CHECK(std::memcmp(out.data(), expected.data(), 300 * sizeof(f32)) == 0);
 	}
 
+	// sys_uart's rings (retro_spsc behind uart_ring_push and uart_ring_pop)
+	// against the ring they were: a write takes as many bytes as fit, a
+	// read as many as there are, the same bytes either way
+	{
+		retro_spsc_t q{};
+		CHECK(retro_spsc_init(&q, PS3AV_TX_BUF_SIZE));
+		reference_ringbuf old_ring(PS3AV_TX_BUF_SIZE);
+		u8 in[3000], a[3000], b[3000];
+		u32 seed = 12345;
+		usz wrong = 0;
+
+		for (u32 step = 0; step < 200000; step++)
+		{
+			seed = seed * 1664525 + 1013904223;
+			const u32 n = (seed >> 8) % 3000;
+
+			if (seed & 1)
+			{
+				for (u32 i = 0; i < n; i++)
+					in[i] = static_cast<u8>(seed >> (i % 24)) ^ static_cast<u8>(i);
+				wrong += uart_ring_push(q, PS3AV_TX_BUF_SIZE, in, n) != old_ring.push(in, n, true);
+			}
+			else
+			{
+				const u32 got = uart_ring_pop(q, a, n);
+				wrong += got != old_ring.pop(b, n, true);
+				wrong += std::memcmp(a, b, got) != 0;
+			}
+			wrong += uart_ring_used(q) != old_ring.get_used_size();
+		}
+		CHECK(wrong == 0);
+		retro_spsc_free(&q);
+	}
+
 	// A callback's worth (256 stereo frames) in and out, against the ring replaced
 	if (std::getenv("RSXAUDIO_BENCH"))
 	{
@@ -214,7 +251,7 @@ int main()
 		double best_old = 1e18, best_new = 1e18;
 		for (u32 k = 0; k < 5; k++)
 		{
-			simple_ringbuf old_ring(4096 * sizeof(f32));
+			reference_ringbuf old_ring(4096 * sizeof(f32));
 			double t = now_ns();
 			for (u32 i = 0; i < rounds; i++)
 			{
@@ -233,6 +270,36 @@ int main()
 			best_new = std::min(best_new, (now_ns() - t) / rounds);
 		}
 		std::printf("test_rsxaudio_ring: 256 stereo frames in and out: %.0f ns with the old ring, %.0f ns now\n", best_old, best_new);
+
+		// A 64-byte packet through a UART ring
+		retro_spsc_t q{};
+		CHECK(retro_spsc_init(&q, PS3AV_TX_BUF_SIZE));
+		reference_ringbuf old_uart(PS3AV_TX_BUF_SIZE);
+		u8 packet[64]{}, back[64];
+		u64 sink = 0;
+		best_old = best_new = 1e18;
+		for (u32 k = 0; k < 5; k++)
+		{
+			double t = now_ns();
+			for (u32 i = 0; i < 5000000; i++)
+			{
+				packet[0] = static_cast<u8>(i);
+				old_uart.push(packet, 64, true);
+				sink += old_uart.pop(back, 64, true) + back[0];
+			}
+			best_old = std::min(best_old, (now_ns() - t) / 5000000);
+
+			t = now_ns();
+			for (u32 i = 0; i < 5000000; i++)
+			{
+				packet[0] = static_cast<u8>(i);
+				uart_ring_push(q, PS3AV_TX_BUF_SIZE, packet, 64);
+				sink += uart_ring_pop(q, back, 64) + back[0];
+			}
+			best_new = std::min(best_new, (now_ns() - t) / 5000000);
+		}
+		std::printf("test_rsxaudio_ring: a 64-byte UART packet in and out: %.1f ns with the old ring, %.1f ns now (%llu)\n", best_old, best_new, static_cast<unsigned long long>(sink & 1));
+		retro_spsc_free(&q);
 	}
 
 	std::printf("test_rsxaudio_ring: %s\n", failures ? "FAIL" : "ok");

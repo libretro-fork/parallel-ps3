@@ -230,7 +230,6 @@ SOURCES_RPCS3 := \
 	$(CORE_DIR)/Utilities/mutex.cpp \
 	$(CORE_DIR)/Utilities/rXml.cpp \
 	$(CORE_DIR)/Utilities/sema.cpp \
-	$(CORE_DIR)/Utilities/simple_ringbuf.cpp \
 	$(CORE_DIR)/Utilities/stack_trace.cpp \
 	$(CORE_DIR)/Utilities/stereo_config.cpp \
 	$(CORE_DIR)/Utilities/version.cpp \

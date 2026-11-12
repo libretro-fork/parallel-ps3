@@ -780,7 +780,7 @@ $(VDEC_FRAMES_TEST): $(OBJ_VDEC_FRAMES_TEST) $(OBJ_LIBRETRO) $(ARCHIVES)
 # sys_rsxaudio's audio through the lock-free ring to the backend's
 # callback, linked the same way
 RSXAUDIO_RING_TEST := $(GEN_DIR)/test_rsxaudio_ring
-OBJ_RSXAUDIO_RING_TEST := $(CORE_DIR)/rpcs3/libretro/tests/test_rsxaudio_ring.o
+OBJ_RSXAUDIO_RING_TEST := $(CORE_DIR)/rpcs3/libretro/tests/test_rsxaudio_ring.o $(CORE_DIR)/rpcs3/libretro/tests/reference_ringbuf.o
 $(OBJ_RSXAUDIO_RING_TEST): FLAGS := $(FLAGS_LIBRETRO)
 
 $(RSXAUDIO_RING_TEST): $(OBJ_RSXAUDIO_RING_TEST) $(OBJ_LIBRETRO) $(ARCHIVES)

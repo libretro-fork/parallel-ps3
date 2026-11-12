@@ -2005,7 +2005,7 @@ void vuart_av_thread::operator()()
 		}();
 
 		std::unique_lock<shared_mutex> lock(tx_wake_m);
-		if (!tx_buf.get_used_size())
+		if (!uart_ring_used(tx_buf))
 		{
 			tx_wake_c.wait_unlock(wait_time ? wait_time : -1, lock);
 		}
@@ -2097,7 +2097,7 @@ vuart_av_thread &vuart_av_thread::operator=(thread_state)
 u32 vuart_av_thread::enque_tx_data(const void *data, u32 data_sz)
 {
 	std::unique_lock<shared_mutex> lock(tx_wake_m);
-	if (u32 size = static_cast<u32>(tx_buf.push(data, data_sz, true)))
+	if (u32 size = uart_ring_push(tx_buf, PS3AV_TX_BUF_SIZE, data, data_sz))
 	{
 		lock.unlock();
 		tx_wake_c.notify_all();
@@ -2109,18 +2109,18 @@ u32 vuart_av_thread::enque_tx_data(const void *data, u32 data_sz)
 
 u32 vuart_av_thread::get_tx_bytes()
 {
-	return static_cast<u32>(tx_buf.get_used_size());
+	return static_cast<u32>(uart_ring_used(tx_buf));
 }
 
 u32 vuart_av_thread::read_rx_data(void *data, u32 data_sz)
 {
-	return static_cast<u32>(rx_buf.pop(data, data_sz, true));
+	return uart_ring_pop(rx_buf, data, data_sz);
 }
 
 u32 vuart_av_thread::read_tx_data(void *data, u32 data_sz)
 {
 	std::unique_lock<shared_mutex> lock(tx_rdy_m);
-	if (u32 size = static_cast<u32>(tx_buf.pop(data, data_sz, true)))
+	if (u32 size = uart_ring_pop(tx_buf, data, data_sz))
 	{
 		lock.unlock();
 		tx_rdy_c.notify_all();
@@ -2219,10 +2219,10 @@ void vuart_av_thread::commit_rx_buf(bool syscon_buf)
 	temp_buf &buf = syscon_buf ? temp_rx_sc_buf : temp_rx_buf;
 
 	std::unique_lock<shared_mutex> lock(rx_wake_m);
-	rx_buf.push(buf.buf, buf.crnt_size, true);
+	uart_ring_push(rx_buf, PS3AV_RX_BUF_SIZE, buf.buf, buf.crnt_size);
 	buf.crnt_size = 0;
 
-	if (rx_buf.get_used_size())
+	if (uart_ring_used(rx_buf))
 	{
 		lock.unlock();
 		rx_wake_c.notify_all();
@@ -2403,9 +2403,9 @@ void vuart_av_thread::add_hdcp_done_event(bool hdmi_0, bool hdmi_1)
 void vuart_av_thread::commit_event_data(const void *data, u16 data_size)
 {
 	std::unique_lock<shared_mutex> lock(rx_wake_m);
-	rx_buf.push(data, data_size, true);
+	uart_ring_push(rx_buf, PS3AV_RX_BUF_SIZE, data, data_size);
 
-	if (rx_buf.get_used_size())
+	if (uart_ring_used(rx_buf))
 	{
 		lock.unlock();
 		rx_wake_c.notify_all();

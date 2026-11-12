@@ -517,6 +517,7 @@ check: all
 	@if grep -n "gem\.mtx\|lock(mtx)\|tracker\.mutex\|lock(mutex)" ../../Emu/Cell/Modules/cellGem.cpp; then echo "cellGem: a lock of its own is back - what cellGem and its tracker keep are records (AGENTS.md)"; exit 1; else echo "cellGem: no lock of its own"; fi
 	@# cellAudio's ring is the one that lends
 	@if grep -n "simple_ringbuf\|SetWriteCallback" ../../Emu/Cell/Modules/cellAudio.h ../../Emu/Cell/Modules/cellAudio.cpp; then echo "cellAudio: upstream's ring or its write callback is back - its audio is lent from libretro_audio_ring (AGENTS.md)"; exit 1; else echo "cellAudio: its ring lends"; fi
+	@if grep -rn "simple_ringbuf\.h\|simple_ringbuf [a-z_]*[{;(]" ../.. ../../../Utilities --include=*.h --include=*.hpp --include=*.cpp | grep -v "^\.\./\.\./libretro/tests/"; then echo "rings: upstream's simple_ringbuf is back - a ring between two threads is libretro-common's retro_spsc, or libretro_audio_ring for audio (AGENTS.md)"; exit 1; else echo "rings: no simple_ringbuf in the core"; fi
 	@# A file's reads and writes share nothing between threads: no counters of the core's own
 	@if grep -n "retro_atomic_size_t\|fetch_add_size" ../libretro_vfs.cpp; then echo "VFS: a counter every read or write adds to is back - threads on different files would wait on one another for it (CHANGELOG, 0091)"; exit 1; else echo "VFS: nothing counted"; fi
 	@# The lv2 scheduler's wait lists and an event queue's events are retro_deque: no std::deque, no std::vector

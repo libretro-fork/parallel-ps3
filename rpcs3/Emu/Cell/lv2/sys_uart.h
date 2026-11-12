@@ -3,7 +3,27 @@
 #include "Emu/Memory/vm_ptr.h"
 #include "Utilities/mutex.h"
 #include "Utilities/cond.h"
-#include "Utilities/simple_ringbuf.h"
+#include <retro_spsc.h>
+
+// The UART's two byte rings (libretro-common's retro_spsc: one thread writes
+// and one reads, each side behind its own mutex here). A ring holds @limit
+// bytes; a write takes as many as fit.
+inline u32 uart_ring_used(const retro_spsc_t& ring)
+{
+	return static_cast<u32>(retro_spsc_read_avail(&ring));
+}
+
+inline u32 uart_ring_push(retro_spsc_t& ring, u32 limit, const void* data, u32 size)
+{
+	const u32 used = uart_ring_used(ring);
+	const u32 room = limit > used ? limit - used : 0;
+	return static_cast<u32>(retro_spsc_write(&ring, data, std::min(size, room)));
+}
+
+inline u32 uart_ring_pop(retro_spsc_t& ring, void* data, u32 size)
+{
+	return static_cast<u32>(retro_spsc_read(&ring, data, size));
+}
 
 enum : u32
 {
@@ -269,6 +289,21 @@ class vuart_av_thread
 {
 public:
 
+	vuart_av_thread()
+	{
+		ensure(retro_spsc_init(&tx_buf, PS3AV_TX_BUF_SIZE));
+		ensure(retro_spsc_init(&rx_buf, PS3AV_RX_BUF_SIZE));
+	}
+
+	~vuart_av_thread()
+	{
+		retro_spsc_free(&tx_buf);
+		retro_spsc_free(&rx_buf);
+	}
+
+	vuart_av_thread(const vuart_av_thread&) = delete;
+	vuart_av_thread& operator=(const vuart_av_thread&) = delete;
+
 	atomic_t<bool> initialized{};
 
 	shared_mutex rx_mutex{};
@@ -315,8 +350,8 @@ private:
 		u8 buf[PS3AV_RX_BUF_SIZE]{};
 	};
 
-	simple_ringbuf tx_buf{PS3AV_TX_BUF_SIZE};
-	simple_ringbuf rx_buf{PS3AV_RX_BUF_SIZE};
+	retro_spsc_t tx_buf{}; // written by the game's thread (tx_wake_m), read by this one (tx_rdy_m)
+	retro_spsc_t rx_buf{}; // written by this thread (rx_wake_m), read by the game's (rx_mutex)
 
 	// uart_mngr could sometimes read past the tx_buffer due to weird size checks in FW,
 	// but no further than size of largest packet

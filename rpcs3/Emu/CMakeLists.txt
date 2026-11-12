@@ -96,7 +96,6 @@ target_sources(rpcs3_emu PRIVATE
     ../../Utilities/mutex.cpp
     ../../Utilities/rXml.cpp
     ../../Utilities/sema.cpp
-    ../../Utilities/simple_ringbuf.cpp
     ../../Utilities/stack_trace.cpp
     ../../Utilities/stereo_config.cpp
     ../../Utilities/StrFmt.cpp
