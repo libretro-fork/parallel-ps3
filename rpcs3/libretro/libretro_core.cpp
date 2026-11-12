@@ -1454,7 +1454,7 @@ void retro_set_environment(retro_environment_t cb)
 
     if (cb(RETRO_ENVIRONMENT_GET_VFS_INTERFACE, &vfs_info) && vfs_info.iface)
     {
-        libretro_vfs::set_vfs_interface(vfs_info.iface);
+        libretro_vfs::set_vfs_interface(vfs_info.iface, vfs_info.required_interface_version);
 
     }
     else

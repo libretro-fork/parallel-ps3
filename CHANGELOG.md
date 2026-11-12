@@ -4,6 +4,7 @@ What changed in the libretro core of this fork, newest first. Changes that come 
 
 ## Unreleased
 
+- Files through the frontend take no lock where the frontend reads and writes at an offset (VFS v6, new in RetroArch). The frontend's handle had one position, so every read, write, seek and size on a file locked it and sought first, and the threads sharing a file (every SPU worker appends to the SPU cache) waited on one another. Reads and writes now carry their offset, the position and the size are numbers the core keeps, and an append takes its place at the end with one atomic add. An older frontend, or a platform where the frontend has none, gets the lock as before. `test_vfs_positional` reads at offsets and appends from four threads on one handle with a frontend of each kind, checks every byte and record, and that the v6 frontend's handle is never sought.
 - The pad keeps the frontend's precision. Two losses a DualShock 3 does not have:
   - Every button was pressed or not: 255 or 0. A DualShock 3's buttons and triggers are pressure-sensitive, and a trigger or button the frontend reports as analog (RETRO_DEVICE_INDEX_ANALOG_BUTTON) now reaches the game as its pressure: half pressed is 128, where it was 255. A racing game's throttle on R2 was all or nothing.
   - A stick's 16 bits went through two halves of 255 steps, each halved again, truncating both times: pushed all the way left or up read 1, never 0, and the pad's value 0 could not be reached. They go to the pad's 8 bits in one step, rounded: 0 full left or up, 128 at rest, 255 full right or down.

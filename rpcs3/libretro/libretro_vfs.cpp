@@ -22,6 +22,8 @@
 namespace libretro_vfs
 {
 	static const struct retro_vfs_interface* s_vfs_interface = nullptr;
+	// The version the frontend gave: its members past that are not there
+	static unsigned s_vfs_version = 0;
 
 	// Counted on the game's threads, read for the log; zero as static
 	// storage starts
@@ -43,9 +45,10 @@ namespace libretro_vfs
 		retro_atomic_store_release_size(&s_native_fallback_count, 0);
 	}
 
-	void set_vfs_interface(const struct retro_vfs_interface* vfs_interface)
+	void set_vfs_interface(const struct retro_vfs_interface* vfs_interface, unsigned version)
 	{
 		s_vfs_interface = vfs_interface;
+		s_vfs_version = vfs_interface ? version : 0;
 	}
 
 	const struct retro_vfs_interface* get_vfs_interface()
@@ -412,23 +415,42 @@ namespace libretro_vfs
 	class vfs_file_base final : public fs::file_base
 	{
 		struct retro_vfs_file_handle* m_handle;
-		std::string m_path;
-		mutable uint64_t m_pos;
+		// Where the next read or write without an offset goes
+		retro_atomic_64_t m_pos;
+		// The file's end (m_at only): the size at open, moved by this
+		// handle's writes
+		retro_atomic_64_t m_end;
 		// fs::append: every write goes to the end, as O_APPEND does natively.
 		const bool m_append;
-		// The frontend's handle has one position shared by seek, read and
-		// write, while fs::file is used from several threads at once (the SPU
-		// cache is appended to by every SPU worker); each operation takes the
-		// lock so that its seek and its read or write stay together.
+		// The frontend reads and writes this file at an offset (VFS v6):
+		// nothing here touches the handle's own position, and nothing locks.
+		const bool m_at;
+		// Without that (an older frontend, or a platform where it has no
+		// positional I/O) the handle has one position shared by seek, read
+		// and write, while fs::file is used from several threads at once (the
+		// SPU cache is appended to by every SPU worker): no way round a lock
+		// there, so that an operation's seek and its read or write stay
+		// together.
 		std::mutex m_mutex;
 
-	public:
-		vfs_file_base(struct retro_vfs_file_handle* handle, const std::string& path, bool append)
-			: m_handle(handle)
-			, m_path(path)
-			, m_pos(0)
-			, m_append(append)
+		void raise_end(s64 end)
 		{
+			s64 old = retro_atomic_load_acquire_64(&m_end);
+			while (old < end && !retro_atomic_cas_64(&m_end, old, end))
+				old = retro_atomic_load_acquire_64(&m_end);
+		}
+
+	public:
+		vfs_file_base(struct retro_vfs_file_handle* handle, bool append, bool at)
+			: m_handle(handle)
+			, m_append(append)
+			, m_at(at)
+		{
+			s64 end = 0;
+			if (at && s_vfs_interface->size)
+				end = s_vfs_interface->size(handle);
+			retro_atomic_64_init(&m_pos, 0);
+			retro_atomic_64_init(&m_end, end > 0 ? end : 0);
 		}
 
 		~vfs_file_base() override
@@ -462,12 +484,19 @@ namespace libretro_vfs
 
 		bool trunc(u64 length) override
 		{
-			std::lock_guard lock(m_mutex);
-			if (m_handle && s_vfs_interface && s_vfs_interface->truncate)
+			if (!m_handle || !s_vfs_interface || !s_vfs_interface->truncate)
+				return false;
+
+			if (m_at)
 			{
-				return s_vfs_interface->truncate(m_handle, length) >= 0;
+				if (s_vfs_interface->truncate(m_handle, length) < 0)
+					return false;
+				retro_atomic_store_release_64(&m_end, static_cast<s64>(length));
+				return true;
 			}
-			return false;
+
+			std::lock_guard lock(m_mutex);
+			return s_vfs_interface->truncate(m_handle, length) >= 0;
 		}
 
 		u64 read(void* buffer, u64 count) override
@@ -475,20 +504,33 @@ namespace libretro_vfs
 			if (!m_handle || !s_vfs_interface || !s_vfs_interface->read)
 				return 0;
 
-			std::lock_guard lock(m_mutex);
+			int64_t result;
 
-			// Seek to current position first
-			if (s_vfs_interface->seek)
+			if (m_at)
 			{
-				s_vfs_interface->seek(m_handle, m_pos, RETRO_VFS_SEEK_POSITION_START);
+				result = s_vfs_interface->read_at(m_handle, buffer, count,
+					retro_atomic_load_acquire_64(&m_pos));
+				if (result > 0)
+					retro_atomic_fetch_add_64(&m_pos, result);
+			}
+			else
+			{
+				std::lock_guard lock(m_mutex);
+				const s64 pos = retro_atomic_load_relaxed_64(&m_pos);
+
+				// Seek to current position first
+				if (s_vfs_interface->seek)
+				{
+					s_vfs_interface->seek(m_handle, pos, RETRO_VFS_SEEK_POSITION_START);
+				}
+
+				result = s_vfs_interface->read(m_handle, buffer, count);
+				if (result > 0)
+					retro_atomic_store_relaxed_64(&m_pos, pos + result);
 			}
 
-			int64_t result = s_vfs_interface->read(m_handle, buffer, count);
 			if (result > 0)
-			{
-				m_pos += result;
 				retro_atomic_fetch_add_size(&s_vfs_read_bytes, static_cast<usz>(result));
-			}
 			return result > 0 ? static_cast<u64>(result) : 0;
 		}
 
@@ -497,19 +539,27 @@ namespace libretro_vfs
 			if (!m_handle || !s_vfs_interface || !s_vfs_interface->read)
 				return 0;
 
-			std::lock_guard lock(m_mutex);
+			int64_t result;
 
-			// Seek to offset
-			if (s_vfs_interface->seek)
+			if (m_at)
 			{
-				s_vfs_interface->seek(m_handle, offset, RETRO_VFS_SEEK_POSITION_START);
+				result = s_vfs_interface->read_at(m_handle, buffer, count, static_cast<s64>(offset));
+			}
+			else
+			{
+				std::lock_guard lock(m_mutex);
+
+				// Seek to offset
+				if (s_vfs_interface->seek)
+				{
+					s_vfs_interface->seek(m_handle, offset, RETRO_VFS_SEEK_POSITION_START);
+				}
+
+				result = s_vfs_interface->read(m_handle, buffer, count);
 			}
 
-			int64_t result = s_vfs_interface->read(m_handle, buffer, count);
 			if (result > 0)
-			{
 				retro_atomic_fetch_add_size(&s_vfs_read_bytes, static_cast<usz>(result));
-			}
 			return result > 0 ? static_cast<u64>(result) : 0;
 		}
 
@@ -518,37 +568,82 @@ namespace libretro_vfs
 			if (!m_handle || !s_vfs_interface || !s_vfs_interface->write)
 				return 0;
 
-			std::lock_guard lock(m_mutex);
+			int64_t result;
 
-			// Seek to current position first (the end in append mode; the
-			// frontend's size() is the size at open, so ask tell() instead)
-			if (m_append && s_vfs_interface->seek && s_vfs_interface->tell)
+			if (m_at)
 			{
-				s_vfs_interface->seek(m_handle, 0, RETRO_VFS_SEEK_POSITION_END);
-				const int64_t end = s_vfs_interface->tell(m_handle);
-				if (end >= 0)
-					m_pos = static_cast<u64>(end);
+				// An append takes its place at the end with one add, so two
+				// threads' appends neither overlap nor tear
+				const s64 pos = m_append
+					? retro_atomic_fetch_add_64(&m_end, static_cast<s64>(count))
+					: retro_atomic_load_acquire_64(&m_pos);
+
+				result = s_vfs_interface->write_at(m_handle, buffer, count, pos);
+				if (result > 0)
+				{
+					if (m_append)
+						retro_atomic_store_release_64(&m_pos, pos + result);
+					else
+					{
+						retro_atomic_fetch_add_64(&m_pos, result);
+						raise_end(pos + result);
+					}
+				}
 			}
-			else if (s_vfs_interface->seek)
+			else
 			{
-				s_vfs_interface->seek(m_handle, m_pos, RETRO_VFS_SEEK_POSITION_START);
+				std::lock_guard lock(m_mutex);
+				s64 pos = retro_atomic_load_relaxed_64(&m_pos);
+
+				// Seek to current position first (the end in append mode; the
+				// frontend's size() is the size at open, so ask tell() instead)
+				if (m_append && s_vfs_interface->seek && s_vfs_interface->tell)
+				{
+					s_vfs_interface->seek(m_handle, 0, RETRO_VFS_SEEK_POSITION_END);
+					const int64_t end = s_vfs_interface->tell(m_handle);
+					if (end >= 0)
+						pos = end;
+				}
+				else if (s_vfs_interface->seek)
+				{
+					s_vfs_interface->seek(m_handle, pos, RETRO_VFS_SEEK_POSITION_START);
+				}
+
+				result = s_vfs_interface->write(m_handle, buffer, count);
+				retro_atomic_store_relaxed_64(&m_pos, result > 0 ? pos + result : pos);
 			}
 
-			int64_t result = s_vfs_interface->write(m_handle, buffer, count);
 			if (result > 0)
-			{
-				m_pos += result;
 				retro_atomic_fetch_add_size(&s_vfs_write_bytes, static_cast<usz>(result));
-			}
 			return result > 0 ? static_cast<u64>(result) : 0;
 		}
 
 		u64 seek(s64 offset, fs::seek_mode whence) override
 		{
-			if (!m_handle || !s_vfs_interface || !s_vfs_interface->seek)
-				return m_pos;
+			if (!m_handle || !s_vfs_interface)
+				return static_cast<u64>(retro_atomic_load_acquire_64(&m_pos));
+
+			if (m_at)
+			{
+				// Only the number moves: the handle's position is not used
+				s64 pos;
+				switch (whence)
+				{
+				case fs::seek_cur: pos = retro_atomic_load_acquire_64(&m_pos) + offset; break;
+				case fs::seek_end: pos = retro_atomic_load_acquire_64(&m_end) + offset; break;
+				default:           pos = offset; break;
+				}
+				if (pos < 0)
+					return static_cast<u64>(retro_atomic_load_acquire_64(&m_pos));
+				retro_atomic_store_release_64(&m_pos, pos);
+				return static_cast<u64>(pos);
+			}
+
+			if (!s_vfs_interface->seek)
+				return static_cast<u64>(retro_atomic_load_acquire_64(&m_pos));
 
 			std::lock_guard lock(m_mutex);
+			s64 pos = retro_atomic_load_relaxed_64(&m_pos);
 
 			int vfs_whence;
 			switch (whence)
@@ -567,28 +662,32 @@ namespace libretro_vfs
 				switch (whence)
 				{
 				case fs::seek_set:
-					m_pos = static_cast<u64>(offset);
+					pos = offset;
 					break;
 				case fs::seek_cur:
-					m_pos = static_cast<u64>(static_cast<int64_t>(m_pos) + offset);
+					pos += offset;
 					break;
 				case fs::seek_end:
 					if (s_vfs_interface->tell)
 					{
 						const int64_t end = s_vfs_interface->tell(m_handle);
 						if (end >= 0)
-							m_pos = static_cast<u64>(end);
+							pos = end;
 					}
 					break;
 				}
+				retro_atomic_store_relaxed_64(&m_pos, pos);
 			}
-			return m_pos;
+			return static_cast<u64>(pos);
 		}
 
 		u64 size() override
 		{
 			if (!m_handle || !s_vfs_interface)
 				return 0;
+
+			if (m_at)
+				return static_cast<u64>(retro_atomic_load_acquire_64(&m_end));
 
 			// The frontend's size() stays at the size the file had when it
 			// was opened; the end is where writes since then have moved it.
@@ -630,7 +729,18 @@ namespace libretro_vfs
 			return nullptr;
 
 		retro_atomic_fetch_add_size(&s_vfs_open_count, 1);
-		return std::make_unique<vfs_file_base>(handle, path, (mode & VFS_MODE_APPEND) != 0);
+
+		// Positional I/O where the frontend has it for this file: asked once,
+		// with a read of nothing, or a write of nothing to a file that is
+		// only written (-1 where it has none)
+		u8 none = 0;
+		const bool at = s_vfs_version >= 6
+			&& s_vfs_interface->read_at && s_vfs_interface->write_at
+			&& ((mode & VFS_MODE_READ)
+				? s_vfs_interface->read_at(handle, &none, 0, 0)
+				: s_vfs_interface->write_at(handle, &none, 0, 0)) == 0;
+
+		return std::make_unique<vfs_file_base>(handle, (mode & VFS_MODE_APPEND) != 0, at);
 	}
 }
 

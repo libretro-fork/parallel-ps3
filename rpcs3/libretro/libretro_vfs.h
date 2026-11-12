@@ -13,7 +13,8 @@ namespace fs { struct file_base; struct device_base; }
 
 namespace libretro_vfs
 {
-	void set_vfs_interface(const struct retro_vfs_interface* vfs_interface);
+	// version: what the frontend wrote back to required_interface_version
+	void set_vfs_interface(const struct retro_vfs_interface* vfs_interface, unsigned version);
 	const struct retro_vfs_interface* get_vfs_interface();
 	bool is_vfs_available();
 

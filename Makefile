@@ -662,6 +662,16 @@ $(GUEST_CLOCK_TEST): $(OBJ_GUEST_CLOCK_TEST) $(OBJ_LIBRETRO) $(ARCHIVES)
 	$(SAY) LINK $@
 	$(Q)$(CXX) -o $@ $(OBJ_GUEST_CLOCK_TEST) $(OBJ_LIBRETRO) $(GROUP_START) $(ARCHIVES) $(GROUP_END) $(LDFLAGS) $(LIBS)
 
+# fs::file over the frontend's VFS from several threads (libretro_vfs.cpp),
+# linked the same way
+VFS_POSITIONAL_TEST := $(GEN_DIR)/test_vfs_positional
+OBJ_VFS_POSITIONAL_TEST := $(CORE_DIR)/rpcs3/libretro/tests/test_vfs_positional.o
+$(OBJ_VFS_POSITIONAL_TEST): FLAGS := $(FLAGS_LIBRETRO)
+
+$(VFS_POSITIONAL_TEST): $(OBJ_VFS_POSITIONAL_TEST) $(OBJ_LIBRETRO) $(ARCHIVES)
+	$(SAY) LINK $@
+	$(Q)$(CXX) -o $@ $(OBJ_VFS_POSITIONAL_TEST) $(OBJ_LIBRETRO) $(GROUP_START) $(ARCHIVES) $(GROUP_END) $(LDFLAGS) $(LIBS)
+
 # retro_run without a game (libretro_core.cpp), linked the same way
 FAILED_BOOT_TEST := $(GEN_DIR)/test_failed_boot
 OBJ_FAILED_BOOT_TEST := $(CORE_DIR)/rpcs3/libretro/tests/test_failed_boot.o
@@ -692,7 +702,7 @@ $(GEN_DIR)/test_llvm_jit: $(OBJ_LLVM_JIT_TEST) $(OBJ_LIBRETRO) $(ARCHIVES)
 	$(SAY) LINK $@
 	$(Q)$(CXX) -o $@ $(OBJ_LLVM_JIT_TEST) $(OBJ_LIBRETRO) $(GROUP_START) $(ARCHIVES) $(GROUP_END) $(LDFLAGS) $(LIBS)
 
-check: $(TARGET) $(SAVESTATE_TEST) $(DECODERS_TEST) $(PATCHES_TEST) $(AUDIO_TEST) $(VK_HANDOFF_TEST) $(PAD_HANDOFF_TEST) $(MOUSE_HANDOFF_TEST) $(EMU_WAITS_TEST) $(FAILED_BOOT_TEST) $(GUEST_CLOCK_TEST) $(GL_CONTEXTS_TEST) $(LLVM_JIT_TEST)
+check: $(TARGET) $(SAVESTATE_TEST) $(DECODERS_TEST) $(PATCHES_TEST) $(AUDIO_TEST) $(VK_HANDOFF_TEST) $(PAD_HANDOFF_TEST) $(MOUSE_HANDOFF_TEST) $(EMU_WAITS_TEST) $(FAILED_BOOT_TEST) $(GUEST_CLOCK_TEST) $(VFS_POSITIONAL_TEST) $(GL_CONTEXTS_TEST) $(LLVM_JIT_TEST)
 	@$(MAKE) -q $(EMBED_STAMPS) || { echo "check: the embedded sources are made again on every build"; exit 1; }
 	@for f in $(EMBED_STAMPS:.stamp=.cpp); do [ -f $$f ] || { echo "check: $$f was deleted after the build"; exit 1; }; done
 	$(HOST_CC) -O2 -o $(GEN_DIR)/load_test $(CORE_DIR)/rpcs3/libretro/make/load_test.c -ldl
@@ -707,10 +717,11 @@ check: $(TARGET) $(SAVESTATE_TEST) $(DECODERS_TEST) $(PATCHES_TEST) $(AUDIO_TEST
 	$(EMU_WAITS_TEST)
 	$(FAILED_BOOT_TEST)
 	$(GUEST_CLOCK_TEST)
+	$(VFS_POSITIONAL_TEST)
 	$(if $(GL_CONTEXTS_TEST),$(GL_CONTEXTS_TEST))
 	$(if $(LLVM_JIT_TEST),$(LLVM_JIT_TEST))
 
--include $(OBJECTS:.o=.d) $(OBJ_SAVESTATE_TEST:.o=.d) $(OBJ_DECODERS_TEST:.o=.d) $(OBJ_PATCHES_TEST:.o=.d) $(OBJ_AUDIO_TEST:.o=.d) $(OBJ_VK_HANDOFF_TEST:.o=.d) $(OBJ_PAD_HANDOFF_TEST:.o=.d) $(OBJ_MOUSE_HANDOFF_TEST:.o=.d) $(OBJ_EMU_WAITS_TEST:.o=.d) $(OBJ_FAILED_BOOT_TEST:.o=.d) $(OBJ_GUEST_CLOCK_TEST:.o=.d) $(OBJ_GL_CONTEXTS_TEST:.o=.d) $(OBJ_LLVM_JIT_TEST:.o=.d)
+-include $(OBJECTS:.o=.d) $(OBJ_SAVESTATE_TEST:.o=.d) $(OBJ_DECODERS_TEST:.o=.d) $(OBJ_PATCHES_TEST:.o=.d) $(OBJ_AUDIO_TEST:.o=.d) $(OBJ_VK_HANDOFF_TEST:.o=.d) $(OBJ_PAD_HANDOFF_TEST:.o=.d) $(OBJ_MOUSE_HANDOFF_TEST:.o=.d) $(OBJ_EMU_WAITS_TEST:.o=.d) $(OBJ_FAILED_BOOT_TEST:.o=.d) $(OBJ_GUEST_CLOCK_TEST:.o=.d) $(OBJ_VFS_POSITIONAL_TEST:.o=.d) $(OBJ_GL_CONTEXTS_TEST:.o=.d) $(OBJ_LLVM_JIT_TEST:.o=.d)
 
 clean:
 	@$(REMOVE_OBJECTS)

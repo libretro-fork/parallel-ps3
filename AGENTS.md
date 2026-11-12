@@ -193,7 +193,7 @@ The core's code moves from C++ to C89 that MSVC compiles, a piece at a time, as 
 
 Not there yet, in the core's own glue. These are debts, not precedent:
 
-1. `libretro_vfs.cpp` takes locks on its paths.
+1. `libretro_vfs.cpp` locks a file for a frontend without positional I/O (VFS before v6, or a platform where the frontend has none); with it, nothing.
 2. The game's side of the pads (`pad::g_pad_mutex` in `Input/pad_thread.cpp`), which the frontend's side no longer takes.
 
 ## Audio, video and pacing
