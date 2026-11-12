@@ -484,6 +484,8 @@ check: all
 	@# The pads take no lock: pad::g_pad_mutex is gone, and a merge of
 	@# upstream's code that takes it does not bring it back
 	@if grep -rn "g_pad_mutex" ../../Emu ../../Input ../*.cpp ../*.h ../*.c; then echo "pads: pad::g_pad_mutex is back - the pads take no lock (AGENTS.md)"; exit 1; else echo "pads: no pad lock"; fi
+	@# Nor does cellGem take one of its own for what it keeps
+	@if grep -n "gem\.mtx\|lock(mtx)" ../../Emu/Cell/Modules/cellGem.cpp; then echo "cellGem: gem.mtx is back - what cellGem keeps is a record (AGENTS.md)"; exit 1; else echo "cellGem: no gem.mtx"; fi
 
 clean:
 	rm -rf obj $(TESTS) *_out.* rec_out

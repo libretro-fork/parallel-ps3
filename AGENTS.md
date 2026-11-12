@@ -194,7 +194,7 @@ The core's code moves from C++ to C89 that MSVC compiles, a piece at a time, as 
 Not there yet, in the core's own glue. These are debts, not precedent:
 
 1. `libretro_vfs.cpp` locks a file for a frontend without positional I/O (VFS before v6, or a platform where the frontend has none); with it, nothing.
-2. Locks of the emulator's own that the pads' paths still pass through: cellGem's `gem.mtx`, the mouse handler's mutex, sys_io's. The pad lock itself (`pad::g_pad_mutex`) is gone - cellPad, cellGem, the emulated USB controllers, the overlays' input and the pad thread take none - and the library tests fail if a merge brings it back. A PS Move of its own (the core has no handler for one) would hand its data (`ps_move_data`) over through a record, as the pads do.
+2. Locks of the emulator's own that the pads' paths still pass through: cellGem's tracker results (`gem_tracker::mutex`), the mouse handler's mutex, sys_io's. cellGem's own lock (`gem.mtx`) is gone: what it keeps is a `retro_cas_record` (`gem_shared`), and upstream's code merged into `cellGem.cpp` goes through `gem.change()` or a copy read from it, never a lock. The pad lock itself (`pad::g_pad_mutex`) is gone - cellPad, cellGem, the emulated USB controllers, the overlays' input and the pad thread take none - and the library tests fail if a merge brings it back. A PS Move of its own (the core has no handler for one) would hand its data (`ps_move_data`) over through a record, as the pads do.
 
 ## Audio, video and pacing
 
