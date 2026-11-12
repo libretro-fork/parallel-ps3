@@ -51,6 +51,7 @@ struct pad_setting
 
 pad_thread::pad_thread(void* curthread, void* curwindow, std::string_view title_id) : m_curthread(curthread), m_curwindow(curwindow)
 {
+	retro_atomic_int_init(&num_ldd_pad, 0);
 	pad::g_title_id = title_id;
 	pad::g_pad_thread = this;
 	pad::g_started = false;
@@ -67,10 +68,16 @@ void pad_thread::Init()
 
 	// Cache old settings if possible
 	std::array<pad_setting, CELL_PAD_MAX_PORT_NUM> pad_settings;
+	// and the game's side of each port, which the new pads take over
+	std::array<pad_guest_state, CELL_PAD_MAX_PORT_NUM> guest_states{};
 	for (u32 i = 0; i < CELL_PAD_MAX_PORT_NUM; i++) // max 7 pads
 	{
+		guest_states[i].buffer_cleared = 1;
+
 		if (m_pads[i])
 		{
+			retro_cas_record_read(&m_pads[i]->m_guest, &guest_states[i]);
+
 			pad_settings[i] =
 			{
 				m_pads[i]->port_status(),
@@ -79,7 +86,7 @@ void pad_thread::Init()
 				m_pads[i]->m_class_type,
 				m_pads[i]->m_vendor_id,
 				m_pads[i]->m_product_id,
-				m_pads[i]->ldd
+				!!guest_states[i].ldd
 			};
 		}
 		else
@@ -97,7 +104,7 @@ void pad_thread::Init()
 		}
 	}
 
-	num_ldd_pad = 0;
+	retro_atomic_store_release_int(&num_ldd_pad, 0);
 
 	retro_atomic_store_release_int(&m_info.now_connect_, 0);
 
@@ -169,6 +176,9 @@ void pad_thread::Init()
 		cur_pad_handler->Init();
 
 		std::shared_ptr<Pad> pad = std::make_shared<Pad>(handler_type, i, CELL_PAD_STATUS_DISCONNECTED, pad_settings[i].device_capability, pad_settings[i].device_type);
+		// Nobody else has the new pad yet: its first record is written in place
+		pad->m_guest_slots[0] = guest_states[i];
+		pad->m_guest_slots[0].ldd = 0;
 		m_pads[i] = pad;
 
 		if (pad_settings[i].is_ldd_pad)
@@ -235,11 +245,11 @@ void pad_thread::SetRumble(u32 pad, u8 large_motor, u8 small_motor)
 	if (pad >= m_pads.size() || !m_pads[pad])
 		return;
 
-	const u64 now_us = get_system_time();
-
-	m_pads[pad]->m_last_rumble_time_us = now_us;
-	m_pads[pad]->m_vibrate_motors[0].value = large_motor;
-	m_pads[pad]->m_vibrate_motors[1].value = small_motor;
+	// Any of the game's threads, with no lock: the motors as one word and a
+	// count of the requests, for retro_run. (The motors' plain fields and
+	// the time of the request were written here too, for the standalone's
+	// device handlers; nothing in the core reads them, and two threads
+	// would have raced on them.)
 	retro_atomic_store_release_int(&m_pads[pad]->m_rumble_motors, large_motor | (small_motor << 8));
 	retro_atomic_fetch_add_int(&m_pads[pad]->m_rumble_requests, 1);
 
@@ -248,9 +258,6 @@ void pad_thread::SetRumble(u32 pad, u8 large_motor, u8 small_motor)
 	{
 		if (copilot && copilot->is_connected())
 		{
-			copilot->m_last_rumble_time_us = now_us;
-			copilot->m_vibrate_motors[0].value = large_motor;
-			copilot->m_vibrate_motors[1].value = small_motor;
 			retro_atomic_store_release_int(&copilot->m_rumble_motors, large_motor | (small_motor << 8));
 			retro_atomic_fetch_add_int(&copilot->m_rumble_requests, 1);
 		}
@@ -423,7 +430,7 @@ void pad_thread::frontend_update(u32 connected_devices)
 {
 	// Native overlays (message dialogs, the save data list) ignore the pads
 	// while nothing is counted as connected
-	retro_atomic_store_release_int(&m_info.now_connect_, static_cast<int>(connected_devices + num_ldd_pad));
+	retro_atomic_store_release_int(&m_info.now_connect_, static_cast<int>(connected_devices + static_cast<u32>(retro_atomic_load_acquire_int(&num_ldd_pad))));
 
 	if (Emu.IsRunning())
 	{
@@ -653,7 +660,7 @@ void pad_thread::operator()()
 			update_pad_states();
 		}
 
-		retro_atomic_store_release_int(&m_info.now_connect_, static_cast<int>(connected_devices + num_ldd_pad));
+		retro_atomic_store_release_int(&m_info.now_connect_, static_cast<int>(connected_devices + static_cast<u32>(retro_atomic_load_acquire_int(&num_ldd_pad))));
 
 		update_ignore_input();
 
@@ -674,7 +681,10 @@ void pad_thread::operator()()
 
 				// Check if an LDD pad pressed the PS button (bit 0 of the first button)
 				// NOTE: Rock Band 3 doesn't seem to care about the len. It's always 0.
-				if (pad->ldd /*&& pad->ldd_data.len >= 1 */&& !!(pad->ldd_data.button[0] & CELL_PAD_CTRL_LDD_PS))
+				pad_guest_state guest;
+				retro_cas_record_read(&pad->m_guest, &guest);
+
+				if (guest.ldd /*&& guest.ldd_data.len >= 1 */&& !!(guest.ldd_data.button[0] & CELL_PAD_CTRL_LDD_PS))
 				{
 					ps_button_pressed = true;
 					break;
@@ -796,6 +806,60 @@ void pad_thread::operator()()
 	stop_threads();
 }
 
+// A custom (LDD) controller is registered and unregistered by the game's
+// threads with no lock: the port's game side says whether one is there
+// (pad_guest_state::ldd, changed with one compare-and-swap, so a port goes
+// to one thread only), and the pad is then made to match it.
+
+extern bool cellPad_NotifyStateChange(usz index, u64 state, bool lock = true, bool is_blocking = true);
+
+// The pad as the port's game side now says: a connected custom controller,
+// or disconnected, and the game told of it (@notify). Done again if the port
+// changed meanwhile, so whichever threads are at it, the pad and what the
+// game was told end up as the last change says.
+void pad_thread::apply_ldd(u32 handle, bool notify)
+{
+	static const input::product_info product = input::get_product_info(input::product_type::playstation_3_controller);
+
+	auto& pad = m_pads[handle];
+
+	for (;;)
+	{
+		pad_guest_state state, now;
+		retro_cas_record_read(&pad->m_guest, &state);
+
+		if (state.ldd)
+		{
+			pad->Init
+			(
+				CELL_PAD_STATUS_CONNECTED | CELL_PAD_STATUS_ASSIGN_CHANGES | CELL_PAD_STATUS_CUSTOM_CONTROLLER,
+				CELL_PAD_CAPABILITY_PS3_CONFORMITY,
+				CELL_PAD_DEV_TYPE_LDD,
+				CELL_PAD_PCLASS_TYPE_STANDARD,
+				product.pclass_profile,
+				product.vendor_id,
+				product.product_id,
+				50
+			);
+		}
+		else
+		{
+			retro_atomic_fetch_and_int(&pad->m_port_status, ~CELL_PAD_STATUS_CONNECTED);
+			retro_atomic_fetch_or_int(&pad->m_port_status, CELL_PAD_STATUS_ASSIGN_CHANGES);
+		}
+
+		if (notify)
+			cellPad_NotifyStateChange(handle, state.ldd ? CELL_PAD_STATUS_CONNECTED : CELL_PAD_STATUS_DISCONNECTED, false);
+
+		retro_cas_record_read(&pad->m_guest, &now);
+
+		if (now.ldd_serial == state.ldd_serial)
+			return;
+	}
+}
+
+// pad_thread::Init's: a custom controller that was registered before the
+// pads were made again, with the status it had
 void pad_thread::InitLddPad(u32 handle, const u32* port_status)
 {
 	if (handle >= m_pads.size())
@@ -803,26 +867,27 @@ void pad_thread::InitLddPad(u32 handle, const u32* port_status)
 		return;
 	}
 
-	static const input::product_info product = input::get_product_info(input::product_type::playstation_3_controller);
-
 	auto& pad = m_pads[handle];
-	pad->ldd = true;
-	pad->Init
-	(
-		port_status ? *port_status : CELL_PAD_STATUS_CONNECTED | CELL_PAD_STATUS_ASSIGN_CHANGES | CELL_PAD_STATUS_CUSTOM_CONTROLLER,
-		CELL_PAD_CAPABILITY_PS3_CONFORMITY,
-		CELL_PAD_DEV_TYPE_LDD,
-		CELL_PAD_PCLASS_TYPE_STANDARD,
-		product.pclass_profile,
-		product.vendor_id,
-		product.product_id,
-		50
-	);
+
+	retro_cas_record_txn_t txn;
+	do
+	{
+		pad_guest_state* state = static_cast<pad_guest_state*>(retro_cas_record_begin(&pad->m_guest, &txn));
+		state->ldd = 1;
+		state->ldd_identity = 1;
+		state->ldd_serial++;
+	}
+	while (!retro_cas_record_commit(&pad->m_guest, &txn));
+
+	apply_ldd(handle, false);
+
+	if (port_status)
+		retro_atomic_store_release_int(&pad->m_port_status, static_cast<int>(*port_status));
 
 	input_log.notice("Pad %d: LDD, VID=0x%x, PID=0x%x, class_type=0x%x, class_profile=0x%x",
 		handle, pad->m_vendor_id, pad->m_product_id, pad->m_class_type, pad->m_class_profile);
 
-	num_ldd_pad++;
+	retro_atomic_inc_int(&num_ldd_pad);
 }
 
 s32 pad_thread::AddLddPad()
@@ -830,25 +895,68 @@ s32 pad_thread::AddLddPad()
 	// Look for first null pad
 	for (u32 i = 0; i < CELL_PAD_MAX_PORT_NUM; i++)
 	{
-		if (g_cfg_input.player[i]->handler == pad_handler::null && !m_pads[i]->ldd)
+		if (g_cfg_input.player[i]->handler != pad_handler::null)
+			continue;
+
+		auto& pad = m_pads[i];
+
+		for (;;)
 		{
-			InitLddPad(i, nullptr);
-			return i;
+			retro_cas_record_txn_t txn;
+			pad_guest_state* state = static_cast<pad_guest_state*>(retro_cas_record_begin(&pad->m_guest, &txn));
+
+			if (state->ldd)
+			{
+				// Taken: the next port
+				retro_cas_record_abort(&pad->m_guest, &txn);
+				break;
+			}
+
+			state->ldd = 1;
+			state->ldd_identity = 1;
+			state->ldd_serial++;
+			state->port_setting = 0;
+
+			if (retro_cas_record_commit(&pad->m_guest, &txn))
+			{
+				retro_atomic_inc_int(&num_ldd_pad);
+				apply_ldd(i, true);
+
+				input_log.notice("Pad %d: LDD, VID=0x%x, PID=0x%x, class_type=0x%x, class_profile=0x%x",
+					i, pad->m_vendor_id, pad->m_product_id, pad->m_class_type, pad->m_class_profile);
+				return i;
+			}
 		}
 	}
 
 	return -1;
 }
 
-void pad_thread::UnregisterLddPad(u32 handle)
+bool pad_thread::UnregisterLddPad(u32 handle)
 {
 	auto& pad = ::at32(m_pads, handle);
 
-	pad->ldd = false;
-	retro_atomic_fetch_and_int(&pad->m_port_status, ~CELL_PAD_STATUS_CONNECTED);
-	retro_atomic_fetch_or_int(&pad->m_port_status, CELL_PAD_STATUS_ASSIGN_CHANGES);
+	for (;;)
+	{
+		retro_cas_record_txn_t txn;
+		pad_guest_state* state = static_cast<pad_guest_state*>(retro_cas_record_begin(&pad->m_guest, &txn));
 
-	num_ldd_pad--;
+		if (!state->ldd)
+		{
+			retro_cas_record_abort(&pad->m_guest, &txn);
+			return false;
+		}
+
+		state->ldd = 0;
+		state->ldd_serial++;
+
+		if (retro_cas_record_commit(&pad->m_guest, &txn))
+			break;
+	}
+
+	retro_atomic_dec_int(&num_ldd_pad);
+	apply_ldd(handle, true);
+	return true;
 }
 
 std::shared_ptr<PadHandlerBase> pad_thread::GetHandler(pad_handler type)

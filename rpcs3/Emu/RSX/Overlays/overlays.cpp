@@ -259,6 +259,11 @@ namespace rsx
 						continue;
 					}
 
+					// The game's side of the port, read whole: a custom
+					// (LDD) controller and what the game last inserted for it
+					pad_guest_state guest;
+					retro_cas_record_read(&pad->m_guest, &guest);
+
 					if (pad->m_pad_handler == pad_handler::keyboard)
 					{
 						m_keyboard_pad_handler_active = true;
@@ -274,14 +279,14 @@ namespace rsx
 						continue;
 					}
 
-					if (pad->ldd)
+					if (guest.ldd)
 					{
 						// LDD pads get passed input data from the game itself.
 
 						// NOTE: Rock Band 3 doesn't seem to care about the len. It's always 0.
-						//if (pad->ldd_data.len > CELL_PAD_BTN_OFFSET_DIGITAL1)
+						//if (guest.ldd_data.len > CELL_PAD_BTN_OFFSET_DIGITAL1)
 						{
-							const u16 digital1 = pad->ldd_data.button[CELL_PAD_BTN_OFFSET_DIGITAL1];
+							const u16 digital1 = guest.ldd_data.button[CELL_PAD_BTN_OFFSET_DIGITAL1];
 
 							handle_button_press(pad_button::dpad_left,  !!(digital1 & CELL_PAD_CTRL_LEFT),     pad_index);
 							handle_button_press(pad_button::dpad_right, !!(digital1 & CELL_PAD_CTRL_RIGHT),    pad_index);
@@ -294,9 +299,9 @@ namespace rsx
 							handle_button_press(pad_button::ps,         !!(digital1 & CELL_PAD_CTRL_PS),       pad_index);
 						}
 
-						//if (pad->ldd_data.len > CELL_PAD_BTN_OFFSET_DIGITAL2)
+						//if (guest.ldd_data.len > CELL_PAD_BTN_OFFSET_DIGITAL2)
 						{
-							const u16 digital2 = pad->ldd_data.button[CELL_PAD_BTN_OFFSET_DIGITAL2];
+							const u16 digital2 = guest.ldd_data.button[CELL_PAD_BTN_OFFSET_DIGITAL2];
 
 							handle_button_press(pad_button::triangle,   !!(digital2 & CELL_PAD_CTRL_TRIANGLE), pad_index);
 							handle_button_press(circle_button,          !!(digital2 & CELL_PAD_CTRL_CIRCLE),   pad_index);
@@ -310,10 +315,10 @@ namespace rsx
 
 						const auto handle_ldd_stick_input = [&](s32 offset, pad_button id_small, pad_button id_large)
 						{
-							//if (pad->ldd_data.len <= offset) return;
+							//if (guest.ldd_data.len <= offset) return;
 
 							constexpr u16 threshold = 20; // Let's be careful and use some threshold here
-							const u16 value = pad->ldd_data.button[offset];
+							const u16 value = guest.ldd_data.button[offset];
 
 							if (value <= (128 - threshold))
 							{

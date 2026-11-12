@@ -6,8 +6,18 @@
 #include "ps_move_data.h"
 
 #include <retro_atomic.h>
+// C, with C's casts
+#ifndef _MSC_VER
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wold-style-cast"
+#endif
+#include <rthreads/retro_cas_record.h>
+#ifndef _MSC_VER
+#pragma GCC diagnostic pop
+#endif
 
 #include <algorithm>
+#include <cstring>
 #include <array>
 #include <map>
 #include <set>
@@ -362,6 +372,38 @@ struct CellPadData
 	be_t<u16> button[CELL_PAD_MAX_CODES];
 };
 
+// What cellPad last reported of a port's device (sys_io's connection events)
+struct pad_data_internal
+{
+	u16 vendor_id = 0;
+	u16 product_id = 0;
+	u32 port_status = 0;
+	u32 device_capability = 0;
+	u32 device_type = 0;
+	u32 pclass_type = 0;
+	u32 pclass_profile = 0;
+
+	ENABLE_BITWISE_SERIALIZATION;
+};
+
+// A port as the game's side of cellPad keeps it: what it last gave the game,
+// the port's setting, what it reported of the device, and a custom (LDD)
+// controller's registration and data. One record (Pad::m_guest,
+// retro_cas_record): any of the game's threads reads it whole and changes it
+// whole, with no lock - a cellPad call is one change of one port.
+struct pad_guest_state
+{
+	CellPadData data;           // what cellPadGetData last gave
+	CellPadData ldd_data;       // what the game last inserted for a custom controller
+	pad_data_internal reported;
+	u32 port_setting;
+	u32 ldd_serial;             // counts the registrations and unregistrations
+	u64 sensor_time;            // the PS3's clock at the last report with the sensors on
+	u8 buffer_cleared;          // the next cellPadGetData gives everything
+	u8 ldd;                     // a custom controller is registered here
+	u8 ldd_identity;            // the port's device is a custom controller's (stays after it is unregistered)
+};
+
 static constexpr u8 MOTOR_THRESHOLD = 63; // The DS3 does not seem to respond to values <= 63. So we should ignore those in other handlers as well.
 
 static constexpr u16 MOTION_ONE_G = 113;
@@ -525,7 +567,6 @@ struct Pad
 	const pad_handler m_pad_handler;
 	const u32 m_player_id;
 
-	bool m_buffer_cleared{true};
 	// CELL_PAD_STATUS_*: the frontend's thread connects and disconnects the
 	// pad while the game's (an LDD controller) may change it too
 	retro_atomic_int_t m_port_status;
@@ -586,10 +627,11 @@ struct Pad
 
 	std::vector<std::shared_ptr<Pad>> copilots;
 
-	CellPadData data {};
-
-	bool ldd{false};
-	CellPadData ldd_data{};
+	// The game's side of the port (pad_guest_state): read with
+	// retro_cas_record_read, changed between retro_cas_record_begin and
+	// retro_cas_record_commit
+	retro_cas_record_t m_guest;
+	pad_guest_state m_guest_slots[RETRO_CAS_RECORD_SLOTS];
 
 	bool is_fake_pad = false;
 
@@ -614,6 +656,9 @@ struct Pad
 		}
 		retro_atomic_int_init(&m_rumble_motors, 0);
 		retro_atomic_int_init(&m_rumble_requests, 0);
+		std::memset(m_guest_slots, 0, sizeof(m_guest_slots));
+		m_guest_slots[0].buffer_cleared = 1;
+		retro_cas_record_init(&m_guest, m_guest_slots, sizeof(pad_guest_state));
 	}
 
 	Pad(const Pad&) = delete;

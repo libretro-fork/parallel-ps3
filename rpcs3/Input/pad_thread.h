@@ -30,7 +30,8 @@ public:
 	void SetIntercepted(bool intercepted);
 
 	s32 AddLddPad();
-	void UnregisterLddPad(u32 handle);
+	// False when no custom controller is registered at @handle (any more)
+	bool UnregisterLddPad(u32 handle);
 
 	void open_home_menu();
 
@@ -57,7 +58,10 @@ protected:
 	std::array<std::shared_ptr<Pad>, CELL_PAD_MAX_PORT_NUM> m_pads{};
 	std::array<bool, CELL_PAD_MAX_PORT_NUM> m_pads_connected{};
 
-	u32 num_ldd_pad = 0;
+	// The custom (LDD) controllers registered, counted by the game's threads
+	// and read by retro_run
+	retro_atomic_int_t num_ldd_pad;
+	void apply_ldd(u32 handle, bool notify);
 
 public:
 	void apply_copilots();

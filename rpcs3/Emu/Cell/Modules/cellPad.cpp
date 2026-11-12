@@ -3,6 +3,7 @@
 #include "Emu/system_config.h"
 #include "Emu/Cell/PPUModule.h"
 #include "Emu/Cell/lv2/sys_process.h"
+#include "Emu/Cell/timers.hpp"
 #include "Emu/Io/pad_types.h"
 #include "Emu/RSX/Overlays/overlay_debug_overlay.h"
 #include "Input/pad_thread.h"
@@ -55,12 +56,67 @@ void fmt_class_string<CellPadFilterError>::format(std::string& out, u64 arg)
 
 extern void sys_io_serialize(utils::serial& ar);
 
+// A port's pad. Its game side (pad_guest_state, Pad::m_guest) is read whole
+// with retro_cas_record_read and changed whole between retro_cas_record_begin
+// and retro_cas_record_commit: no lock. What is done to the copy between the
+// two is done again when another thread changed the port meanwhile, so it
+// touches only the copy and the caller's own output.
+static Pad& port_pad(u32 port_no)
+{
+	return *pad::get_pad_thread()->GetPads()[port_no];
+}
+
+// The device a port has, for the game: a custom controller's once one was
+// registered there, the pad's own (set when the pads are made) otherwise
+struct port_device
+{
+	u32 capability;
+	u32 type;
+	u32 class_type;
+	u32 class_profile;
+	u16 vendor_id;
+	u16 product_id;
+};
+
+static port_device device_of(const Pad& pad, const pad_guest_state& state)
+{
+	if (state.ldd_identity)
+	{
+		static const input::product_info product = input::get_product_info(input::product_type::playstation_3_controller);
+		return {CELL_PAD_CAPABILITY_PS3_CONFORMITY, CELL_PAD_DEV_TYPE_LDD, CELL_PAD_PCLASS_TYPE_STANDARD, product.pclass_profile, product.vendor_id, product.product_id};
+	}
+
+	return {pad.m_device_capability, pad.m_device_type, pad.m_class_type, pad.m_class_profile, pad.m_vendor_id, pad.m_product_id};
+}
+
+// The savestate keeps the ports' settings and reported devices as the two
+// arrays pad_info used to hold
 pad_info::pad_info(utils::serial& ar)
 	: max_connect(ar.pop<u32>())
-	, port_setting(ar.pop<decltype(port_setting)>())
-	, reported_info(ar.pop<decltype(reported_info)>())
 {
-	//reported_info = {};
+	const auto port_setting = ar.pop<std::array<u32, CELL_PAD_MAX_PORT_NUM>>();
+	const auto reported_info = ar.pop<std::array<pad_data_internal, CELL_PAD_MAX_PORT_NUM>>();
+
+	if (const auto handler = pad::g_pad_thread.load())
+	{
+		for (u32 i = 0; i < CELL_PAD_MAX_PORT_NUM; i++)
+		{
+			const auto& pad = handler->GetPads()[i];
+
+			if (!pad)
+				continue;
+
+			retro_cas_record_txn_t txn;
+			do
+			{
+				pad_guest_state* state = static_cast<pad_guest_state*>(retro_cas_record_begin(&pad->m_guest, &txn));
+				state->port_setting = port_setting[i];
+				state->reported = reported_info[i];
+			}
+			while (!retro_cas_record_commit(&pad->m_guest, &txn));
+		}
+	}
+
 	sys_io_serialize(ar);
 }
 
@@ -68,15 +124,34 @@ void pad_info::save(utils::serial& ar)
 {
 	USING_SERIALIZATION_VERSION(sys_io);
 
-	ar(max_connect, port_setting, reported_info);
+	std::array<u32, CELL_PAD_MAX_PORT_NUM> port_setting{};
+	std::array<pad_data_internal, CELL_PAD_MAX_PORT_NUM> reported_info{};
+
+	if (const auto handler = pad::g_pad_thread.load())
+	{
+		for (u32 i = 0; i < CELL_PAD_MAX_PORT_NUM; i++)
+		{
+			if (const auto& pad = handler->GetPads()[i])
+			{
+				pad_guest_state state;
+				retro_cas_record_read(&pad->m_guest, &state);
+				port_setting[i] = state.port_setting;
+				reported_info[i] = state.reported;
+			}
+		}
+	}
+
+	ar(initialized(), port_setting, reported_info);
 
 	sys_io_serialize(ar);
 }
 
-void show_debug_overlay(const CellPadData& data, const Pad& pad, const pad_info& config)
+void show_debug_overlay(const CellPadData& data, const Pad& pad, const pad_guest_state& state)
 {
-	const u32 setting = config.port_setting[pad.m_player_id];
-	const CellPadData& raw = pad.data;
+	const u32 setting = state.port_setting;
+	const CellPadData& raw = state.data;
+	// What the game last asked of the motors: large | small << 8
+	const u32 motors = static_cast<u32>(retro_atomic_load_acquire_int(const_cast<retro_atomic_int_t*>(&pad.m_rumble_motors)));
 	const u16 raw_d1 = raw.button[CELL_PAD_BTN_OFFSET_DIGITAL1];
 	const u16 raw_d2 = raw.button[CELL_PAD_BTN_OFFSET_DIGITAL2];
 	const u16 d1 = data.button[CELL_PAD_BTN_OFFSET_DIGITAL1];
@@ -131,8 +206,8 @@ void show_debug_overlay(const CellPadData& data, const Pad& pad, const pad_info&
 		"on", data.len >= CELL_PAD_LEN_CHANGE_DEFAULT ? "on" : "off",
 		(setting & CELL_PAD_SETTING_PRESS_ON) ? "on" : "off", data.len >= CELL_PAD_LEN_CHANGE_PRESS_ON ? "on" : "off",
 		(setting & CELL_PAD_SETTING_SENSOR_ON) ? "on" : "off", data.len >= CELL_PAD_LEN_CHANGE_SENSOR_ON ? "on" : "off",
-		pad.m_vibrate_motors[0].value, pad.m_vibrate_motors[0].adjusted_value,
-		pad.m_vibrate_motors[1].value, pad.m_vibrate_motors[1].adjusted_value,
+		motors & 0xff, pad.m_vibrate_motors[0].adjusted_value,
+		motors >> 8, pad.m_vibrate_motors[1].adjusted_value,
 		raw_d1, d1,
 		raw_d2, d2,
 		raw.button[CELL_PAD_BTN_OFFSET_PRESS_UP],       !!(d1 & CELL_PAD_CTRL_UP),       data.button[CELL_PAD_BTN_OFFSET_PRESS_UP],
@@ -171,7 +246,9 @@ void show_debug_overlay(const CellPadData& data, const Pad& pad, const pad_info&
 
 extern void send_sys_io_connect_event(usz index, u32 state);
 
-bool cellPad_NotifyStateChange(usz index, u64 /*state*/, bool locked, bool is_blocking = true)
+// The port's connection as the game is told of it (sys_io's events): takes
+// no lock, so it never has to be tried again - always true
+bool cellPad_NotifyStateChange(usz index, u64 /*state*/, bool /*locked*/, bool /*is_blocking*/ = true)
 {
 	auto info = g_fxo->try_get<pad_info>();
 
@@ -180,73 +257,63 @@ bool cellPad_NotifyStateChange(usz index, u64 /*state*/, bool locked, bool is_bl
 		return true;
 	}
 
-	std::unique_lock lock(pad::g_pad_mutex, std::defer_lock);
-
-	if (locked)
-	{
-		if (is_blocking)
-		{
-			lock.lock();
-		}
-		else
-		{
-			if (!lock.try_lock())
-			{
-				return false;
-			}
-		}
-	}
-
 	if (index >= info->get_max_connect())
 	{
 		return true;
 	}
 
-	const auto handler = pad::get_pad_thread();
-	const auto& pads = handler->GetPads();
-	const auto& pad = pads[index];
+	Pad& pad = port_pad(static_cast<u32>(index));
 
-	if (pad->is_fake_pad)
+	if (pad.is_fake_pad)
 	{
 		return true;
 	}
 
-	pad_data_internal& reported_info = info->reported_info[index];
-	const u32 old_status = reported_info.port_status;
-
-	// Ignore sent status for now, use the latest instead
-	// NOTE 1: The state's CONNECTED bit should currently be identical to the current
-	//         m_port_status CONNECTED bit when called from our pad handlers.
-	// NOTE 2: Make sure to propagate all other status bits to the reported status.
-	const u32 new_status = pad->port_status();
-
-	if (~(old_status ^ new_status) & CELL_PAD_STATUS_CONNECTED)
+	for (;;)
 	{
-		// old and new have the same connection status
-		return true;
-	}
+		retro_cas_record_txn_t txn;
+		pad_guest_state* state = static_cast<pad_guest_state*>(retro_cas_record_begin(&pad.m_guest, &txn));
+		pad_data_internal& reported_info = state->reported;
+		const u32 old_status = reported_info.port_status;
 
-	reported_info.port_status = new_status | CELL_PAD_STATUS_ASSIGN_CHANGES;
-	reported_info.device_capability = pad->m_device_capability;
-	reported_info.device_type = pad->m_device_type;
-	reported_info.pclass_type = pad->m_class_type;
-	reported_info.pclass_profile = pad->m_class_profile;
+		// Ignore sent status for now, use the latest instead
+		// NOTE 1: The state's CONNECTED bit should currently be identical to the current
+		//         m_port_status CONNECTED bit when called from our pad handlers.
+		// NOTE 2: Make sure to propagate all other status bits to the reported status.
+		const u32 new_status = pad.port_status();
 
-	if (pad->m_vendor_id == 0 || pad->m_product_id == 0)
-	{
-		// Fallback to defaults
-		const std::vector<input::product_info> input_products = input::get_products_by_class(pad->m_class_type);
-		const input::product_info& product = ::at32(input_products, 0);
-		reported_info.vendor_id = product.vendor_id;
-		reported_info.product_id = product.product_id;
-	}
-	else
-	{
-		reported_info.vendor_id = pad->m_vendor_id;
-		reported_info.product_id = pad->m_product_id;
-	}
+		if (~(old_status ^ new_status) & CELL_PAD_STATUS_CONNECTED)
+		{
+			// old and new have the same connection status
+			retro_cas_record_abort(&pad.m_guest, &txn);
+			return true;
+		}
 
-	return true;
+		const port_device device = device_of(pad, *state);
+
+		reported_info.port_status = new_status | CELL_PAD_STATUS_ASSIGN_CHANGES;
+		reported_info.device_capability = device.capability;
+		reported_info.device_type = device.type;
+		reported_info.pclass_type = device.class_type;
+		reported_info.pclass_profile = device.class_profile;
+
+		if (device.vendor_id == 0 || device.product_id == 0)
+		{
+			// Fallback to defaults
+			const std::vector<input::product_info> input_products = input::get_products_by_class(device.class_type);
+			const input::product_info& product = ::at32(input_products, 0);
+			reported_info.vendor_id = product.vendor_id;
+			reported_info.product_id = product.product_id;
+		}
+		else
+		{
+			reported_info.vendor_id = device.vendor_id;
+			reported_info.product_id = device.product_id;
+		}
+
+		if (retro_cas_record_commit(&pad.m_guest, &txn))
+			return true;
+	}
 }
 
 extern void pad_state_notify_state_change(usz index, u32 state)
@@ -258,8 +325,6 @@ error_code cellPadInit(ppu_thread& ppu, u32 max_connect)
 {
 	cellPad.warning("cellPadInit(max_connect=%d)", max_connect);
 
-	std::lock_guard lock(pad::g_pad_mutex);
-
 	auto& config = g_fxo->get<pad_info>();
 
 	if (config.max_connect)
@@ -268,14 +333,29 @@ error_code cellPadInit(ppu_thread& ppu, u32 max_connect)
 	if (max_connect == 0 || max_connect > CELL_MAX_PADS)
 		return CELL_PAD_ERROR_INVALID_PARAMETER;
 
-	sys_config_start(ppu);
+	// Taken, for one of two threads at it; not initialized yet for the
+	// other calls until the ports are set up
+	if (!config.max_connect.compare_and_swap_test(0, pad_info::starting))
+		return CELL_PAD_ERROR_ALREADY_INITIALIZED;
 
-	config.max_connect = max_connect;
-	config.port_setting.fill(CELL_PAD_SETTING_PRESS_OFF | CELL_PAD_SETTING_SENSOR_OFF);
-	config.reported_info = {};
+	sys_config_start(ppu);
 
 	const auto handler = pad::get_pad_thread();
 	const auto& pads = handler->GetPads();
+
+	for (u32 i = 0; i < CELL_PAD_MAX_PORT_NUM; i++)
+	{
+		retro_cas_record_txn_t txn;
+		do
+		{
+			pad_guest_state* state = static_cast<pad_guest_state*>(retro_cas_record_begin(&pads[i]->m_guest, &txn));
+			state->port_setting = CELL_PAD_SETTING_PRESS_OFF | CELL_PAD_SETTING_SENSOR_OFF;
+			state->reported = {};
+		}
+		while (!retro_cas_record_commit(&pads[i]->m_guest, &txn));
+	}
+
+	config.max_connect = max_connect;
 
 	for (usz i = 0; i < config.get_max_connect(); ++i)
 	{
@@ -292,72 +372,91 @@ error_code cellPadEnd(ppu_thread& ppu)
 {
 	cellPad.notice("cellPadEnd()");
 
-	std::lock_guard lock(pad::g_pad_mutex);
-
 	auto& config = g_fxo->get<pad_info>();
 
-	if (!config.max_connect.exchange(0))
-		return CELL_PAD_ERROR_UNINITIALIZED;
+	// One of two threads at it ends it; while a cellPadInit is under way
+	// there is nothing to end yet
+	for (;;)
+	{
+		const u32 max_connect = config.initialized();
+
+		if (!max_connect)
+			return CELL_PAD_ERROR_UNINITIALIZED;
+
+		if (config.max_connect.compare_and_swap_test(max_connect, 0))
+			break;
+	}
 
 	sys_config_stop(ppu);
 	return CELL_OK;
 }
 
-void clear_pad_buffer(const std::shared_ptr<Pad>& pad)
+// Set 'buffer_cleared' to force a resend of everything
+// might as well also reset everything in our pad 'buffer' to nothing as well
+void clear_pad_buffer(pad_guest_state& state)
 {
-	if (!pad)
-		return;
+	state.buffer_cleared = 1;
+	state.data = {};
+	state.data.button[CELL_PAD_BTN_OFFSET_ANALOG_LEFT_X] = 128;
+	state.data.button[CELL_PAD_BTN_OFFSET_ANALOG_LEFT_Y] = 128;
+	state.data.button[CELL_PAD_BTN_OFFSET_ANALOG_RIGHT_X] = 128;
+	state.data.button[CELL_PAD_BTN_OFFSET_ANALOG_RIGHT_Y] = 128;
+	state.data.button[CELL_PAD_BTN_OFFSET_SENSOR_X] = DEFAULT_MOTION_X;
+	state.data.button[CELL_PAD_BTN_OFFSET_SENSOR_Y] = DEFAULT_MOTION_Y;
+	state.data.button[CELL_PAD_BTN_OFFSET_SENSOR_Z] = DEFAULT_MOTION_Z;
+	state.data.button[CELL_PAD_BTN_OFFSET_SENSOR_G] = DEFAULT_MOTION_G;
+}
 
-	// Set 'm_buffer_cleared' to force a resend of everything
-	// might as well also reset everything in our pad 'buffer' to nothing as well
-
-	pad->m_buffer_cleared = true;
-	pad->data = {};
-	pad->data.button[CELL_PAD_BTN_OFFSET_ANALOG_LEFT_X] = 128;
-	pad->data.button[CELL_PAD_BTN_OFFSET_ANALOG_LEFT_Y] = 128;
-	pad->data.button[CELL_PAD_BTN_OFFSET_ANALOG_RIGHT_X] = 128;
-	pad->data.button[CELL_PAD_BTN_OFFSET_ANALOG_RIGHT_Y] = 128;
-	pad->data.button[CELL_PAD_BTN_OFFSET_SENSOR_X] = DEFAULT_MOTION_X;
-	pad->data.button[CELL_PAD_BTN_OFFSET_SENSOR_Y] = DEFAULT_MOTION_Y;
-	pad->data.button[CELL_PAD_BTN_OFFSET_SENSOR_Z] = DEFAULT_MOTION_Z;
-	pad->data.button[CELL_PAD_BTN_OFFSET_SENSOR_G] = DEFAULT_MOTION_G;
+// Whether the game has the port's device: the port is no fake one, the game
+// was told of the connection and it still stands
+static bool port_has_device(const Pad& pad, const pad_guest_state& state)
+{
+	return !pad.is_fake_pad && (state.reported.port_status & CELL_PAD_STATUS_CONNECTED) && pad.is_connected();
 }
 
 error_code cellPadClearBuf(u32 port_no)
 {
 	cellPad.trace("cellPadClearBuf(port_no=%d)", port_no);
 
-	std::lock_guard lock(pad::g_pad_mutex);
-
 	auto& config = g_fxo->get<pad_info>();
+	const u32 max_connect = config.initialized();
 
-	if (!config.max_connect)
+	if (!max_connect)
 		return CELL_PAD_ERROR_UNINITIALIZED;
 
 	if (port_no >= CELL_MAX_PADS)
 		return CELL_PAD_ERROR_INVALID_PARAMETER;
 
-	if (port_no >= config.get_max_connect())
+	if (port_no >= pad_info::max_ports(max_connect))
 		return CELL_PAD_ERROR_NO_DEVICE;
 
-	const auto handler = pad::get_pad_thread();
-	const auto& pads = handler->GetPads();
-	const auto& pad = pads[port_no];
+	Pad& pad = port_pad(port_no);
 
-	if (pad->is_fake_pad || !config.is_reportedly_connected(port_no) || !pad->is_connected())
-		return not_an_error(CELL_PAD_ERROR_NO_DEVICE);
+	for (;;)
+	{
+		retro_cas_record_txn_t txn;
+		pad_guest_state* state = static_cast<pad_guest_state*>(retro_cas_record_begin(&pad.m_guest, &txn));
 
-	clear_pad_buffer(pad);
+		if (!port_has_device(pad, *state))
+		{
+			retro_cas_record_abort(&pad.m_guest, &txn);
+			return not_an_error(CELL_PAD_ERROR_NO_DEVICE);
+		}
 
-	return CELL_OK;
+		clear_pad_buffer(*state);
+
+		if (retro_cas_record_commit(&pad.m_guest, &txn))
+			return CELL_OK;
+	}
 }
 
-void pad_get_data(u32 port_no, CellPadData* data, bool get_periph_data = false)
+// One cellPadGetData of a port, on @state: a copy of the port's game side,
+// the caller's until it puts it in the port's place. data->len says whether
+// that is needed: with CELL_PAD_LEN_NO_CHANGE nothing of @state was changed.
+static void pad_get_data(const Pad& pad_ref, pad_guest_state& state, CellPadData* data, bool get_periph_data = false)
 {
-	auto& config = g_fxo->get<pad_info>();
-	const auto handler = pad::get_pad_thread();
-	const auto& pad = handler->GetPads()[port_no];
-	const PadInfo& rinfo = handler->GetInfo();
+	const Pad* const pad = &pad_ref;
+	const PadInfo& rinfo = pad::get_pad_thread()->GetInfo();
 
 	if (rinfo.system_info() & CELL_PAD_INFO_INTERCEPTED)
 	{
@@ -365,24 +464,25 @@ void pad_get_data(u32 port_no, CellPadData* data, bool get_periph_data = false)
 		return;
 	}
 
-	const u32 setting = config.port_setting[port_no];
+	const u32 setting = state.port_setting;
+	const port_device device = device_of(pad_ref, state);
 	bool btnChanged = false;
 
-	CellPadData& output = pad->data;
+	CellPadData& output = state.data;
 
 	if (rinfo.ignore_input() || !is_input_allowed())
 	{
 		// Needed for Hotline Miami and Ninja Gaiden Sigma after dialogs were closed and buttons are still pressed.
 		// Gran Turismo 6 would keep registering the Start button during OSK Dialogs if this wasn't cleared and if we'd return with len as CELL_PAD_LEN_NO_CHANGE.
-		clear_pad_buffer(pad);
+		clear_pad_buffer(state);
 	}
-	else if (pad->ldd)
+	else if (state.ldd)
 	{
 		if (setting & CELL_PAD_SETTING_SENSOR_ON)
 			data->len = CELL_PAD_LEN_CHANGE_SENSOR_ON;
 		else
 			data->len = (setting & CELL_PAD_SETTING_PRESS_ON) ? CELL_PAD_LEN_CHANGE_PRESS_ON : CELL_PAD_LEN_CHANGE_DEFAULT;
-		std::memcpy(data->button, pad->ldd_data.button, data->len * sizeof(u16));
+		std::memcpy(data->button, state.ldd_data.button, data->len * sizeof(u16));
 		return;
 	}
 	else
@@ -392,9 +492,9 @@ void pad_get_data(u32 port_no, CellPadData* data, bool get_periph_data = false)
 
 		// Check if this pad is configured as a skateboard which ignores sticks and pressure button values.
 		// Curiously it maps infrared on the press value of the face buttons for some reason.
-		const bool use_piggyback = pad->m_class_type == CELL_PAD_PCLASS_TYPE_SKATEBOARD;
+		const bool use_piggyback = device.class_type == CELL_PAD_PCLASS_TYPE_SKATEBOARD;
 
-		const auto set_value = [&btnChanged, use_piggyback, &pad](auto& value, u16 new_value, bool force_processing = false, u16 old_max_value = 255, u16 new_max_value = 255)
+		const auto set_value = [&btnChanged, use_piggyback, pad, &device](auto& value, u16 new_value, bool force_processing = false, u16 old_max_value = 255, u16 new_max_value = 255)
 		{
 			if (use_piggyback)
 			{
@@ -404,7 +504,7 @@ void pad_get_data(u32 port_no, CellPadData* data, bool get_periph_data = false)
 				// Some piggyback values need to be scaled down on emulated devices
 				if (old_max_value != new_max_value)
 				{
-					if (pad->m_class_type == CELL_PAD_PCLASS_TYPE_SKATEBOARD && pad->m_pad_handler != pad_handler::skateboard)
+					if (device.class_type == CELL_PAD_PCLASS_TYPE_SKATEBOARD && pad->m_pad_handler != pad_handler::skateboard)
 					{
 						new_value = static_cast<u16>(new_max_value * std::clamp(new_value / static_cast<f32>(old_max_value), 0.0f, 1.0f));
 					}
@@ -543,21 +643,23 @@ void pad_get_data(u32 port_no, CellPadData* data, bool get_periph_data = false)
 	if (setting & CELL_PAD_SETTING_SENSOR_ON)
 	{
 		// report back new data every ~10 ms even if the input doesn't change
-		// this is observed behaviour when using a Dualshock 3 controller
-		static std::array<steady_clock::time_point, CELL_PAD_MAX_PORT_NUM> last_update = { };
-		const auto now = steady_clock::now();
+		// this is observed behaviour when using a Dualshock 3 controller.
+		// 10 ms of the PS3's clock, which follows retro_run (it was the
+		// host's: the reports came at the host's pace while fast-forwarding
+		// and went on through a pause).
+		const u64 now = get_guest_system_time();
 
-		if (btnChanged || pad->m_buffer_cleared || now - last_update[port_no] >= 10ms)
+		if (btnChanged || state.buffer_cleared || now - state.sensor_time >= 10'000)
 		{
 			data->len = CELL_PAD_LEN_CHANGE_SENSOR_ON;
-			last_update[port_no] = now;
+			state.sensor_time = now;
 		}
 		else
 		{
 			data->len = CELL_PAD_LEN_NO_CHANGE;
 		}
 	}
-	else if (btnChanged || pad->m_buffer_cleared)
+	else if (btnChanged || state.buffer_cleared)
 	{
 		// only give back valid data if a controller state changed
 		data->len = (setting & CELL_PAD_SETTING_PRESS_ON) ? CELL_PAD_LEN_CHANGE_PRESS_ON : CELL_PAD_LEN_CHANGE_DEFAULT;
@@ -568,7 +670,7 @@ void pad_get_data(u32 port_no, CellPadData* data, bool get_periph_data = false)
 		data->len = CELL_PAD_LEN_NO_CHANGE;
 	}
 
-	pad->m_buffer_cleared = false;
+	state.buffer_cleared = 0;
 
 	// only update parts of the output struct depending on the controller setting
 	if (data->len > CELL_PAD_LEN_NO_CHANGE)
@@ -622,7 +724,7 @@ void pad_get_data(u32 port_no, CellPadData* data, bool get_periph_data = false)
 	// TODO: support for 'unique' controllers, which goes in offsets 24+ in padData (CELL_PAD_PCLASS_BTN_OFFSET)
 	// TODO: update data->len accordingly
 
-	switch (pad->m_class_profile)
+	switch (device.class_profile)
 	{
 	default:
 	case CELL_PAD_PCLASS_TYPE_STANDARD:
@@ -696,49 +798,111 @@ void pad_get_data(u32 port_no, CellPadData* data, bool get_periph_data = false)
 	}
 }
 
+// cellPadGetData and cellPadPeriphGetData of a port whose pad is @pad: one
+// change of the port, whichever threads call. False when the game has no
+// device there. @device: the port's device, when wanted; @shown: the port as
+// it was left, when wanted.
+bool cellPad_port_get_data(Pad& pad, CellPadData* data, bool get_periph_data, pad_guest_state* shown, u32* pclass_type, u32* pclass_profile)
+{
+	for (;;)
+	{
+		// On a copy of the port. Most calls have nothing new for the game
+		// and change nothing of the port: those write nothing shared.
+		pad_guest_state state;
+		const retro_cas_record_word_t version = retro_cas_record_read_versioned(&pad.m_guest, &state);
+
+		if (!port_has_device(pad, state))
+			return false;
+
+		const bool custom = state.ldd != 0;
+
+		pad_get_data(pad, state, data, get_periph_data);
+
+		if (pclass_type)
+		{
+			const port_device device = device_of(pad, state);
+			*pclass_type = device.class_type;
+			*pclass_profile = device.class_profile;
+		}
+
+		if (shown)
+			*shown = state;
+
+		// Nothing new for the game, so nothing changed. A custom
+		// controller's data is the game's own, given back as it is.
+		if (data->len == CELL_PAD_LEN_NO_CHANGE || custom)
+			return true;
+
+		// Something new: the copy in the port's place, if the port is
+		// still as it was read - else another thread got there first, and
+		// the call is made again on the port as that left it
+		if (retro_cas_record_replace(&pad.m_guest, version, &state))
+			return true;
+	}
+}
+
 error_code cellPadGetData(u32 port_no, vm::ptr<CellPadData> data)
 {
 	cellPad.trace("cellPadGetData(port_no=%d, data=*0x%x)", port_no, data);
 
-	std::lock_guard lock(pad::g_pad_mutex);
-
 	auto& config = g_fxo->get<pad_info>();
+	const u32 max_connect = config.initialized();
 
-	if (!config.max_connect)
+	if (!max_connect)
 		return CELL_PAD_ERROR_UNINITIALIZED;
 
 	if (port_no >= CELL_MAX_PADS || !data)
 		return CELL_PAD_ERROR_INVALID_PARAMETER;
 
-	if (port_no >= config.get_max_connect())
+	if (port_no >= pad_info::max_ports(max_connect))
 		return CELL_PAD_ERROR_NO_DEVICE;
 
-	const auto handler = pad::get_pad_thread();
-	const auto& pads = handler->GetPads();
-	const auto& pad = pads[port_no];
+	Pad& pad = port_pad(port_no);
+	const bool overlay = g_cfg.io.pad_debug_overlay && !g_cfg.video.debug_overlay && port_no == 0;
+	pad_guest_state shown;
 
-	if (pad->is_fake_pad || !config.is_reportedly_connected(port_no) || !pad->is_connected())
+	if (!cellPad_port_get_data(pad, data.get_ptr(), false, overlay ? &shown : nullptr, nullptr, nullptr))
 		return not_an_error(CELL_PAD_ERROR_NO_DEVICE);
 
-	pad_get_data(port_no, data.get_ptr());
-
-	if (g_cfg.io.pad_debug_overlay && !g_cfg.video.debug_overlay && port_no == 0)
+	if (overlay)
 	{
-		show_debug_overlay(*data, *pad, config);
+		show_debug_overlay(*data, pad, shown);
 	}
 
 	return CELL_OK;
+}
+
+// A port as it is reported to the game by the calls that list the ports;
+// they also take ASSIGN_CHANGES off the reported status, once
+static void port_report(Pad& pad, pad_guest_state& as_it_was)
+{
+	for (;;)
+	{
+		retro_cas_record_txn_t txn;
+		pad_guest_state* state = static_cast<pad_guest_state*>(retro_cas_record_begin(&pad.m_guest, &txn));
+		as_it_was = *state;
+
+		if (!(state->reported.port_status & CELL_PAD_STATUS_ASSIGN_CHANGES))
+		{
+			retro_cas_record_abort(&pad.m_guest, &txn);
+			return;
+		}
+
+		state->reported.port_status &= ~CELL_PAD_STATUS_ASSIGN_CHANGES;
+
+		if (retro_cas_record_commit(&pad.m_guest, &txn))
+			return;
+	}
 }
 
 error_code cellPadPeriphGetInfo(vm::ptr<CellPadPeriphInfo> info)
 {
 	cellPad.trace("cellPadPeriphGetInfo(info=*0x%x)", info);
 
-	std::lock_guard lock(pad::g_pad_mutex);
-
 	auto& config = g_fxo->get<pad_info>();
+	const u32 max_connect = config.initialized();
 
-	if (!config.max_connect)
+	if (!max_connect)
 		return CELL_PAD_ERROR_UNINITIALIZED;
 
 	if (!info)
@@ -749,19 +913,19 @@ error_code cellPadPeriphGetInfo(vm::ptr<CellPadPeriphInfo> info)
 
 	std::memset(info.get_ptr(), 0, sizeof(CellPadPeriphInfo));
 
-	info->max_connect = config.max_connect;
+	info->max_connect = max_connect;
 	info->system_info = rinfo.system_info();
 
 	u32 now_connect = 0;
 
-	for (u32 i = 0; i < config.get_max_connect(); ++i)
+	for (u32 i = 0; i < pad_info::max_ports(max_connect); ++i)
 	{
-		pad_data_internal& reported_info = config.reported_info[i];
+		pad_guest_state state;
+		port_report(port_pad(i), state);
+		const pad_data_internal& reported_info = state.reported;
 
 		info->port_status[i] = reported_info.port_status;
-		info->port_setting[i] = config.port_setting[i];
-
-		reported_info.port_status &= ~CELL_PAD_STATUS_ASSIGN_CHANGES;
+		info->port_setting[i] = state.port_setting;
 
 		if (~reported_info.port_status & CELL_PAD_STATUS_CONNECTED)
 		{
@@ -785,31 +949,26 @@ error_code cellPadPeriphGetData(u32 port_no, vm::ptr<CellPadPeriphData> data)
 {
 	cellPad.trace("cellPadPeriphGetData(port_no=%d, data=*0x%x)", port_no, data);
 
-	std::lock_guard lock(pad::g_pad_mutex);
-
 	auto& config = g_fxo->get<pad_info>();
+	const u32 max_connect = config.initialized();
 
-	if (!config.max_connect)
+	if (!max_connect)
 		return CELL_PAD_ERROR_UNINITIALIZED;
 
 	// port_no can only be 0-6 in this function
 	if (port_no >= CELL_PAD_MAX_PORT_NUM || !data)
 		return CELL_PAD_ERROR_INVALID_PARAMETER;
 
-	if (port_no >= config.get_max_connect())
+	if (port_no >= pad_info::max_ports(max_connect))
 		return CELL_PAD_ERROR_NO_DEVICE;
 
-	const auto handler = pad::get_pad_thread();
-	const auto& pads = handler->GetPads();
-	const auto& pad = pads[port_no];
+	u32 pclass_type = 0, pclass_profile = 0;
 
-	if (pad->is_fake_pad || !config.is_reportedly_connected(port_no) || !pad->is_connected())
+	if (!cellPad_port_get_data(port_pad(port_no), &data->cellpad_data, true, nullptr, &pclass_type, &pclass_profile))
 		return not_an_error(CELL_PAD_ERROR_NO_DEVICE);
 
-	pad_get_data(port_no, &data->cellpad_data, true);
-
-	data->pclass_type = pad->m_class_type;
-	data->pclass_profile = pad->m_class_profile;
+	data->pclass_type = pclass_type;
+	data->pclass_profile = pclass_profile;
 
 	return CELL_OK;
 }
@@ -818,28 +977,27 @@ error_code cellPadGetRawData(u32 port_no, vm::ptr<CellPadData> data)
 {
 	cellPad.todo("cellPadGetRawData(port_no=%d, data=*0x%x)", port_no, data);
 
-	std::lock_guard lock(pad::g_pad_mutex);
-
 	auto& config = g_fxo->get<pad_info>();
+	const u32 max_connect = config.initialized();
 
-	if (!config.max_connect)
+	if (!max_connect)
 		return CELL_PAD_ERROR_UNINITIALIZED;
 
 	if (port_no >= CELL_MAX_PADS || !data)
 		return CELL_PAD_ERROR_INVALID_PARAMETER;
 
-	if (port_no >= config.get_max_connect())
+	if (port_no >= pad_info::max_ports(max_connect))
 		return CELL_PAD_ERROR_NO_DEVICE;
 
-	const auto handler = pad::get_pad_thread();
-	const auto& pads = handler->GetPads();
-	const auto& pad = pads[port_no];
+	Pad& pad = port_pad(port_no);
+	pad_guest_state state;
+	retro_cas_record_read(&pad.m_guest, &state);
 
-	if (pad->is_fake_pad || !config.is_reportedly_connected(port_no) || !pad->is_connected())
+	if (!port_has_device(pad, state))
 		return not_an_error(CELL_PAD_ERROR_NO_DEVICE);
 
 	// ?
-	// std::memcpy(data.get_ptr(), &pad->data, sizeof(CellPadData));
+	// std::memcpy(data.get_ptr(), &state.data, sizeof(CellPadData));
 
 	return CELL_OK;
 }
@@ -900,11 +1058,10 @@ error_code cellPadSetActDirect(u32 port_no, vm::ptr<CellPadActParam> param)
 {
 	cellPad.trace("cellPadSetActDirect(port_no=%d, param=*0x%x)", port_no, param);
 
-	std::lock_guard lock(pad::g_pad_mutex);
-
 	auto& config = g_fxo->get<pad_info>();
+	const u32 max_connect = config.initialized();
 
-	if (!config.max_connect)
+	if (!max_connect)
 		return CELL_PAD_ERROR_UNINITIALIZED;
 
 	if (port_no >= CELL_MAX_PADS || !param)
@@ -921,18 +1078,19 @@ error_code cellPadSetActDirect(u32 port_no, vm::ptr<CellPadActParam> param)
 		}
 	}
 
-	if (port_no >= config.get_max_connect())
+	if (port_no >= pad_info::max_ports(max_connect))
 		return CELL_PAD_ERROR_NO_DEVICE;
 
 	const auto handler = pad::get_pad_thread();
-	const auto& pads = handler->GetPads();
-	const auto& pad = pads[port_no];
+	Pad& pad = port_pad(port_no);
+	pad_guest_state state;
+	retro_cas_record_read(&pad.m_guest, &state);
 
-	if (pad->is_fake_pad || !config.is_reportedly_connected(port_no) || !pad->is_connected())
+	if (!port_has_device(pad, state))
 		return not_an_error(CELL_PAD_ERROR_NO_DEVICE);
 
 	// TODO: find out if this is checked here or later or at all
-	if (!(pad->m_device_capability & CELL_PAD_CAPABILITY_ACTUATOR))
+	if (!(device_of(pad, state).capability & CELL_PAD_CAPABILITY_ACTUATOR))
 		return CELL_PAD_ERROR_UNSUPPORTED_GAMEPAD;
 
 	handler->SetRumble(port_no, param->motor[1], param->motor[0]);
@@ -944,11 +1102,10 @@ error_code cellPadGetInfo(vm::ptr<CellPadInfo> info)
 {
 	cellPad.trace("cellPadGetInfo(info=*0x%x)", info);
 
-	std::lock_guard lock(pad::g_pad_mutex);
-
 	auto& config = g_fxo->get<pad_info>();
+	const u32 max_connect = config.initialized();
 
-	if (!config.max_connect)
+	if (!max_connect)
 		return CELL_PAD_ERROR_UNINITIALIZED;
 
 	if (!info)
@@ -958,19 +1115,22 @@ error_code cellPadGetInfo(vm::ptr<CellPadInfo> info)
 
 	const auto handler = pad::get_pad_thread();
 	const PadInfo& rinfo = handler->GetInfo();
-	info->max_connect = config.max_connect;
+	info->max_connect = max_connect;
 	info->system_info = rinfo.system_info();
 
 	u32 now_connect = 0;
 
-	for (u32 i = 0; i < config.get_max_connect(); ++i)
+	for (u32 i = 0; i < pad_info::max_ports(max_connect); ++i)
 	{
-		pad_data_internal& reported_info = config.reported_info[i];
-		reported_info.port_status &= ~CELL_PAD_STATUS_ASSIGN_CHANGES; // TODO: should ASSIGN flags be cleared here?
+		pad_guest_state state;
+		port_report(port_pad(i), state);
+		const pad_data_internal& reported_info = state.reported;
 
-		info->status[i] = reported_info.port_status;
+		// TODO: should ASSIGN flags be cleared here?
+		const u32 port_status = reported_info.port_status & ~CELL_PAD_STATUS_ASSIGN_CHANGES;
+		info->status[i] = port_status;
 
-		if (~reported_info.port_status & CELL_PAD_STATUS_CONNECTED)
+		if (~port_status & CELL_PAD_STATUS_CONNECTED)
 		{
 			continue;
 		}
@@ -982,6 +1142,7 @@ error_code cellPadGetInfo(vm::ptr<CellPadInfo> info)
 	}
 
 	info->now_connect = now_connect;
+
 	return CELL_OK;
 }
 
@@ -989,11 +1150,10 @@ error_code cellPadGetInfo2(vm::ptr<CellPadInfo2> info)
 {
 	cellPad.trace("cellPadGetInfo2(info=*0x%x)", info);
 
-	std::lock_guard lock(pad::g_pad_mutex);
-
 	auto& config = g_fxo->get<pad_info>();
+	const u32 max_connect = config.initialized();
 
-	if (!config.max_connect)
+	if (!max_connect)
 		return CELL_PAD_ERROR_UNINITIALIZED;
 
 	if (!info)
@@ -1003,34 +1163,60 @@ error_code cellPadGetInfo2(vm::ptr<CellPadInfo2> info)
 
 	const auto handler = pad::get_pad_thread();
 	const PadInfo& rinfo = handler->GetInfo();
-	info->max_connect = config.get_max_connect(); // Here it is forcibly clamped
+	info->max_connect = pad_info::max_ports(max_connect); // Here it is forcibly clamped
 	info->system_info = rinfo.system_info();
 
 	u32 now_connect = 0;
 
-	const auto& pads = handler->GetPads();
-
-	for (u32 i = 0; i < config.get_max_connect(); ++i)
+	for (u32 i = 0; i < pad_info::max_ports(max_connect); ++i)
 	{
-		pad_data_internal& reported_info = config.reported_info[i];
+		Pad& pad = port_pad(i);
+		pad_guest_state state;
+		port_report(pad, state);
+		const pad_data_internal& reported_info = state.reported;
 
 		info->port_status[i] = reported_info.port_status;
-		info->port_setting[i] = config.port_setting[i];
-
-		reported_info.port_status &= ~CELL_PAD_STATUS_ASSIGN_CHANGES;
+		info->port_setting[i] = state.port_setting;
 
 		if (~reported_info.port_status & CELL_PAD_STATUS_CONNECTED)
 		{
 			continue;
 		}
 
-		info->device_capability[i] = pads[i]->m_device_capability;
-		info->device_type[i] = pads[i]->m_device_type;
+		const port_device device = device_of(pad, state);
+		info->device_capability[i] = device.capability;
+		info->device_type[i] = device.type;
 
 		now_connect++;
 	}
 
 	info->now_connect = now_connect;
+
+	return CELL_OK;
+}
+
+// What the calls about one port's device start with. The port's game side
+// is read into @state; an error to return, or CELL_OK to go on.
+static error_code port_device_call(u32 port_no, bool has_arg, Pad*& pad, pad_guest_state& state)
+{
+	auto& config = g_fxo->get<pad_info>();
+	const u32 max_connect = config.initialized();
+
+	if (!max_connect)
+		return CELL_PAD_ERROR_UNINITIALIZED;
+
+	if (port_no >= CELL_MAX_PADS || !has_arg)
+		return CELL_PAD_ERROR_INVALID_PARAMETER;
+
+	if (port_no >= pad_info::max_ports(max_connect))
+		return CELL_PAD_ERROR_NO_DEVICE;
+
+	pad = &port_pad(port_no);
+	retro_cas_record_read(&pad->m_guest, &state);
+
+	if (!port_has_device(*pad, state))
+		return not_an_error(CELL_PAD_ERROR_NO_DEVICE);
+
 	return CELL_OK;
 }
 
@@ -1038,42 +1224,39 @@ error_code cellPadGetCapabilityInfo(u32 port_no, vm::ptr<CellPadCapabilityInfo> 
 {
 	cellPad.trace("cellPadGetCapabilityInfo(port_no=%d, data_addr:=0x%x)", port_no, info.addr());
 
-	std::lock_guard lock(pad::g_pad_mutex);
+	Pad* pad = nullptr;
+	pad_guest_state state;
 
-	auto& config = g_fxo->get<pad_info>();
-
-	if (!config.max_connect)
-		return CELL_PAD_ERROR_UNINITIALIZED;
-
-	if (port_no >= CELL_MAX_PADS || !info)
-		return CELL_PAD_ERROR_INVALID_PARAMETER;
-
-	if (port_no >= config.get_max_connect())
-		return CELL_PAD_ERROR_NO_DEVICE;
-
-	const auto handler = pad::get_pad_thread();
-	const auto& pads = handler->GetPads();
-	const auto& pad = pads[port_no];
-
-	if (pad->is_fake_pad || !config.is_reportedly_connected(port_no) || !pad->is_connected())
-		return not_an_error(CELL_PAD_ERROR_NO_DEVICE);
+	if (const error_code error = port_device_call(port_no, !!info, pad, state); error != CELL_OK)
+		return error;
 
 	// Should return the same as device capability mask, psl1ght has it backwards in pad->h
 	memset(info->info, 0, CELL_PAD_MAX_CAPABILITY_INFO * sizeof(u32));
-	info->info[0] = pad->m_device_capability;
+	info->info[0] = device_of(*pad, state).capability;
 
 	return CELL_OK;
+}
+
+// A change of a port's setting: @set on, @clear off
+static void port_change_setting(u32 port_no, u32 set, u32 clear)
+{
+	Pad& pad = port_pad(port_no);
+	retro_cas_record_txn_t txn;
+	do
+	{
+		pad_guest_state* state = static_cast<pad_guest_state*>(retro_cas_record_begin(&pad.m_guest, &txn));
+		state->port_setting = (state->port_setting | set) & ~clear;
+	}
+	while (!retro_cas_record_commit(&pad.m_guest, &txn));
 }
 
 error_code cellPadSetPortSetting(u32 port_no, u32 port_setting)
 {
 	cellPad.trace("cellPadSetPortSetting(port_no=%d, port_setting=0x%x)", port_no, port_setting);
 
-	std::lock_guard lock(pad::g_pad_mutex);
-
 	auto& config = g_fxo->get<pad_info>();
 
-	if (!config.max_connect)
+	if (!config.initialized())
 		return CELL_PAD_ERROR_UNINITIALIZED;
 
 	if (port_no >= CELL_MAX_PADS)
@@ -1083,15 +1266,9 @@ error_code cellPadSetPortSetting(u32 port_no, u32 port_setting)
 	if (port_no >= CELL_PAD_MAX_PORT_NUM)
 		return CELL_OK;
 
-	if (port_setting & CELL_PAD_SETTING_PRESS_ON)
-		config.port_setting[port_no] |= CELL_PAD_SETTING_PRESS_ON;
-	else
-		config.port_setting[port_no] &= ~CELL_PAD_SETTING_PRESS_ON;
-
-	if (port_setting & CELL_PAD_SETTING_SENSOR_ON)
-		config.port_setting[port_no] |= CELL_PAD_SETTING_SENSOR_ON;
-	else
-		config.port_setting[port_no] &= ~CELL_PAD_SETTING_SENSOR_ON;
+	// Both in one change of the port
+	constexpr u32 both = CELL_PAD_SETTING_PRESS_ON | CELL_PAD_SETTING_SENSOR_ON;
+	port_change_setting(port_no, port_setting & both, ~port_setting & both);
 
 	// can also return CELL_PAD_ERROR_UNSUPPORTED_GAMEPAD <- Update: seems to be just internal and ignored
 
@@ -1102,145 +1279,99 @@ error_code cellPadInfoPressMode(u32 port_no)
 {
 	cellPad.trace("cellPadInfoPressMode(port_no=%d)", port_no);
 
-	std::lock_guard lock(pad::g_pad_mutex);
+	Pad* pad = nullptr;
+	pad_guest_state state;
 
-	auto& config = g_fxo->get<pad_info>();
+	if (const error_code error = port_device_call(port_no, true, pad, state); error != CELL_OK)
+		return error;
 
-	if (!config.max_connect)
-		return CELL_PAD_ERROR_UNINITIALIZED;
-
-	if (port_no >= CELL_MAX_PADS)
-		return CELL_PAD_ERROR_INVALID_PARAMETER;
-
-	if (port_no >= config.get_max_connect())
-		return CELL_PAD_ERROR_NO_DEVICE;
-
-	const auto handler = pad::get_pad_thread();
-	const auto& pads = handler->GetPads();
-	const auto& pad = pads[port_no];
-
-	if (pad->is_fake_pad || !config.is_reportedly_connected(port_no) || !pad->is_connected())
-		return not_an_error(CELL_PAD_ERROR_NO_DEVICE);
-
-	return not_an_error((pad->m_device_capability & CELL_PAD_CAPABILITY_PRESS_MODE) ? 1 : 0);
+	return not_an_error((device_of(*pad, state).capability & CELL_PAD_CAPABILITY_PRESS_MODE) ? 1 : 0);
 }
 
 error_code cellPadInfoSensorMode(u32 port_no)
 {
 	cellPad.trace("cellPadInfoSensorMode(port_no=%d)", port_no);
 
-	std::lock_guard lock(pad::g_pad_mutex);
+	Pad* pad = nullptr;
+	pad_guest_state state;
 
+	if (const error_code error = port_device_call(port_no, true, pad, state); error != CELL_OK)
+		return error;
+
+	return not_an_error((device_of(*pad, state).capability & CELL_PAD_CAPABILITY_SENSOR_MODE) ? 1 : 0);
+}
+
+// cellPadSetPressMode and cellPadSetSensorMode: the port's @setting bit on
+// or off, if its device has @capability
+static error_code port_set_mode(u32 port_no, u32 mode, u32 capability, u32 setting)
+{
 	auto& config = g_fxo->get<pad_info>();
 
-	if (!config.max_connect)
+	if (!config.initialized())
 		return CELL_PAD_ERROR_UNINITIALIZED;
 
-	if (port_no >= CELL_MAX_PADS)
+	if (port_no >= CELL_MAX_PADS || mode > 1)
 		return CELL_PAD_ERROR_INVALID_PARAMETER;
 
-	if (port_no >= config.get_max_connect())
-		return CELL_PAD_ERROR_NO_DEVICE;
+	// CELL_PAD_ERROR_NO_DEVICE is not returned in this case.
+	if (port_no >= CELL_PAD_MAX_PORT_NUM)
+		return CELL_OK;
 
-	const auto handler = pad::get_pad_thread();
-	const auto& pads = handler->GetPads();
-	const auto& pad = pads[port_no];
+	Pad& pad = port_pad(port_no);
 
-	if (pad->is_fake_pad || !config.is_reportedly_connected(port_no) || !pad->is_connected())
-		return not_an_error(CELL_PAD_ERROR_NO_DEVICE);
+	for (;;)
+	{
+		retro_cas_record_txn_t txn;
+		pad_guest_state* state = static_cast<pad_guest_state*>(retro_cas_record_begin(&pad.m_guest, &txn));
 
-	return not_an_error((pad->m_device_capability & CELL_PAD_CAPABILITY_SENSOR_MODE) ? 1 : 0);
+		// TODO: find out if this is checked here or later or at all
+		if (!(device_of(pad, *state).capability & capability))
+		{
+			retro_cas_record_abort(&pad.m_guest, &txn);
+			return CELL_PAD_ERROR_UNSUPPORTED_GAMEPAD;
+		}
+
+		if (mode)
+			state->port_setting |= setting;
+		else
+			state->port_setting &= ~setting;
+
+		if (retro_cas_record_commit(&pad.m_guest, &txn))
+			return CELL_OK;
+	}
 }
 
 error_code cellPadSetPressMode(u32 port_no, u32 mode)
 {
 	cellPad.trace("cellPadSetPressMode(port_no=%d, mode=%d)", port_no, mode);
 
-	std::lock_guard lock(pad::g_pad_mutex);
-
-	auto& config = g_fxo->get<pad_info>();
-
-	if (!config.max_connect)
-		return CELL_PAD_ERROR_UNINITIALIZED;
-
-	if (port_no >= CELL_MAX_PADS || mode > 1)
-		return CELL_PAD_ERROR_INVALID_PARAMETER;
-
-	// CELL_PAD_ERROR_NO_DEVICE is not returned in this case.
-	if (port_no >= CELL_PAD_MAX_PORT_NUM)
-		return CELL_OK;
-
-	const auto handler = pad::get_pad_thread();
-	const auto& pads = handler->GetPads();
-	const auto& pad = pads[port_no];
-
-	// TODO: find out if this is checked here or later or at all
-	if (!(pad->m_device_capability & CELL_PAD_CAPABILITY_PRESS_MODE))
-		return CELL_PAD_ERROR_UNSUPPORTED_GAMEPAD;
-
-	if (mode)
-		config.port_setting[port_no] |= CELL_PAD_SETTING_PRESS_ON;
-	else
-		config.port_setting[port_no] &= ~CELL_PAD_SETTING_PRESS_ON;
-
-	return CELL_OK;
+	return port_set_mode(port_no, mode, CELL_PAD_CAPABILITY_PRESS_MODE, CELL_PAD_SETTING_PRESS_ON);
 }
 
 error_code cellPadSetSensorMode(u32 port_no, u32 mode)
 {
 	cellPad.trace("cellPadSetSensorMode(port_no=%d, mode=%d)", port_no, mode);
 
-	std::lock_guard lock(pad::g_pad_mutex);
-
-	auto& config = g_fxo->get<pad_info>();
-
-	if (!config.max_connect)
-		return CELL_PAD_ERROR_UNINITIALIZED;
-
-	if (port_no >= CELL_MAX_PADS || mode > 1)
-		return CELL_PAD_ERROR_INVALID_PARAMETER;
-
-	// CELL_PAD_ERROR_NO_DEVICE is not returned in this case.
-	if (port_no >= CELL_PAD_MAX_PORT_NUM)
-		return CELL_OK;
-
-	const auto handler = pad::get_pad_thread();
-	const auto& pads = handler->GetPads();
-	const auto& pad = pads[port_no];
-
-	// TODO: find out if this is checked here or later or at all
-	if (!(pad->m_device_capability & CELL_PAD_CAPABILITY_SENSOR_MODE))
-		return CELL_PAD_ERROR_UNSUPPORTED_GAMEPAD;
-
-	if (mode)
-		config.port_setting[port_no] |= CELL_PAD_SETTING_SENSOR_ON;
-	else
-		config.port_setting[port_no] &= ~CELL_PAD_SETTING_SENSOR_ON;
-
-	return CELL_OK;
+	return port_set_mode(port_no, mode, CELL_PAD_CAPABILITY_SENSOR_MODE, CELL_PAD_SETTING_SENSOR_ON);
 }
 
 error_code cellPadLddRegisterController()
 {
 	cellPad.warning("cellPadLddRegisterController()");
 
-	std::lock_guard lock(pad::g_pad_mutex);
-
 	auto& config = g_fxo->get<pad_info>();
 
-	if (!config.max_connect)
+	if (!config.initialized())
 		return CELL_PAD_ERROR_UNINITIALIZED;
 
 	const auto handler = pad::get_pad_thread();
 
+	// A free port taken for this caller alone, its setting cleared with it,
+	// and the game told of the connection
 	const s32 handle = handler->AddLddPad();
 
 	if (handle < 0)
 		return CELL_PAD_ERROR_TOO_MANY_DEVICES;
-
-	config.port_setting[handle] = 0;
-
-	cellPad_NotifyStateChange(handle, CELL_PAD_STATUS_CONNECTED, false);
 
 	return not_an_error(handle);
 }
@@ -1249,45 +1380,50 @@ error_code cellPadLddDataInsert(s32 handle, vm::ptr<CellPadData> data)
 {
 	cellPad.trace("cellPadLddDataInsert(handle=%d, data=*0x%x)", handle, data);
 
-	std::lock_guard lock(pad::g_pad_mutex);
-
 	auto& config = g_fxo->get<pad_info>();
 
-	if (!config.max_connect)
+	if (!config.initialized())
 		return CELL_PAD_ERROR_UNINITIALIZED;
 
-	const auto handler = pad::get_pad_thread();
-	auto& pads = handler->GetPads();
-
-	if (handle < 0 || static_cast<u32>(handle) >= pads.size() || !data) // data == NULL stalls on decr
+	if (handle < 0 || static_cast<u32>(handle) >= CELL_PAD_MAX_PORT_NUM || !data) // data == NULL stalls on decr
 		return CELL_PAD_ERROR_INVALID_PARAMETER;
 
-	if (!pads[handle]->ldd)
-		return CELL_PAD_ERROR_NO_DEVICE;
+	Pad& pad = port_pad(handle);
 
-	pads[handle]->ldd_data = *data;
+	for (;;)
+	{
+		retro_cas_record_txn_t txn;
+		pad_guest_state* state = static_cast<pad_guest_state*>(retro_cas_record_begin(&pad.m_guest, &txn));
 
-	return CELL_OK;
+		if (!state->ldd)
+		{
+			retro_cas_record_abort(&pad.m_guest, &txn);
+			return CELL_PAD_ERROR_NO_DEVICE;
+		}
+
+		state->ldd_data = *data;
+
+		if (retro_cas_record_commit(&pad.m_guest, &txn))
+			return CELL_OK;
+	}
 }
 
 error_code cellPadLddGetPortNo(s32 handle)
 {
 	cellPad.trace("cellPadLddGetPortNo(handle=%d)", handle);
 
-	std::lock_guard lock(pad::g_pad_mutex);
-
 	auto& config = g_fxo->get<pad_info>();
 
-	if (!config.max_connect)
+	if (!config.initialized())
 		return CELL_PAD_ERROR_UNINITIALIZED;
 
-	const auto handler = pad::get_pad_thread();
-	const auto& pads = handler->GetPads();
-
-	if (handle < 0 || static_cast<u32>(handle) >= pads.size())
+	if (handle < 0 || static_cast<u32>(handle) >= CELL_PAD_MAX_PORT_NUM)
 		return CELL_PAD_ERROR_INVALID_PARAMETER;
 
-	if (!pads[handle]->ldd)
+	pad_guest_state state;
+	retro_cas_record_read(&port_pad(handle).m_guest, &state);
+
+	if (!state.ldd)
 		return CELL_PAD_ERROR_FATAL; // might be incorrect
 
 	// Other possible return values: CELL_PAD_ERROR_EBUSY, CELL_EBUSY
@@ -1298,24 +1434,18 @@ error_code cellPadLddUnregisterController(s32 handle)
 {
 	cellPad.warning("cellPadLddUnregisterController(handle=%d)", handle);
 
-	std::lock_guard lock(pad::g_pad_mutex);
-
 	auto& config = g_fxo->get<pad_info>();
 
-	if (!config.max_connect)
+	if (!config.initialized())
 		return CELL_PAD_ERROR_UNINITIALIZED;
 
-	const auto handler = pad::get_pad_thread();
-	const auto& pads = handler->GetPads();
-
-	if (handle < 0 || static_cast<u32>(handle) >= pads.size())
+	if (handle < 0 || static_cast<u32>(handle) >= CELL_PAD_MAX_PORT_NUM)
 		return CELL_PAD_ERROR_INVALID_PARAMETER;
 
-	if (!pads[handle]->ldd)
+	// False when no custom controller is registered there, or another
+	// thread unregistered it first; the game is told of the disconnection
+	if (!pad::get_pad_thread()->UnregisterLddPad(handle))
 		return CELL_PAD_ERROR_NO_DEVICE;
-
-	handler->UnregisterLddPad(handle);
-	cellPad_NotifyStateChange(handle, CELL_PAD_STATUS_DISCONNECTED, false);
 
 	return CELL_OK;
 }

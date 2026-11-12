@@ -194,7 +194,7 @@ The core's code moves from C++ to C89 that MSVC compiles, a piece at a time, as 
 Not there yet, in the core's own glue. These are debts, not precedent:
 
 1. `libretro_vfs.cpp` locks a file for a frontend without positional I/O (VFS before v6, or a platform where the frontend has none); with it, nothing.
-2. The game's side of the pads (`pad::g_pad_mutex` in `Input/pad_thread.cpp`), which the frontend's side no longer takes.
+2. `pad::g_pad_mutex` (`Input/pad_thread.cpp`) in cellGem, the emulated USB controllers (`Emu/Io/`), the native overlays' input and `pad_thread::Init`. cellPad no longer takes it (a port's game side is a `retro_cas_record` in its `Pad`), nor does the frontend's side.
 
 ## Audio, video and pacing
 
