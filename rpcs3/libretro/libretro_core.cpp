@@ -49,7 +49,7 @@
 #include "Emu/RSX/VK/VKLibretro.h"
 #include "Emu/RSX/VK/vkutils/instance.h"
 #include "Emu/RSX/VK/vkutils/swapchain.h"
-#include "libretro_vulkan.h"
+#include <libretro_vulkan.h>
 #endif
 #include "Emu/RSX/Null/NullGSRender.h"
 #include "Emu/IdManager.h"
@@ -2159,10 +2159,14 @@ static bool vk_own_device_possible(std::string& error)
     return true;
 }
 
-static bool vk_create_device(struct retro_vulkan_context* context, VkInstance instance, VkPhysicalDevice gpu,
+// The device, for either version of the negotiation: on the frontend's
+// instance, RPCS3's own render_device with what the frontend needs on it -
+// merged in here from what create_device was given (version 1), or added by
+// the frontend's own wrapper around vkCreateDevice (version 2,
+// vk::libretro::set_device_wrapper before this).
+static bool vk_make_device(struct retro_vulkan_context* context, VkInstance instance, VkPhysicalDevice gpu,
     VkSurfaceKHR surface, PFN_vkGetInstanceProcAddr get_instance_proc_addr,
     const char** required_device_extensions, unsigned num_required_device_extensions,
-    const char** /*required_device_layers*/, unsigned /*num_required_device_layers*/,
     const VkPhysicalDeviceFeatures* required_features)
 {
     // Vulkan's functions from the frontend's loader, for its instance
@@ -2263,6 +2267,62 @@ static bool vk_create_device(struct retro_vulkan_context* context, VkInstance in
     return true;
 }
 
+// Version 1: the frontend made the instance from the application info and
+// says which device extensions and features it needs; the core merges them
+// into its own and calls vkCreateDevice.
+static bool vk_create_device(struct retro_vulkan_context* context, VkInstance instance, VkPhysicalDevice gpu,
+    VkSurfaceKHR surface, PFN_vkGetInstanceProcAddr get_instance_proc_addr,
+    const char** required_device_extensions, unsigned num_required_device_extensions,
+    const char** /*required_device_layers*/, unsigned /*num_required_device_layers*/,
+    const VkPhysicalDeviceFeatures* required_features)
+{
+    vk::libretro::set_device_wrapper(nullptr, nullptr);
+    return vk_make_device(context, instance, gpu, surface, get_instance_proc_addr,
+        required_device_extensions, num_required_device_extensions, required_features);
+}
+
+// Version 2: the core says what it wants of the instance and of the device,
+// and the frontend's wrappers create them with what the frontend needs added
+// - by the frontend, which knows its own needs (its upscalers, its low
+// latency, its video queues) and the features' pNext chain better than a
+// list of names handed to the core could say.
+
+// RPCS3's instance: its extensions (MoltenVK's settings on Apple systems,
+// the debug ones when asked for), which version 1 had no way to ask for.
+static VkInstance vk_create_instance(PFN_vkGetInstanceProcAddr get_instance_proc_addr, const VkApplicationInfo* app,
+    retro_vulkan_create_instance_wrapper_t create_instance_wrapper, void* opaque)
+{
+    if (!get_instance_proc_addr || !create_instance_wrapper)
+        return VK_NULL_HANDLE;
+
+    vk::load_vulkan(get_instance_proc_addr);
+
+    vk::instance& inst = vk::libretro::shared_instance();
+    if (!inst.create_wrapped(app ? app : vk_get_application_info(), create_instance_wrapper, opaque))
+    {
+        if (log_cb)
+            log_cb(RETRO_LOG_ERROR, "RPCS3: Vulkan: the frontend could not create the instance\n");
+        return VK_NULL_HANDLE;
+    }
+    return inst.handle();
+}
+
+// False when the GPU the frontend named cannot be used: it then asks again
+// with none, and the core picks.
+static bool vk_create_device2(struct retro_vulkan_context* context, VkInstance instance, VkPhysicalDevice gpu,
+    VkSurfaceKHR surface, PFN_vkGetInstanceProcAddr get_instance_proc_addr,
+    retro_vulkan_create_device_wrapper_t create_device_wrapper, void* opaque)
+{
+    if (!create_device_wrapper)
+        return false;
+
+    vk::libretro::set_device_wrapper(create_device_wrapper, opaque);
+    const bool ok = vk_make_device(context, instance, gpu, surface, get_instance_proc_addr, nullptr, 0, nullptr);
+    // The frontend's wrapper is good for this call only
+    vk::libretro::set_device_wrapper(nullptr, nullptr);
+    return ok;
+}
+
 // What RPCS3 made on the device - its allocator, the swapchain images - and
 // not the device itself, which is the frontend's.
 //
@@ -2306,13 +2366,31 @@ static void vk_release_device_resources()
     s_vk_iface = nullptr;
 }
 
-static const struct retro_hw_render_context_negotiation_interface_vulkan s_vk_negotiation{
+// Version 2 where the frontend has it, version 1 otherwise. A frontend with
+// version 2 uses create_instance and create_device2; create_device stays for
+// one that only knows version 1.
+static struct retro_hw_render_context_negotiation_interface_vulkan s_vk_negotiation{
     RETRO_HW_RENDER_CONTEXT_NEGOTIATION_INTERFACE_VULKAN,
-    1, // create_device, not create_device2: the frontend's instance is enough
+    1,
     vk_get_application_info,
     vk_create_device,
     nullptr, // see vk_release_device_resources
+    vk_create_instance,
+    vk_create_device2,
 };
+
+const struct retro_hw_render_context_negotiation_interface_vulkan* libretro_vulkan_negotiation(retro_environment_t cb)
+{
+    // The frontend leaves the version as it is given when it does not know
+    // the question
+    struct retro_hw_render_context_negotiation_interface supported{};
+    supported.interface_type = RETRO_HW_RENDER_CONTEXT_NEGOTIATION_INTERFACE_VULKAN;
+    supported.interface_version = 0;
+    const bool answered = cb && cb(RETRO_ENVIRONMENT_GET_HW_RENDER_CONTEXT_NEGOTIATION_INTERFACE_SUPPORT, &supported);
+
+    s_vk_negotiation.interface_version = answered && supported.interface_version >= 2 ? 2 : 1;
+    return &s_vk_negotiation;
+}
 
 static void vk_fetch_interface()
 {
@@ -2366,7 +2444,7 @@ static bool setup_vulkan_hw_render()
     if (!environ_cb(RETRO_ENVIRONMENT_SET_HW_RENDER, &s_vk_hw_render))
         return false;
 
-    if (!environ_cb(RETRO_ENVIRONMENT_SET_HW_RENDER_CONTEXT_NEGOTIATION_INTERFACE, const_cast<retro_hw_render_context_negotiation_interface_vulkan*>(&s_vk_negotiation)))
+    if (!environ_cb(RETRO_ENVIRONMENT_SET_HW_RENDER_CONTEXT_NEGOTIATION_INTERFACE, const_cast<retro_hw_render_context_negotiation_interface_vulkan*>(libretro_vulkan_negotiation(environ_cb))))
     {
         // Without it the frontend makes a device of its own, without the
         // extensions and features RPCS3 needs. Take the readback path then,
@@ -2380,7 +2458,7 @@ static bool setup_vulkan_hw_render()
     }
 
     if (log_cb)
-        log_cb(RETRO_LOG_INFO, "RPCS3: Vulkan hardware context requested\n");
+        log_cb(RETRO_LOG_INFO, "RPCS3: Vulkan hardware context requested (context negotiation version %u)\n", s_vk_negotiation.interface_version);
     return true;
 }
 

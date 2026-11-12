@@ -100,6 +100,20 @@ namespace vk
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wold-style-cast"
 #endif
+#ifdef LIBRETRO_CORE
+	bool instance::create_wrapped(const VkApplicationInfo* app, VkInstance (*wrapper)(void* opaque, const VkInstanceCreateInfo* info), void* opaque)
+	{
+		m_wrap_app = app;
+		m_wrapper = wrapper;
+		m_wrapper_opaque = opaque;
+		const bool ok = create(app && app->pApplicationName ? app->pApplicationName : "RPCS3");
+		m_wrap_app = nullptr;
+		m_wrapper = nullptr;
+		m_wrapper_opaque = nullptr;
+		return ok;
+	}
+#endif
+
 	bool instance::create(const char* app_name, bool fast)
 	{
 		// No loader, no driver
@@ -242,6 +256,32 @@ namespace vk
 		instance_info.flags |= VK_INSTANCE_CREATE_ENUMERATE_PORTABILITY_BIT_KHR;
 #endif
 
+#ifdef LIBRETRO_CORE
+		if (m_wrapper)
+		{
+			// The application as the core named it to the frontend
+			if (m_wrap_app)
+				instance_info.pApplicationInfo = m_wrap_app;
+
+			m_instance = m_wrapper(m_wrapper_opaque, &instance_info);
+
+			if (!m_instance && instance_info.enabledLayerCount)
+			{
+				// Without the validation layer rather than without a picture
+				rsx_log.error("Could not initialize layer VK_LAYER_KHRONOS_validation");
+				instance_info.enabledLayerCount = 0;
+				instance_info.ppEnabledLayerNames = nullptr;
+				m_instance = m_wrapper(m_wrapper_opaque, &instance_info);
+			}
+
+			if (!m_instance)
+				return false;
+
+			// The frontend's to destroy
+			m_owned = false;
+		}
+		else
+#endif
 		if (VkResult result = vkCreateInstance(&instance_info, nullptr, &m_instance); result != VK_SUCCESS)
 		{
 			if (result == VK_ERROR_LAYER_NOT_PRESENT)

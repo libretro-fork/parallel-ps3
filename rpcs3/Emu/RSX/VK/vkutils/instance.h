@@ -45,6 +45,11 @@ namespace vk
 		// False for an instance someone else created and destroys - the
 		// libretro frontend's, with the core's hardware Vulkan context.
 		bool m_owned = true;
+#ifdef LIBRETRO_CORE
+		const VkApplicationInfo* m_wrap_app = nullptr;
+		VkInstance (*m_wrapper)(void* opaque, const VkInstanceCreateInfo* info) = nullptr;
+		void* m_wrapper_opaque = nullptr;
+#endif
 
 	public:
 
@@ -57,6 +62,13 @@ namespace vk
 		void enable_debugging();
 
 		bool create(const char* app_name, bool fast = false);
+#ifdef LIBRETRO_CORE
+		// As create, but made by the frontend's wrapper (context negotiation
+		// v2) for the application the core named, and the frontend's to
+		// destroy. vk::load_vulkan(get_instance_proc_addr) comes first.
+		VkInstance handle() const { return m_instance; }
+		bool create_wrapped(const VkApplicationInfo* app, VkInstance (*wrapper)(void* opaque, const VkInstanceCreateInfo* info), void* opaque);
+#endif
 
 		// Use an instance created elsewhere. It is not destroyed with this one.
 		void adopt(VkInstance handle);

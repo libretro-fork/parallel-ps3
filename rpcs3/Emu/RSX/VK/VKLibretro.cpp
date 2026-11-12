@@ -84,6 +84,25 @@ namespace vk::libretro
 			dst[i] = dst[i] || src[i];
 	}
 
+	// The frontend's thread's alone, within one create_device2
+	static device_wrapper s_device_wrapper = nullptr;
+	static void* s_device_wrapper_opaque = nullptr;
+
+	void set_device_wrapper(device_wrapper wrapper, void* opaque)
+	{
+		s_device_wrapper = wrapper;
+		s_device_wrapper_opaque = opaque;
+	}
+
+	bool create_device_wrapped(VkPhysicalDevice gpu, const VkDeviceCreateInfo* info, VkDevice* device)
+	{
+		if (!s_device_wrapper)
+			return false;
+
+		*device = s_device_wrapper(gpu, s_device_wrapper_opaque, info);
+		return true;
+	}
+
 	void set_frontend_device(VkDevice dev) { s_frontend_device = dev; }
 	bool is_frontend_device(VkDevice dev) { return dev && dev == s_frontend_device; }
 

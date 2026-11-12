@@ -51,7 +51,7 @@ jobs:
         run: git submodule -q update --init --depth 1 $(awk '/path/ && !/llvm/ && !/opencv/ && !/libsdl-org/ { print $3 }' .gitmodules)
 
       - name: Dependencies
-        run: sudo apt-get install -y -q zlib1g-dev unzip >/dev/null
+        run: sudo apt-get install -y -q zlib1g-dev unzip libvulkan1 mesa-vulkan-drivers >/dev/null
 
       # LLVM from the submodule, built by the Makefile into the core. Its
       # objects and TableGen's output are kept between runs: they change only

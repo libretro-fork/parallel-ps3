@@ -868,6 +868,19 @@ namespace vk
 			device.pNext = &provoking_vertex_info;
 		}
 
+#ifdef LIBRETRO_CORE
+		// Through the frontend's wrapper when it gave one (context negotiation
+		// v2): it adds what it needs of the device to what is asked here
+		if (vk::libretro::create_device_wrapped(*pgpu, &device, &dev))
+		{
+			if (!dev)
+			{
+				dump_debug_info(requested_extensions, enabled_features);
+				fmt::throw_exception("The frontend could not create the Vulkan device");
+			}
+		}
+		else
+#endif
 		if (auto error = vkCreateDevice(*pgpu, &device, nullptr, &dev))
 		{
 			dump_debug_info(requested_extensions, enabled_features);

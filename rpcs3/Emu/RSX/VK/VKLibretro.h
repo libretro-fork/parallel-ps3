@@ -35,6 +35,18 @@ namespace vk::libretro
 	void set_frontend_requirements(const char* const* extensions, u32 count, const VkPhysicalDeviceFeatures* features);
 	void apply_frontend_requirements(std::vector<const char*>& extensions, VkPhysicalDeviceFeatures& features);
 
+	// Version 2 of the context negotiation: the instance and the device are
+	// made by the frontend's wrappers from what RPCS3 asks for, so that the
+	// frontend adds what it needs itself (extensions, features in the pNext
+	// chain, queues of its own). Set for the length of create_instance and
+	// create_device2; nullptr otherwise, and then vkCreateInstance and
+	// vkCreateDevice are called as ever.
+	using instance_wrapper = VkInstance (*)(void* opaque, const VkInstanceCreateInfo* info);
+	using device_wrapper = VkDevice (*)(VkPhysicalDevice gpu, void* opaque, const VkDeviceCreateInfo* info);
+	void set_device_wrapper(device_wrapper wrapper, void* opaque);
+	// VK_NULL_HANDLE with no wrapper set: the caller then creates it itself
+	bool create_device_wrapped(VkPhysicalDevice gpu, const VkDeviceCreateInfo* info, VkDevice* device);
+
 	// The device handed to the frontend is the frontend's: it destroys it after
 	// destroy_device, so render_device::destroy must leave it alone.
 	void set_frontend_device(VkDevice dev);

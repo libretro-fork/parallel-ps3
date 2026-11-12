@@ -15,3 +15,11 @@ const retro_hw_render_callback& get_hw_render();
 // Core directories
 const char* get_system_dir();
 const char* get_save_dir();
+
+#ifdef HAVE_VULKAN
+// The Vulkan context negotiation the core gives the frontend: version 2
+// (create_instance, create_device2) when the frontend says it has it,
+// version 1 (create_device) otherwise
+struct retro_hw_render_context_negotiation_interface_vulkan;
+const struct retro_hw_render_context_negotiation_interface_vulkan* libretro_vulkan_negotiation(retro_environment_t cb);
+#endif
