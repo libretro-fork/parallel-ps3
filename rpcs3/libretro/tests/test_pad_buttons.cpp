@@ -30,6 +30,22 @@
 
 static int failures = 0;
 
+// What a poll allocates, on the thread polling
+static thread_local bool t_counting = false;
+static thread_local usz t_allocations = 0;
+
+void* operator new(std::size_t n)
+{
+	if (t_counting)
+		t_allocations++;
+	if (void* p = std::malloc(n ? n : 1))
+		return p;
+	throw std::bad_alloc();
+}
+
+void operator delete(void* p) noexcept { std::free(p); }
+void operator delete(void* p, std::size_t) noexcept { std::free(p); }
+
 #define CHECK(cond) do { if (!(cond)) { std::fprintf(stderr, "%s:%d: check failed: %s\n", __FILE__, __LINE__, #cond); failures++; } } while (0)
 
 enum class test_btn
@@ -280,6 +296,39 @@ int main()
 		std::printf("test_pad_buttons: %llu polls on %u threads while the mapping was made again 20000 times: %llu whole, %llu between two, %llu mixed\n",
 			static_cast<unsigned long long>(polls.load()), static_cast<u32>(pollers), static_cast<unsigned long long>(whole.load()),
 			static_cast<unsigned long long>(none.load()), static_cast<unsigned long long>(mixed.load()));
+	}
+
+	// A poll allocates nothing, whatever its callback holds on to. The
+	// emulated controllers' callbacks hold three and more things (the PS
+	// Move's stand-in its device, its data and its combinations); as a
+	// std::function each was put on the heap for every poll, and the pad
+	// was passed as a std::shared_ptr of its own, counted up and down.
+	{
+		cfg.clear_buttons();
+		cfg.init_buttons();
+		u32 device = 1, combos = 0;
+		u64 data = 0, more = 0;
+		const long owners = pad.use_count();
+		long owners_seen = 0;
+
+		t_allocations = 0;
+		t_counting = true;
+		for (int i = 0; i < 1000; i++)
+		{
+			cfg.handle_input(pad, false, [device, &data, &combos, &more, &owners_seen, &pad](const auto& value, bool&)
+			{
+				data += value.value + device;
+				combos++;
+				more += value.max_value;
+				owners_seen = pad.use_count();
+			});
+		}
+		t_counting = false;
+
+		CHECK(combos > 0);
+		CHECK(t_allocations == 0);
+		CHECK(owners_seen == owners); // the poll borrows the pad
+		std::printf("test_pad_buttons: 1000 polls with a callback holding six things: %llu allocations\n", static_cast<unsigned long long>(t_allocations));
 	}
 
 	if (std::getenv("PAD_BENCH"))

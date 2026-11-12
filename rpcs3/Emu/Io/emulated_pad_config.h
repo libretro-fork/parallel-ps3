@@ -123,9 +123,14 @@ public:
 		}
 	};
 
-	void handle_input(std::shared_ptr<Pad> pad, bool press_only, const std::function<void(const input_value&, bool&)>& func) const
+	// @func(const input_value&, bool& abort) for each of this controller's
+	// buttons on the pad's. The callback is called as what it is - no
+	// std::function made of it for the poll, which put whatever it holds on
+	// to on the heap each time - and the pad is borrowed for the call.
+	template <typename F>
+	void handle_input(const std::shared_ptr<Pad>& pad, bool press_only, F&& func) const
 	{
-		if (!func || !pad || pad->is_copilot())
+		if (!pad || pad->is_copilot())
 			return;
 
 		// The mapping as it is, whole, for this poll
@@ -164,7 +169,8 @@ public:
 		}
 	}
 
-	void handle_input(const Mouse& mouse, const std::function<void(const input_value&, bool&)>& func) const
+	template <typename F>
+	void handle_input(const Mouse& mouse, F&& func) const
 	{
 		button_table table;
 		read_table(table);
@@ -315,10 +321,9 @@ protected:
 		return &table.entries[lo];
 	}
 
-	bool handle_input_internal(const std::function<void(const input_value&, bool&)>& func, const button_table& table, u32 offset, u32 keycode, u16 value, u16 max_value, bool pressed, bool check_axis) const
+	template <typename F>
+	bool handle_input_internal(F& func, const button_table& table, u32 offset, u32 keycode, u16 value, u16 max_value, bool pressed, bool check_axis) const
 	{
-		if (!func) return false;
-
 		u32 count = 0;
 		const table_entry* btns = find_button(table, offset, keycode, count);
 		if (!count)
