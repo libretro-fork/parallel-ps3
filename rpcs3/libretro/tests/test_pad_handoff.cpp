@@ -12,7 +12,10 @@
 //   controller), loses neither's change;
 // - while a dialog intercepts the pads, the input it ignores stays ignored:
 //   retro_run letting go of ignore_input (no button held, nothing
-//   intercepting) never undoes the dialog setting it again meanwhile.
+//   intercepting) never undoes the dialog setting it again meanwhile;
+// - rumble the game asks for runs as long as it asks: one not renewed for 3 s
+//   of runs - counted in retro_runs, not by the host's clock - stops, and a
+//   new request starts it again.
 //
 // Built by `make check` from the core's own objects and archives, the same
 // link as the core's with this main.
@@ -20,6 +23,8 @@
 #include "stdafx.h"
 #include "Input/pad_thread.h"
 #include "Emu/Io/pad_types.h"
+#include "libretro/libretro_input.h"
+#include "libretro/libretro_pad_handler.h"
 
 #include <atomic>
 #include <chrono>
@@ -27,6 +32,23 @@
 #include <thread>
 
 static int failures = 0;
+
+static uint16_t s_strong[LIBRETRO_MAX_PADS];
+
+static bool set_rumble_state(unsigned port, enum retro_rumble_effect effect, uint16_t strength)
+{
+	if (port < LIBRETRO_MAX_PADS && effect == RETRO_RUMBLE_STRONG)
+		s_strong[port] = strength;
+	return true;
+}
+
+static bool environment(unsigned cmd, void* data)
+{
+	if (cmd != RETRO_ENVIRONMENT_GET_RUMBLE_INTERFACE)
+		return false;
+	static_cast<retro_rumble_interface*>(data)->set_rumble_state = set_rumble_state;
+	return true;
+}
 
 #define CHECK(cond) do { if (!(cond)) { std::fprintf(stderr, "%s:%d: check failed: %s\n", __FILE__, __LINE__, #cond); failures++; } } while (0)
 
@@ -205,6 +227,45 @@ int main()
 		CHECK(lost == 0);
 		CHECK(!(pads.GetInfo().system_info() & CELL_PAD_INFO_INTERCEPTED));
 		std::printf("test_pad_handoff: 20000 interceptions while retro_run let go of ignore_input, %u lost\n", lost);
+	}
+
+	// Rumble counted in runs: 30 fps, so 90 runs is 3 s
+	{
+		LibretroPadHandler handler;
+		CHECK(libretro_input_init_rumble(environment));
+		handler.set_frame_rate(30.0);
+		auto rumbled = std::make_shared<Pad>(pad_handler::null, 0, 0, CELL_PAD_CAPABILITY_PS3_CONFORMITY, CELL_PAD_DEV_TYPE_STANDARD);
+		pads.GetPads()[0] = rumbled;
+		CHECK(handler.bindPadToDevice(rumbled));
+		const unsigned port = libretro_input_port_for_player(0);
+
+		handler.process();
+		CHECK(s_strong[port] == 0);
+		pads.SetRumble(0, 255, 0);
+		u32 runs = 0;
+		for (; runs < 1000; runs++)
+		{
+			handler.process();
+			if (s_strong[port] == 0)
+				break;
+		}
+		CHECK(runs == 91);
+
+		// Asked again: it starts again, and lasts as long again
+		pads.SetRumble(0, 255, 0);
+		handler.process();
+		CHECK(s_strong[port] != 0);
+		for (u32 i = 0; i < 60; i++)
+		{
+			if (i == 30)
+				pads.SetRumble(0, 255, 0); // renewed half way
+			handler.process();
+		}
+		CHECK(s_strong[port] != 0);
+		for (u32 i = 0; i < 100; i++)
+			handler.process();
+		CHECK(s_strong[port] == 0);
+		std::printf("test_pad_handoff: rumble stopped %u runs after the game last asked (3 s at 30 fps)\n", runs);
 	}
 
 	std::printf("test_pad_handoff: %s\n", failures ? "FAIL" : "ok");

@@ -285,11 +285,22 @@ pad_preview_values LibretroPadHandler::get_preview_values(const std::unordered_m
 void LibretroPadHandler::apply_rumble(Pad& pad, unsigned port)
 {
     // What the game last asked for, published by pad_thread::SetRumble on
-    // its thread: read here without a lock. After 3 s without a new request
-    // the motors stop, as PadHandlerBase::process stops them.
-    const usz asked_ms = retro_atomic_load_acquire_size(&pad.m_rumble_ms);
+    // its thread: read here without a lock. A request not renewed for 3 s
+    // stops, as PadHandlerBase::process stops it - 3 s of runs, counted
+    // here, not of the host's clock.
+    const int requests = retro_atomic_load_acquire_int(&pad.m_rumble_requests);
     const int motors = retro_atomic_load_acquire_int(&pad.m_rumble_motors);
-    const bool stale = !asked_ms || get_system_time() / 1000 - asked_ms > 3000;
+    const unsigned slot = port < m_rumble_seen.size() ? port : 0;
+    if (requests != m_rumble_seen[slot])
+    {
+        m_rumble_seen[slot] = requests;
+        m_rumble_age[slot] = 0;
+    }
+    else if (m_rumble_age[slot] <= m_rumble_runs)
+    {
+        m_rumble_age[slot]++;
+    }
+    const bool stale = !requests || m_rumble_age[slot] > m_rumble_runs;
     const u8 large = stale ? 0 : static_cast<u8>(motors & 0xff);
     const u8 small = stale ? 0 : static_cast<u8>((motors >> 8) & 0xff);
 

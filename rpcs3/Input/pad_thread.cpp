@@ -240,8 +240,8 @@ void pad_thread::SetRumble(u32 pad, u8 large_motor, u8 small_motor)
 	m_pads[pad]->m_last_rumble_time_us = now_us;
 	m_pads[pad]->m_vibrate_motors[0].value = large_motor;
 	m_pads[pad]->m_vibrate_motors[1].value = small_motor;
-	retro_atomic_store_release_size(&m_pads[pad]->m_rumble_ms, static_cast<usz>(now_us / 1000));
 	retro_atomic_store_release_int(&m_pads[pad]->m_rumble_motors, large_motor | (small_motor << 8));
+	retro_atomic_fetch_add_int(&m_pads[pad]->m_rumble_requests, 1);
 
 	// Rumble copilots as well
 	for (const auto& copilot : m_pads[pad]->copilots)
@@ -251,8 +251,8 @@ void pad_thread::SetRumble(u32 pad, u8 large_motor, u8 small_motor)
 			copilot->m_last_rumble_time_us = now_us;
 			copilot->m_vibrate_motors[0].value = large_motor;
 			copilot->m_vibrate_motors[1].value = small_motor;
-			retro_atomic_store_release_size(&copilot->m_rumble_ms, static_cast<usz>(now_us / 1000));
 			retro_atomic_store_release_int(&copilot->m_rumble_motors, large_motor | (small_motor << 8));
+			retro_atomic_fetch_add_int(&copilot->m_rumble_requests, 1);
 		}
 	}
 }

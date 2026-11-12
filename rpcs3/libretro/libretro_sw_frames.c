@@ -27,7 +27,6 @@ static struct sw_frame s_frames[SW_FRAMES];
 static unsigned s_back   = 1;
 static unsigned s_front  = 2;
 static retro_atomic_int_t s_ready;
-static retro_atomic_size_t s_presented;
 
 uint8_t *sw_frames_begin(size_t size)
 {
@@ -54,7 +53,6 @@ void sw_frames_end(unsigned width, unsigned height, size_t pitch)
    /* Published, and the one between taken back to fill next */
    previous  = retro_atomic_exchange_int(&s_ready, (int)s_back | SW_NEW);
    s_back    = (unsigned)previous & 3;
-   retro_atomic_fetch_add_size(&s_presented, 1);
 }
 
 bool sw_frames_take(const void **data, unsigned *width, unsigned *height, size_t *pitch)
@@ -73,11 +71,6 @@ bool sw_frames_take(const void **data, unsigned *width, unsigned *height, size_t
    *height  = f->height;
    *pitch   = f->pitch;
    return true;
-}
-
-size_t sw_frames_presented(void)
-{
-   return retro_atomic_load_acquire_size(&s_presented);
 }
 
 void sw_frames_free(void)

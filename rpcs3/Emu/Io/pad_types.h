@@ -579,10 +579,10 @@ struct Pad
 	retro_atomic_int_t m_external_buttons[pad_external::max_buttons][3]; // offset, key code, value | pressed << 16
 	retro_atomic_int_t m_external_sticks[4][2];                          // offset, value
 
-	// The motors the game last asked for (large | small << 8), and when
-	// (milliseconds of get_system_time), for the frontend's thread
+	// The motors the game last asked for (large | small << 8), and how many
+	// times it has asked, for the frontend's thread
 	retro_atomic_int_t m_rumble_motors;
-	retro_atomic_size_t m_rumble_ms;
+	retro_atomic_int_t m_rumble_requests;
 
 	std::vector<std::shared_ptr<Pad>> copilots;
 
@@ -613,7 +613,7 @@ struct Pad
 			retro_atomic_int_init(&stick[1], 128);
 		}
 		retro_atomic_int_init(&m_rumble_motors, 0);
-		retro_atomic_size_init(&m_rumble_ms, 0);
+		retro_atomic_int_init(&m_rumble_requests, 0);
 	}
 
 	Pad(const Pad&) = delete;

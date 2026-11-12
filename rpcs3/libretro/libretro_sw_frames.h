@@ -29,9 +29,6 @@ void sw_frames_end(unsigned width, unsigned height, size_t pitch);
  * none */
 bool sw_frames_take(const void **data, unsigned *width, unsigned *height, size_t *pitch);
 
-/* Every frame finished, for retro_run's stall report */
-size_t sw_frames_presented(void);
-
 /* The buffers freed; neither side may be using them */
 void sw_frames_free(void);
 

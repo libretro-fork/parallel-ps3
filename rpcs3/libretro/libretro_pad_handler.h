@@ -1,6 +1,8 @@
 #pragma once
 
 #include "Emu/Io/PadHandler.h"
+
+#include <array>
 #include "libretro_input.h"
 
 // Libretro pad handler - connects libretro input to RPCS3's pad system
@@ -53,6 +55,19 @@ private:
     pad_preview_values get_preview_values(const std::unordered_map<u32, u16>& data, const std::vector<std::string>& buttons) override;
 
     void apply_rumble(Pad& pad, unsigned port);
+
+    // retro_run's: the runs a request lasts without being renewed (3 s of
+    // the frames a second the core declares), and per port the requests
+    // seen and the runs since the last
+    u32 m_rumble_runs = 180;
+    std::array<int, 8> m_rumble_seen{};
+    std::array<u32, 8> m_rumble_age{};
+
+public:
+    // retro_run: the frames a second the core declares, for the rumble's
+    // timeout
+    void set_frame_rate(double fps) { m_rumble_runs = static_cast<u32>(fps * 3.0 + 0.5); }
+private:
 
     // Convert libretro analog value (-32768 to 32767) to 0-255 range
     static u16 ConvertAnalogValue(int16_t value);

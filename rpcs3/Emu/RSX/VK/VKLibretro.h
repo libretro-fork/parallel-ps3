@@ -61,19 +61,6 @@ namespace vk::libretro
 	bool take_frame(u32& image_index);
 	void drop_pending_frames();
 
-	// The core's retro_run tells the handoff it ran, and that it will not
-	// (the content is being stopped). While it keeps coming, a frame
-	// finishing when the queue is full takes the place of the oldest. Once
-	// it has stopped - RetroArch paused, in its menu or stepping frames -
-	// the renderer waits after each flip for the next retro_run, and a
-	// retro_run that comes then lets the game draw one frame and takes that
-	// one: a pause holds the game within a frame, nothing is lost over it,
-	// and Frame Advance shows each frame with the input of its step.
-	// frontend_returned ends the retro_run frontend_ran began: the frontend
-	// counts as stopped by how long it stays away, not by how long a run took.
-	void frontend_ran();
-	void frontend_returned();
-	void frontend_detached();
 
 	// Bumped whenever the swapchain's images are made anew (a resize): the
 	// indices the core holds then name images that are gone, and the one the

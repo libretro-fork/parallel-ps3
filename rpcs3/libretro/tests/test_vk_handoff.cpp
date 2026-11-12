@@ -6,9 +6,10 @@
 // - a renderer and a retro_run on their own threads: every frame taken is
 //   newer than the last, none twice;
 // - no allocation on the way, steady or overtaking;
-// - stepping (the run after the frontend stopped): the run shows the frame
-//   the game draws in it, and the renderer waits after that one frame
-//   until the next run.
+// - neither side waits: with no retro_run at all, as when the frontend is
+//   paused, the renderer still hands frames over without waiting (VBLANK,
+//   which retro_run posts, is what holds the game), and a retro_run with
+//   nothing finished returns at once.
 //
 // Built by `make check` from the core's own objects and archives, the same
 // link as the core's with this main.
@@ -47,8 +48,7 @@ int main()
 	using namespace vk::libretro;
 	u32 index = 0;
 
-	// A frontend running: frames in order, a third overtakes the oldest
-	frontend_ran();
+	// Frames in order, a third overtakes the oldest
 	frame_ready(1);
 	frame_ready(2);
 	frame_ready(3);
@@ -78,8 +78,6 @@ int main()
 
 	// Two threads: every frame taken newer than the last
 	{
-		// A run in progress: the frontend counts as running throughout
-		frontend_ran();
 		// Image indices go 0..199 over and over, the renderer never more
 		// than 50 frames past the last one taken, so each taken index says
 		// how far on it is
@@ -119,35 +117,25 @@ int main()
 		std::printf("test_vk_handoff: %u of 200000 frames taken across threads, %u out of order\n", taken, wrong);
 	}
 
-	// Stepping
+	// No retro_run for a while: frames still go in without waiting, the
+	// newest two kept; retro_run with nothing waiting returns at once
 	{
 		drop_pending_frames();
-		frontend_ran();
-		frontend_returned();
-		std::this_thread::sleep_for(std::chrono::milliseconds(40)); // the frontend stopped
-		frontend_ran();                                              // a step
-
-		std::atomic<int> drawn{0};
+		std::atomic<bool> done{false};
 		std::thread renderer([&]
 		{
-			frame_ready(7); // the step's frame: the renderer waits in it
-			drawn = 1;
-			frame_ready(8); // the next step's
-			drawn = 2;
+			for (u32 i = 0; i < 100; i++)
+				frame_ready(i % 8);
+			done = true;
 		});
-
-		CHECK(take_frame(index) && index == 7);
-		frontend_returned();
-		std::this_thread::sleep_for(std::chrono::milliseconds(60));
-		CHECK(drawn == 0); // waiting for the next run
-		frontend_ran();     // the next step: frame 8 is drawn, and waits
-		std::this_thread::sleep_for(std::chrono::milliseconds(30));
-		CHECK(drawn == 1);
-		CHECK(take_frame(index) && index == 8);
-		frontend_detached(); // the content closing lets it go
+		const auto until = std::chrono::steady_clock::now() + std::chrono::milliseconds(500);
+		while (!done && std::chrono::steady_clock::now() < until)
+			std::this_thread::sleep_for(std::chrono::milliseconds(1));
+		CHECK(done);
 		renderer.join();
-		CHECK(drawn == 2);
-		drop_pending_frames();
+		CHECK(take_frame(index) && index == 98 % 8);
+		CHECK(take_frame(index) && index == 99 % 8);
+		CHECK(!take_frame(index));
 	}
 
 	std::printf("test_vk_handoff: %s\n", failures ? "FAIL" : "ok");

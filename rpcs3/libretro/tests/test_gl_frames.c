@@ -230,7 +230,6 @@ int main(void)
    TEST_CHECK(wrong_size == 0);
    TEST_CHECK(shown > 0);
    TEST_CHECK(last == FRAMES);
-   TEST_CHECK(lr_gl_frames_published() == FRAMES);
    printf("gl frames: %u of %u frames shown, %u torn, %u older than the last, %u at the wrong size\n",
          shown, FRAMES, torn, older, wrong_size);
 

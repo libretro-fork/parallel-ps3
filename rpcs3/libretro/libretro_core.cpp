@@ -213,101 +213,6 @@ static std::unique_ptr<pad_thread> g_libretro_pad_thread;
 // Libretro pad handler instance
 static std::shared_ptr<LibretroPadHandler> g_libretro_pad_handler;
 
-// Pause watchdog: RetroArch may stop calling retro_run() when paused.
-// We pause/resume RPCS3 from a small watchdog thread based on retro_run call gaps.
-// The pause watchdog's state, between retro_run and the watchdog's thread.
-// Zero, as static storage starts, is "not running"; the last run is in
-// milliseconds (lr_now_us() / 1000), 0 for none yet.
-static retro_atomic_int_t s_pause_watchdog_running;
-static retro_atomic_int_t s_pause_watchdog_stop;
-static retro_atomic_int_t s_paused_by_watchdog;
-static retro_atomic_size_t s_last_retro_run_ms;
-static std::thread s_pause_watchdog_thread;
-
-// Thread synchronization
-
-static inline long long lr_now_us()
-{
-    return std::chrono::duration_cast<std::chrono::microseconds>(
-        std::chrono::steady_clock::now().time_since_epoch()).count();
-}
-
-static void stop_pause_watchdog()
-{
-#ifdef HAVE_VULKAN
-    // Called before every stop of the emulator: no retro_run will take
-    // frames now, so a flip must not wait for one
-    vk::libretro::frontend_detached();
-#endif
-
-    if (!retro_atomic_exchange_int(&s_pause_watchdog_running, 0))
-        return;
-
-    retro_atomic_store_release_int(&s_pause_watchdog_stop, 1);
-    if (s_pause_watchdog_thread.joinable())
-    {
-        s_pause_watchdog_thread.join();
-    }
-    retro_atomic_store_release_int(&s_pause_watchdog_stop, 0);
-    retro_atomic_store_release_int(&s_paused_by_watchdog, 0);
-    retro_atomic_store_release_size(&s_last_retro_run_ms, 0);
-}
-
-static void start_pause_watchdog()
-{
-    if (retro_atomic_exchange_int(&s_pause_watchdog_running, 1))
-        return;
-
-    retro_atomic_store_release_int(&s_pause_watchdog_stop, 0);
-    retro_atomic_store_release_int(&s_paused_by_watchdog, 0);
-    retro_atomic_store_release_size(&s_last_retro_run_ms, static_cast<usz>(lr_now_us() / 1000));
-
-    s_pause_watchdog_thread = std::thread([]()
-    {
-        constexpr usz pause_threshold_ms = 100;
-        constexpr usz resume_threshold_ms = 40;
-
-        while (!retro_atomic_load_acquire_int(&s_pause_watchdog_stop))
-        {
-            if (!core_initialized || !game_loaded)
-            {
-                std::this_thread::sleep_for(std::chrono::milliseconds(10));
-                continue;
-            }
-
-            const usz now_ms = static_cast<usz>(lr_now_us() / 1000);
-            const usz last_ms = retro_atomic_load_acquire_size(&s_last_retro_run_ms);
-            if (last_ms == 0)
-            {
-                std::this_thread::sleep_for(std::chrono::milliseconds(10));
-                continue;
-            }
-
-            // Unsigned, so a run stamped just after now_ms was read is no gap
-            const usz gap_ms = now_ms - last_ms;
-
-            if (gap_ms > pause_threshold_ms && gap_ms < (~usz{0} >> 1))
-            {
-                if (!retro_atomic_load_acquire_int(&s_paused_by_watchdog) && Emu.IsRunning())
-                {
-                    Emu.Pause(false, false);
-                    retro_atomic_store_release_int(&s_paused_by_watchdog, 1);
-                }
-            }
-            else if (gap_ms < resume_threshold_ms || gap_ms >= (~usz{0} >> 1))
-            {
-                if (retro_atomic_load_acquire_int(&s_paused_by_watchdog) && Emu.IsPaused())
-                {
-                    Emu.Resume();
-                    retro_atomic_store_release_int(&s_paused_by_watchdog, 0);
-                }
-            }
-
-            std::this_thread::sleep_for(std::chrono::milliseconds(10));
-        }
-    });
-}
-
 // Helper to display libretro messages/notifications
 static void libretro_show_message(const char* msg, unsigned frames = 180)
 {
@@ -320,64 +225,6 @@ static void libretro_show_message(const char* msg, unsigned frames = 180)
     environ_cb(RETRO_ENVIRONMENT_SET_MESSAGE, &rm);
 }
 
-// A picture that stops while the game runs on - GT5's menu froze with its
-// music and cursor going on until a pause and resume, inFamous went black
-// after its intro (ozzfreak) - left nothing in the log to say where the frames
-// stopped. Say it when it happens: after a few seconds without a new frame
-// while the emulator runs, log what moved since the last one. No RSX flips:
-// the game or the renderer stopped. Flips but no frames handed over: the
-// renderer flipped without copying a frame out. Frames handed over but none
-// taken: the handoff to retro_run. VBLANKs posted behind those requested: the
-// frontend-paced VBLANK thread.
-static void libretro_check_frame_stall(bool new_frame)
-{
-    struct counters
-    {
-        u64 flips = 0, handed = 0, vblanks = 0, requested = 0;
-    };
-
-    const auto now_counters = []()
-    {
-        counters c{};
-        if (rsx::thread* rsx = rsx::get_current_renderer())
-        {
-            c.flips = rsx->int_flip_index;
-            c.vblanks = rsx->vblank_count;
-        }
-        c.handed = libretro_sw_frames_presented();
-        c.requested = g_libretro_vblank_requests;
-        return c;
-    };
-
-    static counters s_at_frame{};
-    static u64 s_frame_us = 0;
-    static u64 s_report_us = 0;
-    static bool s_reported = false;
-
-    const u64 now = lr_now_us();
-
-    if (new_frame || !Emu.IsRunning() || !s_frame_us)
-    {
-        if (new_frame && s_reported)
-            rsx_log.warning("libretro: frames again after %.1fs", (now - s_frame_us) / 1e6);
-        s_at_frame = now_counters();
-        s_frame_us = now;
-        s_reported = false;
-        return;
-    }
-
-    if (now - s_frame_us < 3'000'000 || now - s_report_us < 10'000'000)
-        return;
-
-    const counters c = now_counters();
-    rsx_log.error("libretro: no new frame for %.1fs while running: RSX flips +%u, frames handed over +%u, "
-        "VBLANKs +%u of +%u requested, progress dialog '%s'",
-        (now - s_frame_us) / 1e6, c.flips - s_at_frame.flips, c.handed - s_at_frame.handed,
-        c.vblanks - s_at_frame.vblanks, c.requested - s_at_frame.requested,
-        std::string(g_progr_text));
-    s_report_us = now;
-    s_reported = true;
-}
 
 // Check if a file path has a PKG extension
 static bool is_pkg_file(const std::string& path)
@@ -2099,7 +1946,6 @@ void retro_deinit(void)
     if (!core_initialized)
         return;
 
-    stop_pause_watchdog();
 
 
 
@@ -2169,7 +2015,6 @@ static void context_reset()
         if (do_boot_game(game_path))
         {
             game_loaded = true;
-            start_pause_watchdog();
         }
         pending_game_boot = false;
     }
@@ -2459,7 +2304,6 @@ static void vk_release_device_resources()
     // finds it stopped later and only drops the disc.
     if (!Emu.IsStopped())
     {
-        stop_pause_watchdog();
         Emu.GracefulShutdown(false, false);
         wait_for_emulation_stop("the Vulkan context going away");
     }
@@ -2513,7 +2357,6 @@ static void vk_context_reset()
         if (do_boot_game(game_path))
         {
             game_loaded = true;
-            start_pause_watchdog();
         }
         pending_game_boot = false;
     }
@@ -2591,7 +2434,6 @@ static void vk_present_frame()
     u32 index = umax;
     vk::swapchain_LIBRETRO::hw_image image;
     const bool new_frame = swapchain && s_vk_iface && vk::libretro::take_frame(index) && swapchain->get_hw_image(index, image);
-    libretro_check_frame_stall(new_frame);
 
     if (new_frame)
     {
@@ -2976,7 +2818,6 @@ bool retro_load_game(const struct retro_game_info* game)
             return false;
         }
         game_loaded = true;
-        start_pause_watchdog();
     }
     else
     {
@@ -3150,10 +2991,6 @@ static bool do_boot_game(const std::string& path)
     }
 
 
-    // Start pause watchdog once the emulator is running so RetroArch pause fully pauses emulation.
-    // (This is safe to call multiple times.)
-    start_pause_watchdog();
-
     return true;
 }
 
@@ -3172,7 +3009,6 @@ void retro_unload_game(void)
     // A motor left running would keep going after the game is gone.
     libretro_input_stop_rumble();
 
-    stop_pause_watchdog();
     forget_state();
     if (game_loaded)
     {
@@ -3256,10 +3092,7 @@ void retro_run(void)
     s_run_counter++;
     s_run_count++;
 
-    // Update watchdog timestamp.
-    retro_atomic_store_release_size(&s_last_retro_run_ms, static_cast<usz>(lr_now_us() / 1000));
 #ifdef HAVE_VULKAN
-    vk::libretro::frontend_ran();
 #endif
 
 
@@ -3284,6 +3117,7 @@ void retro_run(void)
     // Process pad handler to update RPCS3's pad states from libretro input
     if (g_libretro_pad_handler)
     {
+        g_libretro_pad_handler->set_frame_rate(libretro_frame_rate());
         g_libretro_pad_handler->process();
     }
 
@@ -3321,7 +3155,6 @@ void retro_run(void)
     if (g_libretro_vulkan_hw)
     {
         vk_present_frame();
-        vk::libretro::frontend_returned();
         return;
     }
 #endif
@@ -3334,7 +3167,6 @@ void retro_run(void)
         u32 sw_width = 0, sw_height = 0, sw_pitch = 0;
         static u32 s_sw_width = 1280, s_sw_height = 720;
         const bool new_frame = libretro_take_software_frame(&pixels, &sw_width, &sw_height, &sw_pitch);
-        libretro_check_frame_stall(new_frame);
         if (new_frame)
         {
             report_frame_size(sw_width, sw_height);
@@ -3372,16 +3204,14 @@ void retro_run(void)
     // the old shape.
     report_frame_size(s_gl_width, s_gl_height);
 
-    libretro_check_frame_stall(has_new_frame);
 
     video_cb(has_new_frame ? RETRO_HW_FRAME_BUFFER_VALID : NULL, s_gl_width, s_gl_height, 0);
 }
 
 // A reset is an unload and a load of the same game, done the way those are
 // done. Emu.Restart() did it behind the core's back instead: the stop and the
-// reload ran on the Emulation Join Thread while retro_run carried on, the
-// pause watchdog kept pausing and resuming a machine that was being torn down,
-// and between the stop completing and Load() claiming the state, retro_run
+// reload ran on the Emulation Join Thread while retro_run carried on, and
+// between the stop completing and Load() claiming the state, retro_run
 // could see a stopped emulator and ask the frontend to shut down. A reload
 // that failed left it stopped with nothing said.
 void retro_reset(void)
@@ -3389,7 +3219,6 @@ void retro_reset(void)
     if (!game_loaded)
         return;
 
-    stop_pause_watchdog();
 
     Emu.GracefulShutdown(false, false);
     wait_for_emulation_stop("restarting");
@@ -3464,7 +3293,6 @@ static bool make_state()
     if (!game_loaded || pending_game_boot || !(Emu.IsRunning() || Emu.IsPaused()))
         return false;
 
-    stop_pause_watchdog();
     if (Emu.IsPaused())
         Emu.Resume();
 
@@ -3485,7 +3313,6 @@ static bool make_state()
     {
         if (log_cb)
             log_cb(RETRO_LOG_WARN, "RPCS3: the game cannot be saved right now\n");
-        start_pause_watchdog();
         return false;
     }
 
@@ -3552,7 +3379,6 @@ bool retro_unserialize(const void* data, size_t size)
     if (!game_loaded || pending_game_boot || !data || size < 4 || std::memcmp(data, zstd_magic, 4))
         return false;
 
-    stop_pause_watchdog();
     Emu.GracefulShutdown(false, false);
     wait_for_emulation_stop("loading a state");
 

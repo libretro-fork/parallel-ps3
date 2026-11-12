@@ -44,7 +44,7 @@ atomic_t<bool> g_user_asked_for_screenshot = false;
 atomic_t<bool> g_user_asked_for_frame_capture = false;
 atomic_t<bool> g_disable_frame_limit = false;
 #ifdef LIBRETRO_CORE
-atomic_t<u64> g_libretro_vblank_requests = 0;
+atomic_t<u32> g_libretro_vblank_requests = 0;
 #endif
 rsx::frame_trace_data frame_debug;
 rsx::frame_capture_data frame_capture;
@@ -1171,7 +1171,7 @@ namespace rsx
 		g_fxo->get<vblank_thread>().set_thread(std::shared_ptr<named_thread<std::function<void()>>>(new named_thread<std::function<void()>>("VBlank Thread"sv, [this]() -> void
 		{
 #ifdef LIBRETRO_CORE
-			u64 frontend_vblanks = g_libretro_vblank_requests;
+			u32 frontend_vblanks = g_libretro_vblank_requests; // wraps; only compared for equality
 #else
 #ifdef __linux__
 			constexpr u32 host_min_quantum = 10;
@@ -1196,27 +1196,23 @@ namespace rsx
 				// are the frontend's. RPCS3's own timer, which posted VBLANK by
 				// the host's clock, is not in the core.
 				{
-					const u64 requested = g_libretro_vblank_requests;
+					const u32 requested = g_libretro_vblank_requests;
 
 					if (requested == frontend_vblanks)
 					{
-						g_libretro_vblank_requests.wait(requested, atomic_wait_timeout{5'000'000});
+						// Until retro_run asks for one, or the thread is told to
+						// stop: no timeout, no polling
+						thread_ctrl::wait_on(g_libretro_vblank_requests, requested);
+					}
+					else if (Emu.IsPaused())
+					{
+						// Asked for before a pause: not owed to the game
+						frontend_vblanks = requested;
 					}
 					else
 					{
 						frontend_vblanks++;
 						post_vblank_event(get_system_time());
-					}
-
-					if (Emu.IsPaused())
-					{
-						while (Emu.IsPaused() && !is_stopped())
-						{
-							thread_ctrl::wait_for(5'000);
-						}
-
-						// What piled up while paused is not owed to the game
-						frontend_vblanks = g_libretro_vblank_requests;
 					}
 				}
 

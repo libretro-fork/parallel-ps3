@@ -22,10 +22,6 @@ namespace
 {
 }
 
-u64 libretro_sw_frames_presented()
-{
-	return sw_frames_presented();
-}
 
 bool libretro_take_software_frame(const void** data, u32* width, u32* height, u32* pitch)
 {

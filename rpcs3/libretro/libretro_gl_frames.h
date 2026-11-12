@@ -69,9 +69,6 @@ void lr_gl_frames_publish(void);
  * *@width and *@height say the size blitted. */
 bool lr_gl_frames_blit(GLuint dst_fbo, int *width, int *height);
 
-/* Every frame published, for retro_run's stall report */
-size_t lr_gl_frames_published(void);
-
 /* Everything, from the frontend's context, current, once the renderer has
  * stopped: the textures, depth buffers and fences (objects of the share
  * group), and this context's framebuffers. The renderer's framebuffers go with

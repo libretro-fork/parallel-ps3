@@ -1045,11 +1045,6 @@ namespace
 {
 }
 
-u64 libretro_sw_frames_presented()
-{
-    return sw_frames_presented();
-}
-
 void LibretroGSFrame::present_frame(std::vector<u8>&& data, u32 pitch, u32 width, u32 height, bool is_bgra) const
 {
     // XRGB8888 in libretro terms is B,G,R,X in memory, which is what

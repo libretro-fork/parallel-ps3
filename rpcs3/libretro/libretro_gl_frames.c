@@ -41,7 +41,6 @@ static struct gl_frame s_frames[GL_FRAMES];
 static unsigned s_draw = 1;
 static unsigned s_show = 2;
 static retro_atomic_int_t s_ready;
-static retro_atomic_size_t s_published;
 static int s_draw_width;
 static int s_draw_height;
 
@@ -116,7 +115,6 @@ void lr_gl_frames_publish(void)
 
    previous = retro_atomic_exchange_int(&s_ready, (int)s_draw | GL_NEW);
    s_draw   = (unsigned)previous & 3;
-   retro_atomic_fetch_add_size(&s_published, 1);
 
    f = &s_frames[s_draw];
    /* A frame the frontend never took */
@@ -180,11 +178,6 @@ bool lr_gl_frames_blit(GLuint dst_fbo, int *width, int *height)
    *width  = f->width;
    *height = f->height;
    return true;
-}
-
-size_t lr_gl_frames_published(void)
-{
-   return retro_atomic_load_acquire_size(&s_published);
 }
 
 void lr_gl_frames_destroy(void)

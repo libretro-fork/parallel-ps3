@@ -4,6 +4,13 @@ What changed in the libretro core of this fork, newest first. Changes that come 
 
 ## Unreleased
 
+- No host clock and no sleep left in what retro_run drives.
+  - The pause watchdog is gone. It read the host's clock on a thread of its own to tell when RetroArch had stopped calling retro_run, and paused the game then; nothing needs it now that VBlank comes only from retro_run, so a frontend that stops calling it stops the game where it stands.
+  - The Vulkan renderer no longer waits for retro_run to take a frame, nor sleeps while the frontend is away: a finished frame is queued, the newest two kept, and the renderer goes on. The game is held by VBlank, not by the handoff.
+  - RSX's VBlank thread waits on the count of VBlanks retro_run has asked for, untimed, instead of polling it every millisecond.
+  - Rumble the game does not renew stops after 3 s of retro_runs at the core's frame rate, counted by retro_run, not 3 s of the host's clock.
+  - The stall report, which logged when no frame had come for a few seconds of the host's clock, is gone with its frame counters.
+  `test_vk_handoff` checks the renderer hands 100 frames over without retro_run running and the newest two come out; `test_pad_handoff` checks rumble stops 91 runs after the last request at 30 fps (3 s), lasts again when asked again, and goes on when renewed.
 - RetroArch paces the game, and nothing in the core does.
   - VBlank comes only from retro_run, one per run (two for a 30 fps game of the VBlank list). RPCS3's own VBlank timer, which posted VBlank by the host's clock and was the default, is gone from the core, along with the Frame Pacing option.
   - A flip waits for the next VBlank as on a PS3 (RPCS3's PS3 Native limit), so a game that does not wait for the refresh itself is held to it by the emulated hardware. RPCS3's frame limiter, which slept the renderer by the host's clock, is gone, along with the Frame Limit option.
