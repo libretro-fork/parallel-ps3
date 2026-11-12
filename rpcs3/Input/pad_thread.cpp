@@ -25,7 +25,6 @@ extern std::string g_input_config_override;
 namespace pad
 {
 	atomic_t<pad_thread*> g_pad_thread = nullptr;
-	shared_mutex g_pad_mutex;
 	std::string g_title_id;
 	atomic_t<bool> g_started{false};
 	atomic_t<bool> g_reset{false};
@@ -64,8 +63,6 @@ pad_thread::~pad_thread()
 
 void pad_thread::Init()
 {
-	std::lock_guard lock(pad::g_pad_mutex);
-
 	// Cache old settings if possible
 	std::array<pad_setting, CELL_PAD_MAX_PORT_NUM> pad_settings;
 	// and the game's side of each port, which the new pads take over

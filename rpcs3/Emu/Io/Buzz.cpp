@@ -163,7 +163,6 @@ void usb_device_buzz::interrupt_transfer(u32 buf_size, u8* buf, u32 /*endpoint*/
 		return;
 	}
 
-	std::lock_guard lock(pad::g_pad_mutex);
 	const auto handler = pad::get_pad_thread();
 	const auto& pads   = handler->GetPads();
 	ensure(pads.size() > m_last_controller);

@@ -159,8 +159,6 @@ public:
 	struct gem_controller
 	{
 		u32 status = CELL_GEM_STATUS_DISCONNECTED;         // Connection status (CELL_GEM_STATUS_DISCONNECTED or CELL_GEM_STATUS_READY)
-		u32 ext_status = 0;                                // External port connection status
-		u32 ext_id = 0;                                    // External device ID (type). For example SHARP_SHOOTER_DEVICE_ID
 		u32 port = 0;                                      // Assigned port
 		bool enabled_magnetometer = true;                  // Whether the magnetometer is enabled (probably used for additional rotational precision)
 		bool calibrated_magnetometer = false;              // Whether the magnetometer is calibrated
@@ -193,6 +191,12 @@ public:
 	u32 inertial_counter = 0;
 
 	std::array<gem_controller, CELL_GEM_MAX_NUM> controllers;
+
+	// Each controller's external port: set by whichever of the game's threads
+	// asks for the controller's state, several at once (cellGemGetState takes
+	// the reader's side of the lock), so in atomics, beside the controllers
+	retro_atomic_int_t ext_status[CELL_GEM_MAX_NUM]{}; // External port connection status
+	retro_atomic_int_t ext_id[CELL_GEM_MAX_NUM]{};     // External device ID (type). For example SHARP_SHOOTER_DEVICE_ID
 	u32 connected_controllers = 0;
 	atomic_t<bool> video_conversion_in_progress{false};
 	atomic_t<bool> updating{false};
@@ -273,7 +277,6 @@ public:
 		case move_handler::real:
 		case move_handler::fake:
 		{
-			std::lock_guard lock(pad::g_pad_mutex);
 			const auto handler = pad::get_pad_thread(true);
 			if (!handler) break;
 
@@ -320,7 +323,6 @@ public:
 			// Request controller calibration
 			if (g_cfg.io.move == move_handler::real)
 			{
-				std::lock_guard pad_lock(pad::g_pad_mutex);
 				const auto handler = pad::get_pad_thread();
 				const auto& pad = ::at32(handler->GetPads(), pad_num(gem_num));
 				if (pad && pad->m_pad_handler == pad_handler::move && !pad->is_copilot())
@@ -350,7 +352,6 @@ public:
 			// Reset controller calibration request
 			if (g_cfg.io.move == move_handler::real)
 			{
-				std::lock_guard pad_lock(pad::g_pad_mutex);
 				const auto handler = pad::get_pad_thread();
 				const auto& pad = ::at32(handler->GetPads(), pad_num(gem_num));
 				if (pad && pad->m_pad_handler == pad_handler::move && !pad->is_copilot())
@@ -371,6 +372,8 @@ public:
 
 		gem_controller& controller = ::at32(controllers, gem_num);
 		controller = {};
+		retro_atomic_store_release_int(&ext_status[gem_num], 0);
+		retro_atomic_store_release_int(&ext_id[gem_num], 0);
 		controller.sphere_rgb = gem_color::get_default_color(gem_num);
 
 		bool is_connected = false;
@@ -380,7 +383,6 @@ public:
 		case move_handler::real:
 		{
 			connected_controllers = 0;
-			std::lock_guard lock(pad::g_pad_mutex);
 			const auto handler = pad::get_pad_thread();
 			for (u32 i = 0; i < std::min<u32>(attribute.max_connect, CELL_GEM_MAX_NUM); i++)
 			{
@@ -401,7 +403,6 @@ public:
 		case move_handler::fake:
 		{
 			connected_controllers = 0;
-			std::lock_guard lock(pad::g_pad_mutex);
 			const auto handler = pad::get_pad_thread();
 			for (u32 i = 0; i < std::min<u32>(attribute.max_connect, CELL_GEM_MAX_NUM); i++)
 			{
@@ -470,9 +471,18 @@ public:
 
 		ar(attribute, vc_attribute, runtime_status_flags, enable_pitch_correction, inertial_counter);
 
-		for (gem_controller& c : controllers)
+		for (u32 gem_num = 0; gem_num < CELL_GEM_MAX_NUM; gem_num++)
 		{
-			ar(c.status, c.ext_status, c.ext_id, c.port, c.enabled_magnetometer, c.calibrated_magnetometer, c.enabled_filtering, c.enabled_tracking, c.enabled_LED, c.hue_set, c.rumble);
+			gem_controller& c = controllers[gem_num];
+			u32 ext_status = static_cast<u32>(retro_atomic_load_acquire_int(&this->ext_status[gem_num]));
+			u32 ext_id = static_cast<u32>(retro_atomic_load_acquire_int(&this->ext_id[gem_num]));
+			ar(c.status, ext_status, ext_id, c.port, c.enabled_magnetometer, c.calibrated_magnetometer, c.enabled_filtering, c.enabled_tracking, c.enabled_LED, c.hue_set, c.rumble);
+
+			if (!ar.is_writing())
+			{
+				retro_atomic_store_release_int(&this->ext_status[gem_num], static_cast<int>(ext_status));
+				retro_atomic_store_release_int(&this->ext_id[gem_num], static_cast<int>(ext_id));
+			}
 
 			// We need to add padding because we used bitwise serialization in version 1
 			if (version < 2)
@@ -1596,7 +1606,6 @@ public:
 
 			// Update PS Move LED colors
 			{
-				std::lock_guard lock(pad::g_pad_mutex);
 				const auto handler = pad::get_pad_thread();
 				auto& handlers = handler->get_handlers();
 				if (auto it = handlers.find(pad_handler::move); it != handlers.end() && it->second)
@@ -1888,8 +1897,6 @@ static void ds3_input_to_pad(const u32 gem_num, be_t<u16>& digital_buttons, be_t
 		return;
 	}
 
-	std::lock_guard lock(pad::g_pad_mutex);
-
 	const auto handler = pad::get_pad_thread();
 	const auto& pad = ::at32(handler->GetPads(), pad_num(gem_num));
 
@@ -1973,8 +1980,6 @@ static void ds3_pos_to_gem_state(u32 gem_num, gem_config::gem_controller& contro
 		return;
 	}
 
-	std::lock_guard lock(pad::g_pad_mutex);
-
 	const auto handler = pad::get_pad_thread();
 	const auto& pad = ::at32(handler->GetPads(), pad_num(gem_num));
 
@@ -2003,8 +2008,6 @@ static void ps_move_pos_to_gem_state(u32 gem_num, gem_config::gem_controller& co
 	{
 		return;
 	}
-
-	std::lock_guard lock(pad::g_pad_mutex);
 
 	const auto handler = pad::get_pad_thread();
 	const auto& pad = ::at32(handler->GetPads(), pad_num(gem_num));
@@ -2224,24 +2227,29 @@ static void input_to_ext(u32 external_device_id, CellGemExtPortData& ext, std::s
 	}
 }
 
+// What is on a controller's external port, for the calls that ask later
+static void set_ext_port(u32 gem_num, u32 status, u32 id)
+{
+	auto& gem = g_fxo->get<gem_config>();
+	retro_atomic_store_release_int(&gem.ext_status[gem_num], static_cast<int>(status));
+	retro_atomic_store_release_int(&gem.ext_id[gem_num], static_cast<int>(id));
+}
+
 static void real_input_to_ext(u32 gem_num, gem_config::gem_controller& controller, CellGemExtPortData& ext)
 {
-	std::lock_guard lock(pad::g_pad_mutex);
-
 	const auto handler = pad::get_pad_thread();
 	const auto& pad = ::at32(handler->GetPads(), pad_num(gem_num));
 
 	if (!pad->is_connected() || pad->is_copilot())
 	{
-		controller.ext_status = 0;
-		controller.ext_id = 0;
+		set_ext_port(gem_num, 0, 0);
 		return;
 	}
 
 	ps_move_data& move_data = pad->move_data;
 
-	controller.ext_status = move_data.external_device_connected ? CELL_GEM_EXT_CONNECTED : 0; // TODO: | CELL_GEM_EXT_EXT0 | CELL_GEM_EXT_EXT1
-	controller.ext_id = move_data.external_device_connected ? move_data.external_device_id : 0;
+	const u32 ext_status = move_data.external_device_connected ? CELL_GEM_EXT_CONNECTED : 0; // TODO: | CELL_GEM_EXT_EXT0 | CELL_GEM_EXT_EXT1
+	set_ext_port(gem_num, ext_status, move_data.external_device_connected ? move_data.external_device_id : 0);
 
 	if (!move_data.external_device_connected)
 	{
@@ -2256,35 +2264,33 @@ static void real_input_to_ext(u32 gem_num, gem_config::gem_controller& controlle
 	// ext.digital1
 	// ext.digital2
 
-	ext.status = controller.ext_status;
+	ext.status = ext_status;
 	std::memcpy(ext.custom, move_data.external_device_data.data(), 5);
 }
 
 static void fake_input_to_ext(u32 gem_num, gem_config::gem_controller& controller, CellGemExtPortData& ext)
 {
-	std::lock_guard lock(pad::g_pad_mutex);
-
 	const auto handler = pad::get_pad_thread();
 	const auto& pad = ::at32(handler->GetPads(), pad_num(gem_num));
 
 	if (!pad->is_connected() || pad->is_copilot())
 	{
-		controller.ext_status = 0;
-		controller.ext_id = 0;
+		set_ext_port(gem_num, 0, 0);
 		return;
 	}
 
-	ps_move_data& move_data = pad->move_data;
 	const auto& cfg = ::at32(g_cfg_gem_fake.players, gem_num);
 
-	move_data.external_device_id = ext_device_id(cfg->external_device);
-	move_data.external_device_connected = move_data.external_device_id != 0;
-	move_data.external_device_data = {};
+	// The device the configuration names, each call: this caller's own
+	// (it was written into the pad's PS Move data, which several threads
+	// asking at once would have raced on, and nothing read it back from there)
+	const u32 external_device_id = ext_device_id(cfg->external_device);
+	const bool external_device_connected = external_device_id != 0;
+	const u32 ext_status = external_device_connected ? CELL_GEM_EXT_CONNECTED : 0; // TODO: | CELL_GEM_EXT_EXT0 | CELL_GEM_EXT_EXT1
 
-	controller.ext_status = move_data.external_device_connected ? CELL_GEM_EXT_CONNECTED : 0; // TODO: | CELL_GEM_EXT_EXT0 | CELL_GEM_EXT_EXT1
-	controller.ext_id = move_data.external_device_connected ? move_data.external_device_id : 0;
+	set_ext_port(gem_num, ext_status, external_device_connected ? external_device_id : 0);
 
-	if (!move_data.external_device_connected)
+	if (!external_device_connected)
 	{
 		return;
 	}
@@ -2292,13 +2298,14 @@ static void fake_input_to_ext(u32 gem_num, gem_config::gem_controller& controlle
 	// Restore firing mode
 	ext.custom[0] = controller.firing_mode;
 
-	cfg->handle_input(pad, true, [&move_data, &ext](const auto& value, bool& /*abort*/)
+	// No combos on a pad: an empty set of this call's own
+	std::set<pad_button> combos;
+	cfg->handle_input(pad, true, [external_device_id, &ext, &combos](const auto& value, bool& /*abort*/)
 	{
-		static std::set<pad_button> s_combos = {};
-		input_to_ext<false, false>(move_data.external_device_id, ext, s_combos, value);
+		input_to_ext<false, false>(external_device_id, ext, combos, value);
 	});
 
-	ext.status = controller.ext_status;
+	ext.status = ext_status;
 
 	// Save firing mode
 	controller.firing_mode = ext.custom[0] & button_flags::ss_firing_mode_mask;
@@ -2316,8 +2323,7 @@ static void mouse_input_to_ext(u32 mouse_no, gem_config::gem_controller& control
 
 	if (mouse_no >= handler.GetMice().size())
 	{
-		controller.ext_status = 0;
-		controller.ext_id = 0;
+		set_ext_port(mouse_no, 0, 0);
 		return;
 	}
 
@@ -2327,8 +2333,8 @@ static void mouse_input_to_ext(u32 mouse_no, gem_config::gem_controller& control
 	const u32 external_device_id = ext_device_id(cfg->external_device);
 	const bool external_device_connected = external_device_id != 0;
 
-	controller.ext_status = external_device_connected ? CELL_GEM_EXT_CONNECTED : 0; // TODO: | CELL_GEM_EXT_EXT0 | CELL_GEM_EXT_EXT1
-	controller.ext_id = external_device_connected ? external_device_id : 0;
+	const u32 ext_status = external_device_connected ? CELL_GEM_EXT_CONNECTED : 0; // TODO: | CELL_GEM_EXT_EXT0 | CELL_GEM_EXT_EXT1
+	set_ext_port(mouse_no, ext_status, external_device_connected ? external_device_id : 0);
 
 	if (!external_device_connected)
 	{
@@ -2366,7 +2372,7 @@ static void mouse_input_to_ext(u32 mouse_no, gem_config::gem_controller& control
 		input_to_ext<true, false>(external_device_id, ext, combos, value);
 	});
 
-	ext.status = controller.ext_status;
+	ext.status = ext_status;
 
 	// Save firing mode
 	controller.firing_mode = ext.custom[0] & button_flags::ss_firing_mode_mask;
@@ -2755,8 +2761,6 @@ error_code cellGemEnableMagnetometer(u32 gem_num, u32 enable)
 
 	if (g_cfg.io.move == move_handler::real)
 	{
-		std::lock_guard lock(pad::g_pad_mutex);
-
 		const auto handler = pad::get_pad_thread();
 		const auto& pad = ::at32(handler->GetPads(), pad_num(gem_num));
 
@@ -2803,8 +2807,6 @@ error_code cellGemEnableMagnetometer2(u32 gem_num, u32 enable)
 
 	if (g_cfg.io.move == move_handler::real)
 	{
-		std::lock_guard lock(pad::g_pad_mutex);
-
 		const auto handler = pad::get_pad_thread();
 		const auto& pad = ::at32(handler->GetPads(), pad_num(gem_num));
 
@@ -3129,8 +3131,6 @@ error_code cellGemGetInertialState(u32 gem_num, u32 state_flag, u64 timestamp, v
 		{
 			// Get temperature and sensor data
 			{
-				std::lock_guard lock(pad::g_pad_mutex);
-
 				const auto handler = pad::get_pad_thread();
 				const auto& pad = ::at32(handler->GetPads(), pad_num(gem_num));
 
@@ -3726,12 +3726,12 @@ error_code cellGemReadExternalPortDeviceInfo(u32 gem_num, vm::ptr<u32> ext_id, v
 		get_external_device_input(gem_num, controller, ext_port_data);
 	}
 
-	if (!(controller.ext_status & CELL_GEM_EXT_CONNECTED))
+	if (!(static_cast<u32>(retro_atomic_load_acquire_int(&gem.ext_status[gem_num])) & CELL_GEM_EXT_CONNECTED))
 	{
 		return CELL_GEM_NO_EXTERNAL_PORT_DEVICE;
 	}
 
-	*ext_id = controller.ext_id;
+	*ext_id = static_cast<u32>(retro_atomic_load_acquire_int(&gem.ext_id[gem_num]));
 
 	if (ext_info && g_cfg.io.move == move_handler::real)
 	{
@@ -3740,8 +3740,6 @@ error_code cellGemReadExternalPortDeviceInfo(u32 gem_num, vm::ptr<u32> ext_id, v
 		while (true)
 		{
 			{
-				std::lock_guard lock(pad::g_pad_mutex);
-
 				const auto handler = pad::get_pad_thread();
 				const auto& pad = ::at32(handler->GetPads(), pad_num(gem_num));
 
@@ -3758,7 +3756,8 @@ error_code cellGemReadExternalPortDeviceInfo(u32 gem_num, vm::ptr<u32> ext_id, v
 
 				if (!pad->move_data.external_device_read_requested)
 				{
-					*ext_id = controller.ext_id = pad->move_data.external_device_id;
+					retro_atomic_store_release_int(&gem.ext_id[gem_num], static_cast<int>(pad->move_data.external_device_id));
+					*ext_id = pad->move_data.external_device_id;
 					std::memcpy(ext_info.get_ptr(), pad->move_data.external_device_read.data(), CELL_GEM_EXTERNAL_PORT_DEVICE_INFO_SIZE);
 					break;
 				}
@@ -3825,7 +3824,6 @@ error_code cellGemSetRumble(u32 gem_num, u8 rumble)
 	// Set actual device rumble
 	if (g_cfg.io.move == move_handler::real)
 	{
-		std::lock_guard pad_lock(pad::g_pad_mutex);
 		const auto handler = pad::get_pad_thread();
 		auto& handlers = handler->get_handlers();
 		if (auto it = handlers.find(pad_handler::move); it != handlers.end() && it->second)
@@ -3873,7 +3871,6 @@ error_code cellGemSetYaw(u32 gem_num, v128 z_direction)
 		return CELL_OK;
 	}
 
-	std::lock_guard pad_lock(pad::g_pad_mutex);
 	const auto handler = pad::get_pad_thread();
 	const auto& pad = ::at32(handler->GetPads(), pad_num(gem_num));
 
@@ -4083,8 +4080,6 @@ error_code cellGemWriteExternalPort(u32 gem_num, vm::ptr<u8[CELL_GEM_EXTERNAL_PO
 
 	if (data && g_cfg.io.move == move_handler::real)
 	{
-		std::lock_guard lock(pad::g_pad_mutex);
-
 		const auto handler = pad::get_pad_thread();
 		const auto& pad = ::at32(handler->GetPads(), pad_num(gem_num));
 

@@ -419,6 +419,8 @@ int main()
 	if (std::getenv("PAD_BENCH"))
 	{
 		enum { loops = 4000000 };
+		// A lock of the kind pad::g_pad_mutex was
+		shared_mutex old_pad_lock;
 		double lock_ns = 1e9, abort_ns = 1e9, commit_ns = 1e9, call_ns = 1e9;
 		const auto since = [](const timespec& a)
 		{
@@ -432,7 +434,7 @@ int main()
 			clock_gettime(CLOCK_MONOTONIC, &a); // not pacing: the benchmark's stopwatch
 			for (int i = 0; i < loops; i++)
 			{
-				std::lock_guard lock(pad::g_pad_mutex);
+				std::lock_guard lock(old_pad_lock);
 			}
 			lock_ns = std::min(lock_ns, since(a));
 

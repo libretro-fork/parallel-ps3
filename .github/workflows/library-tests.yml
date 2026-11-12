@@ -8,6 +8,11 @@ on:
     paths:
       - 'rpcs3/libretro/libretro-common/**'
       - 'rpcs3/libretro/tests/**'
+      - 'rpcs3/Emu/Io/**'
+      - 'rpcs3/Input/**'
+      - 'rpcs3/Emu/Cell/Modules/cellPad.*'
+      - 'rpcs3/Emu/Cell/Modules/cellGem.*'
+      - 'rpcs3/Emu/RSX/Overlays/**'
       - 'rpcs3/Emu/Cell/Modules/cellJpgDec_rows.*'
       - 'rpcs3/Emu/Cell/Modules/cellPngDec_rows.*'
       - 'rpcs3/Emu/RSX/Utils/rsx_scale.*'
@@ -38,6 +43,11 @@ on:
     paths:
       - 'rpcs3/libretro/libretro-common/**'
       - 'rpcs3/libretro/tests/**'
+      - 'rpcs3/Emu/Io/**'
+      - 'rpcs3/Input/**'
+      - 'rpcs3/Emu/Cell/Modules/cellPad.*'
+      - 'rpcs3/Emu/Cell/Modules/cellGem.*'
+      - 'rpcs3/Emu/RSX/Overlays/**'
       - 'rpcs3/Emu/Cell/Modules/cellJpgDec_rows.*'
       - 'rpcs3/Emu/Cell/Modules/cellPngDec_rows.*'
       - 'rpcs3/Emu/RSX/Utils/rsx_scale.*'

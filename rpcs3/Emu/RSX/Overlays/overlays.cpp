@@ -220,7 +220,6 @@ namespace rsx
 				}
 
 				// Get gamepad input
-				std::lock_guard lock(pad::g_pad_mutex);
 				const auto handler = pad::get_pad_thread();
 				const PadInfo& rinfo = handler->GetInfo();
 
@@ -481,7 +480,7 @@ namespace rsx
 			}
 
 			// Disable pad interception since this user interface has to be interactive.
-			// Non-interactive user intefaces handle this in close in order to prevent a g_pad_mutex deadlock.
+			// Non-interactive user intefaces handle this in close.
 			if (m_stop_pad_interception)
 			{
 				input::SetIntercepted(false);
@@ -510,7 +509,7 @@ namespace rsx
 			}
 
 			// Only disable pad interception if this user interface is not interactive.
-			// Interactive user interfaces handle this in run_input_loop in order to prevent a g_pad_mutex deadlock.
+			// Interactive user interfaces handle this in run_input_loop.
 			if (!m_interactive && m_stop_pad_interception)
 			{
 				input::SetIntercepted(false);

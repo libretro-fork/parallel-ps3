@@ -1,8 +1,9 @@
 // The pads' buttons and sticks on their way from the frontend's thread to
 // the game's (Emu/Io/pad_types.h, Input/pad_thread.cpp):
 //
-// - retro_run hands them over (pad_thread::apply_copilots) while the game
-//   holds the pad lock: it does not wait for it;
+// - retro_run hands them over (pad_thread::apply_copilots) with no lock:
+//   there is no pad lock any more (the library tests check that none comes
+//   back);
 // - a game's thread reading them (Pad::read_external) while retro_run
 //   writes them over and over always gets one whole handover, never half
 //   of one and half of the next;
@@ -170,30 +171,7 @@ int main()
 	CHECK(ext.buttons[5].m_pressed && ext.buttons[5].m_value == 255);
 	CHECK(!ext.buttons[4].m_pressed);
 	pad->copilots.clear();
-
-	// The game holding the pad lock: the handover does not wait for it
-	{
-		std::atomic<bool> held{false}, release{false};
-		std::thread game([&]
-		{
-			std::lock_guard lock(pad::g_pad_mutex);
-			held = true;
-			while (!release)
-				std::this_thread::sleep_for(std::chrono::milliseconds(1));
-		});
-		while (!held)
-			std::this_thread::yield();
-
-		std::atomic<bool> done{false};
-		std::thread run([&] { pads.apply_copilots(); done = true; });
-		const auto until = std::chrono::steady_clock::now() + std::chrono::milliseconds(500);
-		while (!done && std::chrono::steady_clock::now() < until)
-			std::this_thread::sleep_for(std::chrono::milliseconds(1));
-		CHECK(done);
-		release = true;
-		run.join();
-		game.join();
-	}
+	pads.apply_copilots(); // without the copilot's press
 
 	// One whole handover at a time: every button of a read has the same value
 	{

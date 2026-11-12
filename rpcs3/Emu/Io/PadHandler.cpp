@@ -833,8 +833,6 @@ void PadHandlerBase::process()
 		// Disable pad vibration if no new data was sent for 3 seconds
 		if (pad->m_last_rumble_time_us > 0)
 		{
-			std::lock_guard lock(pad::g_pad_mutex);
-
 			if ((get_system_time() - pad->m_last_rumble_time_us) > 3'000'000)
 			{
 				for (VibrateMotor& motor : pad->m_vibrate_motors)

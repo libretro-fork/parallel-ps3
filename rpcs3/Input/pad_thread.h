@@ -86,7 +86,6 @@ private:
 namespace pad
 {
 	extern atomic_t<pad_thread*> g_pad_thread;
-	extern shared_mutex g_pad_mutex;
 	extern std::string g_title_id;
 	extern atomic_t<bool> g_enabled;
 	extern atomic_t<bool> g_reset;
@@ -116,7 +115,6 @@ namespace pad
 
 	static inline void SetIntercepted(bool intercepted)
 	{
-		std::lock_guard lock(g_pad_mutex);
 		const auto handler = get_pad_thread();
 		handler->SetIntercepted(intercepted);
 	}

@@ -481,6 +481,9 @@ check: all
 	./test_pad_values
 	./test_input_poll
 	./no_host_clock.sh $(CLOCK_FILES)
+	@# The pads take no lock: pad::g_pad_mutex is gone, and a merge of
+	@# upstream's code that takes it does not bring it back
+	@if grep -rn "g_pad_mutex" ../../Emu ../../Input ../*.cpp ../*.h ../*.c; then echo "pads: pad::g_pad_mutex is back - the pads take no lock (AGENTS.md)"; exit 1; else echo "pads: no pad lock"; fi
 
 clean:
 	rm -rf obj $(TESTS) *_out.* rec_out
