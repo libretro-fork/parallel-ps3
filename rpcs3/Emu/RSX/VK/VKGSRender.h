@@ -32,6 +32,12 @@ using fs_binding_table_t = decltype(VKFragmentProgram::binding_table);
 
 namespace vk
 {
+	struct frame_context_t;
+	RETRO_DEQUE_DEFINE(queued_frames, frame_context_t*);
+}
+
+namespace vk
+{
 	using host_data_t = rsx::host_gpu_context_t;
 }
 
@@ -172,7 +178,7 @@ private:
 
 	u32 m_current_queue_index = 0;
 	vk::frame_context_t* m_current_frame = nullptr;
-	std::deque<vk::frame_context_t*> m_queued_frames;
+	vk::queued_frames_t m_queued_frames{};
 
 	VkViewport m_viewport {};
 	VkRect2D m_scissor {};

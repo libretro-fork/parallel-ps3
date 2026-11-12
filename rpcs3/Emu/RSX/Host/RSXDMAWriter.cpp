@@ -10,19 +10,19 @@ namespace rsx
 	{
 		if (m_dispatch_handlers.empty())
 		{
-			m_job_queue.clear();
+			host_gpu_write_ops_clear(&m_job_queue);
 			return;
 		}
 
-		while (!m_job_queue.empty())
+		while (!host_gpu_write_ops_empty(&m_job_queue))
 		{
-			const auto job = m_job_queue.front();
+			const auto job = *host_gpu_write_ops_front(&m_job_queue);
 
 			if (const auto dispatch = m_dispatch_handlers.find(job.dispatch_class);
 				dispatch == m_dispatch_handlers.end() || dispatch->second.handler(m_host_context_ptr, &job))
 			{
 				// No handler registered, or callback consumed the job
-				m_job_queue.pop_front();
+				host_gpu_write_ops_pop_front(&m_job_queue);
 				continue;
 			}
 
@@ -43,7 +43,7 @@ namespace rsx
 
 	void RSXDMAWriter::enqueue(const host_gpu_write_op_t& request)
 	{
-		m_job_queue.push_back(request);
+		ensure(host_gpu_write_ops_push_back_growing(&m_job_queue, &request));
 	}
 
 	void RSXDMAWriter::drain_label_queue()

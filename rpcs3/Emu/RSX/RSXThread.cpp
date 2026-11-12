@@ -755,6 +755,7 @@ namespace rsx
 	{
 		rsx_fifo_recoveries_free(&recovered_fifo_cmds_history);
 		rsx_frame_times_free(&frame_times);
+		flip_buffers_free(&m_queued_flip_buffers);
 		g_access_violation_handler = nullptr;
 	}
 
@@ -841,6 +842,7 @@ namespace rsx
 	{
 		ensure(rsx_fifo_recoveries_init(&recovered_fifo_cmds_history, 20));
 		ensure(rsx_frame_times_init(&frame_times, 64));
+		ensure(flip_buffers_init(&m_queued_flip_buffers, 8));
 
 		g_access_violation_handler = [this](u32 address, bool is_writing)
 		{
@@ -3421,7 +3423,7 @@ namespace rsx
 
 		// Save current state
 		m_queued_flip.stats = m_frame_stats;
-		m_queued_flip.push(buffer);
+		flip_buffers_queue(m_queued_flip_buffers, buffer);
 		m_queued_flip.skip_frame = skip_current_frame;
 
 		if (!forced) [[likely]]
@@ -3539,11 +3541,11 @@ namespace rsx
 			return;
 		}
 
-		if (!m_queued_flip.pop(buffer))
+		if (!flip_buffers_take(m_queued_flip_buffers, m_queued_flip, buffer))
 		{
 			// Frame was not queued before flipping
 			on_frame_end(buffer, true);
-			ensure(m_queued_flip.pop(buffer));
+			ensure(flip_buffers_take(m_queued_flip_buffers, m_queued_flip, buffer));
 		}
 
 		double limit = 0.;

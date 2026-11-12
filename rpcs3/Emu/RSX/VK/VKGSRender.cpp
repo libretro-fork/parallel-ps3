@@ -407,6 +407,8 @@ u64 VKGSRender::get_cycles()
 
 VKGSRender::VKGSRender(utils::serial* ar) noexcept : GSRender(ar)
 {
+	ensure(vk::queued_frames_init(&m_queued_frames, 16));
+
 	// Initialize dependencies
 	g_fxo->need<rsx::dma_manager>();
 	g_fxo->need<vk::driver_manager_thread>();
@@ -1208,9 +1210,9 @@ void VKGSRender::notify_tile_unbound(u32 tile)
 
 void VKGSRender::check_present_status()
 {
-	while (!m_queued_frames.empty())
+	while (!vk::queued_frames_empty(&m_queued_frames))
 	{
-		auto ctx = m_queued_frames.front();
+		auto ctx = *vk::queued_frames_front(&m_queued_frames);
 		if (!ctx->swap_command_buffer->poke())
 		{
 			return;
@@ -1595,7 +1597,7 @@ void VKGSRender::flush_command_queue(bool hard_sync, bool do_not_switch)
 		m_primary_cb_list.poke_all();
 
 		// Drain present queue
-		while (!m_queued_frames.empty())
+		while (!vk::queued_frames_empty(&m_queued_frames))
 		{
 			check_present_status();
 		}

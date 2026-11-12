@@ -58,9 +58,12 @@ namespace vk
 		query_type = type;
 		query_slot_status.resize(num_entries, {});
 
-		for (unsigned i = 0; i < num_entries; ++i)
+		ensure(query_slots_init(&m_available_slots, num_entries));
+		ensure(query_pools_init(&m_query_pool_cache, 8));
+
+		for (u32 i = 0; i < num_entries; ++i)
 		{
-			m_available_slots.push_back(i);
+			ensure(query_slots_push_back(&m_available_slots, &i));
 		}
 	}
 
@@ -71,6 +74,15 @@ namespace vk
 			m_current_query_pool.reset();
 			owner = nullptr;
 		}
+
+		while (!query_pools_empty(&m_query_pool_cache))
+		{
+			delete *query_pools_front(&m_query_pool_cache);
+			query_pools_pop_front(&m_query_pool_cache);
+		}
+
+		query_pools_free(&m_query_pool_cache);
+		query_slots_free(&m_available_slots);
 	}
 
 	void query_pool_manager::allocate_new_pool(vk::command_buffer& cmd)
@@ -79,11 +91,11 @@ namespace vk
 		{
 			std::lock_guard lock(m_query_pool_cache_lock); // If we're creating a new pool, we probably have items in the cache.
 
-			if (m_query_pool_cache.size() > 0)
+			if (!query_pools_empty(&m_query_pool_cache))
 			{
-				m_current_query_pool = std::move(m_query_pool_cache.front());
+				m_current_query_pool.reset(*query_pools_front(&m_query_pool_cache));
 				m_current_query_pool->reset_refs();
-				m_query_pool_cache.pop_front();
+				query_pools_pop_front(&m_query_pool_cache);
 			}
 			else
 			{
@@ -206,7 +218,7 @@ namespace vk
 		}
 
 		query = {};
-		m_available_slots.push_back(index);
+		ensure(query_slots_push_back(&m_available_slots, &index));
 	}
 
 	u32 query_pool_manager::allocate_query(vk::command_buffer& cmd)
@@ -224,12 +236,12 @@ namespace vk
 			reallocate_pool(cmd);
 		}
 
-		if (!m_available_slots.empty())
+		if (!query_slots_empty(&m_available_slots))
 		{
 			m_pool_lifetime_counter--;
 
-			const auto result = m_available_slots.front();
-			m_available_slots.pop_front();
+			const u32 result = *query_slots_front(&m_available_slots);
+			query_slots_pop_front(&m_available_slots);
 			return result;
 		}
 
@@ -246,7 +258,8 @@ namespace vk
 		}
 
 		std::lock_guard lock(m_query_pool_cache_lock);
-		m_query_pool_cache.emplace_back(std::move(pool));
+		query_pool* const cached = pool.release();
+		ensure(query_pools_push_back_growing(&m_query_pool_cache, &cached));
 	}
 
 	query_pool_manager::query_pool_ref::~query_pool_ref()

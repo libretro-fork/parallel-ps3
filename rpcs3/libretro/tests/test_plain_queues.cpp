@@ -10,6 +10,8 @@
 // - a P2P datagram socket's received packets, against the std::queue of
 //   address and vector they were, and in a savestate - which leaves them
 //   queued;
+// - RSX's queued flips, against the std::deque in the flip info, and the
+//   host GPU write jobs through RSXDMAWriter's own code;
 // - the patterns the others use (sys_usbd's events, the USB figures'
 //   replies, RSX's two histories), each against the std:: container it
 //   was, a few hundred thousand steps: same contents at every step.
@@ -24,6 +26,7 @@
 #include "Emu/Io/KamenRider.h"
 #include "Emu/Cell/lv2/sys_net/lv2_socket_p2ps.h"
 #include "Emu/RSX/RSXThread.h"
+#include "Emu/RSX/Host/RSXDMAWriter.h"
 #include "util/serialization.hpp"
 
 #include <cstdio>
@@ -330,6 +333,96 @@ int main()
 		}
 		CHECK(wrong == 0 && rsx::rsx_frame_times_limit(&q) == 64);
 		rsx::rsx_frame_times_free(&q);
+	}
+
+	// RSX's queued flips: taking a buffer's flip drops the ones queued
+	// before it, as the std::deque in the flip info did
+	{
+		rsx::flip_buffers_t q{};
+		rsx::display_flip_info_t info{};
+		std::deque<u32> model;
+		usz wrong = 0;
+
+		CHECK(rsx::flip_buffers_init(&q, 8));
+		CHECK(!rsx::flip_buffers_take(q, info, 3));
+
+		for (u32 step = 0; step < 100000; step++)
+		{
+			const u32 buffer = rnd() & 7;
+
+			if (rnd() & 1)
+			{
+				rsx::flip_buffers_queue(q, buffer);
+				model.push_back(buffer);
+			}
+			else
+			{
+				bool expected = false;
+				while (!model.empty())
+				{
+					const u32 index = model.front();
+					model.pop_front();
+					if (index == buffer)
+					{
+						expected = true;
+						break;
+					}
+				}
+				info.buffer = 99;
+				const bool got = rsx::flip_buffers_take(q, info, buffer);
+				wrong += got != expected || info.buffer != (expected ? buffer : 99u);
+			}
+			wrong += rsx::flip_buffers_count(&q) != model.size();
+		}
+		CHECK(wrong == 0);
+		rsx::flip_buffers_free(&q);
+	}
+
+	// The host GPU write jobs (RSXDMAWriter), through its own code: done in
+	// the order queued, stopping at one its handler turns down and taking
+	// it up again later; dropped when there is no handler
+	{
+		rsx::host_gpu_context_t ctx{};
+		rsx::RSXDMAWriter writer(&ctx);
+		std::vector<usz> done;
+		usz refuse_at = 5;
+		int marks[400];
+
+		writer.register_handler({1, [&](const volatile rsx::host_gpu_context_t*, const rsx::host_gpu_write_op_t* job)
+		{
+			const usz n = static_cast<usz>(static_cast<int*>(job->userdata) - marks);
+			if (n == refuse_at)
+				return false;
+			done.push_back(n);
+			return true;
+		}});
+
+		for (usz n = 0; n < 400; n++) // more than it was made for: it grows, in order
+			writer.enqueue({n % 7 == 3 ? 2 : 1, &marks[n]}); // class 2 has no handler: skipped
+
+		writer.update();
+		CHECK(!done.empty() && done.back() == 4);
+		writer.update();
+		CHECK(done.back() == 4); // still turned down: nothing passes it
+		refuse_at = umax;
+		writer.update();
+		usz expected = 0, wrong = 0;
+		for (usz n = 0; n < 400; n++)
+		{
+			if (n % 7 == 3)
+				continue;
+			wrong += expected >= done.size() || done[expected] != n;
+			expected++;
+		}
+		CHECK(wrong == 0 && done.size() == expected);
+
+		// No handler at all: the jobs are dropped
+		writer.deregister_handler(1);
+		writer.enqueue({1, &marks[0]});
+		writer.update();
+		writer.register_handler({1, [&](const volatile rsx::host_gpu_context_t*, const rsx::host_gpu_write_op_t*) { done.clear(); return true; }});
+		writer.update();
+		CHECK(done.size() == expected);
 	}
 
 	std::printf("test_plain_queues: %s\n", failures ? "FAIL" : "ok");

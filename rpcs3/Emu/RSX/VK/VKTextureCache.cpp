@@ -55,7 +55,8 @@ namespace vk
 		if (!parent->m_cache_is_exiting)
 		{
 			parent->m_cached_memory_size += data->memory->size();
-			parent->m_cached_images.emplace_front(key, data);
+			const cached_image_t cached{key, data.release()};
+			ensure(cached_images_push_front_growing(&parent->m_cached_images, &cached));
 		}
 		else
 		{
@@ -407,7 +408,7 @@ namespace vk
 		}
 		baseclass::clear();
 
-		m_cached_images.clear();
+		drop_cached_images();
 		m_cached_memory_size = 0;
 	}
 
@@ -673,17 +674,19 @@ namespace vk
 	{
 		reader_lock lock(m_cached_pool_lock);
 
-		if (!m_cached_images.empty())
+		if (!cached_images_empty(&m_cached_images))
 		{
 			const u64 desired_key = hash_image_properties(format, w, h, d, mipmaps, type, create_flags, sharing);
 			lock.upgrade();
 
-			for (auto it = m_cached_images.begin(); it != m_cached_images.end(); ++it)
+			for (usz i = 0, count = cached_images_count(&m_cached_images); i < count; i++)
 			{
-				if (it->key == desired_key && (it->data->info.usage & usage) == usage)
+				const cached_image_t& cached = *cached_images_at(&m_cached_images, i);
+
+				if (cached.key == desired_key && (cached.data->info.usage & usage) == usage)
 				{
-					auto ret = std::move(it->data);
-					m_cached_images.erase(it);
+					std::unique_ptr<vk::viewable_image> ret(cached.data);
+					cached_images_erase(&m_cached_images, i);
 					m_cached_memory_size -= ret->memory->size();
 					return ret;
 				}
@@ -1498,6 +1501,9 @@ namespace vk
 		m_formats_support = device.get_formats_support();
 		m_submit_queue = submit_queue;
 		m_texture_upload_heap = &upload_heap;
+
+		// Room for the pool at its fullest between two frame ends
+		ensure(cached_images_reserve(&m_cached_images, max_cached_image_pool_size * 2));
 	}
 
 	void texture_cache::destroy()
@@ -1568,12 +1574,13 @@ namespace vk
 
 		// Nuke temporary resources. They will still be visible to the GPU.
 		auto gc = vk::get_resource_manager();
-		any_released |= !m_cached_images.empty();
-		for (auto& img : m_cached_images)
+		any_released |= !cached_images_empty(&m_cached_images);
+		while (!cached_images_empty(&m_cached_images))
 		{
-			gc->dispose(img.data);
+			std::unique_ptr<vk::viewable_image> image(cached_images_front(&m_cached_images)->data);
+			cached_images_pop_front(&m_cached_images);
+			gc->dispose(image);
 		}
-		m_cached_images.clear();
 		m_cached_memory_size = 0;
 
 		any_released |= !m_temporary_subresource_cache.empty();
@@ -1596,18 +1603,18 @@ namespace vk
 			purge_unreleased_sections();
 		}
 
-		if (m_cached_images.size() > max_cached_image_pool_size ||
+		if (cached_images_count(&m_cached_images) > max_cached_image_pool_size ||
 			m_cached_memory_size > 256 * 0x100000)
 		{
 			std::lock_guard lock(m_cached_pool_lock);
 
-			const auto new_size = m_cached_images.size() / 2;
-			for (usz i = new_size; i < m_cached_images.size(); ++i)
+			const auto new_size = cached_images_count(&m_cached_images) / 2;
+			for (usz i = new_size; i < cached_images_count(&m_cached_images); ++i)
 			{
-				m_cached_memory_size -= m_cached_images[i].data->memory->size();
+				m_cached_memory_size -= cached_images_at(&m_cached_images, i)->data->memory->size();
 			}
 
-			m_cached_images.resize(new_size);
+			drop_cached_images(new_size);
 		}
 
 		baseclass::on_frame_end();
@@ -1700,7 +1707,7 @@ namespace vk
 
 	u32 texture_cache::get_unreleased_textures_count() const
 	{
-		return baseclass::get_unreleased_textures_count() + ::size32(m_cached_images);
+		return baseclass::get_unreleased_textures_count() + static_cast<u32>(cached_images_count(&m_cached_images));
 	}
 
 	u64 texture_cache::get_temporary_memory_in_use() const

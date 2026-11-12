@@ -424,15 +424,26 @@ namespace vk
 			~cached_image_reference_t();
 		};
 
+		// An image the GPU is done with, kept for reuse. Plain data: the
+		// image is owned by the pool, and whoever takes an entry out takes
+		// the image into a unique_ptr or deletes it.
 		struct cached_image_t
 		{
 			u64 key;
-			std::unique_ptr<vk::viewable_image> data;
-
-			cached_image_t() = default;
-			cached_image_t(u64 key_, std::unique_ptr<vk::viewable_image>& data_) :
-				key(key_), data(std::move(data_)) {}
+			vk::viewable_image* data;
 		};
+
+		RETRO_DEQUE_DEFINE(cached_images, cached_image_t);
+
+		// Deletes the pool's images from @keep on
+		void drop_cached_images(usz keep = 0)
+		{
+			while (cached_images_count(&m_cached_images) > keep)
+			{
+				delete cached_images_back(&m_cached_images)->data;
+				cached_images_pop_back(&m_cached_images);
+			}
+		}
 
 	public:
 		enum texture_create_flags : u32
@@ -445,6 +456,12 @@ namespace vk
 
 		void on_section_destroyed(cached_texture_section& tex) override;
 
+		~texture_cache()
+		{
+			drop_cached_images();
+			cached_images_free(&m_cached_images);
+		}
+
 	private:
 
 		// Vulkan internals
@@ -456,7 +473,7 @@ namespace vk
 
 		// Stuff that has been dereferenced by the GPU goes into these
 		const u32 max_cached_image_pool_size = 256;
-		std::deque<cached_image_t> m_cached_images;
+		cached_images_t m_cached_images{};
 		atomic_t<u64> m_cached_memory_size = { 0 };
 		shared_mutex m_cached_pool_lock;
 

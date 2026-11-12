@@ -65,19 +65,19 @@ bool VKGSRender::reinitialize_swapchain()
 	}
 
 	// NOTE: frame_context_cleanup alters the queued_frames structure.
-	while (!m_queued_frames.empty())
+	while (!vk::queued_frames_empty(&m_queued_frames))
 	{
-		auto& frame = m_queued_frames.front();
+		vk::frame_context_t* const frame = *vk::queued_frames_front(&m_queued_frames);
 		if (!frame->swap_command_buffer)
 		{
 			// Drop it
-			m_queued_frames.pop_front();
+			vk::queued_frames_pop_front(&m_queued_frames);
 			continue;
 		}
 
 		frame_context_cleanup(frame);
 	}
-	ensure(m_queued_frames.empty());
+	ensure(vk::queued_frames_empty(&m_queued_frames));
 
 	// Discard the current upscaling pipeline if any
 	m_upscaler.reset();
@@ -218,8 +218,8 @@ void VKGSRender::advance_queued_frames()
 	m_vertex_cache->purge();
 	m_current_frame->tag_frame_end();
 
-	m_queued_frames.push_back(m_current_frame);
-	ensure(m_queued_frames.size() <= m_max_async_frames);
+	ensure(vk::queued_frames_push_back_growing(&m_queued_frames, &m_current_frame));
+	ensure(vk::queued_frames_count(&m_queued_frames) <= m_max_async_frames);
 
 	m_current_queue_index = (m_current_queue_index + 1) % m_max_async_frames;
 	m_current_frame = &m_frame_context_storage[m_current_queue_index];
@@ -363,10 +363,10 @@ void VKGSRender::frame_context_cleanup(vk::frame_context_t *ctx)
 	ctx->swap_command_buffer = nullptr;
 
 	// Remove from queued list
-	while (!m_queued_frames.empty())
+	while (!vk::queued_frames_empty(&m_queued_frames))
 	{
-		auto frame = m_queued_frames.front();
-		m_queued_frames.pop_front();
+		auto frame = *vk::queued_frames_front(&m_queued_frames);
+		vk::queued_frames_pop_front(&m_queued_frames);
 
 		if (frame == ctx)
 		{
@@ -729,14 +729,15 @@ void VKGSRender::flip(const rsx::display_flip_info_t& info)
 				{
 					acquire_reported = true;
 					std::string frames;
-					for (auto* ctx : m_queued_frames)
+					for (usz qi = 0; qi < vk::queued_frames_count(&m_queued_frames); qi++)
 					{
+						auto* ctx = *vk::queued_frames_at(&m_queued_frames, qi);
 						fmt::append(frames, " [image %d, commands %s]", static_cast<s32>(ctx->present_image),
 							!ctx->swap_command_buffer ? "none" : ctx->swap_command_buffer->poke() ? "done" : "pending");
 					}
 					rsx_log.error("libretro present: no free image for 2s (images %s, swapchain %s, %u frames queued:%s)",
 						libretro_swapchain->describe_images(), swapchain_unavailable ? "unavailable" : "available",
-						::size32(m_queued_frames), frames);
+						static_cast<u32>(vk::queued_frames_count(&m_queued_frames)), frames);
 				}
 				if (waited > 5'000'000)
 				{

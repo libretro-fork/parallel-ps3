@@ -4,6 +4,7 @@
 #include <util/logs.hpp>
 #include <deque>
 #include <unordered_map>
+#include <queues/retro_deque.h>
 
 template <typename T>
 class named_thread;
@@ -76,42 +77,46 @@ namespace rsx
 
 	struct display_flip_info_t
 	{
-		std::deque<u32> buffer_queue;
 		u32 buffer;
 		bool skip_frame;
 		bool emu_flip;
 		bool in_progress;
 		frame_statistics_t stats;
+	};
 
-		inline void push(u32 _buffer)
+	// The buffers of the flips queued and not yet shown, in order (plain
+	// data: rsx::thread makes it and frees it)
+	RETRO_DEQUE_DEFINE(flip_buffers, u32);
+
+	inline void flip_buffers_queue(flip_buffers_t& queue, u32 buffer)
+	{
+		ensure(flip_buffers_push_back_growing(&queue, &buffer));
+	}
+
+	// Takes the queued flips up to and including @buffer's; false if it was not queued
+	inline bool flip_buffers_take(flip_buffers_t& queue, display_flip_info_t& info, u32 buffer)
+	{
+		if (flip_buffers_empty(&queue))
 		{
-			buffer_queue.push_back(_buffer);
-		}
-
-		inline bool pop(u32 _buffer)
-		{
-			if (buffer_queue.empty())
-			{
-				return false;
-			}
-
-			do
-			{
-				const auto index = buffer_queue.front();
-				buffer_queue.pop_front();
-
-				if (index == _buffer)
-				{
-					buffer = _buffer;
-					return true;
-				}
-			} while (!buffer_queue.empty());
-
-			// Need to observe this happening in the wild
-			rsx_log.error("Display queue was discarded while not empty!");
 			return false;
 		}
-	};
+
+		do
+		{
+			const u32 index = *flip_buffers_front(&queue);
+			flip_buffers_pop_front(&queue);
+
+			if (index == buffer)
+			{
+				info.buffer = buffer;
+				return true;
+			}
+		} while (!flip_buffers_empty(&queue));
+
+		// Need to observe this happening in the wild
+		rsx_log.error("Display queue was discarded while not empty!");
+		return false;
+	}
 
 	class vblank_thread
 	{

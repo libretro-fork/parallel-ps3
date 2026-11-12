@@ -113,6 +113,7 @@ namespace rsx
 		u64 m_cycles_counter = 0;
 
 		display_flip_info_t m_queued_flip{};
+		flip_buffers_t m_queued_flip_buffers{};
 
 		void cpu_task() override;
 	protected:

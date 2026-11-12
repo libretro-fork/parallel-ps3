@@ -4,7 +4,7 @@
 
 #include <unordered_map>
 #include <functional>
-#include <deque>
+#include <queues/retro_deque.h>
 
 namespace rsx
 {
@@ -76,6 +76,8 @@ namespace rsx
 		void* userdata = nullptr;
 	};
 
+	RETRO_DEQUE_DEFINE(host_gpu_write_ops, host_gpu_write_op_t);
+
 	struct host_dispatch_handler_t
 	{
 		int dispatch_class = 0;
@@ -87,11 +89,23 @@ namespace rsx
 	public:
 		RSXDMAWriter(void* mem)
 			: m_host_context_ptr(new (mem)host_gpu_context_t)
-		{}
+		{
+			ensure(host_gpu_write_ops_init(&m_job_queue, 64));
+		}
 
 		RSXDMAWriter(host_gpu_context_t* pctx)
 			: m_host_context_ptr(pctx)
-		{}
+		{
+			ensure(host_gpu_write_ops_init(&m_job_queue, 64));
+		}
+
+		~RSXDMAWriter()
+		{
+			host_gpu_write_ops_free(&m_job_queue);
+		}
+
+		RSXDMAWriter(const RSXDMAWriter&) = delete;
+		RSXDMAWriter& operator=(const RSXDMAWriter&) = delete;
 
 		void update();
 
@@ -110,6 +124,6 @@ namespace rsx
 		std::unordered_map<int, host_dispatch_handler_t> m_dispatch_handlers;
 		volatile host_gpu_context_t* m_host_context_ptr = nullptr;
 
-		std::deque<host_gpu_write_op_t> m_job_queue;
+		host_gpu_write_ops_t m_job_queue{};
 	};
 }

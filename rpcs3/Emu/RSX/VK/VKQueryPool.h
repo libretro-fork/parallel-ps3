@@ -2,10 +2,15 @@
 #include "VulkanAPI.h"
 #include "Utilities/mutex.h"
 
-#include <deque>
+#include <queues/retro_deque.h>
 
 namespace vk
 {
+	class query_pool;
+
+	RETRO_DEQUE_DEFINE(query_slots, u32);
+	RETRO_DEQUE_DEFINE(query_pools, query_pool*); // owned: taken out with a unique_ptr, or deleted
+
 	class command_buffer;
 	class query_pool;
 	class render_device;
@@ -37,10 +42,10 @@ namespace vk
 
 		std::vector<std::unique_ptr<query_pool>> m_consumed_pools;
 		std::unique_ptr<query_pool> m_current_query_pool;
-		std::deque<u32> m_available_slots;
+		query_slots_t m_available_slots{}; // made for every slot: never grows
 		u32 m_pool_lifetime_counter = 0;
 
-		std::deque<std::unique_ptr<query_pool>> m_query_pool_cache;
+		query_pools_t m_query_pool_cache{};
 		shared_mutex m_query_pool_cache_lock;
 
 		VkQueryType query_type = VK_QUERY_TYPE_OCCLUSION;
