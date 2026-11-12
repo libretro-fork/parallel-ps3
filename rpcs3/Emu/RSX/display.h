@@ -15,7 +15,11 @@ using Window  = unsigned long;
 #include <wayland-client.h>
 #endif
 
-#ifdef _WIN32
+#ifdef LIBRETRO_CORE
+// The frontend has the window, and the core no window system: a handle to
+// nothing
+using display_handle_t = void*;
+#elif defined(_WIN32)
 using display_handle_t = HWND;
 #elif defined(__APPLE__)
 using display_handle_t = void*; // NSView

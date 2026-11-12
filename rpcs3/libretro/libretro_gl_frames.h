@@ -15,19 +15,10 @@
 
 #include <stddef.h>
 
-#ifdef _WIN32
-/* The GL types as RPCS3's OpenGL.h has them on Windows: its functions are
- * its own there, and GLEW's header turned every one the including file calls
- * into GLEW's, which a Windows build does not have (undefined references to
- * __glewUseProgram and the rest) */
-#include <windows.h>
-#include <GL/gl.h>
-#include <glext.h>
+/* The GL types from Khronos' header, which declares no functions: the
+ * functions are the caller's (lr_gl_frames_procs) */
+#include <glcorearb.h>
 #define LR_GL_APIENTRY APIENTRY
-#else
-#include <GL/glew.h>
-#define LR_GL_APIENTRY GLAPIENTRY
-#endif
 
 #include <boolean.h>
 

@@ -48,7 +48,8 @@ This repository builds the libretro core and nothing else. The standalone's part
 
 ## How the core is built
 
-- RPCS3 runs inside the frontend's process. `rpcs3/libretro/libretro_core.cpp` is the libretro entry point; `libretro_video.cpp` hands frames over (Vulkan through the frontend's hardware context and its swapchain, OpenGL through shared contexts, `libretro_video_sw.cpp` when there is no hardware context), `libretro_audio.cpp` the audio, `libretro_input.cpp` and the pad and mouse handlers the input, `libretro_vfs.cpp` the files.
+- RPCS3 runs inside the frontend's process. `rpcs3/libretro/libretro_core.cpp` is the libretro entry point; `libretro_video.cpp` hands frames over (Vulkan through the frontend's hardware context and its swapchain, OpenGL through contexts the frontend makes for the renderer's threads, `libretro_video_sw.cpp` when there is no hardware context), `libretro_audio.cpp` the audio, `libretro_input.cpp` and the pad and mouse handlers the input, `libretro_vfs.cpp` the files.
+- The core knows no window system and links no graphics library: no EGL, GLX, WGL, X11, Wayland or Win32 surface, no GLEW, no libGL. Every OpenGL function comes from the frontend's `get_proc_address`, the renderer's contexts from `RETRO_ENVIRONMENT_GET_HW_SHARED_CONTEXT_INTERFACE`, Vulkan from the frontend's device or, without one, a headless swapchain.
 - Because it shares the frontend's process, anything the emulator leaves behind - a thread, a static with a destructor, `thread_local` state, a pinned library - is the frontend's problem after unload. Content loaded again starts from scratch.
 - Builds are CMake. A commit that adds, removes or renames a source updates the CMake files and anything else that lists sources or submodules (`.ci/` scripts, `.github/workflows/libretro.yml`, `.gitmodules`) in the same commit, and builds the core to completion on every lane it touches.
 - libretro-common is built as one static library from `rpcs3/libretro/libretro-common/` and linked into the emulator's targets that use it. A file added to the sync is added there in the same commit.
@@ -169,10 +170,8 @@ Measure against what the work needs and what the hardware can do, not against th
 
 Not there yet, in the core's own glue. These are debts, not precedent:
 
-1. `libretro_core.cpp`: the pause watchdog thread polls in 10 ms sleeps and pauses emulation from wall-clock gaps between `retro_run` calls; boot, PKG installation (50 ms) and `wait_for_emulation_stop` (1 ms) poll with `sleep_for`; `emu_mutex` serialises entry points.
-2. `libretro_video.cpp`: `s_frame_mutex` with `s_frame_cv`, `s_video_mutex`, the context-pool, EGL and GLX context mutexes, and `s_sw_frame_mutex` in the software path.
-3. `libretro_audio.cpp` guards its ring with `m_mutex`; `libretro_vfs.cpp`, `libretro_mouse_handler.cpp` and the pad handler (`pad::g_pad_mutex`) take locks on their paths.
-4. `libretro_frontend.cpp` retries an operation in a `sleep_for` loop.
+1. `libretro_vfs.cpp` takes locks on its paths.
+2. The game's side of the pads (`pad::g_pad_mutex` in `Input/pad_thread.cpp`), which the frontend's side no longer takes.
 
 ## Audio, video and pacing
 

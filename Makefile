@@ -1,5 +1,5 @@
 # The core without CMake: make and a compiler. LLVM is built from the
-# 3rdparty/llvm submodule into the core, GLEW and the Vulkan headers are in
+# 3rdparty/llvm submodule into the core, the GL and Vulkan headers are in
 # the tree. What it builds is what the CMake
 # build (BUILD_LIBRETRO_CORE_ONLY, as .ci/build-libretro.sh configures it)
 # builds, from the same sources with the same flags: Makefile.common has
@@ -85,27 +85,11 @@ ifeq ($(platform), unix)
    OS_RPCS3    := $(SOURCES_RPCS3_GL)
    OS_LIBRETRO := $(SOURCES_LIBRETRO_GL)
    # As rpcs3/CMakeLists.txt has it, on Linux only (on Windows it is a type)
-   DEFINES += -DGLEW_STATIC -DGLEW_NO_GLU -DDATADIR=\"/usr/local/share/rpcs3\"
+   DEFINES += -DDATADIR=\"/usr/local/share/rpcs3\"
    FLAGS_GLSLANG += -DGLSLANG_OSINCLUDE_UNIX
    FLAGS_LIBUSB  += -DPLATFORM_POSIX=1 -DHAVE_CLOCK_GETTIME
-   # The GL renderer's X11 parts, as the CMake build has them when X11 and
-   # GLVND's libOpenGL are found
-   ifeq ($(shell $(PKG_CONFIG) --exists x11 && echo yes),yes)
-      DEFINES += -DHAVE_X11
-      FLAGS_VOLK += -DVK_USE_PLATFORM_XLIB_KHR
-      OS_LIBRETRO += $(SOURCES_LIBRETRO_X11)
-   endif
-   # GLEW from the tree, for the OpenGL renderer
-   OS_GLEW := $(SOURCES_GLEW)
-   ifeq ($(shell $(PKG_CONFIG) --exists opengl && echo yes),yes)
-      GL_LIBS ?= -lOpenGL
-   else
-      GL_LIBS ?= -lGL
-   endif
-   ifeq ($(shell $(PKG_CONFIG) --exists egl && echo yes),yes)
-      GL_LIBS += -lEGL
-   endif
-   LIBS += $(GL_LIBS) -ldl -lrt -lpthread -lm
+   # No GL or window system library: OpenGL comes from the frontend
+   LIBS += -ldl -lrt -lpthread -lm
 
 # OS X
 else ifeq ($(platform), osx)
@@ -121,8 +105,6 @@ else ifeq ($(platform), osx)
    FLAGS_LIBUSB  += -DPLATFORM_POSIX=1 -DHAVE_CLOCK_GETTIME
    # RtMidi's own default on macOS: CoreMIDI
    FLAGS_RTMIDI  += -D__MACOSX_CORE__
-   # Vulkan through MoltenVK, which volk opens at run time
-   FLAGS_VOLK += -DVK_USE_PLATFORM_METAL_EXT
    LIBS += -liconv -framework CoreFoundation -framework Foundation \
       -framework IOKit -framework Security -framework QuartzCore -framework Metal -framework AppKit \
       -framework CoreMIDI -framework CoreAudio
@@ -133,7 +115,7 @@ else ifeq ($(platform), osx)
 # Windows (MinGW-w64)
 else ifneq (,$(findstring win,$(platform)))
    TARGET  := $(TARGET_NAME)_libretro.dll
-   # Statically, so the DLL needs Windows' own DLLs and opengl32 and nothing
+   # Statically, so the DLL needs Windows' own DLLs and nothing
    # else (volk opens vulkan-1.dll at run time); RETRO_API's dllexport is
    # what it exports
    SHARED  := -shared -static -static-libgcc -static-libstdc++ -Wl,--no-undefined
@@ -142,12 +124,11 @@ else ifneq (,$(findstring win,$(platform)))
    OS_RPCS3    := $(SOURCES_RPCS3_GL)
    OS_LIBRETRO := $(SOURCES_LIBRETRO_GL)
    DEFINES += -DUNICODE -D_UNICODE -D_WIN32_WINNT=0x0A00
-   FLAGS_VOLK += -DVK_USE_PLATFORM_WIN32_KHR
    FLAGS_GLSLANG += -DGLSLANG_OSINCLUDE_WIN32
    FLAGS_LIBUSB  += -DPLATFORM_WINDOWS=1
    # RtMidi's own default on Windows: Windows multimedia MIDI (winmm)
    FLAGS_RTMIDI  += -D__WINDOWS_MM__
-   LIBS += -lopengl32 -lws2_32 -liphlpapi -lwinmm -lpsapi -lgdi32 \
+   LIBS += -lws2_32 -liphlpapi -lwinmm -lpsapi -lgdi32 \
       -lsetupapi -ldbghelp -lpdh -lbcrypt -lole32 -loleaut32 -luuid -lshlwapi \
       -lstrmiids -luser32 -lwinpthread
 else
@@ -365,12 +346,11 @@ OBJ_ASMJIT   := $(call objs,$(SOURCES_ASMJIT))
 OBJ_RTMIDI   := $(call objs,$(SOURCES_RTMIDI))
 OBJ_FUSION   := $(call objs,$(SOURCES_FUSION))
 OBJ_VOLK     := $(call objs,$(SOURCES_VOLK))
-OBJ_GLEW     := $(call objs,$(OS_GLEW))
 OBJ_LIBRETRO := $(call objs,$(SOURCES_LIBRETRO) $(SOURCES_GENERATED) $(OS_LIBRETRO))
 OBJ_RPCS3    := $(call objs,$(SOURCES_RPCS3) $(OS_RPCS3))
 
 OBJECTS := $(OBJ_LRC) $(OBJ_LIBUSB) $(OBJ_GLSLANG) $(OBJ_ASMJIT) $(OBJ_RTMIDI) $(OBJ_FUSION) \
-	$(OBJ_VOLK) $(OBJ_GLEW) $(OBJ_RPCS3) $(OBJ_LIBRETRO)
+	$(OBJ_VOLK) $(OBJ_RPCS3) $(OBJ_LIBRETRO)
 
 $(OBJ_LRC):      FLAGS := $(FLAGS_LRC)
 $(OBJ_LIBUSB):   FLAGS := $(FLAGS_LIBUSB)
@@ -381,9 +361,6 @@ $(OBJ_FUSION):   FLAGS := $(FLAGS_FUSION)
 $(OBJ_VOLK):     FLAGS := $(FLAGS_VOLK)
 $(OBJ_RPCS3):    FLAGS := $(FLAGS_RPCS3)
 $(call objs,$(filter %.c,$(SOURCES_RPCS3) $(OS_RPCS3))): FLAGS := $(FLAGS_RPCS3_C)
-ifneq ($(OBJ_GLEW),)
-$(OBJ_GLEW):     FLAGS := $(FLAGS_GLEW)
-endif
 $(OBJ_LIBRETRO): FLAGS := $(FLAGS_LIBRETRO)
 
 # The core's 4 KiB stack frame, held to by the core's own code and the RPCS3
@@ -405,11 +382,11 @@ $(CORE_DIR)/rpcs3/rpcs3_version.o: $(CORE_DIR)/rpcs3/git-version.h
 # the fake toolchains in LLVM's clang tests, and delete them.
 OBJ_DIRS := $(sort $(dir \
 	$(SOURCES_LRC) $(SOURCES_ASMJIT) $(SOURCES_GLSLANG) $(SOURCES_LIBUSB) $(SOURCES_RTMIDI) \
-	$(SOURCES_FUSION) $(SOURCES_VOLK) $(SOURCES_GLEW) $(SOURCES_RPCS3) $(SOURCES_RPCS3_GL) $(SOURCES_LIBRETRO) \
+	$(SOURCES_FUSION) $(SOURCES_VOLK) $(SOURCES_RPCS3) $(SOURCES_RPCS3_GL) $(SOURCES_LIBRETRO) \
 	$(SOURCES_GLSLANG_UNIX) $(SOURCES_GLSLANG_WINDOWS) $(SOURCES_LIBUSB_LINUX) \
 	$(SOURCES_LIBUSB_DARWIN) $(SOURCES_LIBUSB_WINDOWS) $(SOURCES_RPCS3_AARCH64) \
 	$(SOURCES_RPCS3_DARWIN) $(SOURCES_LIBRETRO_GL) $(SOURCES_LIBRETRO_NOGL) \
-	$(SOURCES_LIBRETRO_X11) $(SOURCES_GENERATED) $(CORE_DIR)/rpcs3/libretro/tests/x.cpp))
+	$(SOURCES_GENERATED) $(CORE_DIR)/rpcs3/libretro/tests/x.cpp))
 # Those that are there: a generated one goes with `make clean`
 REMOVE_OBJECTS = $(if $(wildcard $(OBJ_DIRS)),find $(wildcard $(OBJ_DIRS)) -maxdepth 1 -type f \( -name '*.o' -o -name '*.d' \) -delete,true)
 
@@ -446,7 +423,6 @@ ARCHIVES := \
 	$(CORE_DIR)/librtmidi.a \
 	$(CORE_DIR)/libfusion.a \
 	$(CORE_DIR)/libvolk.a \
-	$(if $(OBJ_GLEW),$(CORE_DIR)/libglew.a) \
 	$(LLVM_ARCHIVE)
 
 $(CORE_DIR)/librpcs3_emu.a: $(OBJ_RPCS3)
@@ -457,7 +433,6 @@ $(CORE_DIR)/libusb.a: $(OBJ_LIBUSB)
 $(CORE_DIR)/librtmidi.a: $(OBJ_RTMIDI)
 $(CORE_DIR)/libfusion.a: $(OBJ_FUSION)
 $(CORE_DIR)/libvolk.a: $(OBJ_VOLK)
-$(CORE_DIR)/libglew.a: $(OBJ_GLEW)
 
 $(filter-out $(LLVM_ARCHIVE),$(ARCHIVES)):
 	$(SAY) AR $@
@@ -662,6 +637,16 @@ $(MOUSE_HANDOFF_TEST): $(OBJ_MOUSE_HANDOFF_TEST) $(OBJ_LIBRETRO) $(ARCHIVES)
 	$(SAY) LINK $@
 	$(Q)$(CXX) -o $@ $(OBJ_MOUSE_HANDOFF_TEST) $(OBJ_LIBRETRO) $(GROUP_START) $(ARCHIVES) $(GROUP_END) $(LDFLAGS) $(LIBS)
 
+# The OpenGL renderer's contexts from the frontend (libretro_video.cpp),
+# linked the same way; only where the core has the GL renderer
+GL_CONTEXTS_TEST := $(if $(filter %libretro_video.cpp,$(OS_LIBRETRO)),$(GEN_DIR)/test_gl_contexts)
+OBJ_GL_CONTEXTS_TEST := $(CORE_DIR)/rpcs3/libretro/tests/test_gl_contexts.o
+$(OBJ_GL_CONTEXTS_TEST): FLAGS := $(FLAGS_LIBRETRO)
+
+$(GEN_DIR)/test_gl_contexts: $(OBJ_GL_CONTEXTS_TEST) $(OBJ_LIBRETRO) $(ARCHIVES)
+	$(SAY) LINK $@
+	$(Q)$(CXX) -o $@ $(OBJ_GL_CONTEXTS_TEST) $(OBJ_LIBRETRO) $(GROUP_START) $(ARCHIVES) $(GROUP_END) $(LDFLAGS) $(LIBS)
+
 # The emulator's waits on its state and on retro_run (Emu/System.h,
 # libretro_frontend.cpp), linked the same way
 EMU_WAITS_TEST := $(GEN_DIR)/test_emu_waits
@@ -683,7 +668,7 @@ $(GEN_DIR)/test_llvm_jit: $(OBJ_LLVM_JIT_TEST) $(OBJ_LIBRETRO) $(ARCHIVES)
 	$(SAY) LINK $@
 	$(Q)$(CXX) -o $@ $(OBJ_LLVM_JIT_TEST) $(OBJ_LIBRETRO) $(GROUP_START) $(ARCHIVES) $(GROUP_END) $(LDFLAGS) $(LIBS)
 
-check: $(TARGET) $(SAVESTATE_TEST) $(DECODERS_TEST) $(PATCHES_TEST) $(AUDIO_TEST) $(VK_HANDOFF_TEST) $(PAD_HANDOFF_TEST) $(MOUSE_HANDOFF_TEST) $(EMU_WAITS_TEST) $(LLVM_JIT_TEST)
+check: $(TARGET) $(SAVESTATE_TEST) $(DECODERS_TEST) $(PATCHES_TEST) $(AUDIO_TEST) $(VK_HANDOFF_TEST) $(PAD_HANDOFF_TEST) $(MOUSE_HANDOFF_TEST) $(EMU_WAITS_TEST) $(GL_CONTEXTS_TEST) $(LLVM_JIT_TEST)
 	@$(MAKE) -q $(EMBED_STAMPS) || { echo "check: the embedded sources are made again on every build"; exit 1; }
 	$(HOST_CC) -O2 -o $(GEN_DIR)/load_test $(CORE_DIR)/rpcs3/libretro/make/load_test.c -ldl
 	$(GEN_DIR)/load_test ./$(TARGET)
@@ -695,9 +680,10 @@ check: $(TARGET) $(SAVESTATE_TEST) $(DECODERS_TEST) $(PATCHES_TEST) $(AUDIO_TEST
 	$(PAD_HANDOFF_TEST)
 	$(MOUSE_HANDOFF_TEST)
 	$(EMU_WAITS_TEST)
+	$(if $(GL_CONTEXTS_TEST),$(GL_CONTEXTS_TEST))
 	$(if $(LLVM_JIT_TEST),$(LLVM_JIT_TEST))
 
--include $(OBJECTS:.o=.d) $(OBJ_SAVESTATE_TEST:.o=.d) $(OBJ_DECODERS_TEST:.o=.d) $(OBJ_PATCHES_TEST:.o=.d) $(OBJ_AUDIO_TEST:.o=.d) $(OBJ_VK_HANDOFF_TEST:.o=.d) $(OBJ_PAD_HANDOFF_TEST:.o=.d) $(OBJ_MOUSE_HANDOFF_TEST:.o=.d) $(OBJ_EMU_WAITS_TEST:.o=.d) $(OBJ_LLVM_JIT_TEST:.o=.d)
+-include $(OBJECTS:.o=.d) $(OBJ_SAVESTATE_TEST:.o=.d) $(OBJ_DECODERS_TEST:.o=.d) $(OBJ_PATCHES_TEST:.o=.d) $(OBJ_AUDIO_TEST:.o=.d) $(OBJ_VK_HANDOFF_TEST:.o=.d) $(OBJ_PAD_HANDOFF_TEST:.o=.d) $(OBJ_MOUSE_HANDOFF_TEST:.o=.d) $(OBJ_EMU_WAITS_TEST:.o=.d) $(OBJ_GL_CONTEXTS_TEST:.o=.d) $(OBJ_LLVM_JIT_TEST:.o=.d)
 
 clean:
 	@$(REMOVE_OBJECTS)

@@ -51,7 +51,7 @@ jobs:
         run: git submodule -q update --init --depth 1 $(awk '/path/ && !/llvm/ && !/opencv/ && !/libsdl-org/ { print $3 }' .gitmodules)
 
       - name: Dependencies
-        run: sudo apt-get install -y -q libx11-dev libegl-dev libgl-dev zlib1g-dev unzip >/dev/null
+        run: sudo apt-get install -y -q zlib1g-dev unzip >/dev/null
 
       # LLVM from the submodule, built by the Makefile into the core. Its
       # objects and TableGen's output are kept between runs: they change only
@@ -71,12 +71,14 @@ jobs:
       - name: Build
         run: make -j"$(nproc)" HAVE_LLVM=${{ matrix.llvm }}
 
-      # Nothing to install for Vulkan or GLEW, and nothing of theirs needed
-      # by the core: GLEW is compiled in, Vulkan opened at run time
+      # Nothing to install for OpenGL or Vulkan, and no library of theirs or
+      # of a window system needed by the core: GL comes from the frontend,
+      # Vulkan is opened at run time
       - name: Libraries
         run: |
           readelf -d parallel_ps3_libretro.so | grep NEEDED
-          if readelf -d parallel_ps3_libretro.so | grep -qE 'NEEDED.*(libvulkan|libGLEW)'; then exit 1; fi
+          if readelf -d parallel_ps3_libretro.so | grep -qE 'NEEDED.*(libvulkan|libGLEW|libGL|libOpenGL|libEGL|libX11|libxcb|libwayland)'; then exit 1; fi
+          if nm -D --undefined-only parallel_ps3_libretro.so | grep -E ' (gl[A-Z]|egl[A-Z]|glX|wgl|X[A-Z][a-z]|xcb_|wl_)'; then exit 1; fi
 
       - name: Load
         run: make check HAVE_LLVM=${{ matrix.llvm }}

@@ -680,7 +680,6 @@ target_link_libraries(rpcs3_emu
         3rdparty::asmjit
         3rdparty::opengl
         3rdparty::vulkan
-        3rdparty::glew
         3rdparty::libusb
         3rdparty::vulkanmemoryallocator
         libretro_common
@@ -702,6 +701,3 @@ if(USE_PRECOMPILED_HEADERS)
     target_precompile_headers(rpcs3_emu PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/../stdafx.h")
 endif()
 
-if(WAYLAND_FOUND)
-    target_link_libraries(rpcs3_emu PRIVATE OpenGL::EGL)
-endif()

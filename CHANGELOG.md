@@ -4,6 +4,13 @@ What changed in the libretro core of this fork, newest first. Changes that come 
 
 ## Unreleased
 
+- The core knows no window system and links no graphics library. OpenGL is libretro's alone.
+  - Every OpenGL function, OpenGL 1.0's included, comes from the frontend's get_proc_address into one table, on every platform. GLEW is gone from the tree; the GL types come from Khronos' `glcorearb.h` and `glext.h`. Nothing links libGL, libOpenGL, libEGL or opengl32 any more.
+  - The renderer's contexts, for its own thread and RPCS3's shader compiler threads, come from the frontend through RETRO_ENVIRONMENT_GET_HW_SHARED_CONTEXT_INTERFACE (RetroArch's, from this release on). Eight are made in context_reset and handed out and back without a lock. The core's own EGL, GLX and WGL context code, its X11 run-time loader (`libretro_x11_runtime.cpp`) and their locks are gone.
+  - A frontend without that interface cannot run the OpenGL renderer yet: the core says so and does not boot. The renderer driven from retro_run for such a frontend is to come; Vulkan is unaffected.
+  - The Vulkan code makes no window system's surface either (no Win32, Xlib, Wayland, Metal or Android surface extension or function): the frontend presents, or the headless swapchain hands frames over.
+  - The core's private, older copy of `libretro.h` is gone: it uses libretro-common's, which is RetroArch's.
+  `test_gl_contexts` checks the contexts are all made in context_reset on its thread, never one on two threads while twelve threads take and give them back, nothing allocated doing so, none to be had when all are taken, and all destroyed in context_destroy; and that without the interface the renderer says it cannot run. The CI fails on any GL or window system library or function the core needs from the loader. Run in RetroArch under Xvfb with llvmpipe on GLX and EGL, context_reset gets the contexts and boots; not yet run on real hardware.
 - The emulator's waits wake on events instead of sleeping. Every change of the emulator's state now wakes whoever waits for it, and so does every retro_run.
   - Unloading, resetting, loading a state and the Vulkan context going away wait for the stop to finish on the state itself, untimed. They used to look every millisecond for up to 5 s of the host's clock.
   - The boot waits for the emulator to be past loading the same way, instead of looking every 100 ms for up to 30 s.

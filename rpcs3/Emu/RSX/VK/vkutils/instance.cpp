@@ -138,7 +138,9 @@ namespace vk
 			extensions_loaded = true;
 			supported_extensions support(supported_extensions::instance);
 
+#ifndef LIBRETRO_CORE
 			extensions.push_back(VK_KHR_SURFACE_EXTENSION_NAME);
+#endif
 			if (support.is_supported(VK_EXT_DEBUG_REPORT_EXTENSION_NAME))
 			{
 				extensions.push_back(VK_EXT_DEBUG_REPORT_EXTENSION_NAME);
@@ -163,17 +165,21 @@ namespace vk
 			}
 #endif
 
+#ifndef LIBRETRO_CORE
 			if (support.is_supported(VK_KHR_GET_SURFACE_CAPABILITIES_2_EXTENSION_NAME))
 			{
 				extensions.push_back(VK_KHR_GET_SURFACE_CAPABILITIES_2_EXTENSION_NAME);
 			}
+#endif
 
 			if (g_cfg.video.renderdoc_compatiblity && support.is_supported(VK_EXT_DEBUG_UTILS_EXTENSION_NAME))
 			{
 				extensions.push_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
 			}
 
-#ifdef _WIN32
+#if defined(LIBRETRO_CORE)
+			// No surface: the frontend presents
+#elif defined(_WIN32)
 			extensions.push_back(VK_KHR_WIN32_SURFACE_EXTENSION_NAME);
 #elif defined(__APPLE__)
 			extensions.push_back(VK_EXT_METAL_SURFACE_EXTENSION_NAME);
@@ -306,12 +312,11 @@ namespace vk
 
 	swapchain_base* instance::create_swapchain(display_handle_t window_handle, vk::physical_device& dev)
 	{
-		// A libretro frontend that gave the core no hardware context also gave
-		// it no surface, and make_WSI_surface below would be handed a window
-		// handle that is not one. Nothing is presented in that mode anyway -
-		// the finished frame leaves through GSFrameBase::present_frame - so
-		// take the headless swapchain and skip the surface entirely.
-		if (g_libretro_software_present)
+		// The core makes an instance of its own only when the frontend gave it
+		// no hardware context, and then no surface either: nothing is
+		// presented in that mode - the finished frame leaves through
+		// GSFrameBase::present_frame - so the swapchain is the headless one.
+#ifdef LIBRETRO_CORE
 		{
 			rsx_log.notice("Vulkan: no surface to present to, using the headless swapchain");
 
@@ -338,6 +343,7 @@ namespace vk
 			swapchain->create(window_handle);
 			return swapchain;
 		}
+#else
 
 		WSI_config surface_config
 		{
@@ -451,5 +457,6 @@ namespace vk
 		color_space = surfFormats[0].colorSpace;
 
 		return new swapchain_WSI(dev, present_queue_idx, graphics_queue_idx, transfer_queue_idx, format, m_surface, color_space, !surface_config.supports_automatic_wm_reports);
+#endif
 	}
 }

@@ -1,7 +1,9 @@
 #pragma once
 
-// Configure vulkan.h
-#ifdef _WIN32
+// Configure vulkan.h. The core: no window system's surface, the frontend
+// presents
+#ifdef LIBRETRO_CORE
+#elif defined(_WIN32)
 #define VK_USE_PLATFORM_WIN32_KHR
 #elif defined(__APPLE__)
 #define VK_USE_PLATFORM_METAL_EXT

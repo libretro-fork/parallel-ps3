@@ -35,13 +35,13 @@ static EGLDisplay dpy;
 static EGLContext show_ctx, draw_ctx;
 static retro_atomic_int_t done;
 
-typedef void   (GLAPIENTRY *clear_color_fn)(GLfloat, GLfloat, GLfloat, GLfloat);
-typedef void   (GLAPIENTRY *clear_fn)(GLbitfield);
-typedef void   (GLAPIENTRY *enable_fn)(GLenum);
-typedef void   (GLAPIENTRY *scissor_fn)(GLint, GLint, GLsizei, GLsizei);
-typedef void   (GLAPIENTRY *viewport_fn)(GLint, GLint, GLsizei, GLsizei);
-typedef void   (GLAPIENTRY *read_pixels_fn)(GLint, GLint, GLsizei, GLsizei, GLenum, GLenum, void*);
-typedef GLenum (GLAPIENTRY *get_error_fn)(void);
+typedef void   (APIENTRY *clear_color_fn)(GLfloat, GLfloat, GLfloat, GLfloat);
+typedef void   (APIENTRY *clear_fn)(GLbitfield);
+typedef void   (APIENTRY *enable_fn)(GLenum);
+typedef void   (APIENTRY *scissor_fn)(GLint, GLint, GLsizei, GLsizei);
+typedef void   (APIENTRY *viewport_fn)(GLint, GLint, GLsizei, GLsizei);
+typedef void   (APIENTRY *read_pixels_fn)(GLint, GLint, GLsizei, GLsizei, GLenum, GLenum, void*);
+typedef GLenum (APIENTRY *get_error_fn)(void);
 
 static clear_color_fn p_clear_color;
 static clear_fn       p_clear;
@@ -50,7 +50,7 @@ static scissor_fn     p_scissor;
 static viewport_fn    p_viewport;
 static read_pixels_fn p_read_pixels;
 static get_error_fn   p_get_error;
-static void (GLAPIENTRY *p_bind_framebuffer)(GLenum, GLuint);
+static void (APIENTRY *p_bind_framebuffer)(GLenum, GLuint);
 
 #define PROC(type, name) (type)eglGetProcAddress(name)
 
@@ -58,25 +58,25 @@ static void load_procs(void)
 {
    struct lr_gl_frames_procs p;
    memset(&p, 0, sizeof(p));
-   p.gen_textures             = PROC(void (GLAPIENTRY*)(GLsizei, GLuint*), "glGenTextures");
-   p.delete_textures          = PROC(void (GLAPIENTRY*)(GLsizei, const GLuint*), "glDeleteTextures");
-   p.bind_texture             = PROC(void (GLAPIENTRY*)(GLenum, GLuint), "glBindTexture");
-   p.tex_image_2d             = PROC(void (GLAPIENTRY*)(GLenum, GLint, GLint, GLsizei, GLsizei, GLint, GLenum, GLenum, const void*), "glTexImage2D");
-   p.tex_parameteri           = PROC(void (GLAPIENTRY*)(GLenum, GLenum, GLint), "glTexParameteri");
-   p.gen_framebuffers         = PROC(void (GLAPIENTRY*)(GLsizei, GLuint*), "glGenFramebuffers");
-   p.delete_framebuffers      = PROC(void (GLAPIENTRY*)(GLsizei, const GLuint*), "glDeleteFramebuffers");
-   p.bind_framebuffer         = PROC(void (GLAPIENTRY*)(GLenum, GLuint), "glBindFramebuffer");
-   p.framebuffer_texture_2d   = PROC(void (GLAPIENTRY*)(GLenum, GLenum, GLenum, GLuint, GLint), "glFramebufferTexture2D");
-   p.gen_renderbuffers        = PROC(void (GLAPIENTRY*)(GLsizei, GLuint*), "glGenRenderbuffers");
-   p.delete_renderbuffers     = PROC(void (GLAPIENTRY*)(GLsizei, const GLuint*), "glDeleteRenderbuffers");
-   p.bind_renderbuffer        = PROC(void (GLAPIENTRY*)(GLenum, GLuint), "glBindRenderbuffer");
-   p.renderbuffer_storage     = PROC(void (GLAPIENTRY*)(GLenum, GLenum, GLsizei, GLsizei), "glRenderbufferStorage");
-   p.framebuffer_renderbuffer = PROC(void (GLAPIENTRY*)(GLenum, GLenum, GLenum, GLuint), "glFramebufferRenderbuffer");
-   p.blit_framebuffer         = PROC(void (GLAPIENTRY*)(GLint, GLint, GLint, GLint, GLint, GLint, GLint, GLint, GLbitfield, GLenum), "glBlitFramebuffer");
-   p.fence_sync               = PROC(GLsync (GLAPIENTRY*)(GLenum, GLbitfield), "glFenceSync");
-   p.wait_sync                = PROC(void (GLAPIENTRY*)(GLsync, GLbitfield, GLuint64), "glWaitSync");
-   p.delete_sync              = PROC(void (GLAPIENTRY*)(GLsync), "glDeleteSync");
-   p.flush                    = PROC(void (GLAPIENTRY*)(void), "glFlush");
+   p.gen_textures             = PROC(void (APIENTRY*)(GLsizei, GLuint*), "glGenTextures");
+   p.delete_textures          = PROC(void (APIENTRY*)(GLsizei, const GLuint*), "glDeleteTextures");
+   p.bind_texture             = PROC(void (APIENTRY*)(GLenum, GLuint), "glBindTexture");
+   p.tex_image_2d             = PROC(void (APIENTRY*)(GLenum, GLint, GLint, GLsizei, GLsizei, GLint, GLenum, GLenum, const void*), "glTexImage2D");
+   p.tex_parameteri           = PROC(void (APIENTRY*)(GLenum, GLenum, GLint), "glTexParameteri");
+   p.gen_framebuffers         = PROC(void (APIENTRY*)(GLsizei, GLuint*), "glGenFramebuffers");
+   p.delete_framebuffers      = PROC(void (APIENTRY*)(GLsizei, const GLuint*), "glDeleteFramebuffers");
+   p.bind_framebuffer         = PROC(void (APIENTRY*)(GLenum, GLuint), "glBindFramebuffer");
+   p.framebuffer_texture_2d   = PROC(void (APIENTRY*)(GLenum, GLenum, GLenum, GLuint, GLint), "glFramebufferTexture2D");
+   p.gen_renderbuffers        = PROC(void (APIENTRY*)(GLsizei, GLuint*), "glGenRenderbuffers");
+   p.delete_renderbuffers     = PROC(void (APIENTRY*)(GLsizei, const GLuint*), "glDeleteRenderbuffers");
+   p.bind_renderbuffer        = PROC(void (APIENTRY*)(GLenum, GLuint), "glBindRenderbuffer");
+   p.renderbuffer_storage     = PROC(void (APIENTRY*)(GLenum, GLenum, GLsizei, GLsizei), "glRenderbufferStorage");
+   p.framebuffer_renderbuffer = PROC(void (APIENTRY*)(GLenum, GLenum, GLenum, GLuint), "glFramebufferRenderbuffer");
+   p.blit_framebuffer         = PROC(void (APIENTRY*)(GLint, GLint, GLint, GLint, GLint, GLint, GLint, GLint, GLbitfield, GLenum), "glBlitFramebuffer");
+   p.fence_sync               = PROC(GLsync (APIENTRY*)(GLenum, GLbitfield), "glFenceSync");
+   p.wait_sync                = PROC(void (APIENTRY*)(GLsync, GLbitfield, GLuint64), "glWaitSync");
+   p.delete_sync              = PROC(void (APIENTRY*)(GLsync), "glDeleteSync");
+   p.flush                    = PROC(void (APIENTRY*)(void), "glFlush");
    lr_gl_frames_set_procs(&p);
 
    p_clear_color = PROC(clear_color_fn, "glClearColor");
@@ -87,7 +87,7 @@ static void load_procs(void)
    p_viewport    = PROC(viewport_fn, "glViewport");
    p_read_pixels = PROC(read_pixels_fn, "glReadPixels");
    p_get_error   = PROC(get_error_fn, "glGetError");
-   p_bind_framebuffer = PROC(void (GLAPIENTRY*)(GLenum, GLuint), "glBindFramebuffer");
+   p_bind_framebuffer = PROC(void (APIENTRY*)(GLenum, GLuint), "glBindFramebuffer");
 }
 
 /* Frame n's colour: n in red and green, so a frame is told from the next */
@@ -168,14 +168,14 @@ int main(void)
 
    /* The frontend's framebuffer */
    {
-      void (GLAPIENTRY *gen_textures)(GLsizei, GLuint*) = PROC(void (GLAPIENTRY*)(GLsizei, GLuint*), "glGenTextures");
-      void (GLAPIENTRY *bind_texture)(GLenum, GLuint) = PROC(void (GLAPIENTRY*)(GLenum, GLuint), "glBindTexture");
-      void (GLAPIENTRY *tex_image_2d)(GLenum, GLint, GLint, GLsizei, GLsizei, GLint, GLenum, GLenum, const void*) =
-         PROC(void (GLAPIENTRY*)(GLenum, GLint, GLint, GLsizei, GLsizei, GLint, GLenum, GLenum, const void*), "glTexImage2D");
-      void (GLAPIENTRY *gen_framebuffers)(GLsizei, GLuint*) = PROC(void (GLAPIENTRY*)(GLsizei, GLuint*), "glGenFramebuffers");
-      void (GLAPIENTRY *bind_framebuffer)(GLenum, GLuint) = PROC(void (GLAPIENTRY*)(GLenum, GLuint), "glBindFramebuffer");
-      void (GLAPIENTRY *framebuffer_texture_2d)(GLenum, GLenum, GLenum, GLuint, GLint) =
-         PROC(void (GLAPIENTRY*)(GLenum, GLenum, GLenum, GLuint, GLint), "glFramebufferTexture2D");
+      void (APIENTRY *gen_textures)(GLsizei, GLuint*) = PROC(void (APIENTRY*)(GLsizei, GLuint*), "glGenTextures");
+      void (APIENTRY *bind_texture)(GLenum, GLuint) = PROC(void (APIENTRY*)(GLenum, GLuint), "glBindTexture");
+      void (APIENTRY *tex_image_2d)(GLenum, GLint, GLint, GLsizei, GLsizei, GLint, GLenum, GLenum, const void*) =
+         PROC(void (APIENTRY*)(GLenum, GLint, GLint, GLsizei, GLsizei, GLint, GLenum, GLenum, const void*), "glTexImage2D");
+      void (APIENTRY *gen_framebuffers)(GLsizei, GLuint*) = PROC(void (APIENTRY*)(GLsizei, GLuint*), "glGenFramebuffers");
+      void (APIENTRY *bind_framebuffer)(GLenum, GLuint) = PROC(void (APIENTRY*)(GLenum, GLuint), "glBindFramebuffer");
+      void (APIENTRY *framebuffer_texture_2d)(GLenum, GLenum, GLenum, GLuint, GLint) =
+         PROC(void (APIENTRY*)(GLenum, GLenum, GLenum, GLuint, GLint), "glFramebufferTexture2D");
       gen_textures(1, &dst_tex);
       bind_texture(GL_TEXTURE_2D, dst_tex);
       tex_image_2d(GL_TEXTURE_2D, 0, GL_RGBA8, 128, 64, 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
@@ -193,7 +193,7 @@ int main(void)
       int w = 0, h = 0;
       unsigned char left[4], right[4];
       unsigned n_left, n_right;
-      void (GLAPIENTRY *bind_framebuffer)(GLenum, GLuint) = PROC(void (GLAPIENTRY*)(GLenum, GLuint), "glBindFramebuffer");
+      void (APIENTRY *bind_framebuffer)(GLenum, GLuint) = PROC(void (APIENTRY*)(GLenum, GLuint), "glBindFramebuffer");
 
       if (!lr_gl_frames_blit(dst_fbo, &w, &h))
       {
@@ -236,7 +236,7 @@ int main(void)
    /* As the core tears down: the renderer's context, then everything else
     * from the frontend's - and again, to start over */
    {
-      GLboolean (GLAPIENTRY *is_texture)(GLuint) = PROC(GLboolean (GLAPIENTRY*)(GLuint), "glIsTexture");
+      GLboolean (APIENTRY *is_texture)(GLuint) = PROC(GLboolean (APIENTRY*)(GLuint), "glIsTexture");
       GLuint name;
       unsigned before = 0, after = 0;
       for (name = 1; name < 64; name++)

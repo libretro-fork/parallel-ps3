@@ -751,7 +751,6 @@ SOURCES_RPCS3_GL := \
 	$(CORE_DIR)/rpcs3/Emu/RSX/GL/upscalers/fsr1/fsr_pass.cpp
 
 SOURCES_VOLK := $(CORE_DIR)/3rdparty/volk/volk.c
-SOURCES_GLEW := $(CORE_DIR)/3rdparty/glew/src/glew.c
 
 SOURCES_LIBRETRO := \
 	$(CORE_DIR)/rpcs3/Input/pad_thread.cpp \
@@ -787,7 +786,6 @@ SOURCES_RPCS3_DARWIN  := $(CORE_DIR)/darwin/util/sysinfo_darwin.mm $(CORE_DIR)/r
 # no desktop GL renderer (macOS, which draws through MoltenVK)
 SOURCES_LIBRETRO_GL   := $(CORE_DIR)/rpcs3/libretro/libretro_video.cpp $(CORE_DIR)/rpcs3/libretro/libretro_gl_frames.c
 SOURCES_LIBRETRO_NOGL := $(CORE_DIR)/rpcs3/libretro/libretro_video_sw.cpp
-SOURCES_LIBRETRO_X11  := $(CORE_DIR)/rpcs3/libretro/libretro_x11_runtime.cpp
 
 # Made by the build (rpcs3/libretro/make/embed.c): the data compiled in
 GEN_DIR := $(CORE_DIR)/rpcs3/libretro/generated
@@ -815,10 +813,9 @@ FLAGS_GLSLANG := -std=c++17 -fno-rtti -fno-exceptions -w -DENABLE_OPT=0 -DENABLE
 FLAGS_ASMJIT  := -std=gnu++20 -w -DASMJIT_STATIC -isystem $(CORE_DIR)/3rdparty/asmjit/asmjit/src
 FLAGS_RTMIDI  := -std=c++11 -w -I$(CORE_DIR)/3rdparty/rtmidi/rtmidi
 FLAGS_FUSION  := -w -I$(CORE_DIR)/3rdparty/fusion/fusion/Fusion
-# Vulkan's headers and volk, and GLEW, from the tree: nothing to install.
+# Vulkan's headers and volk from the tree: nothing to install.
 # volk loads the Vulkan functions at run time; the core links no loader.
 FLAGS_VOLK    := -std=gnu99 -w -DVK_NO_PROTOTYPES -isystem $(CORE_DIR)/3rdparty/Vulkan-Headers/include
-FLAGS_GLEW    := -std=gnu99 -w -DGLEW_STATIC -DGLEW_NO_GLU -isystem $(CORE_DIR)/3rdparty/glew/include
 
 # RPCS3 itself (rpcs3_emu) and the core's own files (rpcs3_libretro)
 INCLUDES_RPCS3 := \
@@ -834,8 +831,7 @@ INCLUDES_RPCS3 := \
 	-isystem $(CORE_DIR)/3rdparty/GL \
 	-isystem $(CORE_DIR)/3rdparty/GPUOpen/VulkanMemoryAllocator/include \
 	-isystem $(CORE_DIR)/3rdparty/Vulkan-Headers/include \
-	-isystem $(CORE_DIR)/3rdparty/volk \
-	-isystem $(CORE_DIR)/3rdparty/glew/include
+	-isystem $(CORE_DIR)/3rdparty/volk
 INCLUDES_LIBRETRO := \
 	-I$(CORE_DIR)/rpcs3/Emu \
 	-I$(CORE_DIR)/rpcs3/libretro \

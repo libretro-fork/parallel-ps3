@@ -96,16 +96,15 @@ jobs:
             echo "::error::the core still needs a library the build image provided but a user's system will not"
             exit 1
           fi
-          # No X11: the frontend owns the window, and the core has to load
-          # where X11 is not installed. GLX and Xlib are looked up at run time,
-          # so none of their libraries may be needed and none of their
-          # functions left for the loader to find.
-          if readelf -d parallel_ps3_libretro_linux_${{ matrix.arch }}.so | grep -qE 'NEEDED.*(libX11|libGLX|libGL\.so|libxcb|libwayland)'; then
-            echo "::error::the core needs an X11 or Wayland library to load"
+          # No GL library and no window system: the frontend owns the window
+          # and gives the core its GL functions, so none of their libraries
+          # may be needed and none of their functions left for the loader.
+          if readelf -d parallel_ps3_libretro_linux_${{ matrix.arch }}.so | grep -qE 'NEEDED.*(libX11|libGLX|libGL|libOpenGL|libEGL|libxcb|libwayland)'; then
+            echo "::error::the core needs a GL or window system library to load"
             exit 1
           fi
-          if nm -D --undefined-only parallel_ps3_libretro_linux_${{ matrix.arch }}.so | grep -E ' (X[A-Z][a-z]|glX|xcb_|wl_)'; then
-            echo "::error::the core has X11 functions left for the loader, which libretro_x11_runtime.cpp should define"
+          if nm -D --undefined-only parallel_ps3_libretro_linux_${{ matrix.arch }}.so | grep -E ' (gl[A-Z]|egl[A-Z]|X[A-Z][a-z]|glX|xcb_|wl_)'; then
+            echo "::error::the core has GL or window system functions left for the loader"
             exit 1
           fi
 

@@ -37,7 +37,7 @@
 #include "Emu/Io/KeyboardHandler.h"
 #include "Emu/Io/MouseHandler.h"
 // The OpenGL renderer, where there is one to have. On Android there is no
-// desktop GL and these headers reach for GL/glew.h, so the software path uses
+// desktop GL, so the software path uses
 // Vulkan instead - see g_libretro_software_present. macOS has no GL renderer
 // either (LIBRETRO_NO_GL, from CMakeLists.txt): Vulkan, through MoltenVK.
 #ifndef LIBRETRO_NO_GL
@@ -1979,13 +1979,18 @@ static void forget_state();
 
 static void context_reset()
 {
-
-
-
-    // Initialize libretro video with the new context
-    libretro_video_init(hw_render.get_current_framebuffer, hw_render.get_proc_address);
-
-
+    // The GL functions and the renderer's contexts, from the frontend. The
+    // renderer draws on a thread of its own, and only a frontend that makes
+    // contexts for a core's threads (GET_HW_SHARED_CONTEXT_INTERFACE) has
+    // one for it.
+    if (!libretro_video_init(hw_render.get_current_framebuffer, hw_render.get_proc_address, environ_cb))
+    {
+        if (log_cb)
+            log_cb(RETRO_LOG_ERROR, "RPCS3: the frontend makes no OpenGL contexts for the renderer's thread; use the Vulkan renderer\n");
+        libretro_show_message("OpenGL needs a newer RetroArch; use the Vulkan renderer", 600);
+        pending_game_boot = false;
+        return;
+    }
 
     // Now that the GL context is ready, boot the game if pending
     if (pending_game_boot && !game_loaded)
@@ -2003,11 +2008,7 @@ static void context_reset()
 
 static void context_destroy()
 {
-
-
     libretro_video_deinit();
-
-
 }
 
 static bool setup_hw_render()

@@ -9,7 +9,8 @@
 #include <mutex>
 
 // Initialize libretro video subsystem
-void libretro_video_init(retro_hw_get_current_framebuffer_t get_fb, retro_hw_get_proc_address_t get_proc);
+bool libretro_video_init(retro_hw_get_current_framebuffer_t get_fb, retro_hw_get_proc_address_t get_proc,
+    retro_environment_t environ_cb);
 
 // Deinitialize libretro video subsystem
 void libretro_video_deinit();

@@ -6,21 +6,15 @@
 # LLVM is linked statically, so the core is a single file with nothing to
 # place beside it.
 #
-# GLEW, the Vulkan headers and volk come from the tree (3rdparty/glew,
-# 3rdparty/Vulkan-Headers, 3rdparty/volk): GLEW is compiled into the core, so
-# it needs no libGLEW.so by soname, and Vulkan is loaded at run time.
+# The GL and Vulkan headers and volk come from the tree (3rdparty/GL,
+# 3rdparty/Vulkan-Headers, 3rdparty/volk): the GL functions come from the
+# frontend and Vulkan is loaded at run time, so neither is linked.
 #
 # TLS (RPCN, the clans server) is libretro-common's own client, and HTTP
 # (UPnP, the clans server) its net_http: no wolfSSL and no libcurl, whose
 # system copy on the images is Debian's libcurl-gnutls.so.4, which Fedora,
 # Arch, the flatpak runtimes RetroArch is built on and most handheld
 # distributions do not have.
-#
-# Wayland is disabled deliberately. With it found, rpcs3/Emu links OpenGL::EGL,
-# an imported target created by a find_package down in 3rdparty/ and therefore
-# visible only in that directory - the generate step then fails with "target
-# was not found". The core has no use for Wayland anyway: the frontend hands it
-# the context.
 
 cd "${RPCS3_DIR:-rpcs3}" || exit 1
 
@@ -66,8 +60,6 @@ cmake ..                                               \
     -DUSE_LIBEVDEV=OFF                                 \
     -DUSE_SYSTEM_OPENCV=ON                             \
     -DUSE_DISCORD_RPC=OFF                              \
-    -DOpenGL_GL_PREFERENCE=LEGACY                      \
-    -DCMAKE_DISABLE_FIND_PACKAGE_Wayland=ON            \
     -DLLVM_DIR=/opt/llvm/lib/cmake/llvm                \
     -DSTATIC_LINK_LLVM=ON                              \
     -G Ninja

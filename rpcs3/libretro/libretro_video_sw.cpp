@@ -39,7 +39,7 @@ bool libretro_take_software_frame(const void** data, u32* width, u32* height, u3
 
 // --- the OpenGL interface, answered without OpenGL -------------------------
 
-void libretro_video_init(retro_hw_get_current_framebuffer_t, retro_hw_get_proc_address_t) {}
+bool libretro_video_init(retro_hw_get_current_framebuffer_t, retro_hw_get_proc_address_t, retro_environment_t) { return false; }
 void libretro_video_deinit() {}
 uintptr_t libretro_get_current_framebuffer() { return 0; }
 void* libretro_get_proc_address(const char*) { return nullptr; }

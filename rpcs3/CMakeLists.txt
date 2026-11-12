@@ -13,15 +13,7 @@ set(CMAKE_CXX_STANDARD 23)
 
 if(UNIX AND NOT APPLE AND NOT ANDROID)
     add_compile_definitions(DATADIR="${CMAKE_INSTALL_FULL_DATADIR}/rpcs3")
-    # Optionally enable X11 for window management
-    find_package(X11)
-    if(X11_FOUND)
-        add_compile_definitions(HAVE_X11)
-    endif()
-    find_package(Wayland)
-    if(WAYLAND_FOUND)
-        add_compile_definitions(HAVE_WAYLAND)
-    endif()
+    # No window system: the frontend has the window
 endif()
 
 # This repository builds the libretro core and nothing else: the Qt

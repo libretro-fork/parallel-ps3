@@ -64,33 +64,13 @@ endif()
 add_subdirectory(glslang EXCLUDE_FROM_ALL)
 
 
-# OpenGL
-
-# GLU is not linked: there is not a single glu* call in the tree, and on a
-# libretro core it is one more NEEDED entry a frontend's sandbox has to provide.
-# That one is real - the RetroArch flatpak's runtime does not carry libGLU, so a
-# core that names it does not load there at all.
+# OpenGL: the core has every function through the frontend's
+# get_proc_address, so only the headers (GL/glcorearb.h, glext.h), and no GL
+# or window system library is linked. Android and macOS have no GL renderer.
+add_library(3rdparty_opengl INTERFACE)
 if (NOT ANDROID AND NOT APPLE)
-	find_package(OpenGL REQUIRED OPTIONAL_COMPONENTS EGL OpenGL)
-
-	add_library(3rdparty_opengl INTERFACE)
 	target_include_directories(3rdparty_opengl SYSTEM INTERFACE GL)
-
-	if (WIN32)
-		if(NOT MSVC)
-			target_link_libraries(3rdparty_opengl INTERFACE OpenGL::GL OpenGL::GLU)
-		else()
-			target_link_libraries(3rdparty_opengl INTERFACE dxgi.lib d2d1.lib dwrite.lib)
-		endif()
-	elseif(TARGET OpenGL::OpenGL)
-		# The core: libOpenGL alone, so that it loads without X11. GLX is found
-		# at run time (rpcs3/libretro/libretro_x11_runtime.cpp).
-		target_link_libraries(3rdparty_opengl INTERFACE OpenGL::OpenGL)
-	else()
-		target_link_libraries(3rdparty_opengl INTERFACE OpenGL::GL OpenGL::GLX)
-	endif()
 else()
-	add_library(3rdparty_opengl INTERFACE)
 	target_compile_definitions(3rdparty_opengl INTERFACE WITHOUT_OPENGL=1)
 endif()
 
@@ -105,24 +85,7 @@ if(USE_VULKAN)
 	set_property(TARGET 3rdparty_volk PROPERTY POSITION_INDEPENDENT_CODE ON)
 	target_include_directories(3rdparty_volk SYSTEM PUBLIC Vulkan-Headers/include volk)
 	target_compile_definitions(3rdparty_volk PUBLIC VK_NO_PROTOTYPES)
-	if(WIN32)
-		target_compile_definitions(3rdparty_volk PRIVATE VK_USE_PLATFORM_WIN32_KHR)
-	elseif(APPLE)
-		target_compile_definitions(3rdparty_volk PRIVATE VK_USE_PLATFORM_METAL_EXT)
-	elseif(ANDROID)
-		target_compile_definitions(3rdparty_volk PRIVATE VK_USE_PLATFORM_ANDROID_KHR)
-	else()
-		find_package(X11)
-		if(X11_FOUND)
-			target_compile_definitions(3rdparty_volk PRIVATE VK_USE_PLATFORM_XLIB_KHR)
-			target_include_directories(3rdparty_volk PRIVATE ${X11_INCLUDE_DIR})
-		endif()
-		find_package(Wayland)
-		if(WAYLAND_FOUND)
-			target_compile_definitions(3rdparty_volk PRIVATE VK_USE_PLATFORM_WAYLAND_KHR)
-			target_include_directories(3rdparty_volk PRIVATE ${WAYLAND_INCLUDE_DIR})
-		endif()
-	endif()
+	# No window system's surface functions: the frontend presents
 	if(NOT WIN32)
 		target_link_libraries(3rdparty_volk PRIVATE ${CMAKE_DL_LIBS})
 	endif()
@@ -131,37 +94,11 @@ if(USE_VULKAN)
 	target_compile_definitions(3rdparty_vulkan INTERFACE -DHAVE_VULKAN)
 	target_link_libraries(3rdparty_vulkan INTERFACE 3rdparty_volk)
 
-	if(UNIX AND NOT APPLE AND NOT ANDROID)
-		find_package(Wayland)
-		if (WAYLAND_FOUND)
-			target_include_directories(3rdparty_vulkan
-				SYSTEM INTERFACE ${WAYLAND_INCLUDE_DIR})
-		endif()
-	endif()
-
 	set(VULKAN_TARGET 3rdparty_vulkan)
 endif()
 
 # AsmJit
 add_subdirectory(asmjit EXCLUDE_FROM_ALL)
-
-
-# GLEW, from the tree, for the OpenGL renderer on Linux and the BSDs (on
-# Windows it loads its functions itself; Android and macOS have no GL
-# renderer). Compiled into the core: nothing to install, no libGLEW.so to
-# need by soname.
-if(UNIX AND NOT APPLE AND NOT ANDROID)
-	add_library(3rdparty_glew STATIC glew/src/glew.c)
-	target_include_directories(3rdparty_glew SYSTEM PUBLIC glew/include)
-	target_compile_definitions(3rdparty_glew PUBLIC GLEW_STATIC GLEW_NO_GLU)
-	find_package(X11)
-	if(X11_FOUND)
-		target_include_directories(3rdparty_glew PRIVATE ${X11_INCLUDE_DIR})
-	endif()
-	set_property(TARGET 3rdparty_glew PROPERTY POSITION_INDEPENDENT_CODE ON)
-else()
-	add_library(3rdparty_glew INTERFACE)
-endif()
 
 
 # LLVM
@@ -185,7 +122,6 @@ endif()
 add_library(3rdparty::glslang ALIAS 3rdparty_glslang)
 add_library(3rdparty::opengl ALIAS 3rdparty_opengl)
 add_library(3rdparty::vulkan ALIAS ${VULKAN_TARGET})
-add_library(3rdparty::glew ALIAS 3rdparty_glew)
 add_library(3rdparty::rtmidi ALIAS rtmidi)
 add_library(3rdparty::opencv ALIAS ${OPENCV_TARGET})
 add_library(3rdparty::fusion ALIAS Fusion)
