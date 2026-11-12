@@ -24,6 +24,7 @@
 #include <mutex>
 #include <queue>
 #include <cmath>
+#include <queues/retro_deque.h>
 #include "Utilities/lockless.h"
 #include <variant>
 #include "util/asm.hpp"
@@ -190,25 +191,15 @@ struct vdec_pic_pool
 	}
 };
 
+// A decoded picture on its way to the game. Plain data: the picture's
+// buffer is the decoder's pool's, and whoever takes a frame out of a queue
+// gives the buffer back to the pool (vdec_context::give_back).
 struct vdec_frame
 {
-	struct pic_return
-	{
-		std::shared_ptr<vdec_pic_pool> pool;
-
-		void operator()(vdc_pic* pic) const
-		{
-			if (pool)
-				pool->give(pic);
-			else
-				vdec_pic_pool::free_pic(pic);
-		}
-	};
-
 	u64 seq_id{};
 	u64 cmd_id{};
 
-	std::unique_ptr<vdc_pic, pic_return> pic;
+	vdc_pic* pic{};
 	u64 dts{};
 	u64 pts{};
 	u64 userdata{};
@@ -216,6 +207,8 @@ struct vdec_frame
 	bool pic_item_received = false;
 	CellVdecPicAttr attr = CELL_VDEC_PICITEM_ATTR_NORMAL;
 };
+
+RETRO_DEQUE_DEFINE(vdec_frames, vdec_frame);
 
 struct vdec_context final
 {
@@ -233,7 +226,7 @@ struct vdec_context final
 	atomic_t<sequence_state> seq_state = sequence_state::closed;
 
 	vdc* dec{}; // libretro-common's decoder for the codec
-	const std::shared_ptr<vdec_pic_pool> pic_pool = std::make_shared<vdec_pic_pool>();
+	vdec_pic_pool pic_pool; // outlives every frame: they are all in this context's queues, or a caller's that holds the context
 
 	// Each AU's time stamps and user data, under the command ID the decoder
 	// carries through its reordering to the pictures decoded from it
@@ -261,8 +254,25 @@ struct vdec_context final
 	u64 next_dts{};
 	atomic_t<u32> ppu_tid{};
 
-	std::deque<vdec_frame> out_queue;
+	vdec_frames_t out_queue{}; // pictures the game has yet to take; made for out_max and one more
 	const u32 out_max = 60;
+	vdec_frames_t decoded{};   // the decoder thread's own: the pictures of the AU it is on
+
+	// A frame's picture back to the pool
+	void give_back(vdec_frame& frame)
+	{
+		pic_pool.give(std::exchange(frame.pic, nullptr));
+	}
+
+	// Drops every frame in @frames, their pictures back to the pool
+	void flush(vdec_frames_t& frames)
+	{
+		while (!vdec_frames_empty(&frames))
+		{
+			give_back(*vdec_frames_front(&frames));
+			vdec_frames_pop_front(&frames);
+		}
+	}
 
 	atomic_t<s32> au_count{0};
 
@@ -278,6 +288,9 @@ struct vdec_context final
 		, cb_func(func)
 		, cb_arg(arg)
 	{
+		ensure(vdec_frames_init(&out_queue, 64));
+		ensure(vdec_frames_init(&decoded, 32));
+
 		switch (type)
 		{
 		case CELL_VDEC_CODEC_TYPE_MPEG2: dec = vdc_new(VDC_MPEG2); break;
@@ -300,6 +313,10 @@ struct vdec_context final
 
 	~vdec_context()
 	{
+		flush(out_queue);
+		flush(decoded);
+		vdec_frames_free(&out_queue);
+		vdec_frames_free(&decoded);
 		release_decoder();
 	}
 
@@ -369,7 +386,7 @@ struct vdec_context final
 
 				vdc_start(dec);
 
-				out_queue.clear(); // Flush image queue
+				flush(out_queue); // Flush image queue
 				log_framerate_num = 0;
 				log_framerate_den = 0;
 
@@ -421,7 +438,6 @@ struct vdec_context final
 
 				const CellVdecPicAttr attr = au_mode == CELL_VDEC_DEC_MODE_NORMAL ? CELL_VDEC_PICITEM_ATTR_NORMAL : CELL_VDEC_PICITEM_ATTR_SKIPPED;
 
-				std::deque<vdec_frame> decoded_frames;
 
 				if (!abort_decode && seq_id == cmd->seq_id)
 				{
@@ -456,10 +472,11 @@ struct vdec_context final
 						vdec_frame frame;
 						frame.seq_id = cmd->seq_id;
 						frame.cmd_id = cmd->id;
-						frame.pic = std::unique_ptr<vdc_pic, vdec_frame::pic_return>(pic_pool->take(), vdec_frame::pic_return{pic_pool});
+						frame.pic = pic_pool.take();
 
-						if (!vdc_next(dec, frame.pic.get()))
+						if (!vdc_next(dec, frame.pic))
 						{
+							give_back(frame);
 							break;
 						}
 
@@ -541,7 +558,7 @@ struct vdec_context final
 
 						cellVdec.trace("Got picture (handle=0x%x, seq_id=%d, cmd_id=%d, pts=0x%llx, dts=0x%llx, au=%d)", handle, cmd->seq_id, cmd->id, frame.pts, frame.dts, frame.pic->tag);
 
-						decoded_frames.push_back(std::move(frame));
+						ensure(vdec_frames_push_back_growing(&decoded, &frame));
 					}
 				}
 
@@ -558,7 +575,7 @@ struct vdec_context final
 						lv2_obj::sleep(ppu);
 					}
 
-					while (!decoded_frames.empty() && seq_id == cmd->seq_id)
+					while (!vdec_frames_empty(&decoded) && seq_id == cmd->seq_id)
 					{
 						// Wait until there is free space in the image queue.
 						// Do this after pushing the frame to the queue. That way the game can consume the frame and we can move on.
@@ -568,7 +585,7 @@ struct vdec_context final
 							{
 								std::lock_guard lock{mutex};
 
-								if (out_queue.size() <= out_max)
+								if (vdec_frames_count(&out_queue) <= out_max)
 								{
 									break;
 								}
@@ -579,7 +596,7 @@ struct vdec_context final
 							// Report a wait once: a game may keep the pictures of a decoder it does not display for a long time
 							if (++elapsed == 500) // 5 seconds
 							{
-								cellVdec.warning("Video au decode has been waiting for a consumer for 5 seconds. (handle=0x%x, seq_id=%d, cmd_id=%d, queue_size=%d)", handle, cmd->seq_id, cmd->id, out_queue.size());
+								cellVdec.warning("Video au decode has been waiting for a consumer for 5 seconds. (handle=0x%x, seq_id=%d, cmd_id=%d, queue_size=%d)", handle, cmd->seq_id, cmd->id, vdec_frames_count(&out_queue));
 							}
 						}
 
@@ -595,8 +612,8 @@ struct vdec_context final
 
 						{
 							std::lock_guard lock{mutex};
-							out_queue.push_back(std::move(decoded_frames.front()));
-							decoded_frames.pop_front();
+							ensure(vdec_frames_push_back_growing(&out_queue, vdec_frames_front(&decoded)));
+							vdec_frames_pop_front(&decoded);
 						}
 
 						cellVdec.trace("Sending CELL_VDEC_MSG_TYPE_PICOUT (handle=0x%x, seq_id=%d, cmd_id=%d)", handle, cmd->seq_id, cmd->id);
@@ -604,6 +621,9 @@ struct vdec_context final
 						lv2_obj::sleep(ppu);
 					}
 				}
+
+				// What an aborted AU left: its pictures back to the pool
+				flush(decoded);
 
 				if (abort_decode || seq_id != cmd->seq_id)
 				{
@@ -624,7 +644,7 @@ struct vdec_context final
 			case vdec_cmd_type::close:
 			{
 				std::lock_guard lock{mutex};
-				out_queue.clear();
+				flush(out_queue);
 				break;
 			}
 			default:
@@ -1769,16 +1789,16 @@ error_code cellVdecGetPictureExt(ppu_thread& ppu, u32 handle, vm::cptr<CellVdecP
 	{
 		std::lock_guard lock(vdec->mutex);
 
-		if (vdec->out_queue.empty())
+		if (vdec_frames_empty(&vdec->out_queue))
 		{
 			return CELL_VDEC_ERROR_EMPTY;
 		}
 
-		frame = std::move(vdec->out_queue.front());
+		frame = *vdec_frames_front(&vdec->out_queue);
 		sequence_id = vdec->seq_id;
 
-		vdec->out_queue.pop_front();
-		if (vdec->out_queue.size() + 1 == vdec->out_max)
+		vdec_frames_pop_front(&vdec->out_queue);
+		if (vdec_frames_count(&vdec->out_queue) + 1 == vdec->out_max)
 			notify = true;
 	}
 
@@ -1790,12 +1810,13 @@ error_code cellVdecGetPictureExt(ppu_thread& ppu, u32 handle, vm::cptr<CellVdecP
 
 	if (sequence_id != frame.seq_id)
 	{
+		vdec->give_back(frame);
 		return { CELL_VDEC_ERROR_EMPTY, "sequence_id=%d, seq_id=%d", sequence_id, frame.seq_id };
 	}
 
 	if (outBuff)
 	{
-		const vdc_pic* pic = frame.pic.get();
+		const vdc_pic* pic = frame.pic;
 		int out_f = VDC_OUT_YUV420;
 
 		switch (const u32 type = format->formatType)
@@ -1820,6 +1841,8 @@ error_code cellVdecGetPictureExt(ppu_thread& ppu, u32 handle, vm::cptr<CellVdecP
 		vdc_convert(outBuff.get_ptr(), pic, out_f, format->alpha, format->colorMatrixType == CELL_VDEC_COLOR_MATRIX_TYPE_BT709);
 	}
 
+	// The game has had the picture: its buffer is free for the next
+	vdec->give_back(frame);
 	return CELL_OK;
 }
 
@@ -1895,8 +1918,10 @@ error_code cellVdecGetPicItem(ppu_thread& ppu, u32 handle, vm::pptr<CellVdecPicI
 	{
 		std::lock_guard lock(vdec->mutex);
 
-		for (auto& picture : vdec->out_queue)
+		for (usz i = 0, count = vdec_frames_count(&vdec->out_queue); i < count; i++)
 		{
+			vdec_frame& picture = *vdec_frames_at(&vdec->out_queue, i);
+
 			if (!picture.pic_item_received)
 			{
 				picture.pic_item_received = true;
