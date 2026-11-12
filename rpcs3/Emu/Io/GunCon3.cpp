@@ -265,19 +265,16 @@ void usb_device_guncon3::interrupt_transfer(u32 buf_size, u8* buf, u32 endpoint,
 
 	{
 		auto& mouse_handler = g_fxo->get<MouseHandlerBase>();
-		std::lock_guard mouse_lock(mouse_handler.mutex);
-		mouse_handler.take_pending();
-
 		mouse_handler.Init(4);
 
 		const usz mouse_index = g_cfg.io.mouse == mouse_handler::basic ? 0 : m_controller_index;
-		if (mouse_index >= mouse_handler.GetMice().size())
+		Mouse mouse_data;
+		if (!mouse_handler.read_mouse(mouse_index, mouse_data))
 		{
 			guncon3_encode(&gc, buf, m_key.data());
 			return;
 		}
 
-		const Mouse& mouse_data = ::at32(mouse_handler.GetMice(), mouse_index);
 		cfg->handle_input(mouse_data, input_callback);
 
 		// Expand 0..+wh to -32767..+32767

@@ -369,19 +369,16 @@ void usb_device_topshotfearmaster::interrupt_transfer(u32 buf_size, u8* buf, u32
 	if (m_mode)
 	{
 		auto& mouse_handler = g_fxo->get<MouseHandlerBase>();
-		std::lock_guard mouse_lock(mouse_handler.mutex);
-		mouse_handler.take_pending();
-
 		mouse_handler.Init(4);
 
 		const usz mouse_index = g_cfg.io.mouse == mouse_handler::basic ? 0 : m_controller_index;
-		if (mouse_index >= mouse_handler.GetMice().size())
+		Mouse mouse_data;
+		if (!mouse_handler.read_mouse(mouse_index, mouse_data))
 		{
 			prepare_data(&ts, buf);
 			return;
 		}
 
-		const Mouse& mouse_data = ::at32(mouse_handler.GetMice(), mouse_index);
 		cfg->handle_input(mouse_data, input_callback);
 		ts.trigger = ts.btn_trigger ? 0xff : 0x00;
 		ts.heartrate = ts.btn_heartrate ? get_heartrate_sensor_value(60) : 0;

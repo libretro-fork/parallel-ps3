@@ -122,23 +122,13 @@ error_code cellMouseClearBuf(u32 port_no)
 		return CELL_MOUSE_ERROR_INVALID_PARAMETER;
 	}
 
-	const MouseInfo& current_info = handler.GetInfo();
-
-	if (port_no >= handler.GetMice().size() || current_info.status[port_no] != CELL_MOUSE_STATUS_CONNECTED)
+	if (!handler.connected(port_no))
 	{
 		return not_an_error(CELL_MOUSE_ERROR_NO_DEVICE);
 	}
 
-	handler.GetDataList(port_no).clear();
-	handler.GetTabletDataList(port_no).clear();
-
-	MouseRawData& raw_data = handler.GetRawData(port_no);
-	raw_data.len = 0;
-
-	for (int i = 0; i < CELL_MOUSE_MAX_CODES; i++)
-	{
-		raw_data.data[i] = 0;
-	}
+	// The data waiting for the game; there is no tablet or raw data
+	handler.take_data(port_no, nullptr, 0, true);
 
 	return CELL_OK;
 }
@@ -177,16 +167,15 @@ error_code cellMouseGetInfo(vm::ptr<CellMouseInfo> info)
 
 	std::memset(info.get_ptr(), 0, info.size());
 
-	const MouseInfo& current_info = handler.GetInfo();
-	info->max_connect = current_info.max_connect;
-	info->now_connect = current_info.now_connect;
-	info->info = current_info.info;
+	info->max_connect = handler.max_connect();
+	info->now_connect = handler.now_connect();
+	info->info = handler.info();
 
 	for (u32 i = 0; i < CELL_MAX_MICE; i++)
 	{
-		info->vendor_id[i]  = current_info.vendor_id[i];
-		info->product_id[i] = current_info.product_id[i];
-		info->status[i]     = current_info.status[i];
+		info->vendor_id[i]  = handler.vendor_id(i);
+		info->product_id[i] = handler.product_id(i);
+		info->status[i]     = handler.status(i);
 	}
 
 	return CELL_OK;
@@ -209,9 +198,7 @@ error_code cellMouseInfoTabletMode(u32 port_no, vm::ptr<CellMouseInfoTablet> inf
 		return CELL_MOUSE_ERROR_INVALID_PARAMETER;
 	}
 
-	const MouseInfo& current_info = handler.GetInfo();
-
-	if (port_no >= handler.GetMice().size() || current_info.status[port_no] != CELL_MOUSE_STATUS_CONNECTED)
+	if (!handler.connected(port_no))
 	{
 		return CELL_MOUSE_ERROR_FATAL;
 	}
@@ -221,8 +208,8 @@ error_code cellMouseInfoTabletMode(u32 port_no, vm::ptr<CellMouseInfoTablet> inf
 		return CELL_EFAULT; // we don't get CELL_MOUSE_ERROR_INVALID_PARAMETER here :thonkang:
 	}
 
-	info->is_supported = current_info.tablet_is_supported[port_no];
-	info->mode = current_info.mode[port_no];
+	info->is_supported = handler.tablet_is_supported(port_no);
+	info->mode = handler.mode(port_no);
 
 	// TODO: decr returns CELL_ENOTSUP ... How should we handle this?
 
@@ -245,12 +232,7 @@ error_code cellMouseGetData(u32 port_no, vm::ptr<CellMouseData> data)
 		return CELL_MOUSE_ERROR_INVALID_PARAMETER;
 	}
 
-	std::lock_guard lock(handler.mutex);
-	handler.take_pending();
-
-	const MouseInfo& current_info = handler.GetInfo();
-
-	if (port_no >= handler.GetMice().size() || current_info.status[port_no] != CELL_MOUSE_STATUS_CONNECTED)
+	if (!handler.connected(port_no))
 	{
 		return not_an_error(CELL_MOUSE_ERROR_NO_DEVICE);
 	}
@@ -259,12 +241,14 @@ error_code cellMouseGetData(u32 port_no, vm::ptr<CellMouseData> data)
 
 	// TODO: check if (current_info.mode[port_no] != CELL_MOUSE_INFO_TABLET_MOUSE_MODE) has any impact
 
-	MouseDataList& data_list = handler.GetDataList(port_no);
+	const bool blocked = handler.is_null_handler() || (handler.info() & CELL_MOUSE_INFO_INTERCEPTED) || !is_input_allowed();
 
-	if (data_list.empty() || current_info.is_null_handler || (current_info.info & CELL_MOUSE_INFO_INTERCEPTED) || !is_input_allowed())
+	// The oldest of the data waiting, taken off the list; all of it dropped
+	// when the game is not to have any
+	MouseData current_data;
+
+	if (handler.take_data(port_no, &current_data, 1, blocked) <= 0)
 	{
-		data_list.clear();
-
 		if (port_no == 0 && g_cfg.io.mouse_debug_overlay && !g_cfg.io.pad_debug_overlay && !g_cfg.video.debug_overlay)
 		{
 			show_debug_overlay(*data, nullptr);
@@ -273,7 +257,6 @@ error_code cellMouseGetData(u32 port_no, vm::ptr<CellMouseData> data)
 		return CELL_OK;
 	}
 
-	const MouseData& current_data = data_list.front();
 	data->update = current_data.update;
 	data->buttons = current_data.buttons;
 	data->x_axis = current_data.x_axis;
@@ -285,8 +268,6 @@ error_code cellMouseGetData(u32 port_no, vm::ptr<CellMouseData> data)
 	{
 		show_debug_overlay(*data, &current_data);
 	}
-
-	data_list.pop_front();
 
 	return CELL_OK;
 }
@@ -307,12 +288,7 @@ error_code cellMouseGetDataList(u32 port_no, vm::ptr<CellMouseDataList> data)
 		return CELL_MOUSE_ERROR_INVALID_PARAMETER;
 	}
 
-	std::lock_guard lock(handler.mutex);
-	handler.take_pending();
-
-	const MouseInfo& current_info = handler.GetInfo();
-
-	if (port_no >= handler.GetMice().size() || current_info.status[port_no] != CELL_MOUSE_STATUS_CONNECTED)
+	if (!handler.connected(port_no))
 	{
 		return not_an_error(CELL_MOUSE_ERROR_NO_DEVICE);
 	}
@@ -321,12 +297,15 @@ error_code cellMouseGetDataList(u32 port_no, vm::ptr<CellMouseDataList> data)
 
 	// TODO: check if (current_info.mode[port_no] != CELL_MOUSE_INFO_TABLET_MOUSE_MODE) has any impact
 
-	MouseDataList& list = handler.GetDataList(port_no);
+	const bool blocked = handler.is_null_handler() || (handler.info() & CELL_MOUSE_INFO_INTERCEPTED) || !is_input_allowed();
 
-	if (list.empty() || current_info.is_null_handler || (current_info.info & CELL_MOUSE_INFO_INTERCEPTED) || !is_input_allowed())
+	// All the data waiting, taken off the list: the game gets the oldest
+	// CELL_MOUSE_MAX_DATA_LIST_NUM
+	MouseData list[CELL_MOUSE_MAX_DATA_LIST_NUM];
+	const s32 count = handler.take_data(port_no, list, CELL_MOUSE_MAX_DATA_LIST_NUM, blocked);
+
+	if (count <= 0)
 	{
-		list.clear();
-
 		if (port_no == 0 && g_cfg.io.mouse_debug_overlay && !g_cfg.io.pad_debug_overlay && !g_cfg.video.debug_overlay)
 		{
 			show_debug_overlay(data->list[0], nullptr);
@@ -335,9 +314,9 @@ error_code cellMouseGetDataList(u32 port_no, vm::ptr<CellMouseDataList> data)
 		return CELL_OK;
 	}
 
-	data->list_num = std::min<u32>(CELL_MOUSE_MAX_DATA_LIST_NUM, static_cast<u32>(list.size()));
+	data->list_num = static_cast<u32>(count);
 
-	for (size_t i = 0; i < list.size() && i < CELL_MOUSE_MAX_DATA_LIST_NUM; ++i)
+	for (s32 i = 0; i < count; ++i)
 	{
 		const MouseData& current_data = list[i];
 		data->list[i].update = current_data.update;
@@ -352,8 +331,6 @@ error_code cellMouseGetDataList(u32 port_no, vm::ptr<CellMouseDataList> data)
 			show_debug_overlay(data->list[i], &current_data);
 		}
 	}
-
-	list.clear();
 
 	return CELL_OK;
 }
@@ -375,9 +352,7 @@ error_code cellMouseSetTabletMode(u32 port_no, u32 mode)
 		return CELL_MOUSE_ERROR_INVALID_PARAMETER;
 	}
 
-	MouseInfo& current_info = handler.GetInfo();
-
-	if (port_no >= handler.GetMice().size() || current_info.status[port_no] != CELL_MOUSE_STATUS_CONNECTED)
+	if (!handler.connected(port_no))
 	{
 		return CELL_MOUSE_ERROR_FATAL;
 	}
@@ -387,7 +362,7 @@ error_code cellMouseSetTabletMode(u32 port_no, u32 mode)
 		return CELL_EINVAL; // lol... why not CELL_MOUSE_ERROR_INVALID_PARAMETER. Sony is drunk
 	}
 
-	current_info.mode[port_no] = mode;
+	handler.set_mode(port_no, mode);
 
 	// TODO: decr returns CELL_ENOTSUP ... How should we handle this?
 
@@ -410,9 +385,7 @@ error_code cellMouseGetTabletDataList(u32 port_no, vm::ptr<CellMouseTabletDataLi
 		return CELL_MOUSE_ERROR_INVALID_PARAMETER;
 	}
 
-	const MouseInfo& current_info = handler.GetInfo();
-
-	if (port_no >= handler.GetMice().size() || current_info.status[port_no] != CELL_MOUSE_STATUS_CONNECTED)
+	if (!handler.connected(port_no))
 	{
 		return not_an_error(CELL_MOUSE_ERROR_NO_DEVICE);
 	}
@@ -422,30 +395,7 @@ error_code cellMouseGetTabletDataList(u32 port_no, vm::ptr<CellMouseTabletDataLi
 	// TODO: decr tests show that CELL_MOUSE_ERROR_DATA_READ_FAILED is returned when a mouse is connected
 	// TODO: check if (current_info.mode[port_no] != CELL_MOUSE_INFO_TABLET_TABLET_MODE) has any impact
 
-	MouseTabletDataList& list = handler.GetTabletDataList(port_no);
-
-	if (list.empty() || current_info.is_null_handler || (current_info.info & CELL_MOUSE_INFO_INTERCEPTED) || !is_input_allowed())
-	{
-		list.clear();
-		return CELL_OK;
-	}
-
-	data->list_num = std::min<u32>(CELL_MOUSE_MAX_DATA_LIST_NUM, static_cast<u32>(list.size()));
-
-	int i = 0;
-	for (auto it = list.begin(); it != list.end() && i < CELL_MOUSE_MAX_DATA_LIST_NUM; ++it, ++i)
-	{
-		data->list[i].len = it->len;
-		it->len = 0;
-
-		for (int k = 0; k < CELL_MOUSE_MAX_CODES; k++)
-		{
-			data->list[i].data[k] = it->data[k];
-			it->data[k] = 0;
-		}
-	}
-
-	list.clear();
+	// No tablet: there is never any tablet data
 
 	return CELL_OK;
 }
@@ -466,9 +416,7 @@ error_code cellMouseGetRawData(u32 port_no, vm::ptr<CellMouseRawData> data)
 		return CELL_MOUSE_ERROR_INVALID_PARAMETER;
 	}
 
-	const MouseInfo& current_info = handler.GetInfo();
-
-	if (port_no >= handler.GetMice().size() || current_info.status[port_no] != CELL_MOUSE_STATUS_CONNECTED)
+	if (!handler.connected(port_no))
 	{
 		return not_an_error(CELL_MOUSE_ERROR_NO_DEVICE);
 	}
@@ -478,22 +426,7 @@ error_code cellMouseGetRawData(u32 port_no, vm::ptr<CellMouseRawData> data)
 	// TODO: decr tests show that CELL_MOUSE_ERROR_DATA_READ_FAILED is returned when a mouse is connected
 	// TODO: check if (current_info.mode[port_no] != CELL_MOUSE_INFO_TABLET_MOUSE_MODE) has any impact
 
-	MouseRawData& current_data = handler.GetRawData(port_no);
-
-	if (current_info.is_null_handler || (current_info.info & CELL_MOUSE_INFO_INTERCEPTED) || !is_input_allowed())
-	{
-		current_data = {};
-		return CELL_OK;
-	}
-
-	data->len = current_data.len;
-	current_data.len = 0;
-
-	for (int i = 0; i < CELL_MOUSE_MAX_CODES; i++)
-	{
-		data->data[i] = current_data.data[i];
-		current_data.data[i] = 0;
-	}
+	// No raw data is ever made (upstream's handlers make none either)
 
 	return CELL_OK;
 }

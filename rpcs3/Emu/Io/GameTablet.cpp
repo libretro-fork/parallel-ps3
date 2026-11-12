@@ -283,19 +283,16 @@ void usb_device_gametablet::interrupt_transfer(u32 buf_size, u8* buf, u32 /*endp
 		gt.dpad = Dpad_NW;
 
 	auto& mouse_handler = g_fxo->get<MouseHandlerBase>();
-	std::lock_guard mouse_lock(mouse_handler.mutex);
-	mouse_handler.take_pending();
-
 	mouse_handler.Init(1);
 
 	constexpr u8 mouse_index = 0;
-	if (mouse_index >= mouse_handler.GetMice().size())
+	Mouse mouse_data;
+	if (!mouse_handler.read_mouse(mouse_index, mouse_data))
 	{
 		std::memcpy(buf, &gt, sizeof(GameTablet_data));
 		return;
 	}
 
-	const Mouse& mouse_data = ::at32(mouse_handler.GetMice(), mouse_index);
 
 	static u8 noise_x = 0; // Toggle the LSB to simulate a noisy signal, Instant Artist dislikes a pen held perfectly still
 	static u8 noise_y = 0;

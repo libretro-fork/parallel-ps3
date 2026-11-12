@@ -367,13 +367,10 @@ public:
 		case move_handler::raw_mouse:
 		{
 			auto& handler = *ensure(g_fxo->try_get<MouseHandlerBase>());
-			std::lock_guard mouse_lock(handler.mutex);
-			handler.take_pending();
-			const MouseInfo& info = handler.GetInfo();
 
 			for (u32 i = 0; i < CELL_GEM_MAX_NUM; i++)
 			{
-				update_connection(i, i < gs.attribute.max_connect && info.status[i] == CELL_MOUSE_STATUS_CONNECTED);
+				update_connection(i, i < gs.attribute.max_connect && handler.status(i) == CELL_MOUSE_STATUS_CONNECTED);
 			}
 			break;
 		}
@@ -496,14 +493,10 @@ public:
 		case move_handler::raw_mouse:
 		{
 			auto& handler = *ensure(g_fxo->try_get<MouseHandlerBase>());
-			std::lock_guard mouse_lock(handler.mutex);
-			handler.take_pending();
-
 			// Make sure that the mouse handler is initialized
 			handler.Init(std::min<u32>(gs.attribute.max_connect, CELL_GEM_MAX_NUM));
 
-			const MouseInfo& info = handler.GetInfo();
-			gs.connected_controllers = std::min<u32>({ info.now_connect, gs.attribute.max_connect, CELL_GEM_MAX_NUM });
+			gs.connected_controllers = std::min<u32>({ handler.now_connect(), gs.attribute.max_connect, CELL_GEM_MAX_NUM });
 			if (gem_num < gs.connected_controllers)
 			{
 				is_connected = true;
@@ -2459,19 +2452,16 @@ static void mouse_input_to_ext(u32 mouse_no, gem_config::gem_controller& control
 {
 	auto& handler = g_fxo->get<MouseHandlerBase>();
 
-	std::scoped_lock lock(handler.mutex);
-	handler.take_pending();
-
 	// Make sure that the mouse handler is initialized
 	handler.Init(std::min<u32>(gem_max_connect(), CELL_GEM_MAX_NUM));
 
-	if (mouse_no >= handler.GetMice().size())
+	Mouse mouse_data;
+	if (!handler.read_mouse(mouse_no, mouse_data))
 	{
 		set_ext_port(mouse_no, 0, 0);
 		return;
 	}
 
-	const Mouse& mouse_data = ::at32(handler.GetMice(), mouse_no);
 	const auto& cfg = ::at32(g_cfg_gem_mouse.players, mouse_no);
 
 	const u32 external_device_id = ext_device_id(cfg->external_device);
@@ -2589,18 +2579,15 @@ static bool mouse_input_to_pad(u32 mouse_no, be_t<u16>& digital_buttons, be_t<u1
 
 	auto& handler = g_fxo->get<MouseHandlerBase>();
 
-	std::scoped_lock lock(handler.mutex);
-	handler.take_pending();
-
 	// Make sure that the mouse handler is initialized
 	handler.Init(std::min<u32>(gem_max_connect(), CELL_GEM_MAX_NUM));
 
-	if (mouse_no >= handler.GetMice().size())
+	Mouse mouse_data;
+	if (!handler.read_mouse(mouse_no, mouse_data))
 	{
 		return false;
 	}
 
-	const Mouse& mouse_data = ::at32(handler.GetMice(), mouse_no);
 	const auto& cfg = ::at32(g_cfg_gem_mouse.players, mouse_no);
 
 	bool combo_active = false;
@@ -2705,18 +2692,16 @@ static void mouse_pos_to_gem_state(u32 mouse_no, gem_config::gem_controller& con
 
 	auto& handler = g_fxo->get<MouseHandlerBase>();
 
-	std::scoped_lock lock(handler.mutex);
-	handler.take_pending();
-
 	// Make sure that the mouse handler is initialized
 	handler.Init(std::min<u32>(gem_max_connect(), CELL_GEM_MAX_NUM));
 
-	if (mouse_no >= handler.GetMice().size())
+	Mouse mouse_data;
+	if (!handler.read_mouse(mouse_no, mouse_data))
 	{
 		return;
 	}
 
-	const auto& mouse = ::at32(handler.GetMice(), mouse_no);
+	const Mouse& mouse = mouse_data;
 
 	if constexpr (std::is_same_v<T, vm::ptr<CellGemState>>)
 	{

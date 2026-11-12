@@ -307,8 +307,6 @@ void usb_device_usio::translate_input_tekken()
 	le_t<u16> digital_input_lm = 0;
 
 	auto& mouse_handler = g_fxo->get<MouseHandlerBase>();
-	std::lock_guard mouse_lock(mouse_handler.mutex);
-	mouse_handler.take_pending();
 	mouse_handler.Init(g_cfg_usio.players.size());
 
 	const auto translate_input = [&](usz player)
@@ -446,20 +444,18 @@ void usb_device_usio::translate_input_tekken()
 		}
 		
 		const usz mouse_index = g_cfg.io.mouse == mouse_handler::basic ? 0 : player;
-		if (mouse_index < mouse_handler.GetMice().size())
+		Mouse mouse_data;
+		if (mouse_handler.read_mouse(static_cast<u32>(mouse_index), mouse_data))
 		{
-			const Mouse& mouse_data = ::at32(mouse_handler.GetMice(), mouse_index);
 			cfg->handle_input(mouse_data, input_callback);
 
 			if (cfg->gun == pad_button::mouse)
 			{
 				s8 current_wheel = 0;
-				MouseDataList& data_list = mouse_handler.GetDataList(mouse_index);
-				if (!data_list.empty())
+				MouseData current_data;
+				if (mouse_handler.take_data(static_cast<u32>(mouse_index), &current_data, 1, false) > 0)
 				{
-					const MouseData& current_data = data_list.front();
 					current_wheel = current_data.wheel * 0x10;
-					data_list.pop_front();
 				}
 				status.vital_sensors[player_index] += current_wheel;
 				status.wheel_rotation += current_wheel; // Multiple players can collaborate on turning the wheel
