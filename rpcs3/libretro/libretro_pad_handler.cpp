@@ -177,7 +177,7 @@ bool LibretroPadHandler::bindPadToDevice(std::shared_ptr<Pad> pad)
     pad->m_sticks[3].m_offset = CELL_PAD_BTN_OFFSET_ANALOG_RIGHT_Y;
 
     // Set pad as connected
-    pad->m_port_status |= CELL_PAD_STATUS_CONNECTED;
+    retro_atomic_fetch_or_int(&pad->m_port_status, CELL_PAD_STATUS_CONNECTED);
     return true;
 }
 
@@ -284,24 +284,14 @@ pad_preview_values LibretroPadHandler::get_preview_values(const std::unordered_m
 // handler has its own process().
 void LibretroPadHandler::apply_rumble(Pad& pad, unsigned port)
 {
-    u8 large = 0;
-    u8 small = 0;
-    {
-        std::lock_guard lock(pad::g_pad_mutex);
-
-        if (pad.m_last_rumble_time_us > 0 && get_system_time() - pad.m_last_rumble_time_us > 3'000'000)
-        {
-            for (VibrateMotor& motor : pad.m_vibrate_motors)
-            {
-                motor.value = 0;
-                motor.adjusted_value = 0;
-            }
-            pad.m_last_rumble_time_us = 0;
-        }
-
-        large = pad.m_vibrate_motors[0].value;
-        small = pad.m_vibrate_motors[1].value;
-    }
+    // What the game last asked for, published by pad_thread::SetRumble on
+    // its thread: read here without a lock. After 3 s without a new request
+    // the motors stop, as PadHandlerBase::process stops them.
+    const usz asked_ms = retro_atomic_load_acquire_size(&pad.m_rumble_ms);
+    const int motors = retro_atomic_load_acquire_int(&pad.m_rumble_motors);
+    const bool stale = !asked_ms || get_system_time() / 1000 - asked_ms > 3000;
+    const u8 large = stale ? 0 : static_cast<u8>(motors & 0xff);
+    const u8 small = stale ? 0 : static_cast<u8>((motors >> 8) & 0xff);
 
     const f32 strong = ScaledInput(large, static_cast<f32>(MOTOR_THRESHOLD), 255.0f, 0.0f, 255.0f);
     libretro_input_set_rumble(port, static_cast<u16>(std::clamp(strong, 0.0f, 255.0f) * 257.0f), small ? 0xffff : 0);
@@ -323,11 +313,11 @@ void LibretroPadHandler::process()
         const auto status = update_connection(binding.device);
         if (status == connection::connected)
         {
-            binding.pad->m_port_status |= CELL_PAD_STATUS_CONNECTED;
+            retro_atomic_fetch_or_int(&binding.pad->m_port_status, CELL_PAD_STATUS_CONNECTED);
         }
         else
         {
-            binding.pad->m_port_status &= ~CELL_PAD_STATUS_CONNECTED;
+            retro_atomic_fetch_and_int(&binding.pad->m_port_status, ~CELL_PAD_STATUS_CONNECTED);
             continue;
         }
 

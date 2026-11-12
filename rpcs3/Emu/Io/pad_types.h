@@ -5,8 +5,13 @@
 #include "pad_config_types.h"
 #include "ps_move_data.h"
 
+#include <retro_atomic.h>
+
+#include <algorithm>
+#include <array>
 #include <map>
 #include <set>
+#include <span>
 #include <vector>
 
 enum class pad_button : u8
@@ -471,6 +476,20 @@ struct AnalogStickExternal
 	u16 m_value = 128;
 };
 
+// A pad's buttons and sticks as the game's threads read them: what the
+// frontend's thread last handed over (Pad::write_external), read whole
+// (Pad::read_external) without a lock
+struct pad_external
+{
+	static constexpr usz max_buttons = 64;
+
+	u32 button_count = 0;
+	std::array<ButtonExternal, max_buttons> buttons{};
+	std::array<AnalogStickExternal, 4> sticks{};
+
+	std::span<const ButtonExternal> button_span() const { return {buttons.data(), button_count}; }
+};
+
 struct AnalogSensor
 {
 	u32 m_offset = 0;
@@ -507,7 +526,9 @@ struct Pad
 	const u32 m_player_id;
 
 	bool m_buffer_cleared{true};
-	u32 m_port_status{0};
+	// CELL_PAD_STATUS_*: the frontend's thread connects and disconnects the
+	// pad while the game's (an LDD controller) may change it too
+	retro_atomic_int_t m_port_status;
 	u32 m_device_capability{0};
 	u32 m_device_type{0};
 	u32 m_class_type{0};
@@ -549,8 +570,19 @@ struct Pad
 	std::array<VibrateMotor, 2> m_vibrate_motors{};
 	std::array<u8, 2> m_angles{};
 
-	std::vector<ButtonExternal> m_buttons_external;
-	std::array<AnalogStickExternal, 4> m_sticks_external{};
+	// The pad_external the game's threads read, in retro_atomics under a
+	// sequence count, odd while it is being written: one writer, the
+	// frontend's thread (pad_thread::apply_copilots); a reader copies it and
+	// copies again if the count moved, and the writer never waits
+	retro_atomic_size_t m_external_seq;
+	retro_atomic_int_t m_external_count;
+	retro_atomic_int_t m_external_buttons[pad_external::max_buttons][3]; // offset, key code, value | pressed << 16
+	retro_atomic_int_t m_external_sticks[4][2];                          // offset, value
+
+	// The motors the game last asked for (large | small << 8), and when
+	// (milliseconds of get_system_time), for the frontend's thread
+	retro_atomic_int_t m_rumble_motors;
+	retro_atomic_size_t m_rumble_ms;
 
 	std::vector<std::shared_ptr<Pad>> copilots;
 
@@ -566,15 +598,88 @@ struct Pad
 	explicit Pad(pad_handler handler, u32 player_id, u32 port_status, u32 device_capability, u32 device_type)
 		: m_pad_handler(handler)
 		, m_player_id(player_id)
-		, m_port_status(port_status)
 		, m_device_capability(device_capability)
 		, m_device_type(device_type)
 	{
+		retro_atomic_int_init(&m_port_status, static_cast<int>(port_status));
+		retro_atomic_size_init(&m_external_seq, 0);
+		retro_atomic_int_init(&m_external_count, 0);
+		for (auto& button : m_external_buttons)
+			for (auto& field : button)
+				retro_atomic_int_init(&field, 0);
+		for (auto& stick : m_external_sticks)
+		{
+			retro_atomic_int_init(&stick[0], 0);
+			retro_atomic_int_init(&stick[1], 128);
+		}
+		retro_atomic_int_init(&m_rumble_motors, 0);
+		retro_atomic_size_init(&m_rumble_ms, 0);
+	}
+
+	Pad(const Pad&) = delete;
+	Pad& operator=(const Pad&) = delete;
+
+	u32 port_status() const
+	{
+		return static_cast<u32>(retro_atomic_load_acquire_int(const_cast<retro_atomic_int_t*>(&m_port_status)));
+	}
+
+	// The frontend's thread: the buttons and sticks the game reads next
+	void write_external(const pad_external& ext)
+	{
+		const usz seq = retro_atomic_load_relaxed_size(&m_external_seq);
+		retro_atomic_store_relaxed_size(&m_external_seq, seq + 1);
+		retro_atomic_thread_fence_release();
+		const u32 count = std::min<u32>(ext.button_count, pad_external::max_buttons);
+		retro_atomic_store_relaxed_int(&m_external_count, static_cast<int>(count));
+		for (u32 i = 0; i < count; i++)
+		{
+			const ButtonExternal& b = ext.buttons[i];
+			retro_atomic_store_relaxed_int(&m_external_buttons[i][0], static_cast<int>(b.m_offset));
+			retro_atomic_store_relaxed_int(&m_external_buttons[i][1], static_cast<int>(b.m_outKeyCode));
+			retro_atomic_store_relaxed_int(&m_external_buttons[i][2], static_cast<int>(b.m_value | (b.m_pressed ? 0x10000u : 0u)));
+		}
+		for (usz i = 0; i < ext.sticks.size(); i++)
+		{
+			retro_atomic_store_relaxed_int(&m_external_sticks[i][0], static_cast<int>(ext.sticks[i].m_offset));
+			retro_atomic_store_relaxed_int(&m_external_sticks[i][1], static_cast<int>(ext.sticks[i].m_value));
+		}
+		retro_atomic_store_release_size(&m_external_seq, seq + 2);
+	}
+
+	// Any thread: what the frontend's thread last handed over, whole
+	void read_external(pad_external& out) const
+	{
+		auto* self = const_cast<Pad*>(this);
+		for (;;)
+		{
+			const usz seq = retro_atomic_load_acquire_size(&self->m_external_seq);
+			if (seq & 1)
+				continue; // being written: a few stores, then it is done
+			const u32 count = std::min<u32>(static_cast<u32>(retro_atomic_load_relaxed_int(&self->m_external_count)), pad_external::max_buttons);
+			out.button_count = count;
+			for (u32 i = 0; i < count; i++)
+			{
+				const u32 value = static_cast<u32>(retro_atomic_load_relaxed_int(&self->m_external_buttons[i][2]));
+				out.buttons[i].m_offset = static_cast<u32>(retro_atomic_load_relaxed_int(&self->m_external_buttons[i][0]));
+				out.buttons[i].m_outKeyCode = static_cast<u32>(retro_atomic_load_relaxed_int(&self->m_external_buttons[i][1]));
+				out.buttons[i].m_value = static_cast<u16>(value);
+				out.buttons[i].m_pressed = (value & 0x10000u) != 0;
+			}
+			for (usz i = 0; i < out.sticks.size(); i++)
+			{
+				out.sticks[i].m_offset = static_cast<u32>(retro_atomic_load_relaxed_int(&self->m_external_sticks[i][0]));
+				out.sticks[i].m_value = static_cast<u16>(retro_atomic_load_relaxed_int(&self->m_external_sticks[i][1]));
+			}
+			retro_atomic_thread_fence_acquire();
+			if (retro_atomic_load_relaxed_size(&self->m_external_seq) == seq)
+				return;
+		}
 	}
 
 	void Init(u32 port_status, u32 device_capability, u32 device_type, u32 class_type, u32 class_profile, u16 vendor_id, u16 product_id, u8 pressure_intensity_percent)
 	{
-		m_port_status = port_status;
+		retro_atomic_store_release_int(&m_port_status, static_cast<int>(port_status));
 		m_device_capability = device_capability;
 		m_device_type = device_type;
 		m_class_type = class_type;
@@ -602,6 +707,6 @@ struct Pad
 
 	bool is_connected() const
 	{
-		return !!(m_port_status & CELL_PAD_STATUS_CONNECTED);
+		return !!(port_status() & CELL_PAD_STATUS_CONNECTED);
 	}
 };

@@ -3302,7 +3302,7 @@ void retro_run(void)
         g_libretro_pad_handler->process();
     }
 
-    // Copy button values from m_buttons to m_buttons_external so cellPad can read them
+    // Hand the buttons and sticks to the game's threads (cellPad), without a lock
     if (g_libretro_pad_thread)
     {
         g_libretro_pad_thread->apply_copilots();
@@ -3311,13 +3311,12 @@ void retro_run(void)
         // ran: without it no pad counted as connected, and RPCS3's in-game
         // dialogs (save data list, "install game data?") ignored the
         // controller and left the game waiting on them for good (NNshi)
+        // The pads are this thread's to create, and their status an atomic:
+        // no lock
         u32 connected = 0;
-        {
-            std::lock_guard lock(pad::g_pad_mutex);
-            for (const auto& pad : g_libretro_pad_thread->GetPads())
-                if (pad && pad->is_connected())
-                    connected++;
-        }
+        for (const auto& pad : g_libretro_pad_thread->GetPads())
+            if (pad && pad->is_connected())
+                connected++;
         g_libretro_pad_thread->frontend_update(connected);
     }
 

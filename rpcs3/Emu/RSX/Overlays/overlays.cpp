@@ -343,7 +343,11 @@ namespace rsx
 						continue;
 					}
 
-					for (const ButtonExternal& button : pad->m_buttons_external)
+					// What the frontend's thread last handed over, read whole without a lock
+					pad_external pad_ext;
+					pad->read_external(pad_ext);
+
+					for (const ButtonExternal& button : pad_ext.button_span())
 					{
 						pad_button button_id = pad_button::pad_button_max_enum;
 						if (button.m_offset == CELL_PAD_BTN_OFFSET_DIGITAL1)
@@ -420,7 +424,7 @@ namespace rsx
 							break;
 					}
 
-					for (const AnalogStickExternal& stick : pad->m_sticks_external)
+					for (const AnalogStickExternal& stick : pad_ext.sticks)
 					{
 						pad_button button_id = pad_button::pad_button_max_enum;
 						pad_button release_id = pad_button::pad_button_max_enum;

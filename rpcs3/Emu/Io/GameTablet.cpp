@@ -200,7 +200,11 @@ void usb_device_gametablet::interrupt_transfer(u32 buf_size, u8* buf, u32 /*endp
 		const auto& pad = ::at32(pads, m_controller_index);
 		if (pad->is_connected() && !pad->is_copilot())
 		{
-			for (ButtonExternal& button : pad->m_buttons_external)
+			// What the frontend's thread last handed over, read whole without a lock
+			pad_external pad_ext;
+			pad->read_external(pad_ext);
+
+			for (const ButtonExternal& button : pad_ext.button_span())
 			{
 				if (!button.m_pressed)
 				{

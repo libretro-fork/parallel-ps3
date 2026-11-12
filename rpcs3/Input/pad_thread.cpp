@@ -73,7 +73,7 @@ void pad_thread::Init()
 		{
 			pad_settings[i] =
 			{
-				m_pads[i]->m_port_status,
+				m_pads[i]->port_status(),
 				m_pads[i]->m_device_capability,
 				m_pads[i]->m_device_type,
 				m_pads[i]->m_class_type,
@@ -240,6 +240,8 @@ void pad_thread::SetRumble(u32 pad, u8 large_motor, u8 small_motor)
 	m_pads[pad]->m_last_rumble_time_us = now_us;
 	m_pads[pad]->m_vibrate_motors[0].value = large_motor;
 	m_pads[pad]->m_vibrate_motors[1].value = small_motor;
+	retro_atomic_store_release_size(&m_pads[pad]->m_rumble_ms, static_cast<usz>(now_us / 1000));
+	retro_atomic_store_release_int(&m_pads[pad]->m_rumble_motors, large_motor | (small_motor << 8));
 
 	// Rumble copilots as well
 	for (const auto& copilot : m_pads[pad]->copilots)
@@ -249,6 +251,8 @@ void pad_thread::SetRumble(u32 pad, u8 large_motor, u8 small_motor)
 			copilot->m_last_rumble_time_us = now_us;
 			copilot->m_vibrate_motors[0].value = large_motor;
 			copilot->m_vibrate_motors[1].value = small_motor;
+			retro_atomic_store_release_size(&copilot->m_rumble_ms, static_cast<usz>(now_us / 1000));
+			retro_atomic_store_release_int(&copilot->m_rumble_motors, large_motor | (small_motor << 8));
 		}
 	}
 }
@@ -266,6 +270,11 @@ void pad_thread::SetIntercepted(bool intercepted)
 	}
 }
 
+// The frontend's thread (its run): each connected pad's buttons and sticks,
+// merged with its copilots', handed to the game's threads through
+// Pad::write_external - no lock, and nothing allocated. The pads it reads are
+// the ones that thread writes itself; the game's only change their status,
+// an atomic.
 void pad_thread::apply_copilots()
 {
 	const auto normalize = [](s32 value)
@@ -273,7 +282,7 @@ void pad_thread::apply_copilots()
 		return (value - 128) / 127.0f;
 	};
 
-	std::lock_guard lock(pad::g_pad_mutex);
+	pad_external ext;
 
 	for (auto& pad : m_pads)
 	{
@@ -282,12 +291,12 @@ void pad_thread::apply_copilots()
 			continue;
 		}
 
-		pad->m_buttons_external.resize(pad->m_buttons.size());
+		ext.button_count = static_cast<u32>(std::min<usz>(pad->m_buttons.size(), pad_external::max_buttons));
 
-		for (usz i = 0; i < pad->m_buttons.size(); i++)
+		for (usz i = 0; i < ext.button_count; i++)
 		{
 			const Button& src = pad->m_buttons[i];
-			ButtonExternal& dst = pad->m_buttons_external[i];
+			ButtonExternal& dst = ext.buttons[i];
 
 			dst.m_offset = src.m_offset;
 			dst.m_outKeyCode = src.m_outKeyCode;
@@ -298,52 +307,15 @@ void pad_thread::apply_copilots()
 		for (usz i = 0; i < pad->m_sticks.size(); i++)
 		{
 			const AnalogStick& src = pad->m_sticks[i];
-			AnalogStickExternal& dst = pad->m_sticks_external[i];
+			AnalogStickExternal& dst = ext.sticks[i];
 
 			dst.m_offset = src.m_offset;
 			dst.m_value = src.m_value;
 		}
 
-		if (pad->copilots.empty() || pad->is_copilot())
+		if (!pad->copilots.empty() && !pad->is_copilot())
 		{
-			continue;
-		}
-
-		// Merge buttons
-		for (const auto& copilot : pad->copilots)
-		{
-			if (!copilot || !copilot->is_connected())
-			{
-				continue;
-			}
-
-			for (ButtonExternal& button : pad->m_buttons_external)
-			{
-				for (const Button& other : copilot->m_buttons)
-				{
-					if (button.m_offset == other.m_offset && button.m_outKeyCode == other.m_outKeyCode)
-					{
-						if (other.m_pressed)
-						{
-							button.m_pressed = true;
-
-							if (button.m_value < other.m_value)
-							{
-								button.m_value = other.m_value;
-							}
-						}
-
-						break;
-					}
-				}
-			}
-		}
-
-		// Merge sticks
-		for (AnalogStickExternal& stick : pad->m_sticks_external)
-		{
-			f32 accumulated_value = normalize(stick.m_value);
-
+			// Merge buttons
 			for (const auto& copilot : pad->copilots)
 			{
 				if (!copilot || !copilot->is_connected())
@@ -351,18 +323,57 @@ void pad_thread::apply_copilots()
 					continue;
 				}
 
-				for (const AnalogStick& other : copilot->m_sticks)
+				for (u32 i = 0; i < ext.button_count; i++)
 				{
-					if (stick.m_offset == other.m_offset)
+					ButtonExternal& button = ext.buttons[i];
+
+					for (const Button& other : copilot->m_buttons)
 					{
-						accumulated_value += normalize(other.m_value);
-						break;
+						if (button.m_offset == other.m_offset && button.m_outKeyCode == other.m_outKeyCode)
+						{
+							if (other.m_pressed)
+							{
+								button.m_pressed = true;
+
+								if (button.m_value < other.m_value)
+								{
+									button.m_value = other.m_value;
+								}
+							}
+
+							break;
+						}
 					}
 				}
 			}
 
-			stick.m_value = static_cast<u16>(std::round(std::clamp(accumulated_value * 127.0f + 128.0f, 0.0f, 255.0f)));
+			// Merge sticks
+			for (AnalogStickExternal& stick : ext.sticks)
+			{
+				f32 accumulated_value = normalize(stick.m_value);
+
+				for (const auto& copilot : pad->copilots)
+				{
+					if (!copilot || !copilot->is_connected())
+					{
+						continue;
+					}
+
+					for (const AnalogStick& other : copilot->m_sticks)
+					{
+						if (stick.m_offset == other.m_offset)
+						{
+							accumulated_value += normalize(other.m_value);
+							break;
+						}
+					}
+				}
+
+				stick.m_value = static_cast<u16>(std::round(std::clamp(accumulated_value * 127.0f + 128.0f, 0.0f, 255.0f)));
+			}
 		}
+
+		pad->write_external(ext);
 	}
 }
 
@@ -435,12 +446,12 @@ void pad_thread::update_pad_states()
 
 			if (is_connected && now < pad->m_disconnection_timer)
 			{
-				pad->m_port_status &= ~CELL_PAD_STATUS_CONNECTED;
-				pad->m_port_status |= CELL_PAD_STATUS_ASSIGN_CHANGES;
+				retro_atomic_fetch_and_int(&pad->m_port_status, ~CELL_PAD_STATUS_CONNECTED);
+				retro_atomic_fetch_or_int(&pad->m_port_status, CELL_PAD_STATUS_ASSIGN_CHANGES);
 			}
 			else if (!is_connected && now >= pad->m_disconnection_timer)
 			{
-				pad->m_port_status |= CELL_PAD_STATUS_CONNECTED + CELL_PAD_STATUS_ASSIGN_CHANGES;
+				retro_atomic_fetch_or_int(&pad->m_port_status, CELL_PAD_STATUS_CONNECTED + CELL_PAD_STATUS_ASSIGN_CHANGES);
 				pad->m_disconnection_timer = 0;
 			}
 		}
@@ -832,8 +843,8 @@ void pad_thread::UnregisterLddPad(u32 handle)
 	auto& pad = ::at32(m_pads, handle);
 
 	pad->ldd = false;
-	pad->m_port_status &= ~CELL_PAD_STATUS_CONNECTED;
-	pad->m_port_status |= CELL_PAD_STATUS_ASSIGN_CHANGES;
+	retro_atomic_fetch_and_int(&pad->m_port_status, ~CELL_PAD_STATUS_CONNECTED);
+	retro_atomic_fetch_or_int(&pad->m_port_status, CELL_PAD_STATUS_ASSIGN_CHANGES);
 
 	num_ldd_pad--;
 }

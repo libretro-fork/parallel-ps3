@@ -116,7 +116,11 @@ public:
 		if (!func || !pad || pad->is_copilot())
 			return;
 
-		for (const ButtonExternal& button : pad->m_buttons_external)
+		// What the frontend's thread last handed over, read whole without a lock
+		pad_external pad_ext;
+		pad->read_external(pad_ext);
+
+		for (const ButtonExternal& button : pad_ext.button_span())
 		{
 			if (button.m_pressed || !press_only)
 			{
@@ -127,7 +131,7 @@ public:
 			}
 		}
 
-		for (const AnalogStickExternal& stick : pad->m_sticks_external)
+		for (const AnalogStickExternal& stick : pad_ext.sticks)
 		{
 			if (handle_input_internal(func, stick.m_offset, get_axis_keycode(stick.m_offset, stick.m_value), stick.m_value, 255, true, true))
 			{

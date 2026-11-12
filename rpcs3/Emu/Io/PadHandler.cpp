@@ -858,7 +858,7 @@ void PadHandlerBase::process()
 			{
 				input_log.success("%s device %d connected", m_type, i);
 
-				pad->m_port_status |= CELL_PAD_STATUS_CONNECTED + CELL_PAD_STATUS_ASSIGN_CHANGES;
+				retro_atomic_fetch_or_int(&pad->m_port_status, CELL_PAD_STATUS_CONNECTED + CELL_PAD_STATUS_ASSIGN_CHANGES);
 
 				last_connection_status[i] = true;
 				connected_devices++;
@@ -886,7 +886,7 @@ void PadHandlerBase::process()
 				{
 					input_log.success("%s device %d connected by force", m_type, i);
 
-					pad->m_port_status |= CELL_PAD_STATUS_CONNECTED + CELL_PAD_STATUS_ASSIGN_CHANGES;
+					retro_atomic_fetch_or_int(&pad->m_port_status, CELL_PAD_STATUS_CONNECTED + CELL_PAD_STATUS_ASSIGN_CHANGES);
 
 					last_connection_status[i] = true;
 					connected_devices++;
@@ -898,8 +898,8 @@ void PadHandlerBase::process()
 			{
 				input_log.error("%s device %d disconnected", m_type, i);
 
-				pad->m_port_status &= ~CELL_PAD_STATUS_CONNECTED;
-				pad->m_port_status |= CELL_PAD_STATUS_ASSIGN_CHANGES;
+				retro_atomic_fetch_and_int(&pad->m_port_status, ~CELL_PAD_STATUS_CONNECTED);
+				retro_atomic_fetch_or_int(&pad->m_port_status, CELL_PAD_STATUS_ASSIGN_CHANGES);
 
 				last_connection_status[i] = false;
 				connected_devices--;

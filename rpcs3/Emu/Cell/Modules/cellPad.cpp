@@ -218,7 +218,7 @@ bool cellPad_NotifyStateChange(usz index, u64 /*state*/, bool locked, bool is_bl
 	// NOTE 1: The state's CONNECTED bit should currently be identical to the current
 	//         m_port_status CONNECTED bit when called from our pad handlers.
 	// NOTE 2: Make sure to propagate all other status bits to the reported status.
-	const u32 new_status = pad->m_port_status;
+	const u32 new_status = pad->port_status();
 
 	if (~(old_status ^ new_status) & CELL_PAD_STATUS_CONNECTED)
 	{
@@ -418,7 +418,11 @@ void pad_get_data(u32 port_no, CellPadData* data, bool get_periph_data = false)
 			}
 		};
 
-		for (const ButtonExternal& button : pad->m_buttons_external)
+		// What the frontend's thread last handed over, read whole without a lock
+		pad_external pad_ext;
+		pad->read_external(pad_ext);
+
+		for (const ButtonExternal& button : pad_ext.button_span())
 		{
 			// here we check btns, and set pad accordingly,
 			// if something changed, set btnChanged
@@ -497,7 +501,7 @@ void pad_get_data(u32 port_no, CellPadData* data, bool get_periph_data = false)
 			}
 		}
 
-		for (const AnalogStickExternal& stick : pad->m_sticks_external)
+		for (const AnalogStickExternal& stick : pad_ext.sticks)
 		{
 			switch (stick.m_offset)
 			{
