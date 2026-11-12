@@ -77,13 +77,12 @@ static bool RETRO_CALLCONV environ_multi(unsigned cmd, void* data)
 
 static bool RETRO_CALLCONV environ_none(unsigned, void*) { return false; }
 
-static void run_for(int runs)
+// Runs back to back, as fast as they come: the audio is paced by the runs,
+// not by the time between them
+static void run_for(int runs, double fps = 60.0)
 {
 	for (int i = 0; i < runs; i++)
-	{
-		std::this_thread::sleep_for(std::chrono::milliseconds(16));
-		libretro_audio_process(take_s16);
-	}
+		libretro_audio_process(take_s16, fps);
 }
 
 int main()
@@ -97,7 +96,7 @@ int main()
 		backend.Play();
 		s_produced = 0;
 		run_for(10);
-		CHECK(s_got_f32.size() > 48000 / 60 * 2 * 5);
+		CHECK(s_got_f32.size() == 48000 / 60 * 2 * 10); // exactly a frame's worth a run
 		CHECK(s_got_s16.empty());
 		CHECK(s_got_channels == 2);
 		usz wrong = 0;
@@ -120,7 +119,7 @@ int main()
 		s_produced = 0;
 		run_for(10);
 		CHECK(s_got_f32.empty());
-		CHECK(s_got_s16.size() > 48000 / 60 * 2 * 5);
+		CHECK(s_got_s16.size() == 48000 / 60 * 2 * 10);
 		usz wrong = 0;
 		for (usz i = 0; i < s_got_s16.size(); i++)
 			wrong += std::abs(s_got_s16[i] - sample_value(static_cast<u32>(i)) * 32768.0f) > 1.0f;
@@ -139,7 +138,42 @@ int main()
 		s_produced = 0;
 		run_for(5);
 		CHECK(s_batch_calls > 0);
-		CHECK(s_got_s16.size() > 48000 / 60 * 2 * 2);
+		CHECK(s_got_s16.size() == 48000 / 60 * 2 * 5);
+		backend.Close();
+	}
+
+	// NTSC: 48000 / 59.94 = 800.8 a run, the fractions carried, whatever the
+	// time between runs; and silence, the same amount, while not playing
+	{
+		s_got_s16.clear();
+		CHECK(!libretro_audio_negotiate_multi(environ_none));
+		LibretroAudioBackend backend;
+		CHECK(backend.Open("", AudioFreq::FREQ_48K, AudioSampleSize::FLOAT, AudioChannelCnt::STEREO, audio_channel_layout::automatic));
+		backend.SetWriteCallback(produce);
+		backend.Play();
+		const double ntsc = 60.0 * 1000.0 / 1001.0;
+		// 5005 runs of 800.8: 4008004 frames, give or take the fraction
+		// carried in, and every run 800 or 801
+		u32 odd_runs = 0;
+		s_got_s16.clear();
+		for (int i = 0; i < 5005; i++)
+		{
+			const usz before = s_got_s16.size();
+			libretro_audio_process(take_s16, ntsc);
+			const usz got = (s_got_s16.size() - before) / 2;
+			odd_runs += got != 800 && got != 801;
+		}
+		const usz total = s_got_s16.size() / 2;
+		CHECK(total + 1 >= 4008004 && total <= 4008004 + 1);
+		CHECK(odd_runs == 0);
+		backend.Pause();
+		s_got_s16.clear();
+		run_for(60);
+		CHECK(s_got_s16.size() == 48000u * 2);
+		bool silent = true;
+		for (s16 v : s_got_s16)
+			silent = silent && v == 0;
+		CHECK(silent);
 		backend.Close();
 	}
 
@@ -168,7 +202,7 @@ int main()
 			std::this_thread::sleep_for(std::chrono::milliseconds(2));
 			s_got_f32.clear();
 			const auto t0 = std::chrono::steady_clock::now();
-			libretro_audio_process(take_s16);
+			libretro_audio_process(take_s16, 60.0);
 			worst_ms = std::max(worst_ms, std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count());
 		}
 		stop = true;

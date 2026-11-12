@@ -35,8 +35,9 @@ struct retro_audio_sample_multi_callback
 bool libretro_audio_negotiate_multi(retro_environment_t environ_cb);
 bool libretro_audio_multi_available();
 
-// Process and send audio to libretro frontend
-void libretro_audio_process(retro_audio_sample_batch_t audio_batch_cb);
+// retro_run: one frame's worth of the game's audio to the frontend - the
+// sample rate over @frame_rate, the frames a second the core declares
+void libretro_audio_process(retro_audio_sample_batch_t audio_batch_cb, double frame_rate);
 
 // LibretroAudioBackend - AudioBackend implementation for libretro. Nothing
 // is buffered here: retro_run pulls what is due straight from cellAudio's

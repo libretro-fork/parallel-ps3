@@ -191,13 +191,6 @@ struct retro_core_option_v2_definition option_defs_us[] = {
         "16:9"
     },
     {
-        "rpcs3_frame_limit", "Frame Limit", NULL,
-        "Highest frame rate the game may run at. Auto is the VBlank Frequency, as in RPCS3; PS3 Native paces flips the way the PS3 does; Off lets games that do not wait for the PS3's refresh themselves run too fast.",
-        NULL, "gpu",
-        { {"auto", "Auto"}, {"ps3", "PS3 Native"}, {"off", "Off"}, {"30", "30 FPS"}, {"50", "50 FPS"}, {"60", "60 FPS"}, {"120", "120 FPS"}, {"144", "144 FPS"}, {"240", "240 FPS"}, {NULL, NULL} },
-        "auto"
-    },
-    {
         "rpcs3_anisotropic_filter", "Anisotropic Filtering", NULL,
         "Texture filtering quality.",
         NULL, "gpu",
@@ -606,13 +599,6 @@ struct retro_core_option_v2_definition option_defs_us[] = {
         NULL, "core",
         { {"disabled", NULL}, {"minimal", "Frame rate only"}, {"low", "Low"}, {"medium", "Medium"}, {"high", "High"}, {NULL, NULL} },
         "disabled"
-    },
-    {
-        "rpcs3_frame_pacing", "Frame Pacing", NULL,
-        "What the game's frames are timed by. Emulator clock is RPCS3's own timer, as in standalone RPCS3. RetroArch gives the game one PS3 refresh per frame RetroArch shows, so fast-forward speeds the game up and the game runs at the VBlank Frequency when RetroArch shows that many frames a second.",
-        NULL, "core",
-        { {"frontend", "RetroArch"}, {"emulator", "Emulator clock"}, {NULL, NULL} },
-        "emulator"
     },
     {
         "rpcs3_master_volume", "Master Volume", NULL,

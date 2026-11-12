@@ -4,6 +4,11 @@ What changed in the libretro core of this fork, newest first. Changes that come 
 
 ## Unreleased
 
+- RetroArch paces the game, and nothing in the core does.
+  - VBlank comes only from retro_run, one per run (two for a 30 fps game of the VBlank list). RPCS3's own VBlank timer, which posted VBlank by the host's clock and was the default, is gone from the core, along with the Frame Pacing option.
+  - A flip waits for the next VBlank as on a PS3 (RPCS3's PS3 Native limit), so a game that does not wait for the refresh itself is held to it by the emulated hardware. RPCS3's frame limiter, which slept the renderer by the host's clock, is gone, along with the Frame Limit option.
+  - Each retro_run hands over exactly one frame's worth of audio (48000 over the frames a second the core declares, the fractions carried), and silence the same length while the game's audio is stopped. It used to hand over as much as had played in real time since the last run, read off the host's clock.
+  `test_audio_frontend` runs retro_run back to back and checks exactly 800 samples a run at 60 fps, 800 or 801 at 59.94 adding up to the right total over 5005 runs, and silence of the same length while paused. cellAudio still mixes on the host's clock; driving it, and the PS3's other clocks, from retro_run is to come.
 - The core's own code keeps to its 4 KiB stack frame, and the Makefile build enforces it. Three functions went past it:
   - the cellRec provider thread, with its two 2 KiB audio blocks on the stack (now made once when recording starts);
   - the music decoder's thread, through `std::random_device`, about 5 KiB, used only to seed a shuffle (now seeded from the clock);

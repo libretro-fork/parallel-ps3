@@ -44,7 +44,6 @@ atomic_t<bool> g_user_asked_for_screenshot = false;
 atomic_t<bool> g_user_asked_for_frame_capture = false;
 atomic_t<bool> g_disable_frame_limit = false;
 #ifdef LIBRETRO_CORE
-atomic_t<bool> g_libretro_frontend_vblank = false;
 atomic_t<u64> g_libretro_vblank_requests = 0;
 #endif
 rsx::frame_trace_data frame_debug;
@@ -1171,6 +1170,9 @@ namespace rsx
 
 		g_fxo->get<vblank_thread>().set_thread(std::shared_ptr<named_thread<std::function<void()>>>(new named_thread<std::function<void()>>("VBlank Thread"sv, [this]() -> void
 		{
+#ifdef LIBRETRO_CORE
+			u64 frontend_vblanks = g_libretro_vblank_requests;
+#else
 #ifdef __linux__
 			constexpr u32 host_min_quantum = 10;
 #else
@@ -1182,18 +1184,17 @@ namespace rsx
 			u64 vblank_period = 1'000'000 + u64{g_cfg.video.vblank_ntsc.get()} * 1000;
 
 			u64 local_vblank_count = 0;
-#ifdef LIBRETRO_CORE
-			u64 frontend_vblanks = g_libretro_vblank_requests;
 #endif
 
 			// TODO: exit condition
 			while (!is_stopped() && !unsent_gcm_events && thread_ctrl::state() != thread_state::aborting)
 			{
 #ifdef LIBRETRO_CORE
-				// VBLANK on the frontend's clock: one per retro_run. The game then
-				// makes exactly one frame per frame the frontend shows, instead of
-				// drifting against it and now and then showing one twice or not at all.
-				if (g_libretro_frontend_vblank)
+				// VBLANK on the frontend's clock, and on nothing else: one per
+				// retro_run. The game makes exactly one frame per frame the
+				// frontend shows, and fast-forward, slow motion and pausing
+				// are the frontend's. RPCS3's own timer, which posted VBLANK by
+				// the host's clock, is not in the core.
 				{
 					const u64 requested = g_libretro_vblank_requests;
 
@@ -1217,15 +1218,9 @@ namespace rsx
 						// What piled up while paused is not owed to the game
 						frontend_vblanks = g_libretro_vblank_requests;
 					}
-
-					// Picks up from here should the timer take over again
-					start_time = get_system_time();
-					local_vblank_count = 0;
-					continue;
 				}
 
-				frontend_vblanks = g_libretro_vblank_requests;
-#endif
+#else
 				// Get current time
 				const u64 current = get_system_time();
 
@@ -1285,6 +1280,7 @@ namespace rsx
 					// Restore difference
 					start_time = get_system_time() - start_time;
 				}
+#endif
 			}
 		})));
 

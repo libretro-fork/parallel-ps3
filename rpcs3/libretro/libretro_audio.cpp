@@ -7,7 +7,6 @@
 
 #include <algorithm>
 #include <cstring>
-#include <chrono>
 #include <bit>
 #include <thread>
 
@@ -78,64 +77,33 @@ LibretroAudioBackend* get_libretro_audio_backend()
     return s_audio_backend;
 }
 
-void libretro_audio_process(retro_audio_sample_batch_t audio_batch_cb)
+void libretro_audio_process(retro_audio_sample_batch_t audio_batch_cb, double frame_rate)
 {
-    if (!audio_batch_cb || !s_audio_backend)
+    if (!audio_batch_cb || !s_audio_backend || frame_rate <= 0.0)
         return;
 
-    // As much audio as has played in real time since the last retro_run.
+    // Exactly one frame's worth a run: the sample rate over the frames a
+    // second the core declares, the fractions carried. No clock: the
+    // frontend paces the runs, and with them the audio, as it paces the
+    // pictures; fast-forward and slow motion take the audio along.
     //
-    // Handing over 2048 frames every run made audio sync hold RetroArch to
-    // 48000 / 2048 = 23.4 runs a second - the 24 fps NNshi saw in every game.
-    // A fixed 800 frames (48000 / 60) fixed that but is still wrong: RPCS3 is
-    // clocked by real time, not by retro_run. Whenever the frontend ran more
-    // than 60 times a second it drained cellAudio's ring faster than real
-    // time, and with buffering on cellAudio answers a draining ring by
-    // shortening its period - down to half - so the game's music ran ahead of
-    // its pictures (Project Diva, 5-10 % fast). A sound card drains the ring
-    // at a steady 48 kHz whatever the frame rate; this does the same.
+    // It used to be as much as had played in real time since the last run,
+    // read off the host's clock, and before that 2048 frames a run (which held
+    // RetroArch to 23.4 runs a second) and then a fixed 800 (48000 / 60).
+    // While the emulator's audio is stopped (paused, not started yet) the run
+    // hands over silence, so the frontend's audio keeps its pace too.
     static constexpr double SAMPLE_RATE = 48000.0;
-    // The longest a run can be late and still be owed the time it missed: the
-    // gap after which the core's watchdog pauses the emulator. A longer one
-    // was a pause - the frontend's, and then the emulator's.
-    static constexpr double PAUSE_SECONDS = 0.1;
-    static constexpr double MAX_FRAMES_PER_RUN = SAMPLE_RATE * PAUSE_SECONDS;
     static constexpr size_t FRAMES_PER_BATCH = 512;
     // retro_run's alone: the game's samples as the callback gives them, and
     // as s16 for a frontend that takes no floats. Up to 7.1.
     alignas(64) static union { float f32[FRAMES_PER_BATCH * 8]; int16_t s16[FRAMES_PER_BATCH * 8]; } s_raw;
     alignas(64) static int16_t s_s16[FRAMES_PER_BATCH * 8];
+    static double s_owed = 0.0; // the fraction of a frame carried to the next run
+    // The format last handed over, for silence while there is no audio
+    static u32 s_channels = 2;
+    static audio_channel_layout s_layout = audio_channel_layout::automatic;
 
-    static std::chrono::steady_clock::time_point s_last_run;
-    static double s_owed = 0.0; // fractional frames carried to the next run
-
-    const auto now = std::chrono::steady_clock::now();
-    if (s_last_run == std::chrono::steady_clock::time_point{})
-        s_last_run = now - std::chrono::microseconds(1'000'000 / 60);
-    double elapsed = std::chrono::duration<double>(now - s_last_run).count();
-    s_last_run = now;
-
-    // Nothing is owed for a pause. The first runs after one found the
-    // emulator still paused, and what they asked for and did not get - up to
-    // 50 ms - was carried to the run after, which then handed the frontend
-    // four frames' worth at once. With audio sync on, that filled the
-    // frontend's buffer, each run after it waited in the audio driver, and
-    // the frame times swung for seconds until the buffer had drained (NNshi:
-    // frame rate drops and oscillation after unpausing, more often the longer
-    // the pause). After a pause a run is owed one frame's worth, and while
-    // the emulator's audio is stopped, nothing.
-    if (!s_audio_backend->IsPlaying())
-    {
-        s_owed = 0.0;
-        return;
-    }
-    if (elapsed >= PAUSE_SECONDS)
-    {
-        elapsed = 1.0 / 60.0;
-        s_owed = 0.0;
-    }
-    s_owed = std::min(s_owed + elapsed * SAMPLE_RATE, MAX_FRAMES_PER_RUN);
-
+    s_owed += SAMPLE_RATE / frame_rate;
     const size_t due = static_cast<size_t>(s_owed);
     s_owed -= static_cast<double>(due);
 
@@ -146,40 +114,50 @@ void libretro_audio_process(retro_audio_sample_batch_t audio_batch_cb)
         bool is_float = false;
         u32 channels = 2;
         audio_channel_layout layout = audio_channel_layout::automatic;
-        const size_t frames = s_audio_backend->GetSamples(&s_raw, want, &is_float, &channels, &layout);
-        if (frames > 0)
+        size_t frames = s_audio_backend->GetSamples(&s_raw, want, &is_float, &channels, &layout);
+        if (frames)
         {
-            const unsigned mask = speaker_mask(layout, channels);
-            if (is_float && s_multi_available && s_multi.batch_float)
+            s_channels = channels;
+            s_layout = layout;
+        }
+        if (frames < want)
+        {
+            // Not playing, or set up again just now: silence for the rest,
+            // in the format last handed over
+            if (!frames)
             {
-                // As the game made them: no conversion, no copy
-                s_multi.batch_float(s_raw.f32, frames, channels, mask);
+                channels = s_channels;
+                layout = s_layout;
+                is_float = false;
             }
+            if (is_float)
+                std::fill(s_raw.f32 + frames * channels, s_raw.f32 + want * channels, 0.0f);
             else
+                std::fill(s_raw.s16 + frames * channels, s_raw.s16 + want * channels, int16_t{0});
+            frames = want;
+        }
+
+        const unsigned mask = speaker_mask(layout, channels);
+        if (is_float && s_multi_available && s_multi.batch_float)
+        {
+            // As the game made them: no conversion, no copy
+            s_multi.batch_float(s_raw.f32, frames, channels, mask);
+        }
+        else
+        {
+            const int16_t* s16 = s_raw.s16;
+            if (is_float)
             {
-                const int16_t* s16 = s_raw.s16;
-                if (is_float)
-                {
-                    convert_float_to_s16(s_s16, s_raw.f32, frames * channels);
-                    s16 = s_s16;
-                }
-                if (s_multi_available)
-                    s_multi.batch_int16(s16, frames, channels, mask);
-                else if (channels == 2)
-                    audio_batch_cb(s16, frames);
+                convert_float_to_s16(s_s16, s_raw.f32, frames * channels);
+                s16 = s_s16;
             }
+            if (s_multi_available)
+                s_multi.batch_int16(s16, frames, channels, mask);
+            else if (channels == 2)
+                audio_batch_cb(s16, frames);
         }
         remaining -= frames;
-        if (frames < want)
-            break; // nothing more to give this run
     }
-
-    // Without buffering cellAudio produces in 256-sample blocks on its own
-    // clock, so a run often lands just before the next block is out. What was
-    // due but not there yet is owed to the next run - dropping it made every
-    // short run permanent, and the audio that came late piled up unplayed.
-    // Bounded, so a pause does not come back as a burst.
-    s_owed = std::min(s_owed + static_cast<double>(remaining), SAMPLE_RATE / 20);
 }
 
 LibretroAudioBackend::LibretroAudioBackend()

@@ -371,10 +371,10 @@ static void libretro_check_frame_stall(bool new_frame)
 
     const counters c = now_counters();
     rsx_log.error("libretro: no new frame for %.1fs while running: RSX flips +%u, frames handed over +%u, "
-        "VBLANKs +%u of +%u requested (frontend pacing %s), progress dialog '%s'",
+        "VBLANKs +%u of +%u requested, progress dialog '%s'",
         (now - s_frame_us) / 1e6, c.flips - s_at_frame.flips, c.handed - s_at_frame.handed,
         c.vblanks - s_at_frame.vblanks, c.requested - s_at_frame.requested,
-        g_libretro_frontend_vblank ? "on" : "off", std::string(g_progr_text));
+        std::string(g_progr_text));
     s_report_us = now;
     s_reported = true;
 }
@@ -741,40 +741,15 @@ static void libretro_apply_core_options()
     g_cfg.video.precise_zpass_count.set(zcull == "precise");
     g_cfg.video.relaxed_zcull_sync.set(zcull == "relaxed");
 
-    // Frame Limit
-    std::string limit = get_option_value("rpcs3_frame_limit", "auto");
-    g_cfg.video.vsync.set(vsync_mode::off);  // Disable RPCS3 vsync, RetroArch controls timing
-
-    // Auto is RPCS3's own default: at most one flip per PS3 refresh (the
-    // VBlank Rate). Leaving the limiter off for it, as this used to, let
-    // every game that does not wait for VBLANK itself run too fast (NNshi).
-    // 144 and 240 have no frame_limit_type of their own; they go through the
-    // second limit, which applies when the first one is unlimited.
+    // Pacing is RetroArch's: one PS3 refresh per retro_run (see retro_run),
+    // and a flip waits for the next refresh as on a PS3 (PS3 Native), so a
+    // game that does not wait for the refresh itself is held to it by the
+    // emulated hardware, not by a timer. No frame limit of the host's clock,
+    // and no vsync of RPCS3's own.
+    g_cfg.video.vsync.set(vsync_mode::off);
     g_disable_frame_limit = false;
+    g_cfg.video.frame_limit.set(frame_limit_type::_ps3);
     g_cfg.video.second_frame_limit.set(0);
-
-    if (limit == "off" || limit == "Off")
-    {
-        g_disable_frame_limit = true;
-        g_cfg.video.frame_limit.set(frame_limit_type::none);
-    }
-    else if (limit == "ps3")
-        g_cfg.video.frame_limit.set(frame_limit_type::_ps3);
-    else if (limit == "30")
-        g_cfg.video.frame_limit.set(frame_limit_type::_30);
-    else if (limit == "50")
-        g_cfg.video.frame_limit.set(frame_limit_type::_50);
-    else if (limit == "60")
-        g_cfg.video.frame_limit.set(frame_limit_type::_60);
-    else if (limit == "120")
-        g_cfg.video.frame_limit.set(frame_limit_type::_120);
-    else if (limit == "144" || limit == "240")
-    {
-        g_cfg.video.frame_limit.set(frame_limit_type::infinite);
-        g_cfg.video.second_frame_limit.set(std::stoi(limit));
-    }
-    else
-        g_cfg.video.frame_limit.set(frame_limit_type::_auto);
 
     // Shader Mode
     std::string shader_mode = get_option_value("rpcs3_shader_mode", "async");
@@ -985,8 +960,6 @@ static void libretro_apply_core_options()
         }
     }
     g_cfg.video.vblank_rate.set(std::stoi(vblank));
-
-    g_libretro_frontend_vblank = get_option_value("rpcs3_frame_pacing", "emulator") == "frontend";
 
     // Immediate: the readback path is only the fallback without the
     // frontend's Vulkan device now, and no longer offered as an option.
@@ -1765,6 +1738,15 @@ static unsigned scaled_dimension(unsigned native)
 }
 
 
+// The frames a second the core declares: the PS3's refresh (VBlank
+// Frequency, NTSC's 1000/1001 included) or, for a game of the VBlank list
+// shown at half of it, what is shown. One retro_run is one of these.
+static double libretro_frame_rate()
+{
+    const double vblank_period = 1'000'000.0 + g_cfg.video.vblank_ntsc.get() * 1000.0;
+    return (s_output_hz ? s_output_hz : g_cfg.video.vblank_rate.get()) * 1'000'000.0 / vblank_period;
+}
+
 static void fill_av_info(retro_system_av_info* info)
 {
     unsigned width = 1280, height = 720;
@@ -1782,8 +1764,7 @@ static void fill_av_info(retro_system_av_info* info)
     info->geometry.aspect_ratio = s_display_aspect;
     // The PS3's refresh rate. A 30 fps game of the VBlank Frequency list has
     // its VBLANK at 120 Hz and is shown at 60 (s_output_hz).
-    const double vblank_period = 1'000'000.0 + g_cfg.video.vblank_ntsc.get() * 1000.0;
-    info->timing.fps = (s_output_hz ? s_output_hz : g_cfg.video.vblank_rate.get()) * 1'000'000.0 / vblank_period;
+    info->timing.fps = libretro_frame_rate();
     info->timing.sample_rate = 48000.0;
 }
 
@@ -3324,17 +3305,17 @@ void retro_run(void)
         g_libretro_pad_thread->frontend_update(connected);
     }
 
-    // One PS3 VBLANK per frame the frontend asks for (Frame Pacing:
-    // RetroArch) - two where the VBLANK runs at twice the rate the core shows
-    // frames at (a 30 fps game of the VBlank Frequency list)
-    if (g_libretro_frontend_vblank && Emu.IsRunning())
+    // One PS3 VBLANK per retro_run - two where the VBLANK runs at twice the
+    // rate the core shows frames at (a 30 fps game of the VBlank Frequency
+    // list). The frontend paces; nothing in the core does.
+    if (Emu.IsRunning())
     {
         g_libretro_vblank_requests += s_output_hz ? std::max<u32>(1, g_cfg.video.vblank_rate.get() / s_output_hz) : 1;
         g_libretro_vblank_requests.notify_one();
     }
 
     // Process audio
-    libretro_audio_process(audio_batch_cb);
+    libretro_audio_process(audio_batch_cb, libretro_frame_rate());
 
 #ifdef HAVE_VULKAN
     if (g_libretro_vulkan_hw)
