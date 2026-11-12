@@ -247,13 +247,13 @@ error_code cell_music_decode_read(vm::ptr<void> buf, vm::ptr<u32> startTime, u64
 
 	s64 start_time_ms = 0;
 
-	if (!dec.decoder.timestamps_ms.empty())
+	if (!media_timestamps_empty(&dec.decoder.timestamps_ms))
 	{
-		start_time_ms = dec.decoder.timestamps_ms.front().second;
+		start_time_ms = media_timestamps_front(&dec.decoder.timestamps_ms)->second;
 
-		while (dec.decoder.timestamps_ms.size() > 1 && dec.read_pos >= ::at32(dec.decoder.timestamps_ms, 1).first)
+		while (media_timestamps_count(&dec.decoder.timestamps_ms) > 1 && dec.read_pos >= media_timestamps_at(&dec.decoder.timestamps_ms, 1)->first)
 		{
-			dec.decoder.timestamps_ms.pop_front();
+			media_timestamps_pop_front(&dec.decoder.timestamps_ms);
 		}
 	}
 

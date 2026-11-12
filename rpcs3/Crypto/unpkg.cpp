@@ -985,6 +985,9 @@ bool package_reader::fill_data(std::map<std::string, install_entry*>& all_instal
 		return false;
 	}
 
+	// The entries are pointed at as they are added: room for all of them first, so none moves
+	m_install_entries.reserve(entries.size());
+
 	// Create directories first
 	for (const auto& entry : entries)
 	{
@@ -1439,7 +1442,7 @@ void package_reader::extract_worker()
 	}
 }
 
-package_install_result package_reader::extract_data(std::deque<package_reader>& readers, std::deque<std::string>& bootable_paths, bool from_optical_drive)
+package_install_result package_reader::extract_data(std::span<package_reader> readers, std::vector<std::string>& bootable_paths, bool from_optical_drive)
 {
 	package_install_result::error_type error = package_install_result::error_type::no_error;
 	usz num_failures = 0;

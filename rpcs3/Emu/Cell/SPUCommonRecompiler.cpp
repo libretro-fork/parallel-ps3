@@ -747,9 +747,9 @@ static u16 calculate_crc16(const uchar* data, usz length)
 	return crc;
 }
 
-std::deque<spu_program> spu_cache::get()
+std::vector<spu_program> spu_cache::get()
 {
-	std::deque<spu_program> result;
+	std::vector<spu_program> result;
 
 	if (!m_file)
 	{
@@ -757,6 +757,10 @@ std::deque<spu_program> spu_cache::get()
 	}
 
 	m_file.seek(0);
+
+	// Room for a file of ordinary functions (14 words and the header) at
+	// once: a guess that only has to spare most of the regrowing
+	result.reserve(m_file.size() / 64);
 
 	// End of the last entry read whole
 	u64 good_end = 0;
@@ -810,8 +814,11 @@ std::deque<spu_program> spu_cache::get()
 		res.entry_point = addr;
 		res.lower_bound = addr;
 		res.data = std::move(func);
-		result.emplace_front(std::move(res));
+		result.emplace_back(std::move(res));
 	}
+
+	// The last one written first, as it was when each was put at the front
+	std::reverse(result.begin(), result.end());
 
 	// A broken or cut-off entry ends the reading, and everything appended
 	// after it would never be read again; drop the tail so that new entries

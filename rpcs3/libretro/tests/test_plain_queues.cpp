@@ -12,6 +12,7 @@
 //   queued;
 // - RSX's queued flips, against the std::deque in the flip info, and the
 //   host GPU write jobs through RSXDMAWriter's own code;
+// - the SPU cache read back, in the order the std::deque gave it;
 // - the patterns the others use (sys_usbd's events, the USB figures'
 //   replies, RSX's two histories), each against the std:: container it
 //   was, a few hundred thousand steps: same contents at every step.
@@ -27,6 +28,9 @@
 #include "Emu/Cell/lv2/sys_net/lv2_socket_p2ps.h"
 #include "Emu/RSX/RSXThread.h"
 #include "Emu/RSX/Host/RSXDMAWriter.h"
+#include "Emu/Cell/SPURecompiler.h"
+#include "Emu/Cell/SPUAnalyser.h"
+#include "Utilities/File.h"
 #include "util/serialization.hpp"
 
 #include <cstdio>
@@ -423,6 +427,38 @@ int main()
 		writer.register_handler({1, [&](const volatile rsx::host_gpu_context_t*, const rsx::host_gpu_write_op_t*) { done.clear(); return true; }});
 		writer.update();
 		CHECK(done.size() == expected);
+	}
+
+	// The SPU cache read back (spu_cache::get): a vector where it was a
+	// std::deque filled from the front - the last program written first
+	{
+		const std::string path = fs::get_temp_dir() + "test_plain_queues_spu_cache.dat";
+		fs::remove_file(path);
+		{
+			spu_cache cache(path);
+			CHECK(!!cache);
+			for (u32 n = 0; n < 50; n++)
+			{
+				spu_program program;
+				program.entry_point = 0x100 + n * 0x40;
+				program.lower_bound = program.entry_point;
+				program.data.assign(4 + n % 5, 0x40802000 + n); // any words but zero
+				cache.add(program);
+			}
+		}
+		{
+			spu_cache cache(path);
+			const std::vector<spu_program> programs = cache.get();
+			CHECK(programs.size() == 50);
+			usz wrong = 0;
+			for (u32 i = 0; i < programs.size(); i++)
+			{
+				const u32 n = 49 - i;
+				wrong += programs[i].entry_point != 0x100 + n * 0x40 || programs[i].data.size() != 4 + n % 5 || programs[i].data[0] != 0x40802000 + n;
+			}
+			CHECK(wrong == 0);
+		}
+		fs::remove_file(path);
 	}
 
 	std::printf("test_plain_queues: %s\n", failures ? "FAIL" : "ok");

@@ -76,14 +76,13 @@ namespace rpcs3::utils
 
 		int int_progress = 0;
 
-		std::deque<package_reader> reader;
-		reader.emplace_back(path);
+		package_reader reader(path);
 
 		// Run PKG unpacking asynchronously
 		named_thread worker("PKG Installer", [&]
 		{
-			std::deque<std::string> bootables;
-			const package_install_result result = package_reader::extract_data(reader, bootables, from_optical_drive);
+			std::vector<std::string> bootables;
+			const package_install_result result = package_reader::extract_data({&reader, 1}, bootables, from_optical_drive);
 			return result.error == package_install_result::error_type::no_error;
 		});
 
@@ -91,7 +90,7 @@ namespace rpcs3::utils
 		while (std::this_thread::sleep_for(5ms), worker <= thread_state::aborting)
 		{
 			// TODO: update unified progress dialog
-			const int pval = reader[0].get_progress(100);
+			const int pval = reader.get_progress(100);
 
 			if (pval > int_progress)
 			{

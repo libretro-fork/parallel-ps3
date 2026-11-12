@@ -1,3 +1,4 @@
+#include <queues/retro_deque.h>
 #include "stdafx.h"
 #include "Utilities/JIT.h"
 #include "Utilities/StrUtil.h"
@@ -1642,6 +1643,37 @@ std::string ppu_thread::dump_callstack() const
 	return ret;
 }
 
+// dump_callstack_list's routes: a place to carry on from in a function, and
+// what is known of the stack frame on the way there
+struct ppu_leaf_route
+{
+	u32 start_point;
+	bool maybe_leaf = false; // True if the function is leaf or at the very end/start of non-leaf
+	bool non_leaf = false; // Absolutely not a leaf
+	bool about_to_push_frame = false; // STDU incoming
+	bool about_to_store_lr = false; // Link is about to be stored on stack
+	bool about_to_pop_frame = false; // ADDI R1 is about to be issued
+	bool about_to_load_link = false; // MTLR is about to be issued
+	bool maybe_use_reg0_instead_of_lr = false; // Use R0 at the end of a non-leaf function if ADDI has been issued before MTLR
+};
+
+struct ppu_tail_route
+{
+	u32 start_point;
+	bool modified_stack = false;
+	bool restored_stack = false;
+
+	bool can_be_tail_call() const
+	{
+		// Either stack was not touched or was saved and restored
+		// Either way, stack address did not change in the end
+		return modified_stack == restored_stack;
+	}
+};
+
+RETRO_DEQUE_DEFINE(ppu_leaf_routes, ppu_leaf_route);
+RETRO_DEQUE_DEFINE(ppu_tail_routes, ppu_tail_route);
+
 std::vector<std::pair<u32, u32>> ppu_thread::dump_callstack_list() const
 {
 	//std::shared_lock rlock(vm::g_mutex); // Needs optimizations
@@ -1661,6 +1693,14 @@ std::vector<std::pair<u32, u32>> ppu_thread::dump_callstack_list() const
 		// Normally impossible unless the code does not follow ABI rules
 		return {};
 	}
+
+	// The routes still to follow through a function, for the two passes
+	// below. Made once for a number no function comes near and never moved,
+	// so a route can be held by reference while others are added.
+	ppu_leaf_routes_t leaf_routes{};
+	ppu_tail_routes_t tail_routes{};
+	ensure(ppu_leaf_routes_init(&leaf_routes, 4096));
+	ensure(ppu_tail_routes_init(&tail_routes, 4096));
 
 	u32 stack_min = stack_ptr & ~0xfff;
 	u32 stack_max = stack_min + 4096;
@@ -1777,31 +1817,23 @@ std::vector<std::pair<u32, u32>> ppu_thread::dump_callstack_list() const
 
 			bool upper_abort = false;
 
-			struct context_t
-			{
-				u32 start_point;
-				bool maybe_leaf = false; // True if the function is leaf or at the very end/start of non-leaf
-				bool non_leaf = false; // Absolutely not a leaf
-				bool about_to_push_frame = false; // STDU incoming
-				bool about_to_store_lr = false; // Link is about to be stored on stack
-				bool about_to_pop_frame = false; // ADDI R1 is about to be issued
-				bool about_to_load_link = false; // MTLR is about to be issued
-				bool maybe_use_reg0_instead_of_lr = false; // Use R0 at the end of a non-leaf function if ADDI has been issued before MTLR
-			};
+			typedef ppu_leaf_route context_t;
 
 			// Start with CIA
-			std::deque<context_t> workload{context_t{_cia}};
+			ppu_leaf_routes_t& workload = leaf_routes;
+			ppu_leaf_routes_clear(&workload);
+			{ const context_t route{_cia}; ppu_leaf_routes_push_back(&workload, &route); }
 
 			usz start = 0;
 
-			for (; start < workload.size(); start++)
+			for (; start < ppu_leaf_routes_count(&workload); start++)
 			{
-				for (u32 wa = workload[start].start_point; vm::check_addr(wa, vm::page_executable);)
+				for (u32 wa = (*ppu_leaf_routes_at(&workload, start)).start_point; vm::check_addr(wa, vm::page_executable);)
 				{
 					be_t<u32>& opcode = get_inst(wa);
 
 					auto& [_, maybe_leaf, non_leaf, about_to_push_frame, about_to_store_lr,
-						about_to_pop_frame, about_to_load_link, maybe_use_reg0_instead_of_lr] = workload[start];
+						about_to_pop_frame, about_to_load_link, maybe_use_reg0_instead_of_lr] = (*ppu_leaf_routes_at(&workload, start));
 
 					if (!opcode)
 					{
@@ -1816,7 +1848,7 @@ std::vector<std::pair<u32, u32>> ppu_thread::dump_callstack_list() const
 
 					const auto type = g_ppu_itype.decode(op.opcode);
 
-					if (workload.size() == 1 && type == ppu_itype::STDU && op.rs == 1u && op.ra == 1u)
+					if (ppu_leaf_routes_count(&workload) == 1 && type == ppu_itype::STDU && op.rs == 1u && op.ra == 1u)
 					{
 						if (op.simm16 >= 0)
 						{
@@ -1834,7 +1866,7 @@ std::vector<std::pair<u32, u32>> ppu_thread::dump_callstack_list() const
 						break;
 					}
 
-					if (workload.size() == 1 && type == ppu_itype::STD && op.ra == 1u && op.rs == 0u)
+					if (ppu_leaf_routes_count(&workload) == 1 && type == ppu_itype::STD && op.ra == 1u && op.rs == 0u)
 					{
 						bool found_matching_stdu = false;
 
@@ -1882,7 +1914,7 @@ std::vector<std::pair<u32, u32>> ppu_thread::dump_callstack_list() const
 					const u32 spr = ((op.spr >> 5) | ((op.spr & 0x1f) << 5));
 
 					// It can be placed before or after STDU, ignore for now
-					// if (workload.size() == 1 && type == ppu_itype::MFSPR && op.rs == 0u && spr == 0x8)
+					// if (ppu_leaf_routes_count(&workload) == 1 && type == ppu_itype::MFSPR && op.rs == 0u && spr == 0x8)
 					// {
 					// 	// Saving LR to register: this is indeed a new function (ok because LR has not been saved yet)
 					// 	maybe_leaf = true;
@@ -1958,7 +1990,7 @@ std::vector<std::pair<u32, u32>> ppu_thread::dump_callstack_list() const
 							if (proceeded)
 							{
 								// Remember next route start point
-								workload.push_back(context_t{route_pc});
+								{ const context_t route = context_t{route_pc}; ppu_leaf_routes_push_back(&workload, &route); } // refused when full: that route is not followed
 							}
 							else
 							{
@@ -1976,7 +2008,7 @@ std::vector<std::pair<u32, u32>> ppu_thread::dump_callstack_list() const
 				}
 			}
 
-			const context_t& res = workload[std::min<usz>(start, workload.size() - 1)];
+			const context_t& res = (*ppu_leaf_routes_at(&workload, std::min<usz>(start, ppu_leaf_routes_count(&workload) - 1)));
 
 			if (res.maybe_leaf && !res.non_leaf)
 			{
@@ -2093,21 +2125,11 @@ std::vector<std::pair<u32, u32>> ppu_thread::dump_callstack_list() const
 				continue;
 			}
 
-			struct context_t
-			{
-				u32 start_point;
-				bool modified_stack = false;
-				bool restored_stack = false;
+			typedef ppu_tail_route context_t;
 
-				bool can_be_tail_call() const
-				{
-					// Either stack was not touched or was saved and restored
-					// Either way, stack address did not change in the end
-					return modified_stack == restored_stack;
-				}
-			};
-
-			std::deque<context_t> workload{context_t{func_call_before_target}};
+			ppu_tail_routes_t& workload = tail_routes;
+			ppu_tail_routes_clear(&workload);
+			{ const context_t route{func_call_before_target}; ppu_tail_routes_push_back(&workload, &route); }
 
 			std::vector<be_t<u32>> inst_pos;
 
@@ -2154,9 +2176,9 @@ std::vector<std::pair<u32, u32>> ppu_thread::dump_callstack_list() const
 			// Which would be the only option to be the parent function
 			u32 highest_CIA_target_of_tail_call = 0;
 
-			for (usz wi = 0; wi < workload.size(); wi++)
+			for (usz wi = 0; wi < ppu_tail_routes_count(&workload); wi++)
 			{
-				auto& [work_pc, modified_stack, restored_stack] = workload[wi];
+				auto& [work_pc, modified_stack, restored_stack] = (*ppu_tail_routes_at(&workload, wi));
 
 				for (u32 inst_pc = work_pc;;)
 				{
@@ -2261,7 +2283,7 @@ std::vector<std::pair<u32, u32>> ppu_thread::dump_callstack_list() const
 							if (proceeded)
 							{
 								// Remember next route start point
-								workload.push_back(context_t{route_pc, modified_stack, restored_stack});
+								{ const context_t route = context_t{route_pc, modified_stack, restored_stack}; ppu_tail_routes_push_back(&workload, &route); } // refused when full: that route is not followed
 							}
 							else
 							{
@@ -2298,15 +2320,15 @@ std::vector<std::pair<u32, u32>> ppu_thread::dump_callstack_list() const
 
 			// Now we check if highest_CIA_target_of_tail_call is actually the function that hosts the program counter
 
-			workload.clear();
+			ppu_tail_routes_clear(&workload);
 			inst_pos.clear();
-			workload.push_back(context_t{highest_CIA_target_of_tail_call});
+			{ const context_t route = context_t{highest_CIA_target_of_tail_call}; ppu_tail_routes_push_back(&workload, &route); } // refused when full: that route is not followed
 
 			bool path_to_current_frame_found = false;
 
-			for (usz wi = 0; !path_to_current_frame_found && wi < workload.size(); wi++)
+			for (usz wi = 0; !path_to_current_frame_found && wi < ppu_tail_routes_count(&workload); wi++)
 			{
-				auto& [work_pc, modified_stack, restored_stack] = workload[wi];
+				auto& [work_pc, modified_stack, restored_stack] = (*ppu_tail_routes_at(&workload, wi));
 
 				for (u32 inst_pc = work_pc;;)
 				{
@@ -2365,7 +2387,7 @@ std::vector<std::pair<u32, u32>> ppu_thread::dump_callstack_list() const
 							if (proceeded)
 							{
 								// Remember next route start point
-								workload.push_back(context_t{route_pc, modified_stack, restored_stack});
+								{ const context_t route = context_t{route_pc, modified_stack, restored_stack}; ppu_tail_routes_push_back(&workload, &route); } // refused when full: that route is not followed
 							}
 							else
 							{
@@ -2395,6 +2417,9 @@ std::vector<std::pair<u32, u32>> ppu_thread::dump_callstack_list() const
 			call_stack_list_expanded_with_tail_calls.emplace_back(call_stack_list[i]);
 		}
 	}
+
+	ppu_leaf_routes_free(&leaf_routes);
+	ppu_tail_routes_free(&tail_routes);
 
 	ensure(call_stack_list_expanded_with_tail_calls.size() >= call_stack_list.size());
 	return call_stack_list_expanded_with_tail_calls;

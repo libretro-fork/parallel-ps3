@@ -29,7 +29,9 @@
 #include "Utilities/bin_patch.h"
 #include "Utilities/File.h"
 
-#include <deque>
+#include <cstdlib>
+#include <cstring>
+#include <queues/retro_deque.h>
 #include <map>
 #include <set>
 
@@ -82,12 +84,27 @@ static const std::map<std::string_view, std::vector<std::string_view>> s_multiga
     patch_engine::patch_map s_map;
     std::vector<patch_option> s_options;
     std::vector<retro_core_option_v2_definition> s_definitions;
-    std::deque<std::string> s_strings;
+    // The strings the option definitions point at: each a block of its
+    // own, so none moves when another is added
+    RETRO_DEQUE_DEFINE(kept_strings, char*);
+    kept_strings_t s_strings{};
 
-    const char* keep(std::string value)
+    const char* keep(const std::string& value)
     {
-        s_strings.push_back(std::move(value));
-        return s_strings.back().c_str();
+        char* const kept = static_cast<char*>(std::malloc(value.size() + 1));
+        ensure(kept);
+        std::memcpy(kept, value.c_str(), value.size() + 1);
+        ensure(kept_strings_push_back_growing(&s_strings, &kept));
+        return kept;
+    }
+
+    void forget_strings()
+    {
+        while (!kept_strings_empty(&s_strings))
+        {
+            std::free(*kept_strings_front(&s_strings));
+            kept_strings_pop_front(&s_strings);
+        }
     }
 
     // Short and stable: the same patch of the same game gets the same key in
@@ -150,7 +167,7 @@ namespace libretro_patches
         s_map.clear();
         s_options.clear();
         s_definitions.clear();
-        s_strings.clear();
+        forget_strings();
 
         if (serial.empty())
             return;

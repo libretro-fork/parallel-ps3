@@ -8,6 +8,9 @@ on:
     paths:
       - 'rpcs3/libretro/libretro-common/**'
       - 'rpcs3/libretro/tests/**'
+      - 'rpcs3/**/*.h'
+      - 'rpcs3/**/*.hpp'
+      - 'rpcs3/**/*.cpp'
       - 'rpcs3/Emu/Io/**'
       - 'rpcs3/Input/**'
       - 'rpcs3/Emu/Cell/Modules/cellPad.*'
@@ -69,6 +72,9 @@ on:
     paths:
       - 'rpcs3/libretro/libretro-common/**'
       - 'rpcs3/libretro/tests/**'
+      - 'rpcs3/**/*.h'
+      - 'rpcs3/**/*.hpp'
+      - 'rpcs3/**/*.cpp'
       - 'rpcs3/Emu/Io/**'
       - 'rpcs3/Input/**'
       - 'rpcs3/Emu/Cell/Modules/cellPad.*'

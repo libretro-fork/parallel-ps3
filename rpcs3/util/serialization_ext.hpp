@@ -180,7 +180,9 @@ private:
 		std::unique_ptr<named_thread<std::function<void()>>> m_thread;
 	};
 
-	std::deque<compression_thread_context_t> m_compression_threads;
+	// One for every compression thread, made before any thread starts (they do not move)
+	std::unique_ptr<compression_thread_context_t[]> m_compression_threads;
+	usz m_compression_thread_count = 0;
 	std::shared_ptr<compressed_zstd_stream_data> m_stream;
 	std::unique_ptr<named_thread<std::function<void()>>> m_file_writer_thread;
 

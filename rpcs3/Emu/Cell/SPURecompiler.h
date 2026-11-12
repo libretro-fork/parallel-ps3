@@ -32,7 +32,7 @@ public:
 		return m_file.operator bool();
 	}
 
-	std::deque<struct spu_program> get();
+	std::vector<struct spu_program> get();
 
 	void add(const struct spu_program& func);
 

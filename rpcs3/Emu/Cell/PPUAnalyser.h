@@ -138,7 +138,7 @@ struct ppu_module : public Type
 	std::vector<ppu_segment> secs{}; // Segment sections
 	std::vector<ppu_function> funcs{}; // Function list
 	std::vector<u32> applied_patches; // Patch addresses
-	std::deque<std::shared_ptr<void>> allocations; // Segment memory allocations
+	std::vector<std::shared_ptr<void>> allocations; // Segment memory allocations (held, never looked through)
 	std::map<u32, u32> addr_to_seg_index; // address->segment ordered translator map
 	ppu_module* parent = nullptr; // For compilation: refers to original structure (is whole, not partitioned) 
 	std::pair<u32, u32> local_bounds{0, u32{umax}}; // Module addresses range

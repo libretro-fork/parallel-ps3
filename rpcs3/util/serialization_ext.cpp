@@ -806,16 +806,21 @@ void compressed_zstd_serialization_file_handler::initialize(utils::serial& ar)
 		m_write_inited = true;
 		m_errored = false;
 
-		m_compression_threads.clear();
+		m_compression_threads.reset();
+		m_compression_thread_count = 0;
 		m_file_writer_thread.reset();
 
 		// Make sure at least one thread is free
 		// Limit thread count in order to make sure memory limits are under control (TODO: scale with RAM size)
 		const usz thread_count = std::min<u32>(std::max<u32>(utils::get_thread_count(), 2) - 1, 32);
 
+		// All of them first: a thread that starts sees how many there are
+		m_compression_threads = std::make_unique<compression_thread_context_t[]>(thread_count);
+		m_compression_thread_count = thread_count;
+
 		for (usz i = 0; i < thread_count; i++)
 		{
-			m_compression_threads.emplace_back().m_thread = std::make_unique<named_thread<std::function<void()>>>(fmt::format("CompressedPrepare Thread %d", i + 1), [this]() { this->stream_data_prepare_thread_op(); });
+			m_compression_threads[i].m_thread = std::make_unique<named_thread<std::function<void()>>>(fmt::format("CompressedPrepare Thread %d", i + 1), [this]() { this->stream_data_prepare_thread_op(); });
 		}
 
 		m_file_writer_thread = std::make_unique<named_thread<std::function<void()>>>("CompressedWriter Thread"sv, [this]() { this->file_writer_thread_op(); });
@@ -870,7 +875,7 @@ bool compressed_zstd_serialization_file_handler::handle_file_op(utils::serial& a
 
 		ar.seek_end();
 
-		const usz buffer_idx = m_input_buffer_index++ % m_compression_threads.size();
+		const usz buffer_idx = m_input_buffer_index++ % m_compression_thread_count;
 		auto& input = m_compression_threads[buffer_idx].m_input;
 
 		while (input)
@@ -1146,7 +1151,7 @@ void compressed_zstd_serialization_file_handler::finalize(utils::serial& ar)
 		has_pending_threads = false;
 
 		// Try to notify all in bulk
-		for (auto& context : m_compression_threads)
+		for (auto& context : std::span(m_compression_threads.get(), m_compression_thread_count))
 		{
 			if (!context.notified && !context.m_input && context.m_input.compare_and_swap_test(null_ptr, empty_data))
 			{
@@ -1154,7 +1159,7 @@ void compressed_zstd_serialization_file_handler::finalize(utils::serial& ar)
 			}
 		}
 
-		for (auto& context : m_compression_threads)
+		for (auto& context : std::span(m_compression_threads.get(), m_compression_thread_count))
 		{
 			if (context.notify_pending)
 			{
@@ -1164,7 +1169,7 @@ void compressed_zstd_serialization_file_handler::finalize(utils::serial& ar)
 			}
 		}
 
-		for (auto& context : m_compression_threads)
+		for (auto& context : std::span(m_compression_threads.get(), m_compression_thread_count))
 		{
 			// Wait for notification to be sent and received
 			// And wait for data to be written to be read by the thread
@@ -1177,8 +1182,8 @@ void compressed_zstd_serialization_file_handler::finalize(utils::serial& ar)
 
 	for (usz idx = m_output_buffer_index;;)
 	{
-		auto& out_cur = m_compression_threads[idx % m_compression_threads.size()].m_output;
-		auto& out_next = m_compression_threads[(idx + 1) % m_compression_threads.size()].m_output;
+		auto& out_cur = m_compression_threads[idx % m_compression_thread_count].m_output;
+		auto& out_next = m_compression_threads[(idx + 1) % m_compression_thread_count].m_output;
 
 		out_cur.compare_and_swap_test(null_ptr, empty_data);
 		out_next.compare_and_swap_test(null_ptr, empty_data);
@@ -1208,7 +1213,8 @@ void compressed_zstd_serialization_file_handler::finalize(utils::serial& ar)
 		(*m_file_writer_thread)();
 	}
 
-	m_compression_threads.clear();
+	m_compression_threads.reset();
+	m_compression_thread_count = 0;
 	m_file_writer_thread.reset();
 
 	m_stream_data = {};
@@ -1266,7 +1272,7 @@ void compressed_zstd_serialization_file_handler::stream_data_prepare_thread_op()
 			thread_ctrl::wait_for(1000);
 		}
 
-		//if (m_output_buffer_index % m_compression_threads.size() == thread_index)
+		//if (m_output_buffer_index % m_compression_thread_count == thread_index)
 		{
 			output.notify_all();
 		}
@@ -1277,7 +1283,7 @@ void compressed_zstd_serialization_file_handler::file_writer_thread_op()
 {
 	for (m_output_buffer_index = 0;; m_output_buffer_index++)
 	{
-		auto& output = m_compression_threads[m_output_buffer_index % m_compression_threads.size()].m_output;
+		auto& output = m_compression_threads[m_output_buffer_index % m_compression_thread_count].m_output;
 
 		while (!output)
 		{

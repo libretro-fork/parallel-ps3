@@ -132,6 +132,7 @@ namespace utils
 	{
 		stop();
 		md_audio_free(m_md);
+		media_timestamps_free(&timestamps_ms);
 	}
 
 	void audio_decoder::set_context(music_selection_context&& context)
@@ -152,7 +153,7 @@ namespace utils
 		track_fully_consumed = 0;
 		has_error = false;
 		m_size = 0;
-		timestamps_ms.clear();
+		media_timestamps_clear(&timestamps_ms);
 		data.clear();
 	}
 
@@ -232,7 +233,8 @@ namespace utils
 					std::scoped_lock lock(m_mtx);
 					data.insert(data.cend(), out, out + size);
 
-					timestamps_ms.push_back({m_size, timestamp_ms});
+					const media_timestamp stamp{m_size, static_cast<u64>(timestamp_ms)};
+					ensure(media_timestamps_push_back_growing(&timestamps_ms, &stamp));
 					m_size += size;
 				}
 

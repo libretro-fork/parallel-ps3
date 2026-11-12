@@ -306,28 +306,26 @@ static bool install_pkg_file(const std::string& pkg_path, std::string& eboot_pat
         return false;
     }
 
-    // Create deque for extraction - use emplace_back since package_reader is non-copyable
-    std::deque<package_reader> readers;
-    readers.emplace_back(pkg_path);
+    package_reader reader(pkg_path);
 
     // Validate the reader
-    if (!readers.front().is_valid())
+    if (!reader.is_valid())
     {
         libretro_show_message("PKG installation failed: Invalid PKG file", 300);
         return false;
     }
 
     // Get PKG info
-    const auto& header = readers.front().get_header();
+    const auto& header = reader.get_header();
     std::string title_id(header.title_id, strnlen(header.title_id, sizeof(header.title_id)));
 
 
-    std::deque<std::string> bootable_paths;
+    std::vector<std::string> bootable_paths;
 
     // On this thread: RetroArch shows nothing while retro_load_game runs, so
     // a thread of its own polled for progress messages nobody saw
     libretro_show_message("Installing PKG...", 120);
-    const bool extracted = package_reader::extract_data(readers, bootable_paths, false).error == package_install_result::error_type::no_error;
+    const bool extracted = package_reader::extract_data({&reader, 1}, bootable_paths, false).error == package_install_result::error_type::no_error;
 
     if (!extracted)
     {

@@ -373,7 +373,7 @@ public:
 	const PKGHeader& get_header() const { return m_header; }
 	const PKGMetaData& get_metadata() const { return m_metadata; }
 	package_install_result check_target_app_version() const;
-	static package_install_result extract_data(std::deque<package_reader>& readers, std::deque<std::string>& bootable_paths, bool from_optical_drive);
+	static package_install_result extract_data(std::span<package_reader> readers, std::vector<std::string>& bootable_paths, bool from_optical_drive);
 	const psf::registry& get_psf() const { return m_psf; }
 	result get_result() const { return m_result; };
 
@@ -400,7 +400,7 @@ private:
 	usz decrypt(u64 offset, u64 size, const uchar* key, std::span<u8> local_buf);
 	void extract_worker();
 
-	std::deque<install_entry> m_install_entries;
+	std::vector<install_entry> m_install_entries; // reserved for every entry before any is added: the map points into it
 	std::string m_install_path;
 	atomic_t<bool> m_aborted = false;
 	atomic_t<usz> m_num_failures = 0;

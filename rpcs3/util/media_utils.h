@@ -9,6 +9,16 @@
 #include <unordered_map>
 #include <deque>
 #include <mutex>
+#include <queues/retro_deque.h>
+
+// A decoded block: where it starts in the decoder's data, and its time
+struct media_timestamp
+{
+	u64 first;  // byte offset
+	u64 second; // milliseconds
+};
+
+RETRO_DEQUE_DEFINE(media_timestamps, media_timestamp);
 
 struct md_audio;
 
@@ -70,7 +80,7 @@ namespace utils
 		atomic_t<u32> track_fully_decoded{0};
 		atomic_t<u32> track_fully_consumed{0};
 		atomic_t<bool> has_error{false};
-		std::deque<std::pair<u64, u64>> timestamps_ms;
+		media_timestamps_t timestamps_ms{}; // where in data each decoded block starts, and its time
 
 	private:
 		bool m_swap_endianness = false;
