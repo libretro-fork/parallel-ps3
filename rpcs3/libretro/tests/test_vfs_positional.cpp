@@ -21,6 +21,7 @@
 #include <cstdio>
 #include <cstring>
 #include <thread>
+#include <time.h> // not pacing: the benchmark's stopwatch
 
 #ifdef _WIN32
 
@@ -124,8 +125,12 @@ static int fe_stat(const char* path, int32_t* size)
 
 static int fe_mkdir(const char* path) { return mkdir(path, 0755); }
 
+static bool s_bench = false; // the stopwatch's frontend: answers at once, counts nothing
+
 static int64_t fe_read_at(retro_vfs_file_handle* h, void* s, uint64_t len, int64_t offset)
 {
+	if (s_bench)
+		return static_cast<int64_t>(len);
 	if (s_at_refused)
 		return -1;
 	if (len)
@@ -392,6 +397,56 @@ int main()
 	pass("VFS v6 without positional I/O", dir);
 	CHECK(retro_atomic_load_acquire_size(&s_at_io) == 0);
 	CHECK(retro_atomic_load_acquire_size(&s_plain_io) != 0);
+
+	// VFS_BENCH=1: what a read at an offset costs in the core itself, with
+	// four threads each on a file of its own - nothing of theirs is shared,
+	// so whatever they wait for one another over is the core's
+	if (std::getenv("VFS_BENCH"))
+	{
+		s_at_refused = false;
+		libretro_vfs::set_vfs_interface(&s_iface, 6);
+		constexpr u32 threads = 4, reads = 4000000;
+		std::string paths[threads];
+		fs::file files[threads];
+		for (u32 i = 0; i < threads; i++)
+		{
+			paths[i] = std::string(dir) + "/bench" + std::to_string(i);
+			files[i] = fs::file(paths[i], fs::rewrite);
+			CHECK(!!files[i]);
+			files[i].close();
+			files[i] = fs::file(paths[i], fs::read);
+			CHECK(!!files[i]);
+		}
+		s_bench = true;
+		double best = 1e18;
+		for (int round = 0; round < 5; round++)
+		{
+			std::thread t[threads];
+			timespec a, b;
+			clock_gettime(CLOCK_MONOTONIC, &a); // not pacing: the benchmark's stopwatch
+			for (u32 i = 0; i < threads; i++)
+				t[i] = std::thread([&files, i]
+				{
+					u8 buf[16];
+					u64 sum = 0;
+					for (u32 n = 0; n < reads; n++)
+						sum += files[i].read_at(n & 0xfff, buf, sizeof(buf));
+					if (sum != u64{reads} * sizeof(buf))
+						std::abort();
+				});
+			for (u32 i = 0; i < threads; i++)
+				t[i].join();
+			clock_gettime(CLOCK_MONOTONIC, &b); // not pacing: the benchmark's stopwatch
+			best = std::min(best, ((b.tv_sec - a.tv_sec) * 1e9 + (b.tv_nsec - a.tv_nsec)) / (double{reads} * threads));
+		}
+		s_bench = false;
+		for (u32 i = 0; i < threads; i++)
+		{
+			files[i].close();
+			fs::remove_file(paths[i]);
+		}
+		std::printf("test_vfs_positional: a read at an offset, four threads on four files: %.1f ns of the machine's time each\n", best);
+	}
 
 	libretro_vfs::set_vfs_interface(nullptr, 0);
 	rmdir(dir);

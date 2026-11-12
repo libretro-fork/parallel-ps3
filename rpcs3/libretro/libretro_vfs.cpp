@@ -4,16 +4,12 @@
 #include "Utilities/File.h"
 #include <cctype>
 #include <cstring>
-#include <cstdarg>
-#include <atomic>
 #include <mutex>
 
 #ifdef _WIN32
 #include <io.h>
-#include <direct.h>
 #include <sys/types.h>
 #include <sys/stat.h> // _stat64, _S_IFREG: not brought in by libstdc++'s headers
-#define mkdir(path, mode) _mkdir(path)
 #else
 #include <unistd.h>
 #include <sys/stat.h>
@@ -25,275 +21,15 @@ namespace libretro_vfs
 	// The version the frontend gave: its members past that are not there
 	static unsigned s_vfs_version = 0;
 
-	// Counted on the game's threads, read for the log; zero as static
-	// storage starts
-	static retro_atomic_size_t s_vfs_open_count;
-	static retro_atomic_size_t s_vfs_read_bytes;
-	static retro_atomic_size_t s_vfs_write_bytes;
-	static retro_atomic_size_t s_native_fallback_count;
-
-	uint64_t get_vfs_open_count() { return retro_atomic_load_acquire_size(&s_vfs_open_count); }
-	uint64_t get_vfs_read_bytes() { return retro_atomic_load_acquire_size(&s_vfs_read_bytes); }
-	uint64_t get_vfs_write_bytes() { return retro_atomic_load_acquire_size(&s_vfs_write_bytes); }
-	uint64_t get_native_fallback_count() { return retro_atomic_load_acquire_size(&s_native_fallback_count); }
-
-	void reset_vfs_stats()
-	{
-		retro_atomic_store_release_size(&s_vfs_open_count, 0);
-		retro_atomic_store_release_size(&s_vfs_read_bytes, 0);
-		retro_atomic_store_release_size(&s_vfs_write_bytes, 0);
-		retro_atomic_store_release_size(&s_native_fallback_count, 0);
-	}
-
 	void set_vfs_interface(const struct retro_vfs_interface* vfs_interface, unsigned version)
 	{
 		s_vfs_interface = vfs_interface;
 		s_vfs_version = vfs_interface ? version : 0;
 	}
 
-	const struct retro_vfs_interface* get_vfs_interface()
-	{
-		return s_vfs_interface;
-	}
-
 	bool is_vfs_available()
 	{
 		return s_vfs_interface != nullptr;
-	}
-
-	static unsigned mode_to_vfs_flags(const char* mode)
-	{
-		unsigned flags = 0;
-
-		if (!mode || !*mode)
-			return RETRO_VFS_FILE_ACCESS_READ;
-
-		switch (mode[0])
-		{
-		case 'r':
-			flags = RETRO_VFS_FILE_ACCESS_READ;
-			if (mode[1] == '+' || (mode[1] && mode[2] == '+'))
-				flags |= RETRO_VFS_FILE_ACCESS_WRITE | RETRO_VFS_FILE_ACCESS_UPDATE_EXISTING;
-			break;
-		case 'w':
-			flags = RETRO_VFS_FILE_ACCESS_WRITE;
-			if (mode[1] == '+' || (mode[1] && mode[2] == '+'))
-				flags |= RETRO_VFS_FILE_ACCESS_READ | RETRO_VFS_FILE_ACCESS_UPDATE_EXISTING;
-			break;
-		case 'a':
-			flags = RETRO_VFS_FILE_ACCESS_WRITE;
-			if (mode[1] == '+' || (mode[1] && mode[2] == '+'))
-				flags |= RETRO_VFS_FILE_ACCESS_READ;
-			break;
-		default:
-			flags = RETRO_VFS_FILE_ACCESS_READ;
-			break;
-		}
-
-		return flags;
-	}
-
-	vfs_file::vfs_file(const std::string& path, const char* mode)
-		: m_path(path)
-		, m_vfs_handle(nullptr)
-		, m_native_handle(nullptr)
-		, m_use_vfs(false)
-	{
-		if (is_vfs_available() && s_vfs_interface->open)
-		{
-			unsigned vfs_mode = mode_to_vfs_flags(mode);
-			unsigned hints = RETRO_VFS_FILE_ACCESS_HINT_NONE;
-
-			m_vfs_handle = s_vfs_interface->open(path.c_str(), vfs_mode, hints);
-			if (m_vfs_handle)
-			{
-				m_use_vfs = true;
-				retro_atomic_fetch_add_size(&s_vfs_open_count, 1);
-				return;
-			}
-		}
-
-		m_native_handle = std::fopen(path.c_str(), mode);
-		if (m_native_handle)
-			retro_atomic_fetch_add_size(&s_native_fallback_count, 1);
-	}
-
-	vfs_file::~vfs_file()
-	{
-		close();
-	}
-
-	vfs_file::vfs_file(vfs_file&& other) noexcept
-		: m_path(std::move(other.m_path))
-		, m_vfs_handle(other.m_vfs_handle)
-		, m_native_handle(other.m_native_handle)
-		, m_use_vfs(other.m_use_vfs)
-	{
-		other.m_vfs_handle = nullptr;
-		other.m_native_handle = nullptr;
-		other.m_use_vfs = false;
-	}
-
-	vfs_file& vfs_file::operator=(vfs_file&& other) noexcept
-	{
-		if (this != &other)
-		{
-			close();
-			m_path = std::move(other.m_path);
-			m_vfs_handle = other.m_vfs_handle;
-			m_native_handle = other.m_native_handle;
-			m_use_vfs = other.m_use_vfs;
-
-			other.m_vfs_handle = nullptr;
-			other.m_native_handle = nullptr;
-			other.m_use_vfs = false;
-		}
-		return *this;
-	}
-
-	bool vfs_file::is_open() const
-	{
-		return m_use_vfs ? (m_vfs_handle != nullptr) : (m_native_handle != nullptr);
-	}
-
-	int64_t vfs_file::size() const
-	{
-		if (!is_open())
-			return -1;
-
-		if (m_use_vfs && s_vfs_interface->size)
-		{
-			return s_vfs_interface->size(m_vfs_handle);
-		}
-		else if (m_native_handle)
-		{
-			long current = std::ftell(m_native_handle);
-			std::fseek(m_native_handle, 0, SEEK_END);
-			long length = std::ftell(m_native_handle);
-			std::fseek(m_native_handle, current, SEEK_SET);
-			return static_cast<int64_t>(length);
-		}
-
-		return -1;
-	}
-
-	int64_t vfs_file::tell() const
-	{
-		if (!is_open())
-			return -1;
-
-		if (m_use_vfs && s_vfs_interface->tell)
-		{
-			return s_vfs_interface->tell(m_vfs_handle);
-		}
-		else if (m_native_handle)
-		{
-			return static_cast<int64_t>(std::ftell(m_native_handle));
-		}
-
-		return -1;
-	}
-
-	int64_t vfs_file::seek(int64_t offset, int whence)
-	{
-		if (!is_open())
-			return -1;
-
-		if (m_use_vfs && s_vfs_interface->seek)
-		{
-			int vfs_whence;
-			switch (whence)
-			{
-			case SEEK_SET: vfs_whence = RETRO_VFS_SEEK_POSITION_START; break;
-			case SEEK_CUR: vfs_whence = RETRO_VFS_SEEK_POSITION_CURRENT; break;
-			case SEEK_END: vfs_whence = RETRO_VFS_SEEK_POSITION_END; break;
-			default: vfs_whence = RETRO_VFS_SEEK_POSITION_START; break;
-			}
-			return s_vfs_interface->seek(m_vfs_handle, offset, vfs_whence);
-		}
-		else if (m_native_handle)
-		{
-			if (std::fseek(m_native_handle, static_cast<long>(offset), whence) == 0)
-				return std::ftell(m_native_handle);
-		}
-
-		return -1;
-	}
-
-	int64_t vfs_file::read(void* buffer, uint64_t len)
-	{
-		if (!is_open())
-			return -1;
-
-		if (m_use_vfs && s_vfs_interface->read)
-		{
-			int64_t result = s_vfs_interface->read(m_vfs_handle, buffer, len);
-			if (result > 0)
-				retro_atomic_fetch_add_size(&s_vfs_read_bytes, static_cast<usz>(result));
-			return result;
-		}
-		else if (m_native_handle)
-		{
-			size_t bytes_read = std::fread(buffer, 1, static_cast<size_t>(len), m_native_handle);
-			return static_cast<int64_t>(bytes_read);
-		}
-
-		return -1;
-	}
-
-	int64_t vfs_file::write(const void* buffer, uint64_t len)
-	{
-		if (!is_open())
-			return -1;
-
-		if (m_use_vfs && s_vfs_interface->write)
-		{
-			int64_t result = s_vfs_interface->write(m_vfs_handle, buffer, len);
-			if (result > 0)
-				retro_atomic_fetch_add_size(&s_vfs_write_bytes, static_cast<usz>(result));
-			return result;
-		}
-		else if (m_native_handle)
-		{
-			size_t bytes_written = std::fwrite(buffer, 1, static_cast<size_t>(len), m_native_handle);
-			return static_cast<int64_t>(bytes_written);
-		}
-
-		return -1;
-	}
-
-	int vfs_file::flush()
-	{
-		if (!is_open())
-			return -1;
-
-		if (m_use_vfs && s_vfs_interface->flush)
-		{
-			return s_vfs_interface->flush(m_vfs_handle);
-		}
-		else if (m_native_handle)
-		{
-			return std::fflush(m_native_handle);
-		}
-
-		return -1;
-	}
-
-	void vfs_file::close()
-	{
-		if (m_use_vfs && m_vfs_handle)
-		{
-			if (s_vfs_interface->close)
-				s_vfs_interface->close(m_vfs_handle);
-			m_vfs_handle = nullptr;
-		}
-		else if (m_native_handle)
-		{
-			std::fclose(m_native_handle);
-			m_native_handle = nullptr;
-		}
-
-		m_use_vfs = false;
 	}
 
 	bool vfs_stat(const std::string& path, int64_t* size_out)
@@ -329,86 +65,6 @@ namespace libretro_vfs
 #endif
 
 		return false;
-	}
-
-	bool vfs_is_file(const std::string& path)
-	{
-		if (is_vfs_available() && s_vfs_interface->stat)
-		{
-			int32_t size = 0;
-			int result = s_vfs_interface->stat(path.c_str(), &size);
-			return (result & RETRO_VFS_STAT_IS_VALID) && !(result & RETRO_VFS_STAT_IS_DIRECTORY);
-		}
-
-#ifdef _WIN32
-		struct _stat64 st;
-		if (_stat64(path.c_str(), &st) == 0)
-			return (st.st_mode & _S_IFREG) != 0;
-#else
-		struct stat st;
-		if (stat(path.c_str(), &st) == 0)
-			return S_ISREG(st.st_mode);
-#endif
-
-		return false;
-	}
-
-	bool vfs_is_dir(const std::string& path)
-	{
-		if (is_vfs_available() && s_vfs_interface->stat)
-		{
-			int32_t size = 0;
-			int result = s_vfs_interface->stat(path.c_str(), &size);
-			return (result & RETRO_VFS_STAT_IS_VALID) && (result & RETRO_VFS_STAT_IS_DIRECTORY);
-		}
-
-#ifdef _WIN32
-		struct _stat64 st;
-		if (_stat64(path.c_str(), &st) == 0)
-			return (st.st_mode & _S_IFDIR) != 0;
-#else
-		struct stat st;
-		if (stat(path.c_str(), &st) == 0)
-			return S_ISDIR(st.st_mode);
-#endif
-
-		return false;
-	}
-
-	bool vfs_remove(const std::string& path)
-	{
-		if (is_vfs_available() && s_vfs_interface->remove)
-		{
-			return s_vfs_interface->remove(path.c_str()) == 0;
-		}
-
-		return std::remove(path.c_str()) == 0;
-	}
-
-	bool vfs_rename(const std::string& old_path, const std::string& new_path)
-	{
-		if (is_vfs_available() && s_vfs_interface->rename)
-		{
-			return s_vfs_interface->rename(old_path.c_str(), new_path.c_str()) == 0;
-		}
-
-		return std::rename(old_path.c_str(), new_path.c_str()) == 0;
-	}
-
-	bool vfs_mkdir(const std::string& path)
-	{
-		if (is_vfs_available() && s_vfs_interface->mkdir)
-		{
-			auto vfs_mkdir_func = s_vfs_interface->mkdir;
-			int result = vfs_mkdir_func(path.c_str());
-			return result == 0 || result == -2;
-		}
-
-#ifdef _WIN32
-		return _mkdir(path.c_str()) == 0;
-#else
-		return mkdir(path.c_str(), 0755) == 0;
-#endif
 	}
 
 	// VFS-backed file_base implementation for integration with fs::file
@@ -529,8 +185,6 @@ namespace libretro_vfs
 					retro_atomic_store_relaxed_64(&m_pos, pos + result);
 			}
 
-			if (result > 0)
-				retro_atomic_fetch_add_size(&s_vfs_read_bytes, static_cast<usz>(result));
 			return result > 0 ? static_cast<u64>(result) : 0;
 		}
 
@@ -558,8 +212,6 @@ namespace libretro_vfs
 				result = s_vfs_interface->read(m_handle, buffer, count);
 			}
 
-			if (result > 0)
-				retro_atomic_fetch_add_size(&s_vfs_read_bytes, static_cast<usz>(result));
 			return result > 0 ? static_cast<u64>(result) : 0;
 		}
 
@@ -613,8 +265,6 @@ namespace libretro_vfs
 				retro_atomic_store_relaxed_64(&m_pos, result > 0 ? pos + result : pos);
 			}
 
-			if (result > 0)
-				retro_atomic_fetch_add_size(&s_vfs_write_bytes, static_cast<usz>(result));
 			return result > 0 ? static_cast<u64>(result) : 0;
 		}
 
@@ -727,8 +377,6 @@ namespace libretro_vfs
 
 		if (!handle)
 			return nullptr;
-
-		retro_atomic_fetch_add_size(&s_vfs_open_count, 1);
 
 		// Positional I/O where the frontend has it for this file: asked once,
 		// with a read of nothing, or a write of nothing to a file that is
@@ -903,7 +551,6 @@ namespace libretro_vfs
 
 		bool create_dir(const std::string& path) override
 		{
-			// In parentheses: the mkdir macro above (Windows) would take it otherwise
 			const int result = (s_vfs_interface->mkdir)(uri_trim(path).c_str());
 			if (result == -2)
 				fs::g_tls_error = fs::error::exist;
