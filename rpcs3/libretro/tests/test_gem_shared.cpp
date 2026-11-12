@@ -12,6 +12,9 @@
 //   busy, every time.
 // - A reader gets one whole record: a colour set as three equal parts is
 //   never read with unequal ones.
+// - The tracker's results, read by three threads while the tracker
+//   publishes them 200000 times: a sphere's radius, distance and position
+//   are always of one frame; a hue is trackable by its last count.
 // - While cellGemInit is under way cellGem is not initialized for the other
 //   calls.
 // - What a read costs against the reader's side of the lock (GEM_BENCH=1).
@@ -210,6 +213,66 @@ int main()
 		CHECK(other == 0);
 		std::printf("test_gem_shared: %u rounds of %u threads calibrating at once: %u with more or fewer than one starting it\n",
 			static_cast<u32>(rounds), static_cast<u32>(callers), bad_rounds);
+	}
+
+	// What the tracker found in a camera frame, read while it publishes the
+	// next: a sphere is one whole result, a hue's count is one or the other
+	{
+		g_fxo->init<named_thread<gem_tracker>>();
+		auto& tracker = g_fxo->get<named_thread<gem_tracker>>();
+		const move_handler was = g_cfg.io.move;
+		g_cfg.io.move.set(move_handler::real); // the hues are only looked at with a real PS Move
+
+		std::atomic<bool> stop{false};
+		std::atomic<u64> reads{0}, torn{0};
+		std::thread readers[3];
+		for (std::thread& t : readers)
+			t = std::thread([&]
+			{
+				while (!stop)
+				{
+					for (u32 gem_num = 0; gem_num < CELL_GEM_MAX_NUM; gem_num++)
+					{
+						const ps_move_info info = tracker.get_info(gem_num);
+						if (info.distance_mm != info.radius * 3.0f || info.x_pos != info.radius + gem_num || info.valid != (info.radius != 0.0f))
+							torn++;
+					}
+					reads++;
+				}
+			});
+
+		std::array<u32, 360> hues{};
+		std::array<ps_move_info, CELL_GEM_MAX_NUM> info{};
+		for (u32 n = 1; n <= 200000; n++)
+		{
+			for (u32 gem_num = 0; gem_num < CELL_GEM_MAX_NUM; gem_num++)
+			{
+				info[gem_num].valid = true;
+				info[gem_num].radius = static_cast<f32>(n);
+				info[gem_num].distance_mm = static_cast<f32>(n) * 3.0f;
+				info[gem_num].x_pos = static_cast<f32>(n) + gem_num;
+			}
+			hues.fill(n % 40);
+			tracker.publish(hues, info);
+		}
+		stop = true;
+		for (std::thread& t : readers)
+			t.join();
+
+		CHECK(torn == 0 && reads != 0);
+		CHECK(tracker.get_info(2).radius == 200000.0f && tracker.get_info(2).x_pos == 200002.0f);
+		// 200000 % 40 == 0 pixels of every hue: trackable
+		CHECK(tracker.hue_is_trackable(7) && tracker.hue_is_trackable(359) && !tracker.hue_is_trackable(360));
+		hues.fill(25);
+		tracker.publish(hues, info);
+		CHECK(!tracker.hue_is_trackable(7));
+		CHECK(cellGemIsTrackableHue(7) == 0);
+		hues[7] = 19;
+		tracker.publish(hues, info);
+		CHECK(cellGemIsTrackableHue(7) == 1 && cellGemIsTrackableHue(8) == 0);
+		g_cfg.io.move.set(was);
+		std::printf("test_gem_shared: the tracker's results published 200000 times: %llu reads of the four spheres, %llu torn\n",
+			static_cast<unsigned long long>(reads.load()), static_cast<unsigned long long>(torn.load()));
 	}
 
 	if (std::getenv("GEM_BENCH"))

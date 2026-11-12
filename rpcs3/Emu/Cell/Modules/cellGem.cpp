@@ -1565,6 +1565,7 @@ class gem_tracker
 public:
 	gem_tracker()
 	{
+		retro_cas_record_init(&m_tracked, m_tracked_slots, sizeof(tracked));
 	}
 
 	bool is_busy()
@@ -1651,13 +1652,14 @@ public:
 			return true; // potentially true if less than 20 pixels have the hue
 		}
 
-		return hue < m_hues.size() && m_hues[hue] < 20; // potentially true if less than 20 pixels have the hue
+		return hue < 360 && retro_atomic_load_acquire_int(&m_hues[hue]) < 20; // potentially true if less than 20 pixels have the hue
 	}
 
 	ps_move_info get_info(u32 gem_num)
 	{
-		std::lock_guard lock(mutex);
-		return ::at32(m_info, gem_num);
+		tracked now;
+		retro_cas_record_read(&m_tracked, &now);
+		return ::at32(now.info, gem_num);
 	}
 
 	void operator()()
@@ -1758,9 +1760,8 @@ public:
 
 			// Update cellGem with results
 			{
-				std::lock_guard lock(mutex);
-				m_hues = m_tracker.hues();
 				m_info = m_tracker.info();
+				publish(m_tracker.hues(), m_info);
 
 				gem.change([this](gem_config_data::gem_shared& now)
 				{
@@ -1790,7 +1791,26 @@ public:
 
 	static constexpr auto thread_name = "GemUpdateThread"sv;
 
-	shared_mutex mutex;
+	// What the tracker found in a camera frame, for the game's calls, with
+	// no lock: the four spheres as one record, read whole (a sphere's
+	// position goes with its radius), and each hue's pixel count as a word of
+	// its own (a hue is asked about by itself). The tracker's thread alone
+	// calls this, after each frame.
+	void publish(const std::array<u32, 360>& hues, const std::array<ps_move_info, CELL_GEM_MAX_NUM>& info)
+	{
+		for (u32 hue = 0; hue < 360; hue++)
+		{
+			retro_atomic_store_release_int(&m_hues[hue], static_cast<int>(std::min<u32>(hues[hue], 0x7fffffff)));
+		}
+
+		retro_cas_record_txn_t txn;
+		do
+		{
+			tracked* now = static_cast<tracked*>(retro_cas_record_begin(&m_tracked, &txn));
+			now->info = info;
+		}
+		while (!retro_cas_record_commit(&m_tracked, &txn));
+	}
 
 	gem_tracker& operator=(thread_state) noexcept
 	{
@@ -1805,8 +1825,19 @@ private:
 	atomic_t<bool> m_busy = false;
 	ps_move_tracker<false> m_tracker{};
 	CellCameraInfoEx m_camera_info{};
-	std::array<u32, 360> m_hues{};
+
+	// The tracker thread's own copy of the last frame's spheres
 	std::array<ps_move_info, CELL_GEM_MAX_NUM> m_info{};
+
+	// See publish()
+	struct tracked
+	{
+		std::array<ps_move_info, CELL_GEM_MAX_NUM> info;
+	};
+
+	retro_atomic_int_t m_hues[360]{};
+	retro_cas_record_t m_tracked;
+	tracked m_tracked_slots[RETRO_CAS_RECORD_SLOTS]{};
 };
 
 /**
@@ -3079,7 +3110,6 @@ error_code cellGemGetAllTrackableHues(vm::ptr<u8> hues)
 	}
 
 	auto& tracker = g_fxo->get<named_thread<gem_tracker>>();
-	std::lock_guard lock(tracker.mutex);
 
 	for (u32 hue = 0; hue < 360; hue++)
 	{
@@ -3736,7 +3766,6 @@ s32 cellGemIsTrackableHue(u32 hue)
 	}
 
 	auto& tracker = g_fxo->get<named_thread<gem_tracker>>();
-	std::lock_guard lock(tracker.mutex);
 
 	return tracker.hue_is_trackable(hue);
 }

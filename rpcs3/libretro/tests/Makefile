@@ -485,7 +485,7 @@ check: all
 	@# upstream's code that takes it does not bring it back
 	@if grep -rn "g_pad_mutex" ../../Emu ../../Input ../*.cpp ../*.h ../*.c; then echo "pads: pad::g_pad_mutex is back - the pads take no lock (AGENTS.md)"; exit 1; else echo "pads: no pad lock"; fi
 	@# Nor does cellGem take one of its own for what it keeps
-	@if grep -n "gem\.mtx\|lock(mtx)" ../../Emu/Cell/Modules/cellGem.cpp; then echo "cellGem: gem.mtx is back - what cellGem keeps is a record (AGENTS.md)"; exit 1; else echo "cellGem: no gem.mtx"; fi
+	@if grep -n "gem\.mtx\|lock(mtx)\|tracker\.mutex\|lock(mutex)" ../../Emu/Cell/Modules/cellGem.cpp; then echo "cellGem: a lock of its own is back - what cellGem and its tracker keep are records (AGENTS.md)"; exit 1; else echo "cellGem: no lock of its own"; fi
 
 clean:
 	rm -rf obj $(TESTS) *_out.* rec_out
