@@ -1,4 +1,5 @@
 #include "stdafx.h"
+#include "libretro_sw_frames.h"
 
 #include "libretro_video.h"
 #include "libretro_core.h"
@@ -19,42 +20,24 @@
 
 namespace
 {
-	std::mutex s_sw_frame_mutex;
-	std::vector<u8> s_sw_frame;
-	u32 s_sw_frame_pitch = 0;
-	u32 s_sw_frame_width = 0;
-	u32 s_sw_frame_height = 0;
-	bool s_sw_frame_is_new = false;
-
-	// The frame retro_run last handed to the frontend. The frontend reads it
-	// after the lock is gone - and again, from its frame cache, whenever it
-	// redraws a duplicated or paused frame - so it must stay alive until the
-	// next take, not only until the renderer delivers another one.
-	std::vector<u8> s_sw_frame_shown;
-
-	// Every frame the renderer handed over, for the stall report in retro_run.
-	std::atomic<u64> s_sw_frames_presented{0};
 }
 
 u64 libretro_sw_frames_presented()
 {
-	return s_sw_frames_presented.load();
+	return sw_frames_presented();
 }
 
 bool libretro_take_software_frame(const void** data, u32* width, u32* height, u32* pitch)
 {
-	std::lock_guard lock(s_sw_frame_mutex);
-	if (!s_sw_frame_is_new || s_sw_frame.empty())
+	// The newest finished frame, without a lock (libretro_sw_frames.c). It stays
+	// whole until the next take: the frontend may show it again until then.
+	unsigned w = 0, h = 0;
+	size_t p = 0;
+	if (!sw_frames_take(data, &w, &h, &p))
 		return false;
-	s_sw_frame_is_new = false;
-	// Swapped out rather than pointed into: present_frame() replaces
-	// s_sw_frame on the RSX thread, which would free the pixels while the
-	// frontend is still copying them.
-	s_sw_frame_shown.swap(s_sw_frame);
-	*data = s_sw_frame_shown.data();
-	*width = s_sw_frame_width;
-	*height = s_sw_frame_height;
-	*pitch = s_sw_frame_pitch;
+	*width = w;
+	*height = h;
+	*pitch = static_cast<u32>(p);
 	return true;
 }
 
@@ -161,14 +144,17 @@ void LibretroGSFrame::present_frame(std::vector<u8>&& data, u32 pitch, u32 width
 		return;
 	}
 
-	s_sw_frames_presented++;
-
-	std::lock_guard lock(s_sw_frame_mutex);
-	s_sw_frame = std::move(data);
-	s_sw_frame_pitch = pitch;
-	s_sw_frame_width = width;
-	s_sw_frame_height = height;
-	s_sw_frame_is_new = true;
+	// A frame made here (a recording's or a screenshot's): copied into the
+	// buffer retro_run takes frames from (libretro_sw_frames.c). The renderer's
+	// own readback writes straight into it (VKGSRender::libretro_deliver_readback).
+	const usz size = usz{pitch} * height;
+	if (data.size() < size)
+		return;
+	if (u8* dst = sw_frames_begin(size))
+	{
+		std::memcpy(dst, data.data(), size);
+		sw_frames_end(width, height, pitch);
+	}
 }
 
 void LibretroGSFrame::take_screenshot(std::vector<u8>&&, u32, u32, bool) {}

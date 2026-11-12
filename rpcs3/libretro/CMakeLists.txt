@@ -24,6 +24,7 @@ add_library(rpcs3_libretro SHARED
     libretro_core.cpp
     config_database.c
     vblank_list.c
+    libretro_sw_frames.c
     ${CMAKE_CURRENT_BINARY_DIR}/libretro_ui_icons.cpp
     ${CMAKE_CURRENT_BINARY_DIR}/libretro_config_database.cpp
     ${CMAKE_CURRENT_BINARY_DIR}/libretro_patches.cpp

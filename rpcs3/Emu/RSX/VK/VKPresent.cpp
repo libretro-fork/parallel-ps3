@@ -1,4 +1,7 @@
 #include "stdafx.h"
+#ifdef LIBRETRO_CORE
+#include "libretro/libretro_sw_frames.h"
+#endif
 #include "VKGSRender.h"
 #ifdef LIBRETRO_CORE
 #include "VKLibretro.h"
@@ -285,12 +288,28 @@ void VKGSRender::libretro_deliver_readback(vk::frame_context_t* ctx)
 
 	readback->pending = false;
 
-	const usz size = usz{readback->width} * readback->height * 4;
-	std::vector<u8> frame(size);
-	std::memcpy(frame.data(), readback->buffer->map(0, size), size);
-	readback->buffer->unmap();
+	// Straight into the buffer retro_run takes frames from (libretro_sw_frames.c):
+	// one copy, out of the mapped readback, nothing allocated and no lock
+	if (!readback->is_bgra)
+	{
+		// B,G,R,X is what the frontend takes; the renderer is not set up the
+		// way this path expects
+		static bool warned = false;
+		if (!warned)
+		{
+			warned = true;
+			rsx_log.error("libretro: software present got a non-BGRA frame, dropping it");
+		}
+		return;
+	}
 
-	m_frame->present_frame(std::move(frame), readback->width * 4, readback->width, readback->height, readback->is_bgra);
+	const usz size = usz{readback->width} * readback->height * 4;
+	if (u8* dst = sw_frames_begin(size))
+	{
+		std::memcpy(dst, readback->buffer->map(0, size), size);
+		readback->buffer->unmap();
+		sw_frames_end(readback->width, readback->height, readback->width * 4);
+	}
 }
 #endif
 
