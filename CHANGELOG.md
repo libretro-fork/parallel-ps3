@@ -4,6 +4,7 @@ What changed in the libretro core of this fork, newest first. Changes that come 
 
 ## Unreleased
 
+- A boot that fails closes the content. retro_run had nothing to run and returned without a frame, so RetroArch counted none and sat on no picture; it now hands a dupe over every run and, once the boot has failed (the reason said already), asks the frontend to close the content. Run in RetroArch with content that does not boot: it says why and goes back to the menu. `test_failed_boot` runs retro_run with no game and checks a frame each run and the close asked for.
 - The Windows build compiles again. Without a Win32 surface the Vulkan headers no longer bring `windows.h`, which `VKDMA.cpp` (VirtualQuery) and `vkutils/shared.cpp` (DebugBreak) had relied on: they include it themselves. The Win32 full-screen-exclusive code of the window swapchain, which the core never makes, is left out of the core. Every Vulkan, OpenGL and core source compiles with MinGW.
 - The core knows no window system and links no graphics library. OpenGL is libretro's alone.
   - Every OpenGL function, OpenGL 1.0's included, comes from the frontend's get_proc_address into one table, on every platform. GLEW is gone from the tree; the GL types come from Khronos' `glcorearb.h` and `glext.h`. Nothing links libGL, libOpenGL, libEGL or opengl32 any more.

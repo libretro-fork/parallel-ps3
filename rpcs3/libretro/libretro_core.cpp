@@ -3002,7 +3002,16 @@ void retro_run(void)
     }
 
     if (!game_loaded)
+    {
+        // Every retro_run hands a frame over, a dupe at least: RetroArch
+        // counts frames by them. A boot that failed - or never could, without
+        // contexts for the GL renderer - has said why already; with nothing
+        // to run, the content is closed rather than left on no picture.
+        video_cb(nullptr, 1280, 720, 0);
+        if (!pending_game_boot)
+            environ_cb(RETRO_ENVIRONMENT_SHUTDOWN, nullptr);
         return;
+    }
 
     if (retro_atomic_load_acquire_int(&s_fatal_ready) == 1)
     {
