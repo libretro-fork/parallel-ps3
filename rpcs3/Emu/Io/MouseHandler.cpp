@@ -47,7 +47,11 @@ bool MouseHandlerBase::is_time_for_update(double elapsed_time_ms)
 void MouseHandlerBase::Button(u32 index, u8 button, bool pressed)
 {
 	std::lock_guard lock(mutex);
+	button_locked(index, button, pressed);
+}
 
+void MouseHandlerBase::button_locked(u32 index, u8 button, bool pressed)
+{
 	if (index < m_mice.size())
 	{
 		if (m_info.status[index] != CELL_MOUSE_STATUS_CONNECTED)
@@ -81,7 +85,11 @@ void MouseHandlerBase::Button(u32 index, u8 button, bool pressed)
 void MouseHandlerBase::Scroll(u32 index, s8 x, s8 y)
 {
 	std::lock_guard lock(mutex);
+	scroll_locked(index, x, y);
+}
 
+void MouseHandlerBase::scroll_locked(u32 index, s8 x, s8 y)
+{
 	if (index < m_mice.size())
 	{
 		if (m_info.status[index] != CELL_MOUSE_STATUS_CONNECTED)
@@ -112,7 +120,11 @@ void MouseHandlerBase::Scroll(u32 index, s8 x, s8 y)
 void MouseHandlerBase::Move(u32 index, s32 x_pos_new, s32 y_pos_new, s32 x_max, s32 y_max, bool is_relative, s32 x_delta, s32 y_delta)
 {
 	std::lock_guard lock(mutex);
+	move_locked(index, x_pos_new, y_pos_new, x_max, y_max, is_relative, x_delta, y_delta);
+}
 
+void MouseHandlerBase::move_locked(u32 index, s32 x_pos_new, s32 y_pos_new, s32 x_max, s32 y_max, bool is_relative, s32 x_delta, s32 y_delta)
+{
 	if (index < m_mice.size())
 	{
 		if (m_info.status[index] != CELL_MOUSE_STATUS_CONNECTED)

@@ -292,6 +292,7 @@ public:
 		{
 			auto& handler = *ensure(g_fxo->try_get<MouseHandlerBase>());
 			std::lock_guard mouse_lock(handler.mutex);
+			handler.take_pending();
 			const MouseInfo& info = handler.GetInfo();
 
 			for (u32 i = 0; i < CELL_GEM_MAX_NUM; i++)
@@ -422,6 +423,7 @@ public:
 		{
 			auto& handler = *ensure(g_fxo->try_get<MouseHandlerBase>());
 			std::lock_guard mouse_lock(handler.mutex);
+			handler.take_pending();
 
 			// Make sure that the mouse handler is initialized
 			handler.Init(std::min<u32>(attribute.max_connect, CELL_GEM_MAX_NUM));
@@ -2307,6 +2309,7 @@ static void mouse_input_to_ext(u32 mouse_no, gem_config::gem_controller& control
 	auto& handler = g_fxo->get<MouseHandlerBase>();
 
 	std::scoped_lock lock(handler.mutex);
+	handler.take_pending();
 
 	// Make sure that the mouse handler is initialized
 	handler.Init(std::min<u32>(g_fxo->get<gem_config>().attribute.max_connect, CELL_GEM_MAX_NUM));
@@ -2437,6 +2440,7 @@ static bool mouse_input_to_pad(u32 mouse_no, be_t<u16>& digital_buttons, be_t<u1
 	auto& handler = g_fxo->get<MouseHandlerBase>();
 
 	std::scoped_lock lock(handler.mutex);
+	handler.take_pending();
 
 	// Make sure that the mouse handler is initialized
 	handler.Init(std::min<u32>(g_fxo->get<gem_config>().attribute.max_connect, CELL_GEM_MAX_NUM));
@@ -2552,6 +2556,7 @@ static void mouse_pos_to_gem_state(u32 mouse_no, gem_config::gem_controller& con
 	auto& handler = g_fxo->get<MouseHandlerBase>();
 
 	std::scoped_lock lock(handler.mutex);
+	handler.take_pending();
 
 	// Make sure that the mouse handler is initialized
 	handler.Init(std::min<u32>(g_fxo->get<gem_config>().attribute.max_connect, CELL_GEM_MAX_NUM));

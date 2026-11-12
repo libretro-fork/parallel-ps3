@@ -347,6 +347,7 @@ void usb_device_topshotelite::interrupt_transfer(u32 buf_size, u8* buf, u32 /*en
 	{
 		auto& mouse_handler = g_fxo->get<MouseHandlerBase>();
 		std::lock_guard mouse_lock(mouse_handler.mutex);
+		mouse_handler.take_pending();
 
 		mouse_handler.Init(4);
 

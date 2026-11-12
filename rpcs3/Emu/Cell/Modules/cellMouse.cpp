@@ -246,6 +246,7 @@ error_code cellMouseGetData(u32 port_no, vm::ptr<CellMouseData> data)
 	}
 
 	std::lock_guard lock(handler.mutex);
+	handler.take_pending();
 
 	const MouseInfo& current_info = handler.GetInfo();
 
@@ -307,6 +308,7 @@ error_code cellMouseGetDataList(u32 port_no, vm::ptr<CellMouseDataList> data)
 	}
 
 	std::lock_guard lock(handler.mutex);
+	handler.take_pending();
 
 	const MouseInfo& current_info = handler.GetInfo();
 

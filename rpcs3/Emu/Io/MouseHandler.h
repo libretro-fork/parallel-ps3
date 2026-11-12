@@ -150,6 +150,15 @@ public:
 	void Scroll(u32 index, s8 x, s8 y);
 	void Move(u32 index, s32 x_pos_new, s32 y_pos_new, s32 x_max, s32 y_max, bool is_relative = false, s32 x_delta = 0, s32 y_delta = 0);
 
+	// The same, with `mutex` already held
+	void button_locked(u32 index, u8 button, bool pressed);
+	void scroll_locked(u32 index, s8 x, s8 y);
+	void move_locked(u32 index, s32 x_pos_new, s32 y_pos_new, s32 x_max, s32 y_max, bool is_relative = false, s32 x_delta = 0, s32 y_delta = 0);
+
+	// With `mutex` held, before the mice are read: a handler whose input
+	// arrives without the lock (the libretro core's) applies it here
+	virtual void take_pending() {}
+
 	void SetIntercepted(bool intercepted);
 
 	MouseInfo& GetInfo() { return m_info; }
