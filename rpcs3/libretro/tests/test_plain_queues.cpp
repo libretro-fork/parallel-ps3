@@ -13,6 +13,8 @@
 // - RSX's queued flips, against the std::deque in the flip info, and the
 //   host GPU write jobs through RSXDMAWriter's own code;
 // - the SPU cache read back, in the order the std::deque gave it;
+// - cellMic's sample ring against a model, and eight microphones nobody
+//   starts taking no buffers;
 // - the patterns the others use (sys_usbd's events, the USB figures'
 //   replies, RSX's two histories), each against the std:: container it
 //   was, a few hundred thousand steps: same contents at every step.
@@ -31,6 +33,8 @@
 #include "Emu/Cell/SPURecompiler.h"
 #include "Emu/Cell/SPUAnalyser.h"
 #include "Utilities/File.h"
+#include "Emu/Cell/ErrorCodes.h"
+#include "Emu/Cell/Modules/cellMic.h"
 #include "util/serialization.hpp"
 
 #include <cstdio>
@@ -459,6 +463,64 @@ int main()
 			CHECK(wrong == 0);
 		}
 		fs::remove_file(path);
+	}
+
+	// cellMic's sample ring (mic_ringbuf): it reads what was written, in
+	// order; a write that does not fit drops the oldest; and it has no
+	// memory until it is made - a microphone nobody starts takes none
+	{
+		mic_ringbuf<64> ring;
+		std::deque<u8> model;
+		usz wrong = 0;
+		u8 block[64], got[64];
+
+		CHECK(!ring.is_made() && !ring.has_data());
+		CHECK(ring.read_bytes(got, 16) == 0);
+		ring.make();
+		CHECK(ring.is_made() && !ring.has_data());
+
+		for (u32 step = 0; step < 200000; step++)
+		{
+			const u32 n = rnd() % 65;
+
+			if (rnd() & 1)
+			{
+				for (u32 i = 0; i < n; i++)
+					block[i] = static_cast<u8>(rnd());
+				ring.write_bytes(block, n);
+				for (u32 i = 0; i < n; i++)
+					model.push_back(block[i]);
+				while (model.size() > 64)
+					model.pop_front();
+			}
+			else
+			{
+				const u32 read = ring.read_bytes(got, n);
+				wrong += read != std::min<usz>(n, model.size());
+				for (u32 i = 0; i < read && !model.empty(); i++)
+				{
+					wrong += got[i] != model.front();
+					model.pop_front();
+				}
+			}
+			wrong += ring.has_data() != !model.empty();
+		}
+		CHECK(wrong == 0);
+
+		// Eight microphones as cellMic keeps them, made and made again as
+		// cellMicInit does: no sample buffers
+		std::array<microphone_device, CELL_MAX_MICS> mics{};
+		mics = {};
+		mics[0] = microphone_device(microphone_handler::singstar);
+		usz with_buffers = 0;
+		for (const microphone_device& mic : mics)
+			with_buffers += mic.has_buffers();
+		CHECK(with_buffers == 0);
+
+		// Started: it has them, before any sample comes
+		CHECK(mics[0].start_microphone() == CELL_OK);
+		CHECK(mics[0].has_buffers() && !mics[1].has_buffers());
+		CHECK(!mics[0].has_data());
 	}
 
 	std::printf("test_plain_queues: %s\n", failures ? "FAIL" : "ok");

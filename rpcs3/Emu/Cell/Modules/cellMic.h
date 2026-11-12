@@ -185,13 +185,28 @@ struct CellMicStatus
 // --- End of cell definitions ---
 
 
+// A microphone's samples waiting to be read: a ring of @Size bytes on one
+// thread's side of the mic mutex, where a write that does not fit drops the
+// oldest. It has no memory until make() gives it some - a microphone that
+// is never started (and none can be opened in this core) costs nothing;
+// eight of them used to take and clear 12.8 MB when cellMic was loaded and
+// again, with a copy, at cellMicInit.
 template <usz Size>
-class simple_ringbuf
+class mic_ringbuf
 {
 public:
-	simple_ringbuf()
+	// Before the first write (microphone_device::start_microphone)
+	void make()
 	{
-		m_container.resize(Size);
+		if (m_container.empty())
+		{
+			m_container.resize(Size);
+		}
+	}
+
+	bool is_made() const
+	{
+		return !m_container.empty();
 	}
 
 	bool has_data() const
@@ -235,7 +250,7 @@ public:
 			return;
 		}
 
-		ensure(size <= Size);
+		ensure(size <= Size && is_made());
 
 		const u32 over_size = m_used + size;
 
@@ -327,6 +342,9 @@ public:
 	u32 read_raw(u8* buf, u32 size) { return rbuf_raw.read_bytes(buf, size); }
 	u32 read_dsp(u8* buf, u32 size) { return rbuf_dsp.read_bytes(buf, size); }
 
+	// Whether the sample buffers have been made (they are when it is started)
+	bool has_buffers() const { return rbuf_raw.is_made() || rbuf_dsp.is_made(); }
+
 	// Microphone attributes
 	u32 attr_gain       = 3;                      // 0 to 5.   Default is 3.
 	u32 attr_volume     = 145;                    // 0 to 241. Default is 145.
@@ -379,9 +397,8 @@ private:
 	static constexpr usz inbuf_size = 400000; // Default value unknown
 	static constexpr usz float_buf_size = inbuf_size * (sizeof(f32) / sizeof(s16));
 
-	simple_ringbuf<inbuf_size> rbuf_raw;
-	simple_ringbuf<float_buf_size> rbuf_dsp;
-	simple_ringbuf<inbuf_size> rbuf_aux;
+	mic_ringbuf<inbuf_size> rbuf_raw;
+	mic_ringbuf<float_buf_size> rbuf_dsp;
 };
 
 class mic_context

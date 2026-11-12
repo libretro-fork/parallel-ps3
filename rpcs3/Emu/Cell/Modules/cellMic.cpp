@@ -318,6 +318,9 @@ error_code microphone_device::close_microphone()
 
 error_code microphone_device::start_microphone()
 {
+	// Here, not in the middle of capture: its samples have somewhere to go
+	rbuf_raw.make();
+	rbuf_dsp.make();
 
 	mic_started = true;
 	return CELL_OK;
