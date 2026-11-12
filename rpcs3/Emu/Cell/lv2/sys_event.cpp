@@ -12,6 +12,8 @@
 
 #include "util/asm.hpp"
 
+#include <deque>
+
 LOG_CHANNEL(sys_event);
 
 lv2_event_queue::lv2_event_queue(u32 protocol, s32 type, s32 size, u64 name, u64 ipc_key) noexcept
@@ -21,6 +23,7 @@ lv2_event_queue::lv2_event_queue(u32 protocol, s32 type, s32 size, u64 name, u64
 	, size(static_cast<u8>(size))
 	, name(name)
 	, key(ipc_key)
+	, events(this->size)
 {
 }
 
@@ -31,8 +34,33 @@ lv2_event_queue::lv2_event_queue(utils::serial& ar) noexcept
 	, size(ar)
 	, name(ar)
 	, key(ar)
+	, events(this->size)
 {
-	ar(events);
+	events.load(ar);
+}
+
+// A savestate has the events as the std::deque they were: the same bytes.
+// Saving and loading are not play.
+void lv2_event_ring::save(utils::serial& ar) const
+{
+	std::deque<lv2_event> as_deque;
+
+	for (usz i = 0; i < m_count; i++)
+		as_deque.emplace_back((*this)[i]);
+
+	ar(as_deque);
+}
+
+void lv2_event_ring::load(utils::serial& ar)
+{
+	std::deque<lv2_event> as_deque;
+	ar(as_deque);
+
+	clear();
+
+	// No more than the queue holds: send never left more in it
+	for (usz i = 0; i < as_deque.size() && m_count < m_capacity; i++)
+		emplace_back(as_deque[i]);
 }
 
 std::function<void(void*)> lv2_event_queue::load(utils::serial& ar)
@@ -43,7 +71,8 @@ std::function<void(void*)> lv2_event_queue::load(utils::serial& ar)
 
 void lv2_event_queue::save(utils::serial& ar)
 {
-	ar(protocol, type, size, name, key, events);
+	ar(protocol, type, size, name, key);
+	events.save(ar);
 }
 
 void lv2_event_queue::save_ptr(utils::serial& ar, lv2_event_queue* q)
@@ -320,7 +349,8 @@ error_code sys_event_queue_destroy(ppu_thread& ppu, u32 equeue_id, s32 mode)
 		if (!queue.events.empty())
 		{
 			// Copy events for logging, does not empty
-			events.insert(events.begin(), queue.events.begin(), queue.events.end());
+			for (usz i = 0; i < queue.events.size(); i++)
+				events.emplace_back(queue.events[i]);
 		}
 
 		lv2_obj::on_id_destroy(queue, queue.key);
