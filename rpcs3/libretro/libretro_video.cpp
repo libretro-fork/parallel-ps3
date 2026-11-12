@@ -1,6 +1,5 @@
 #include "stdafx.h"
 #include "libretro_sw_frames.h"
-#include <atomic>
 #include <retro_atomic.h>
 
 #include "libretro_video.h"
@@ -204,8 +203,7 @@ static const bool s_frame_counts_init = []
     return true;
 }();
 
-static std::atomic<GLsync> s_present_fence{nullptr};
-static std::atomic<u64> s_present_fence_counter{0};
+static retro_atomic_ptr_t s_present_fence; // a GLsync; null as static storage starts
 
 // Shared render texture and FBOs
 // FBOs are NOT shared between GL contexts, but textures ARE.
@@ -218,15 +216,16 @@ static GLuint s_main_read_fbo = 0;     // FBO on main thread's context for readi
 extern bool g_libretro_vulkan_hw;
 static int s_shared_texture_width = 1280;
 static int s_shared_texture_height = 720;
-static std::atomic<bool> s_rsx_resources_created{false};
-static std::atomic<bool> s_main_fbo_created{false};
+// Zero, as static storage starts, is "not made yet"
+static retro_atomic_int_t s_rsx_resources_created;
+static retro_atomic_int_t s_main_fbo_created;
 
 // Create the shared render texture (must be called from RSX thread with its context current)
 static GLuint s_depth_stencil_rb = 0;
 
 static void create_rsx_render_resources(int width, int height)
 {
-    if (s_rsx_resources_created.load())
+    if (retro_atomic_load_acquire_int(&s_rsx_resources_created))
         return;
 
     // Create shared texture using standard GL calls
@@ -262,7 +261,7 @@ static void create_rsx_render_resources(int width, int height)
 
     s_shared_texture_width = width;
     s_shared_texture_height = height;
-    s_rsx_resources_created = true;
+    retro_atomic_store_release_int(&s_rsx_resources_created, 1);
 }
 
 // Resize shared texture when game resolution changes (called from RSX thread)
@@ -288,7 +287,7 @@ static void resize_rsx_render_resources(int new_width, int new_height)
     s_shared_texture_height = new_height;
 
     // Mark main thread FBO as needing recreation (texture changed)
-    s_main_fbo_created = false;
+    retro_atomic_store_release_int(&s_main_fbo_created, 0);
 }
 
 // Sizes the shared texture to the picture being presented, from the RSX
@@ -302,7 +301,7 @@ void libretro_ensure_render_size(int width, int height)
     if (width <= 0 || height <= 0)
         return;
 
-    if (!s_rsx_resources_created.load())
+    if (!retro_atomic_load_acquire_int(&s_rsx_resources_created))
     {
         s_shared_texture_width = width;
         s_shared_texture_height = height;
@@ -318,7 +317,7 @@ unsigned int libretro_get_rsx_fbo()
 {
     // Lazy creation on first call from RSX thread
     // Use game's native resolution (1280x720) - RetroArch handles final scaling to window
-    if (!s_rsx_resources_created.load())
+    if (!retro_atomic_load_acquire_int(&s_rsx_resources_created))
     {
         create_rsx_render_resources(s_shared_texture_width, s_shared_texture_height);
     }
@@ -343,7 +342,7 @@ int libretro_get_shared_texture_height()
 // Create main thread's read FBO (must be called from main thread with its context current)
 static void create_main_read_fbo()
 {
-    if (s_main_fbo_created.load() || s_shared_texture == 0)
+    if (retro_atomic_load_acquire_int(&s_main_fbo_created) || s_shared_texture == 0)
         return;
 
     // Create FBO on main thread's context
@@ -356,16 +355,16 @@ static void create_main_read_fbo()
     glCheckFramebufferStatus(GL_FRAMEBUFFER);
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
 
-    s_main_fbo_created = true;
+    retro_atomic_store_release_int(&s_main_fbo_created, 1);
 }
 
 void libretro_blit_to_frontend()
 {
-    if (!s_gl_initialized || !s_rsx_resources_created.load() || !s_get_current_framebuffer)
+    if (!s_gl_initialized || !retro_atomic_load_acquire_int(&s_rsx_resources_created) || !s_get_current_framebuffer)
         return;
 
     // Lazy-create main thread's read FBO on first call
-    if (!s_main_fbo_created.load())
+    if (!retro_atomic_load_acquire_int(&s_main_fbo_created))
     {
         create_main_read_fbo();
     }
@@ -437,7 +436,7 @@ void libretro_wait_for_present_fence()
 
     // Take ownership of the latest fence (if any). If RSX produced multiple fences
     // since the last call, we only wait on the newest.
-    GLsync fence = s_present_fence.exchange(nullptr);
+    GLsync fence = static_cast<GLsync>(retro_atomic_exchange_ptr(&s_present_fence, nullptr));
     if (!fence)
         return;
 
@@ -1064,7 +1063,7 @@ void LibretroGSFrame::flip(draw_context_t ctx, bool skip_frame)
         GLsync fence = glFenceSync(GL_SYNC_GPU_COMMANDS_COMPLETE, 0);
         glFlush();
 
-        GLsync old = s_present_fence.exchange(fence);
+        GLsync old = static_cast<GLsync>(retro_atomic_exchange_ptr(&s_present_fence, static_cast<void*>(fence)));
         if (old)
             glDeleteSync(old);
     }
@@ -1103,8 +1102,10 @@ void LibretroGSFrame::set_dimensions(int w, int h)
 // Scale setting: what is drawn before the game's first flip - the shader and
 // PPU compilation progress - was drawn at 1280x720 and blown up, blurry, at
 // 200% and up (NNshi).
-static std::atomic<int> s_vk_frame_width{0};
-static std::atomic<int> s_vk_frame_height{0};
+// The size the renderer last presented, width | height << 16, in one word so
+// the two never come from different pictures; 0, as static storage starts,
+// for none yet
+static retro_atomic_int_t s_vk_frame_size;
 
 static int libretro_vk_start_size(int base)
 {
@@ -1113,17 +1114,17 @@ static int libretro_vk_start_size(int base)
 
 void libretro_set_vk_frame_size(int width, int height)
 {
-    if (width > 0 && height > 0)
-    {
-        s_vk_frame_width = width;
-        s_vk_frame_height = height;
-    }
+    if (width > 0 && height > 0 && width <= 0xffff && height <= 0x7fff)
+        retro_atomic_store_release_int(&s_vk_frame_size, width | (height << 16));
 }
 
 int LibretroGSFrame::client_width()
 {
     if (g_libretro_vulkan_hw)
-        return s_vk_frame_width ? s_vk_frame_width.load() : libretro_vk_start_size(1280);
+    {
+        const int size = retro_atomic_load_acquire_int(&s_vk_frame_size);
+        return size ? (size & 0xffff) : libretro_vk_start_size(1280);
+    }
     // Use shared texture size - RSX renders at game native resolution
     // RetroArch handles scaling from our output to window size
     return libretro_get_shared_texture_width();
@@ -1132,7 +1133,10 @@ int LibretroGSFrame::client_width()
 int LibretroGSFrame::client_height()
 {
     if (g_libretro_vulkan_hw)
-        return s_vk_frame_height ? s_vk_frame_height.load() : libretro_vk_start_size(720);
+    {
+        const int size = retro_atomic_load_acquire_int(&s_vk_frame_size);
+        return size ? (size >> 16) : libretro_vk_start_size(720);
+    }
     // Use shared texture size - RSX renders at game native resolution
     // RetroArch handles scaling from our output to window size
     return libretro_get_shared_texture_height();

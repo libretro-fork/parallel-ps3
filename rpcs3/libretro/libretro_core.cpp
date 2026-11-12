@@ -215,15 +215,16 @@ static std::shared_ptr<LibretroPadHandler> g_libretro_pad_handler;
 
 // Pause watchdog: RetroArch may stop calling retro_run() when paused.
 // We pause/resume RPCS3 from a small watchdog thread based on retro_run call gaps.
-static std::atomic<bool> s_pause_watchdog_running{false};
-static std::atomic<bool> s_pause_watchdog_stop{false};
-static std::atomic<bool> s_paused_by_watchdog{false};
-static std::atomic<long long> s_last_retro_run_us{0};
+// The pause watchdog's state, between retro_run and the watchdog's thread.
+// Zero, as static storage starts, is "not running"; the last run is in
+// milliseconds (lr_now_us() / 1000), 0 for none yet.
+static retro_atomic_int_t s_pause_watchdog_running;
+static retro_atomic_int_t s_pause_watchdog_stop;
+static retro_atomic_int_t s_paused_by_watchdog;
+static retro_atomic_size_t s_last_retro_run_ms;
 static std::thread s_pause_watchdog_thread;
 
 // Thread synchronization
-static std::mutex emu_mutex;
-static std::atomic<bool> frame_ready{false};
 
 static inline long long lr_now_us()
 {
@@ -239,34 +240,34 @@ static void stop_pause_watchdog()
     vk::libretro::frontend_detached();
 #endif
 
-    if (!s_pause_watchdog_running.exchange(false))
+    if (!retro_atomic_exchange_int(&s_pause_watchdog_running, 0))
         return;
 
-    s_pause_watchdog_stop.store(true);
+    retro_atomic_store_release_int(&s_pause_watchdog_stop, 1);
     if (s_pause_watchdog_thread.joinable())
     {
         s_pause_watchdog_thread.join();
     }
-    s_pause_watchdog_stop.store(false);
-    s_paused_by_watchdog.store(false);
-    s_last_retro_run_us.store(0);
+    retro_atomic_store_release_int(&s_pause_watchdog_stop, 0);
+    retro_atomic_store_release_int(&s_paused_by_watchdog, 0);
+    retro_atomic_store_release_size(&s_last_retro_run_ms, 0);
 }
 
 static void start_pause_watchdog()
 {
-    if (s_pause_watchdog_running.exchange(true))
+    if (retro_atomic_exchange_int(&s_pause_watchdog_running, 1))
         return;
 
-    s_pause_watchdog_stop.store(false);
-    s_paused_by_watchdog.store(false);
-    s_last_retro_run_us.store(lr_now_us());
+    retro_atomic_store_release_int(&s_pause_watchdog_stop, 0);
+    retro_atomic_store_release_int(&s_paused_by_watchdog, 0);
+    retro_atomic_store_release_size(&s_last_retro_run_ms, static_cast<usz>(lr_now_us() / 1000));
 
     s_pause_watchdog_thread = std::thread([]()
     {
-        constexpr long long pause_threshold_us = 100'000;
-        constexpr long long resume_threshold_us = 40'000;
+        constexpr usz pause_threshold_ms = 100;
+        constexpr usz resume_threshold_ms = 40;
 
-        while (!s_pause_watchdog_stop.load())
+        while (!retro_atomic_load_acquire_int(&s_pause_watchdog_stop))
         {
             if (!core_initialized || !game_loaded)
             {
@@ -274,30 +275,31 @@ static void start_pause_watchdog()
                 continue;
             }
 
-            const long long now_us = lr_now_us();
-            const long long last_us = s_last_retro_run_us.load();
-            if (last_us == 0)
+            const usz now_ms = static_cast<usz>(lr_now_us() / 1000);
+            const usz last_ms = retro_atomic_load_acquire_size(&s_last_retro_run_ms);
+            if (last_ms == 0)
             {
                 std::this_thread::sleep_for(std::chrono::milliseconds(10));
                 continue;
             }
 
-            const long long gap_us = now_us - last_us;
+            // Unsigned, so a run stamped just after now_ms was read is no gap
+            const usz gap_ms = now_ms - last_ms;
 
-            if (gap_us > pause_threshold_us)
+            if (gap_ms > pause_threshold_ms && gap_ms < (~usz{0} >> 1))
             {
-                if (!s_paused_by_watchdog.load() && Emu.IsRunning())
+                if (!retro_atomic_load_acquire_int(&s_paused_by_watchdog) && Emu.IsRunning())
                 {
                     Emu.Pause(false, false);
-                    s_paused_by_watchdog.store(true);
+                    retro_atomic_store_release_int(&s_paused_by_watchdog, 1);
                 }
             }
-            else if (gap_us < resume_threshold_us)
+            else if (gap_ms < resume_threshold_ms || gap_ms >= (~usz{0} >> 1))
             {
-                if (s_paused_by_watchdog.load() && Emu.IsPaused())
+                if (retro_atomic_load_acquire_int(&s_paused_by_watchdog) && Emu.IsPaused())
                 {
                     Emu.Resume();
-                    s_paused_by_watchdog.store(false);
+                    retro_atomic_store_release_int(&s_paused_by_watchdog, 0);
                 }
             }
 
@@ -480,17 +482,19 @@ static bool install_pkg_file(const std::string& pkg_path, std::string& eboot_pat
     int last_progress = -1;
 
     // Start extraction in a separate thread so we can show progress
-    std::atomic<bool> extraction_done{false};
-    std::atomic<bool> extraction_success{false};
+    retro_atomic_int_t extraction_done;
+    retro_atomic_int_t extraction_success;
+    retro_atomic_int_init(&extraction_done, 0);
+    retro_atomic_int_init(&extraction_success, 0);
     std::thread extraction_thread([&]()
     {
         auto result = package_reader::extract_data(readers, bootable_paths, false);
-        extraction_success = (result.error == package_install_result::error_type::no_error);
-        extraction_done = true;
+        retro_atomic_store_release_int(&extraction_success, result.error == package_install_result::error_type::no_error ? 1 : 0);
+        retro_atomic_store_release_int(&extraction_done, 1);
     });
 
     // Poll progress and show updates - show every 1% change for better feedback
-    while (!extraction_done)
+    while (!retro_atomic_load_acquire_int(&extraction_done))
     {
         if (!readers.empty())
         {
@@ -507,7 +511,7 @@ static bool install_pkg_file(const std::string& pkg_path, std::string& eboot_pat
 
     extraction_thread.join();
 
-    if (!extraction_success)
+    if (!retro_atomic_load_acquire_int(&extraction_success))
     {
 
         libretro_show_message("PKG installation failed: Extraction error", 300);
@@ -3272,7 +3276,7 @@ void retro_run(void)
     s_run_count++;
 
     // Update watchdog timestamp.
-    s_last_retro_run_us.store(lr_now_us());
+    retro_atomic_store_release_size(&s_last_retro_run_ms, static_cast<usz>(lr_now_us() / 1000));
 #ifdef HAVE_VULKAN
     vk::libretro::frontend_ran();
 #endif

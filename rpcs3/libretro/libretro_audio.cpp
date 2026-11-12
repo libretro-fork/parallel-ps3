@@ -185,6 +185,8 @@ void libretro_audio_process(retro_audio_sample_batch_t audio_batch_cb)
 LibretroAudioBackend::LibretroAudioBackend()
 {
     retro_atomic_int_init(&m_access, 0);
+    retro_atomic_int_init(&m_playing, 0);
+    retro_atomic_int_init(&m_initialized, 0);
     convert_float_to_s16_init_simd();
     s_audio_backend = this;
 }
@@ -225,7 +227,7 @@ bool LibretroAudioBackend::Open(std::string_view dev_id, AudioFreq freq, AudioSa
     // fit the game's to the device
     setup_channel_layout(static_cast<u32>(ch_cnt), libretro_audio_multi_available() ? 8 : 2, layout, libretro_audio_log);
 
-    m_initialized = true;
+    retro_atomic_store_release_int(&m_initialized, 1);
     end_exclusive();
     return true;
 }
@@ -233,8 +235,8 @@ bool LibretroAudioBackend::Open(std::string_view dev_id, AudioFreq freq, AudioSa
 void LibretroAudioBackend::Close()
 {
     begin_exclusive();
-    m_playing = false;
-    m_initialized = false;
+    retro_atomic_store_release_int(&m_playing, 0);
+    retro_atomic_store_release_int(&m_initialized, 0);
     end_exclusive();
 }
 
@@ -266,17 +268,17 @@ f64 LibretroAudioBackend::GetCallbackFrameLen()
 
 void LibretroAudioBackend::Play()
 {
-    m_playing = true;
+    retro_atomic_store_release_int(&m_playing, 1);
 }
 
 void LibretroAudioBackend::Pause()
 {
-    m_playing = false;
+    retro_atomic_store_release_int(&m_playing, 0);
 }
 
 size_t LibretroAudioBackend::GetSamples(void* out, size_t max_frames, bool* is_float, u32* channels, audio_channel_layout* layout)
 {
-    if (!m_playing || !m_initialized)
+    if (!IsPlaying() || !Initialized())
         return 0;
 
     // Never waits: while cellAudio's thread is setting things up, this run
@@ -288,7 +290,7 @@ size_t LibretroAudioBackend::GetSamples(void* out, size_t max_frames, bool* is_f
     const u32 ch = get_channels();
     const size_t bytes_per_frame = static_cast<size_t>(ch) * get_sample_size();
 
-    if (m_initialized && m_write_callback && ch && ch <= 8)
+    if (Initialized() && m_write_callback && ch && ch <= 8)
     {
         // Exactly what is due, straight from cellAudio's ring; it pads a
         // short one with silence, as it does for a sound card

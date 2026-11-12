@@ -5,7 +5,6 @@
 
 #include <retro_atomic.h>
 
-#include <atomic>
 
 // Multi-channel audio (RetroArch since 10 September 2026), from the current
 // libretro.h, which the core's copy predates
@@ -45,8 +44,8 @@ void libretro_audio_process(retro_audio_sample_batch_t audio_batch_cb);
 class LibretroAudioBackend : public AudioBackend
 {
 private:
-    std::atomic<bool> m_playing{false};
-    std::atomic<bool> m_initialized{false};
+    retro_atomic_int_t m_playing;
+    retro_atomic_int_t m_initialized;
 
     // Who is using the callbacks and the format: 1 while retro_run pulls,
     // 2 while cellAudio's thread opens, closes or sets them. retro_run never
@@ -74,12 +73,12 @@ public:
 
     f64 GetCallbackFrameLen() override;
 
-    bool IsPlaying() override { return m_playing; }
+    bool IsPlaying() override { return retro_atomic_load_acquire_int(&m_playing) != 0; }
 
     void Play() override;
     void Pause() override;
 
-    bool Initialized() override { return m_initialized; }
+    bool Initialized() override { return retro_atomic_load_acquire_int(&m_initialized) != 0; }
 
     // retro_run's: up to @max_frames frames of the game's audio into @out
     // (room for max_frames of eight floats), in the backend's format - floats

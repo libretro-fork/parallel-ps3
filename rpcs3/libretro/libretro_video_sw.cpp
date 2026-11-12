@@ -1,12 +1,12 @@
 #include "stdafx.h"
 #include "libretro_sw_frames.h"
 
+#include <retro_atomic.h>
+
 #include "libretro_video.h"
 #include "libretro_core.h"
 #include "Emu/system_config.h"
 
-#include <atomic>
-#include <mutex>
 #include <vector>
 
 // The video unit for platforms with no desktop OpenGL to render into - Android
@@ -88,26 +88,24 @@ void LibretroGSFrame::update_dimensions_from_fbo() {}
 // the first picture, 720p at the Resolution Scale setting, so the compilation
 // progress drawn before it is not blown up from 1280x720 (libretro_video.cpp).
 extern bool g_libretro_vulkan_hw;
-static std::atomic<int> s_vk_frame_width{0};
-static std::atomic<int> s_vk_frame_height{0};
+// The size the renderer last presented, width | height << 16, in one word so
+// the two never come from different pictures; 0, as static storage starts,
+// for none yet
+static retro_atomic_int_t s_vk_frame_size;
 
-static int libretro_vk_size(const std::atomic<int>& reported, int base)
+static int libretro_vk_size(int reported, int base)
 {
-	const int size = reported.load();
-	return size ? size : static_cast<int>(static_cast<u64>(base) * g_cfg.video.resolution_scale_percent / 100);
+	return reported ? reported : static_cast<int>(static_cast<u64>(base) * g_cfg.video.resolution_scale_percent / 100);
 }
 
 void libretro_set_vk_frame_size(int width, int height)
 {
-	if (width > 0 && height > 0)
-	{
-		s_vk_frame_width = width;
-		s_vk_frame_height = height;
-	}
+	if (width > 0 && height > 0 && width <= 0xffff && height <= 0x7fff)
+		retro_atomic_store_release_int(&s_vk_frame_size, width | (height << 16));
 }
 
-int LibretroGSFrame::client_width() { return g_libretro_vulkan_hw ? libretro_vk_size(s_vk_frame_width, 1280) : m_width; }
-int LibretroGSFrame::client_height() { return g_libretro_vulkan_hw ? libretro_vk_size(s_vk_frame_height, 720) : m_height; }
+int LibretroGSFrame::client_width() { return g_libretro_vulkan_hw ? libretro_vk_size(retro_atomic_load_acquire_int(&s_vk_frame_size) & 0xffff, 1280) : m_width; }
+int LibretroGSFrame::client_height() { return g_libretro_vulkan_hw ? libretro_vk_size(retro_atomic_load_acquire_int(&s_vk_frame_size) >> 16, 720) : m_height; }
 
 void LibretroGSFrame::set_dimensions(int w, int h)
 {

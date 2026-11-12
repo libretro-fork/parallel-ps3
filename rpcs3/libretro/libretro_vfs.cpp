@@ -1,4 +1,5 @@
 #include "stdafx.h"
+#include <retro_atomic.h>
 #include "libretro_vfs.h"
 #include "Utilities/File.h"
 #include <cctype>
@@ -22,22 +23,24 @@ namespace libretro_vfs
 {
 	static const struct retro_vfs_interface* s_vfs_interface = nullptr;
 
-	static std::atomic<uint64_t> s_vfs_open_count{0};
-	static std::atomic<uint64_t> s_vfs_read_bytes{0};
-	static std::atomic<uint64_t> s_vfs_write_bytes{0};
-	static std::atomic<uint64_t> s_native_fallback_count{0};
+	// Counted on the game's threads, read for the log; zero as static
+	// storage starts
+	static retro_atomic_size_t s_vfs_open_count;
+	static retro_atomic_size_t s_vfs_read_bytes;
+	static retro_atomic_size_t s_vfs_write_bytes;
+	static retro_atomic_size_t s_native_fallback_count;
 
-	uint64_t get_vfs_open_count() { return s_vfs_open_count.load(); }
-	uint64_t get_vfs_read_bytes() { return s_vfs_read_bytes.load(); }
-	uint64_t get_vfs_write_bytes() { return s_vfs_write_bytes.load(); }
-	uint64_t get_native_fallback_count() { return s_native_fallback_count.load(); }
+	uint64_t get_vfs_open_count() { return retro_atomic_load_acquire_size(&s_vfs_open_count); }
+	uint64_t get_vfs_read_bytes() { return retro_atomic_load_acquire_size(&s_vfs_read_bytes); }
+	uint64_t get_vfs_write_bytes() { return retro_atomic_load_acquire_size(&s_vfs_write_bytes); }
+	uint64_t get_native_fallback_count() { return retro_atomic_load_acquire_size(&s_native_fallback_count); }
 
 	void reset_vfs_stats()
 	{
-		s_vfs_open_count = 0;
-		s_vfs_read_bytes = 0;
-		s_vfs_write_bytes = 0;
-		s_native_fallback_count = 0;
+		retro_atomic_store_release_size(&s_vfs_open_count, 0);
+		retro_atomic_store_release_size(&s_vfs_read_bytes, 0);
+		retro_atomic_store_release_size(&s_vfs_write_bytes, 0);
+		retro_atomic_store_release_size(&s_native_fallback_count, 0);
 	}
 
 	void set_vfs_interface(const struct retro_vfs_interface* vfs_interface)
@@ -102,14 +105,14 @@ namespace libretro_vfs
 			if (m_vfs_handle)
 			{
 				m_use_vfs = true;
-				s_vfs_open_count++;
+				retro_atomic_fetch_add_size(&s_vfs_open_count, 1);
 				return;
 			}
 		}
 
 		m_native_handle = std::fopen(path.c_str(), mode);
 		if (m_native_handle)
-			s_native_fallback_count++;
+			retro_atomic_fetch_add_size(&s_native_fallback_count, 1);
 	}
 
 	vfs_file::~vfs_file()
@@ -223,7 +226,7 @@ namespace libretro_vfs
 		{
 			int64_t result = s_vfs_interface->read(m_vfs_handle, buffer, len);
 			if (result > 0)
-				s_vfs_read_bytes += result;
+				retro_atomic_fetch_add_size(&s_vfs_read_bytes, static_cast<usz>(result));
 			return result;
 		}
 		else if (m_native_handle)
@@ -244,7 +247,7 @@ namespace libretro_vfs
 		{
 			int64_t result = s_vfs_interface->write(m_vfs_handle, buffer, len);
 			if (result > 0)
-				s_vfs_write_bytes += result;
+				retro_atomic_fetch_add_size(&s_vfs_write_bytes, static_cast<usz>(result));
 			return result;
 		}
 		else if (m_native_handle)
@@ -484,7 +487,7 @@ namespace libretro_vfs
 			if (result > 0)
 			{
 				m_pos += result;
-				s_vfs_read_bytes += result;
+				retro_atomic_fetch_add_size(&s_vfs_read_bytes, static_cast<usz>(result));
 			}
 			return result > 0 ? static_cast<u64>(result) : 0;
 		}
@@ -505,7 +508,7 @@ namespace libretro_vfs
 			int64_t result = s_vfs_interface->read(m_handle, buffer, count);
 			if (result > 0)
 			{
-				s_vfs_read_bytes += result;
+				retro_atomic_fetch_add_size(&s_vfs_read_bytes, static_cast<usz>(result));
 			}
 			return result > 0 ? static_cast<u64>(result) : 0;
 		}
@@ -535,7 +538,7 @@ namespace libretro_vfs
 			if (result > 0)
 			{
 				m_pos += result;
-				s_vfs_write_bytes += result;
+				retro_atomic_fetch_add_size(&s_vfs_write_bytes, static_cast<usz>(result));
 			}
 			return result > 0 ? static_cast<u64>(result) : 0;
 		}
@@ -626,7 +629,7 @@ namespace libretro_vfs
 		if (!handle)
 			return nullptr;
 
-		s_vfs_open_count++;
+		retro_atomic_fetch_add_size(&s_vfs_open_count, 1);
 		return std::make_unique<vfs_file_base>(handle, path, (mode & VFS_MODE_APPEND) != 0);
 	}
 }
