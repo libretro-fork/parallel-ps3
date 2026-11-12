@@ -15,6 +15,7 @@
 #include "util/vm.hpp"
 #include "sysPrxForUser.h"
 #include "cellAudio.h"
+#include "cellAudio_mix.h"
 #include "util/video_provider.h"
 
 #include <cmath>
@@ -1289,129 +1290,30 @@ void cell_audio_thread::mix(float* out_buffer, s32 offset)
 	{
 		if (port.state != audio_port_state::started) continue;
 
-		auto buf = get_buffer(port, offset);
-
-		static constexpr float minus_3db = 0.707f; // value taken from https://www.dolby.com/us/en/technologies/a-guide-to-dolby-metadata.pdf
-		float m = master_volume;
-
-		// part of cellAudioSetPortLevel functionality
-		// spread port volume changes over 13ms
-		auto step_volume = [master_volume, &m](audio_port& port)
-		{
-			const audio_port::level_set_t param = port.level_set.load();
-
-			if (param.inc != 0.0f)
-			{
-				port.level += param.inc;
-				const bool dec = param.inc < 0.0f;
-
-				if ((!dec && param.value - port.level <= 0.0f) || (dec && param.value - port.level >= 0.0f))
-				{
-					port.level = param.value;
-					port.level_set.compare_and_swap(param, { param.value, 0.0f });
-				}
-			}
-
-			m = port.level * master_volume;
-		};
-
-		if (port.num_channels == 2)
-		{
-			for (u32 out = 0, in = 0; out < out_buffer_sz; out += out_channels, in += 2)
-			{
-				step_volume(port);
-
-				const float left  = buf[in + 0] * m;
-				const float right = buf[in + 1] * m;
-
-				out_buffer[out + 0] += left;
-				out_buffer[out + 1] += right;
-			}
-		}
-		else if (port.num_channels == 8)
-		{
-			for (u32 out = 0, in = 0; out < out_buffer_sz; out += out_channels, in += 8)
-			{
-				step_volume(port);
-
-				const float left       = buf[in + 0] * m;
-				const float right      = buf[in + 1] * m;
-				const float center     = buf[in + 2] * m;
-				const float low_freq   = buf[in + 3] * m;
-				const float side_left  = buf[in + 4] * m;
-				const float side_right = buf[in + 5] * m;
-				const float rear_left  = buf[in + 6] * m;
-				const float rear_right = buf[in + 7] * m;
-
-				if constexpr (downmix == AudioChannelCnt::STEREO)
-				{
-					// Don't mix in the lfe as per dolby specification and based on documentation
-					const float mid = center * 0.5f;
-					out_buffer[out + 0] += left * minus_3db + mid + side_left * 0.5f + rear_left * 0.5f;
-					out_buffer[out + 1] += right * minus_3db + mid + side_right * 0.5f + rear_right * 0.5f;
-				}
-				else if constexpr (downmix == AudioChannelCnt::SURROUND_5_1)
-				{
-					out_buffer[out + 0] += left;
-					out_buffer[out + 1] += right;
-
-					if constexpr (out_channels >= 6) // Only mix the surround channels into the output if surround output is configured
-					{
-						out_buffer[out + 2] += center;
-						out_buffer[out + 3] += low_freq;
-
-						if constexpr (out_channels == 6)
-						{
-							out_buffer[out + 4] += side_left + rear_left;
-							out_buffer[out + 5] += side_right + rear_right;
-						}
-						else // When using 7.1 ouput, out_buffer[out + 4] and out_buffer[out + 5] are the rear channels, so the side channels need to be mixed into [out + 6] and [out + 7]
-						{
-							out_buffer[out + 6] += side_left + rear_left;
-							out_buffer[out + 7] += side_right + rear_right;
-						}
-					}
-				}
-				else
-				{
-					out_buffer[out + 0] += left;
-					out_buffer[out + 1] += right;
-
-					if constexpr (out_channels >= 6) // Only mix the surround channels into the output if surround output is configured
-					{
-						out_buffer[out + 2] += center;
-						out_buffer[out + 3] += low_freq;
-
-						if constexpr (out_channels == 6)
-						{
-							out_buffer[out + 4] += side_left;
-							out_buffer[out + 5] += side_right;
-						}
-						else
-						{
-							out_buffer[out + 4] += rear_left;
-							out_buffer[out + 5] += rear_right;
-							out_buffer[out + 6] += side_left;
-							out_buffer[out + 7] += side_right;
-						}
-					}
-				}
-			}
-		}
-		else if (!port.num_channels)
-		{
-			for (u32 out = 0, in = 0; out < out_buffer_sz; out += out_channels, in++)
-			{
-				step_volume(port);
-
-				const float sample = buf[in] * m;
-				out_buffer[out + 0] += sample;
-				out_buffer[out + 1] += sample;
-			}
-		}
-		else
+		if (port.num_channels != 2 && port.num_channels != 8 && port.num_channels != 0)
 		{
 			fmt::throw_exception("Unknown channel count (port=%u, channel=%d)", port.number, port.num_channels);
+		}
+
+		// The port's block into the output's, at the port's volume
+		// (cellAudio_mix.c). Part of cellAudioSetPortLevel: a change of the
+		// volume is spread over 13 ms, a step a frame. The level it is going
+		// to cannot change meanwhile - cellAudioSetPortLevel takes the mutex
+		// held here - so it is read once for the block, not once a frame.
+		const audio_port::level_set_t param = port.level_set.load();
+		cell_audio_mix_level level{port.level, param.value, param.inc};
+
+		constexpr cell_audio_mix_down down = downmix == AudioChannelCnt::STEREO ? CELL_AUDIO_MIX_STEREO
+			: downmix == AudioChannelCnt::SURROUND_5_1 ? CELL_AUDIO_MIX_5_1 : CELL_AUDIO_MIX_7_1;
+
+		const bool arrived = cell_audio_mix_port(out_buffer, out_channels, get_buffer(port, offset),
+			port.num_channels ? port.num_channels : 1, down, AUDIO_BUFFER_SAMPLES, master_volume, &level) != 0;
+
+		port.level = level.level;
+
+		if (arrived)
+		{
+			port.level_set.compare_and_swap(param, { param.value, 0.0f });
 		}
 	}
 }

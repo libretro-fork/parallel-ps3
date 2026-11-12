@@ -357,6 +357,7 @@ SOURCES_RPCS3 := \
 	$(CORE_DIR)/rpcs3/Emu/Cell/Modules/cellVideoUpload.cpp \
 	$(CORE_DIR)/rpcs3/Emu/Cell/Modules/cellVoice.cpp \
 	$(CORE_DIR)/rpcs3/Emu/Cell/Modules/cellVpost.cpp \
+	$(CORE_DIR)/rpcs3/Emu/Cell/Modules/cellAudio_mix.c \
 	$(CORE_DIR)/rpcs3/Emu/Cell/Modules/cellVpost_conv.c \
 	$(CORE_DIR)/rpcs3/Emu/Cell/Modules/cellWebBrowser.cpp \
 	$(CORE_DIR)/rpcs3/Emu/Cell/Modules/cell_FreeType2.cpp \
