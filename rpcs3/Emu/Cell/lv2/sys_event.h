@@ -5,7 +5,8 @@
 #include "Emu/Memory/vm_ptr.h"
 
 #include <deque> // not used here any more: for the headers that got it from this one
-#include <memory>
+
+#include <queues/retro_deque.h>
 
 class cpu_thread;
 
@@ -79,58 +80,21 @@ struct sys_event_t
 // Source, data1, data2, data3
 using lv2_event = std::tuple<u64, u64, u64, u64>;
 
-// A queue's events, oldest first: a ring of as many as the queue holds
-// (its size, 127 at most), made when the queue is. Sending an event and
-// taking one allocate nothing. It was a std::deque, which takes a block
-// from the heap for every sixteen events sent and gives one back for every
-// sixteen taken, while the game runs - cellAudio alone sends each of its
-// queues one every 5.3 ms.
-class lv2_event_ring
-{
-	std::unique_ptr<lv2_event[]> m_events;
-	u32 m_capacity = 0;
-	u32 m_first = 0;
-	u32 m_count = 0;
-
-public:
-	explicit lv2_event_ring(u32 capacity)
-		: m_events(new lv2_event[capacity ? capacity : 1]{})
-		, m_capacity(capacity ? capacity : 1)
-	{
-	}
-
-	usz size() const { return m_count; }
-	bool empty() const { return m_count == 0; }
-
-	// The caller has checked there is room (lv2_event_queue::send)
-	void emplace_back(const lv2_event& event)
-	{
-		ensure(m_count < m_capacity);
-		m_events[(m_first + m_count) % m_capacity] = event;
-		m_count++;
-	}
-
-	const lv2_event& front() const { return m_events[m_first]; }
-
-	// The @index-th oldest
-	const lv2_event& operator[](usz index) const { return m_events[(m_first + index) % m_capacity]; }
-
-	void pop_front()
-	{
-		m_first = (m_first + 1) % m_capacity;
-		m_count--;
-	}
-
-	void clear()
-	{
-		m_first = 0;
-		m_count = 0;
-	}
-
-	// In a savestate as the std::deque was
-	void save(utils::serial& ar) const;
-	void load(utils::serial& ar);
-};
+// A queue's events, oldest first: a retro_deque that holds as many as the
+// queue does (its size, 127 at most), made when the queue is. Sending an
+// event and taking one allocate nothing. It was a std::deque, which takes a
+// block from the heap for every sixteen events sent and gives one back for
+// every sixteen taken, while the game runs - cellAudio alone sends each of
+// its queues one every 5.3 ms.
+// C, with C's casts
+#ifndef _MSC_VER
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wold-style-cast"
+#endif
+RETRO_DEQUE_DEFINE(lv2_events, lv2_event);
+#ifndef _MSC_VER
+#pragma GCC diagnostic pop
+#endif
 
 struct lv2_event_port;
 
@@ -146,13 +110,14 @@ struct lv2_event_queue final : public lv2_obj
 	const u64 key;
 
 	shared_mutex mutex;
-	lv2_event_ring events;
+	lv2_events_t events;
 	spu_thread* sq{};
 	ppu_thread* pq{};
 
 	lv2_event_queue(u32 protocol, s32 type, s32 size, u64 name, u64 ipc_key) noexcept;
 
 	lv2_event_queue(utils::serial& ar) noexcept;
+	~lv2_event_queue();
 	static std::function<void(void*)> load(utils::serial& ar);
 	void save(utils::serial& ar);
 	static void save_ptr(utils::serial&, lv2_event_queue*);

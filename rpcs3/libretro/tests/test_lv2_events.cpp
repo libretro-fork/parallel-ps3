@@ -1,7 +1,7 @@
-// An lv2 event queue's events (Emu/Cell/lv2/sys_event.h, lv2_event_ring):
-// a ring made with the queue, where there was a std::deque that took a
-// block from the heap for every sixteen events sent and gave one back for
-// every sixteen taken.
+// An lv2 event queue's events (Emu/Cell/lv2/sys_event.h): a retro_deque
+// made with the queue, where there was a std::deque that took a block from
+// the heap for every sixteen events sent and gave one back for every
+// sixteen taken.
 //
 // - events come out in the order they went in, round the ring many times;
 // - the queue holds as many as its size and refuses the next (EBUSY);
@@ -53,10 +53,10 @@ static lv2_event event_of(u64 n)
 static bool take(lv2_event_queue& queue, lv2_event& out)
 {
 	std::lock_guard lock(queue.mutex);
-	if (queue.events.empty())
+	if (lv2_events_empty(&queue.events))
 		return false;
-	out = queue.events.front();
-	queue.events.pop_front();
+	out = *lv2_events_front(&queue.events);
+	lv2_events_pop_front(&queue.events);
 	return true;
 }
 
@@ -73,9 +73,9 @@ int main()
 	// As many as its size, and no more
 	for (u64 n = 0; n < 127; n++)
 		CHECK(queue->send(event_of(n)) == CellError{});
-	CHECK(queue->events.size() == 127);
+	CHECK(lv2_events_count(&queue->events) == 127);
 	CHECK(queue->send(event_of(999)) == CELL_EBUSY);
-	CHECK(queue->events.size() == 127);
+	CHECK(lv2_events_count(&queue->events) == 127);
 
 	// In the order they went in
 	lv2_event got;
@@ -94,7 +94,7 @@ int main()
 		while (taken < 100000)
 		{
 			const u64 burst = 1 + sent % 37;
-			for (u64 i = 0; i < burst && queue->events.size() < 127; i++)
+			for (u64 i = 0; i < burst && lv2_events_count(&queue->events) < 127; i++)
 				if (queue->send(event_of(sent)) == CellError{})
 					sent++;
 			const u64 back = 1 + taken % 29;
@@ -120,9 +120,9 @@ int main()
 		CHECK(queue->send(event_of(n)) == CellError{});
 	{
 		std::lock_guard lock(queue->mutex);
-		queue->events.clear();
+		lv2_events_clear(&queue->events);
 	}
-	CHECK(queue->events.empty() && !take(*queue, got));
+	CHECK(lv2_events_empty(&queue->events) && !take(*queue, got));
 	for (u64 n = 500; n < 540; n++)
 		CHECK(queue->send(event_of(n)) == CellError{});
 
@@ -140,32 +140,29 @@ int main()
 		CHECK(saved.data.size() == expected.data.size());
 		CHECK(saved.data == expected.data);
 
-		// And read back
-		lv2_event_ring ring(127);
+		// And read back: a queue made from the savestate has the same events
 		utils::serial in;
-		{
-			utils::serial only_events;
-			only_events(as_deque);
-			in.set_reading_state(std::move(only_events.data));
-		}
-		ring.load(in);
-		CHECK(ring.size() == 40);
+		in.set_reading_state(std::move(saved.data));
+		lv2_event_queue back{stx::exact_t<utils::serial&>(in)};
+		CHECK(back.protocol == queue->protocol && back.type == queue->type && back.size == queue->size);
+		CHECK(back.name == queue->name && back.key == queue->key);
+		CHECK(lv2_events_count(&back.events) == 40);
 		u64 wrong = 0;
-		for (u64 n = 0; n < ring.size(); n++)
-			wrong += ring[n] != event_of(500 + n);
+		for (u64 n = 0; n < lv2_events_count(&back.events); n++)
+			wrong += *lv2_events_at(&back.events, n) != event_of(500 + n);
 		CHECK(wrong == 0);
-		CHECK(ring.front() == event_of(500));
 	}
 
-	// A queue of one event
+	// A queue of one event: it holds one, not the two its block would
 	{
-		lv2_event_ring one(1);
-		one.emplace_back(event_of(7));
-		CHECK(one.size() == 1 && one.front() == event_of(7));
-		one.pop_front();
-		CHECK(one.empty());
-		one.emplace_back(event_of(8));
-		CHECK(one.front() == event_of(8));
+		const u32 small_id = idm::make<lv2_obj, lv2_event_queue>(SYS_SYNC_PRIORITY, SYS_PPU_QUEUE, 1, 0, 0);
+		const auto small = idm::get_unlocked<lv2_obj, lv2_event_queue>(small_id);
+		small->exists++;
+		CHECK(small->send(event_of(7)) == CellError{});
+		CHECK(small->send(event_of(8)) == CELL_EBUSY);
+		CHECK(take(*small, got) && got == event_of(7));
+		CHECK(small->send(event_of(8)) == CellError{});
+		CHECK(take(*small, got) && got == event_of(8) && !take(*small, got));
 	}
 
 	std::printf("test_lv2_events: %s\n", failures ? "FAIL" : "ok");

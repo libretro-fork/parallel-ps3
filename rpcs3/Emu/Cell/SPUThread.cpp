@@ -6668,7 +6668,7 @@ bool spu_thread::stop_and_signal(u32 code)
 				return ch_in_mbox.set_values(1, CELL_EINVAL), true;
 			}
 
-			if (queue->events.empty())
+			if (lv2_events_empty(&queue->events))
 			{
 				lv2_obj::emplace(queue->sq, this);
 				group->run_state = SPU_THREAD_GROUP_STATUS_WAITING;
@@ -6688,12 +6688,12 @@ bool spu_thread::stop_and_signal(u32 code)
 			else
 			{
 				// Return the event immediately
-				const auto event = queue->events.front();
+				const auto event = *lv2_events_front(&queue->events);
 				const auto data1 = static_cast<u32>(std::get<1>(event));
 				const auto data2 = static_cast<u32>(std::get<2>(event));
 				const auto data3 = static_cast<u32>(std::get<3>(event));
 				ch_in_mbox.set_values(4, CELL_OK, data1, data2, data3);
-				queue->events.pop_front();
+				lv2_events_pop_front(&queue->events);
 				return true;
 			}
 		}
@@ -6783,17 +6783,17 @@ bool spu_thread::stop_and_signal(u32 code)
 			return ch_in_mbox.set_values(1, CELL_EINVAL), true;
 		}
 
-		if (queue->events.empty())
+		if (lv2_events_empty(&queue->events))
 		{
 			return ch_in_mbox.set_values(1, CELL_EBUSY), true;
 		}
 
-		const auto event = queue->events.front();
+		const auto event = *lv2_events_front(&queue->events);
 		const auto data1 = static_cast<u32>(std::get<1>(event));
 		const auto data2 = static_cast<u32>(std::get<2>(event));
 		const auto data3 = static_cast<u32>(std::get<3>(event));
 		ch_in_mbox.set_values(4, CELL_OK, data1, data2, data3);
-		queue->events.pop_front();
+		lv2_events_pop_front(&queue->events);
 		return true;
 	}
 

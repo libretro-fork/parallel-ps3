@@ -12,8 +12,6 @@
 
 #include "util/asm.hpp"
 
-#include <deque>
-
 LOG_CHANNEL(sys_event);
 
 lv2_event_queue::lv2_event_queue(u32 protocol, s32 type, s32 size, u64 name, u64 ipc_key) noexcept
@@ -23,8 +21,8 @@ lv2_event_queue::lv2_event_queue(u32 protocol, s32 type, s32 size, u64 name, u64
 	, size(static_cast<u8>(size))
 	, name(name)
 	, key(ipc_key)
-	, events(this->size)
 {
+	ensure(lv2_events_init(&events, this->size));
 }
 
 lv2_event_queue::lv2_event_queue(utils::serial& ar) noexcept
@@ -34,33 +32,42 @@ lv2_event_queue::lv2_event_queue(utils::serial& ar) noexcept
 	, size(ar)
 	, name(ar)
 	, key(ar)
-	, events(this->size)
 {
-	events.load(ar);
+	ensure(lv2_events_init(&events, this->size));
+
+	// The events, as a savestate has always had them: how many (a std::deque
+	// wrote its size so), then each
+	if (ar.m_file_handler && ar.m_file_handler->is_null())
+	{
+		return;
+	}
+
+	usz count = 0;
+
+	if (!ar.deserialize_vle<28>(count))
+	{
+		return;
+	}
+
+	for (usz i = 0; i < count; i++)
+	{
+		lv2_event event{};
+		ar(event);
+
+		if (!ar.is_valid())
+		{
+			lv2_events_clear(&events);
+			return;
+		}
+
+		// No more than the queue holds: send never left more in it
+		lv2_events_push_back(&events, &event);
+	}
 }
 
-// A savestate has the events as the std::deque they were: the same bytes.
-// Saving and loading are not play.
-void lv2_event_ring::save(utils::serial& ar) const
+lv2_event_queue::~lv2_event_queue()
 {
-	std::deque<lv2_event> as_deque;
-
-	for (usz i = 0; i < m_count; i++)
-		as_deque.emplace_back((*this)[i]);
-
-	ar(as_deque);
-}
-
-void lv2_event_ring::load(utils::serial& ar)
-{
-	std::deque<lv2_event> as_deque;
-	ar(as_deque);
-
-	clear();
-
-	// No more than the queue holds: send never left more in it
-	for (usz i = 0; i < as_deque.size() && m_count < m_capacity; i++)
-		emplace_back(as_deque[i]);
+	lv2_events_free(&events);
 }
 
 std::function<void(void*)> lv2_event_queue::load(utils::serial& ar)
@@ -72,7 +79,15 @@ std::function<void(void*)> lv2_event_queue::load(utils::serial& ar)
 void lv2_event_queue::save(utils::serial& ar)
 {
 	ar(protocol, type, size, name, key);
-	events.save(ar);
+
+	// The events, byte for byte as the std::deque they were: how many, then each
+	const usz count = lv2_events_count(&events);
+	ar.serialize_vle(count);
+
+	for (usz i = 0; i < count; i++)
+	{
+		ar(*lv2_events_at(&events, i));
+	}
 }
 
 void lv2_event_queue::save_ptr(utils::serial& ar, lv2_event_queue* q)
@@ -180,10 +195,9 @@ CellError lv2_event_queue::send(lv2_event event, bool* notified_thread, lv2_even
 
 	if (!pq && !sq)
 	{
-		if (events.size() < this->size + 0u)
+		// Save event, unless the queue holds its size of them already
+		if (lv2_events_push_back(&events, &event))
 		{
-			// Save event
-			events.emplace_back(event);
 			return {};
 		}
 
@@ -346,11 +360,10 @@ error_code sys_event_queue_destroy(ppu_thread& ppu, u32 equeue_id, s32 mode)
 			}
 		}
 
-		if (!queue.events.empty())
+		// Copy events for logging, does not empty
+		for (usz i = 0; i < lv2_events_count(&queue.events); i++)
 		{
-			// Copy events for logging, does not empty
-			for (usz i = 0; i < queue.events.size(); i++)
-				events.emplace_back(queue.events[i]);
+			events.emplace_back(*lv2_events_at(&queue.events, i));
 		}
 
 		lv2_obj::on_id_destroy(queue, queue.key);
@@ -476,11 +489,11 @@ error_code sys_event_queue_tryreceive(ppu_thread& ppu, u32 equeue_id, vm::ptr<sy
 
 	s32 count = 0;
 
-	while (count < size && !queue->events.empty())
+	while (count < size && !lv2_events_empty(&queue->events))
 	{
 		auto& dest = events[count++];
-		std::tie(dest.source, dest.data1, dest.data2, dest.data3) = queue->events.front();
-		queue->events.pop_front();
+		std::tie(dest.source, dest.data1, dest.data2, dest.data3) = *lv2_events_front(&queue->events);
+		lv2_events_pop_front(&queue->events);
 	}
 
 	lock.unlock();
@@ -519,15 +532,15 @@ error_code sys_event_queue_receive(ppu_thread& ppu, u32 equeue_id, vm::ptr<sys_e
 			timeout = 1;
 		}
 
-		if (queue.events.empty())
+		if (lv2_events_empty(&queue.events))
 		{
 			queue.sleep(ppu, timeout);
 			lv2_obj::emplace(queue.pq, &ppu);
 			return CELL_EBUSY;
 		}
 
-		std::tie(ppu.gpr[4], ppu.gpr[5], ppu.gpr[6], ppu.gpr[7]) = queue.events.front();
-		queue.events.pop_front();
+		std::tie(ppu.gpr[4], ppu.gpr[5], ppu.gpr[6], ppu.gpr[7]) = *lv2_events_front(&queue.events);
+		lv2_events_pop_front(&queue.events);
 		return {};
 	});
 
@@ -631,7 +644,7 @@ error_code sys_event_queue_drain(ppu_thread& ppu, u32 equeue_id)
 	{
 		std::lock_guard lock(queue.mutex);
 
-		queue.events.clear();
+		lv2_events_clear(&queue.events);
 	});
 
 	if (!queue)

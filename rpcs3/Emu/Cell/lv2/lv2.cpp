@@ -55,7 +55,7 @@
 
 #include <algorithm>
 #include <optional>
-#include <deque>
+#include <queues/retro_deque.h>
 #include <thread>
 #include "util/tsc.hpp"
 #include "util/sysinfo.hpp"
@@ -1359,26 +1359,53 @@ thread_local DECLARE(lv2_obj::g_postpone_notify_barrier){};
 thread_local DECLARE(lv2_obj::g_to_awake);
 
 // A thread is in each of the two lists below once at most, so neither is
-// ever longer than there can be threads: room for all of them is set aside
-// here, and nothing is allocated when a thread goes to sleep with a timeout
-// or wakes from one. They were std::deque, which takes a block from the
-// heap and gives one back as its contents move along - every few dozen
-// sleeps, all through play, under the scheduler's lock.
+// ever longer than there can be threads: each is a retro_deque that holds
+// that many, set aside when the core is loaded. Nothing is allocated when a
+// thread goes to sleep with a timeout or wakes from one. They were
+// std::deque, which takes a block from the heap and gives one back as its
+// contents move along - every few dozen sleeps, all through play, under the
+// scheduler's lock.
 static constexpr usz g_max_cpu_threads = ppu_thread::id_count + spu_thread::id_count;
 
-template <typename T>
-static std::vector<T> with_room_for_all_threads()
+struct lv2_deadline
 {
-	std::vector<T> list;
-	list.reserve(g_max_cpu_threads);
-	return list;
-}
+	u64 first;          // wait until
+	cpu_thread* second; // who
+};
+
+// C, with C's casts
+#ifndef _MSC_VER
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wold-style-cast"
+#endif
+RETRO_DEQUE_DEFINE(lv2_deadlines, lv2_deadline);
+RETRO_DEQUE_DEFINE(lv2_threads, cpu_thread*);
 
 // Scheduler queue for timeouts (wait until -> thread), the earliest first
-static std::vector<std::pair<u64, class cpu_thread*>> g_waiting = with_room_for_all_threads<std::pair<u64, class cpu_thread*>>();
+static lv2_deadlines_t g_waiting;
 
 // Threads which must call lv2_obj::sleep before the scheduler starts
-static std::vector<class cpu_thread*> g_to_sleep = with_room_for_all_threads<class cpu_thread*>();
+static lv2_threads_t g_to_sleep;
+
+static const bool g_lists_made = lv2_deadlines_init(&g_waiting, g_max_cpu_threads) && lv2_threads_init(&g_to_sleep, g_max_cpu_threads);
+#ifndef _MSC_VER
+#pragma GCC diagnostic pop
+#endif
+
+// Where @cpu is in g_to_sleep, or its count
+static usz to_sleep_index(const cpu_thread* cpu)
+{
+	const usz count = lv2_threads_count(&g_to_sleep);
+
+	for (usz i = 0; i < count; i++)
+	{
+		if (*lv2_threads_at(&g_to_sleep, i) == cpu)
+			return i;
+	}
+
+	return count;
+}
+
 static atomic_t<bool> g_scheduler_ready = false;
 static atomic_t<u64> s_yield_frequency = 0;
 static atomic_t<u64> s_max_allowed_yield_tsc = 0;
@@ -1533,18 +1560,18 @@ bool lv2_obj::sleep_unlocked(cpu_thread& thread, u64 timeout, u64 current_time)
 
 	auto on_to_sleep_update = [&]()
 	{
-		if (g_to_sleep.size() > 5u)
+		if (lv2_threads_count(&g_to_sleep) > 5u)
 		{
-			ppu_log.warning("Threads (%d)", g_to_sleep.size());
+			ppu_log.warning("Threads (%d)", lv2_threads_count(&g_to_sleep));
 		}
-		else if (!g_to_sleep.empty())
+		else if (!lv2_threads_empty(&g_to_sleep))
 		{
 			// In case there is a deadlock (PPU threads not sleeping)
 			// Print-out their IDs for further inspection (focus at 5 at max for now to avoid log spam)
-			std::string out = fmt::format("Threads (%d):", g_to_sleep.size());
-			for (auto thread : g_to_sleep)
+			std::string out = fmt::format("Threads (%d):", lv2_threads_count(&g_to_sleep));
+			for (usz i = 0; i < lv2_threads_count(&g_to_sleep); i++)
 			{
-				fmt::append(out, " 0x%x,", thread->id);
+				fmt::append(out, " 0x%x,", (*lv2_threads_at(&g_to_sleep, i))->id);
 			}
 
 			out.resize(out.size() - 1);
@@ -1608,9 +1635,9 @@ bool lv2_obj::sleep_unlocked(cpu_thread& thread, u64 timeout, u64 current_time)
 		// Find and remove the thread
 		if (!unqueue(g_ppu, ppu, &ppu_thread::next_ppu))
 		{
-			if (auto it = std::find(g_to_sleep.begin(), g_to_sleep.end(), ppu); it != g_to_sleep.end())
+			if (const usz at = to_sleep_index(ppu); at != lv2_threads_count(&g_to_sleep))
 			{
-				g_to_sleep.erase(it);
+				lv2_threads_erase(&g_to_sleep, at);
 				ppu->start_time = start_time;
 				on_to_sleep_update();
 				return true;
@@ -1627,9 +1654,9 @@ bool lv2_obj::sleep_unlocked(cpu_thread& thread, u64 timeout, u64 current_time)
 	}
 	else if (auto spu = thread.try_get<spu_thread>())
 	{
-		if (auto it = std::find(g_to_sleep.begin(), g_to_sleep.end(), spu); it != g_to_sleep.end())
+		if (const usz at = to_sleep_index(spu); at != lv2_threads_count(&g_to_sleep))
 		{
-			g_to_sleep.erase(it);
+			lv2_threads_erase(&g_to_sleep, at);
 			on_to_sleep_update();
 			return true;
 		}
@@ -1641,15 +1668,18 @@ bool lv2_obj::sleep_unlocked(cpu_thread& thread, u64 timeout, u64 current_time)
 	{
 		const u64 wait_until = start_time + std::min<u64>(timeout, ~start_time);
 
-		// Register timeout if necessary
-		for (auto it = g_waiting.cbegin(), end = g_waiting.cend();; it++)
+		// Register timeout if necessary: before the first later deadline,
+		// after any that is the same
+		const usz waiting = lv2_deadlines_count(&g_waiting);
+		usz at = 0;
+
+		while (at < waiting && lv2_deadlines_at(&g_waiting, at)->first <= wait_until)
 		{
-			if (it == end || it->first > wait_until)
-			{
-				g_waiting.emplace(it, wait_until, &thread);
-				break;
-			}
+			at++;
 		}
+
+		const lv2_deadline deadline{wait_until, &thread};
+		ensure(lv2_deadlines_insert(&g_waiting, at, &deadline));
 	}
 
 	return return_val;
@@ -1801,11 +1831,11 @@ bool lv2_obj::awake_unlocked(cpu_thread* cpu, s32 prio)
 		}
 
 		// Unregister timeout if necessary
-		for (auto it = g_waiting.cbegin(), end = g_waiting.cend(); it != end; it++)
+		for (usz i = 0, waiting = lv2_deadlines_count(&g_waiting); i < waiting; i++)
 		{
-			if (it->second == cpu)
+			if (lv2_deadlines_at(&g_waiting, i)->second == cpu)
 			{
-				g_waiting.erase(it);
+				lv2_deadlines_erase(&g_waiting, i);
 				break;
 			}
 		}
@@ -1908,8 +1938,8 @@ void lv2_obj::cleanup()
 {
 	g_ppu = nullptr;
 	g_scheduler_ready = false;
-	g_to_sleep.clear();
-	g_waiting.clear();
+	lv2_threads_clear(&g_to_sleep);
+	lv2_deadlines_clear(&g_waiting);
 	g_pending = 0;
 	s_yield_frequency = 0;
 }
@@ -1953,9 +1983,9 @@ void lv2_obj::schedule_all(u64 current_time)
 	}
 
 	// Check registered timeouts
-	while (!g_waiting.empty())
+	while (!lv2_deadlines_empty(&g_waiting))
 	{
-		const auto pair = &g_waiting.front();
+		const auto pair = lv2_deadlines_front(&g_waiting);
 
 		if (!current_time)
 		{
@@ -1965,7 +1995,7 @@ void lv2_obj::schedule_all(u64 current_time)
 		if (pair->first <= current_time)
 		{
 			const auto target = pair->second;
-			g_waiting.erase(g_waiting.begin());
+			lv2_deadlines_pop_front(&g_waiting);
 
 			if (target != cpu_thread::get_current())
 			{
@@ -2107,13 +2137,13 @@ std::pair<ppu_thread_status, u32> lv2_obj::ppu_state(ppu_thread* ppu, bool lock_
 
 void lv2_obj::set_future_sleep(cpu_thread* cpu)
 {
-	g_to_sleep.emplace_back(cpu);
+	ensure(lv2_threads_push_back(&g_to_sleep, &cpu));
 }
 
 bool lv2_obj::is_scheduler_ready()
 {
 	reader_lock lock(g_mutex);
-	return g_to_sleep.empty();
+	return lv2_threads_empty(&g_to_sleep);
 }
 
 ppu_non_sleeping_count_t lv2_obj::count_non_sleeping_threads()

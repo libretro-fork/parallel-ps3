@@ -42,7 +42,7 @@ int main()
 	// Not started: nothing sent
 	cfg.queue_id = queue_id;
 	send_sys_io_connect_event(1, 1);
-	CHECK(queue->events.empty());
+	CHECK(lv2_events_empty(&queue->events));
 
 	// Started, as sys_config_start leaves it
 	cfg.init_ctr = 1;
@@ -77,10 +77,10 @@ int main()
 		run.join();
 		game.join();
 
-		CHECK(queue->events.size() == 1);
-		if (!queue->events.empty())
+		CHECK(lv2_events_count(&queue->events) == 1);
+		if (!lv2_events_empty(&queue->events))
 		{
-			const auto [source, d1, d2, d3] = queue->events.front();
+			const auto [source, d1, d2, d3] = *lv2_events_front(&queue->events);
 			CHECK(source == 0 && d1 == 1 && d2 == 2 && d3 == 1);
 		}
 	}
@@ -88,7 +88,7 @@ int main()
 	// Stopped: the gate is closed before the queue goes, and nothing is sent
 	sys_io_gate_close(&cfg.gate);
 	send_sys_io_connect_event(3, 1);
-	CHECK(queue->events.size() == 1);
+	CHECK(lv2_events_count(&queue->events) == 1);
 	CHECK(!sys_io_gate_enter(&cfg.gate));
 
 	// A send under way holds a stop back; none starts once it is closed
