@@ -2161,6 +2161,10 @@ bool lv2_obj::wait_timeout(u64 usec, ppu_thread* cpu, bool scale, bool is_usleep
 	static_assert(u64{umax} / max_timeout >= 100, "max timeout is not valid for scaling");
 
 	const u64 start_time = get_system_time();
+#ifdef LIBRETRO_CORE
+	// The time waited is the guest's, which stops with retro_run
+	const u64 slaved_start = get_slaved_system_time();
+#endif
 
 	if (cpu)
 	{
@@ -2271,7 +2275,11 @@ bool lv2_obj::wait_timeout(u64 usec, ppu_thread* cpu, bool scale, bool is_usleep
 			}
 		}
 
+#ifdef LIBRETRO_CORE
+		passed = get_slaved_system_time() - slaved_start;
+#else
 		passed = get_system_time() - start_time;
+#endif
 	}
 
 	return true;

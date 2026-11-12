@@ -12,6 +12,122 @@
 u64 g_timebase_offs{};
 static u64 systemtime_offset;
 
+#ifdef LIBRETRO_CORE
+#include <algorithm>
+#include <retro_atomic.h>
+
+// The guest's clock, slaved to retro_run. Each retro_run grants the guest one
+// frame of time (libretro_guest_clock_grant). Within it the clock runs at the
+// host's rate, smoothly, as the PS3's timebase does - audio periods, timers
+// and the game's own timing see time pass inside a frame as on the console -
+// but it never passes what has been granted: with no retro_run it stops (the
+// frontend paused), and with retro_run faster than real time it is pulled
+// forward to the frame granted before (fast-forward). Over any stretch the
+// guest has had exactly the frames retro_run asked for. The PPU, SPU and RSX
+// threads are not stopped: only their time is bounded. In host TSC ticks:
+// the guest's TSC is tsc - lag, held within [floor, grant]; grant 0 until
+// the first retro_run, the host's own until then. One writer (retro_run),
+// read by every thread through a sequence count.
+static retro_atomic_int_t s_clock_seq;
+static retro_atomic_size_t s_clock_lag;
+static retro_atomic_size_t s_clock_floor;
+static retro_atomic_size_t s_clock_grant;
+
+struct clock_slave
+{
+	u64 lag;
+	u64 floor;
+	u64 grant;
+};
+
+static clock_slave read_clock_slave()
+{
+	for (;;)
+	{
+		const int seq = retro_atomic_load_acquire_int(&s_clock_seq);
+		if (seq & 1)
+			continue;
+		clock_slave c;
+		c.lag   = retro_atomic_load_relaxed_size(&s_clock_lag);
+		c.floor = retro_atomic_load_relaxed_size(&s_clock_floor);
+		c.grant = retro_atomic_load_relaxed_size(&s_clock_grant);
+		retro_atomic_thread_fence_acquire();
+		if (retro_atomic_load_relaxed_int(&s_clock_seq) == seq)
+			return c;
+	}
+}
+
+static u64 slaved_tsc(u64 tsc)
+{
+	const clock_slave c = read_clock_slave();
+	if (!c.grant)
+		return tsc;
+	return std::clamp<u64>(tsc - c.lag, c.floor, c.grant);
+}
+
+// retro_run's thread: one more frame of the guest's time
+void libretro_guest_clock_grant(double frame_seconds)
+{
+	const u64 freq = utils::get_tsc_freq();
+	if (!freq || !(frame_seconds > 0))
+		return;
+	const u64 frame = static_cast<u64>(frame_seconds * static_cast<double>(freq));
+	const u64 tsc   = utils::get_tsc();
+	u64 lag   = retro_atomic_load_relaxed_size(&s_clock_lag);
+	u64 grant = retro_atomic_load_relaxed_size(&s_clock_grant);
+	u64 floor;
+
+	if (!grant)
+	{
+		// Continuous with the host's clock the guest had until now
+		lag   = 0;
+		floor = tsc;
+	}
+	else
+	{
+		// Never behind the frames asked for: from the end of the last, on
+		// at the host's rate - on from where it stopped when it stopped there
+		// (paused), pulled forward to it when behind (fast-forward)
+		floor = grant;
+		lag   = tsc - floor;
+	}
+	grant = floor + frame;
+
+	const int seq = retro_atomic_load_relaxed_int(&s_clock_seq);
+	retro_atomic_store_relaxed_int(&s_clock_seq, seq + 1);
+	retro_atomic_thread_fence_release();
+	retro_atomic_store_relaxed_size(&s_clock_lag, lag);
+	retro_atomic_store_relaxed_size(&s_clock_floor, floor);
+	retro_atomic_store_relaxed_size(&s_clock_grant, grant);
+	retro_atomic_store_release_int(&s_clock_seq, seq + 2);
+}
+
+// The guest's microseconds, as get_system_time's but slaved: unscaled, for
+// measuring how much of the guest's time has passed
+u64 get_slaved_system_time()
+{
+	if (const u64 freq = utils::get_tsc_freq())
+	{
+		const u64 tsc = slaved_tsc(utils::get_tsc());
+		return tsc / freq * 1000000ull + tsc % freq * 1000000ull / freq;
+	}
+	return get_system_time();
+}
+
+// The host's microseconds @time as the guest's: the lag taken off
+static u64 host_to_slaved_time(u64 time)
+{
+	const u64 freq = utils::get_tsc_freq();
+	if (!freq)
+		return time;
+	const clock_slave c = read_clock_slave();
+	if (!c.grant)
+		return time;
+	const u64 lag_us = c.lag / freq * 1000000ull + c.lag % freq * 1000000ull / freq;
+	return time - std::min(time, lag_us);
+}
+#endif
+
 #ifndef __linux__
 #include "util/asm.hpp"
 #endif
@@ -145,6 +261,10 @@ static constexpr u64 g_timebase_freq = /*79800000*/ 80000000ull; // 80 Mhz
 // Convert time is microseconds to timebased time
 u64 convert_to_timebased_time(u64 time)
 {
+#ifdef LIBRETRO_CORE
+	// The host's microseconds (sys_rsxaudio's) as the guest's
+	time = host_to_slaved_time(time);
+#endif
 	const u64 result = time * (g_timebase_freq / 1000000ull) * g_cfg.core.clocks_scale / 100u;
 	ensure(result >= g_timebase_offs);
 	return result - g_timebase_offs;
@@ -154,7 +274,11 @@ u64 get_timebased_time()
 {
 	if (u64 freq = utils::get_tsc_freq())
 	{
+#ifdef LIBRETRO_CORE
+		const u64 tsc = slaved_tsc(utils::get_tsc());
+#else
 		const u64 tsc = utils::get_tsc();
+#endif
 
 #if _MSC_VER
 		const u64 result = static_cast<u64>(u128_from_mul(tsc, g_timebase_freq) / freq) * g_cfg.core.clocks_scale / 100u;
@@ -252,7 +376,11 @@ u64 get_system_time()
 // As get_system_time but obeys Clocks scaling setting
 u64 get_guest_system_time(u64 time)
 {
+#ifdef LIBRETRO_CORE
+	const u64 result = (time != umax ? host_to_slaved_time(time) : get_slaved_system_time()) * g_cfg.core.clocks_scale / 100;
+#else
 	const u64 result = (time != umax ? time : get_system_time()) * g_cfg.core.clocks_scale / 100;
+#endif
 	return result - systemtime_offset;
 }
 

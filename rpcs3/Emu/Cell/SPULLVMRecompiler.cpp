@@ -4713,7 +4713,13 @@ public:
 		case SPU_RdDec:
 		{
 #if defined(ARCH_X64) || defined(ARCH_ARM64)
+			// The core's guest clock is retro_run's (get_timebased_time), not the
+			// host's TSC read here inline
+#ifdef LIBRETRO_CORE
+			if (false)
+#else
 			if (utils::get_tsc_freq() && !(g_cfg.core.spu_loop_detection) && (g_cfg.core.clocks_scale == 100))
+#endif
 			{
 				const auto timebase_offs = m_ir->CreateLoad(get_type<u64>(), m_ir->CreateIntToPtr(m_ir->getInt64(reinterpret_cast<u64>(&g_timebase_offs)), get_type<u64*>()));
 				const auto timestamp = m_ir->CreateLoad(get_type<u64>(), spu_ptr(&spu_thread::ch_dec_start_timestamp));
@@ -5538,7 +5544,13 @@ public:
 			call("spu_get_events", &exec_get_events, m_thread, m_ir->getInt32(SPU_EVENT_TM));
 
 #if defined(ARCH_X64) || defined(ARCH_ARM64)
+			// The core's guest clock is retro_run's (get_timebased_time), not the
+			// host's TSC read here inline
+#ifdef LIBRETRO_CORE
+			if (false)
+#else
 			if (utils::get_tsc_freq() && !(g_cfg.core.spu_loop_detection) && (g_cfg.core.clocks_scale == 100))
+#endif
 			{
 				const auto timebase_offs = m_ir->CreateLoad(get_type<u64>(), m_ir->CreateIntToPtr(m_ir->getInt64(reinterpret_cast<u64>(&g_timebase_offs)), get_type<u64*>()));
 				const auto tsc = m_ir->CreateCall(get_intrinsic(llvm::Intrinsic::readcyclecounter));

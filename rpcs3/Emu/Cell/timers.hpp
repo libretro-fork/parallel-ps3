@@ -10,3 +10,12 @@ u64 get_system_time();
 
 // As get_system_time but obeys Clocks scaling setting. Microseconds.
 u64 get_guest_system_time(u64 time = umax);
+
+#ifdef LIBRETRO_CORE
+// retro_run's thread: one more frame of the guest's time (sys_time.cpp)
+void libretro_guest_clock_grant(double frame_seconds);
+
+// The guest's microseconds, unscaled: how much of the guest's time has
+// passed, which stops when retro_run does
+u64 get_slaved_system_time();
+#endif

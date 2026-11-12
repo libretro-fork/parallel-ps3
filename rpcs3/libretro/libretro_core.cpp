@@ -17,6 +17,7 @@
 #include <retro_atomic.h>
 
 #include "Emu/System.h"
+#include "Emu/Cell/timers.hpp"
 #include "Emu/savestate_utils.hpp"
 #include "Emu/system_config.h"
 #include "Emu/Cell/Modules/cellMsgDialog.h"
@@ -2985,7 +2986,9 @@ void retro_unload_game(void)
 
 void retro_run(void)
 {
-    // A frame of the frontend's: what a wait counted in frames waits for
+    // A frame of the frontend's: one more frame of the guest's time, and
+    // what a wait counted in frames waits for
+    libretro_guest_clock_grant(1.0 / libretro_frame_rate());
     libretro_event();
 
     if (s_pkg_install_only)
