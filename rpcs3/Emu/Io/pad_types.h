@@ -402,7 +402,13 @@ struct pad_guest_state
 	u8 buffer_cleared;          // the next cellPadGetData gives everything
 	u8 ldd;                     // a custom controller is registered here
 	u8 ldd_identity;            // the port's device is a custom controller's (stays after it is unregistered)
+	u32 applied_class;          // the device class @data was last worked out for
+	usz applied_seq;            // which hand-over of the frontend's (Pad::external_seq) is in @data;
+	                            // odd for none: @data has to be worked out again
 };
+
+// No hand-over of the frontend's is in a port's data
+static constexpr usz pad_external_none = 1;
 
 static constexpr u8 MOTOR_THRESHOLD = 63; // The DS3 does not seem to respond to values <= 63. So we should ignore those in other handlers as well.
 
@@ -615,6 +621,34 @@ struct Pad
 	// sequence count, odd while it is being written: one writer, the
 	// frontend's thread (pad_thread::apply_copilots); a reader copies it and
 	// copies again if the count moved, and the writer never waits
+	// The frontend's thread alone: what it last handed over, to hand over
+	// only what differs
+	pad_external m_external_last{};
+	bool m_external_written = false;
+
+	bool same_external(const pad_external& ext, u32 count) const
+	{
+		if (count != m_external_last.button_count)
+			return false;
+
+		for (u32 i = 0; i < count; i++)
+		{
+			const ButtonExternal& a = ext.buttons[i];
+			const ButtonExternal& b = m_external_last.buttons[i];
+
+			if (a.m_value != b.m_value || a.m_pressed != b.m_pressed || a.m_offset != b.m_offset || a.m_outKeyCode != b.m_outKeyCode)
+				return false;
+		}
+
+		for (usz i = 0; i < ext.sticks.size(); i++)
+		{
+			if (ext.sticks[i].m_value != m_external_last.sticks[i].m_value || ext.sticks[i].m_offset != m_external_last.sticks[i].m_offset)
+				return false;
+		}
+
+		return true;
+	}
+
 	retro_atomic_size_t m_external_seq;
 	retro_atomic_int_t m_external_count;
 	retro_atomic_int_t m_external_buttons[pad_external::max_buttons][3]; // offset, key code, value | pressed << 16
@@ -658,6 +692,7 @@ struct Pad
 		retro_atomic_int_init(&m_rumble_requests, 0);
 		std::memset(m_guest_slots, 0, sizeof(m_guest_slots));
 		m_guest_slots[0].buffer_cleared = 1;
+		m_guest_slots[0].applied_seq = pad_external_none;
 		retro_cas_record_init(&m_guest, m_guest_slots, sizeof(pad_guest_state));
 	}
 
@@ -672,10 +707,23 @@ struct Pad
 	// The frontend's thread: the buttons and sticks the game reads next
 	void write_external(const pad_external& ext)
 	{
+		const u32 count = std::min<u32>(ext.button_count, pad_external::max_buttons);
+
+		// The same as was last handed over - a pad nobody is touching, most
+		// frames: nothing is written, the count stays, and a reader that has
+		// what the count names has nothing to read again
+		if (m_external_written && same_external(ext, count))
+			return;
+
+		m_external_written = true;
+		m_external_last.button_count = count;
+		for (u32 i = 0; i < count; i++)
+			m_external_last.buttons[i] = ext.buttons[i];
+		m_external_last.sticks = ext.sticks;
+
 		const usz seq = retro_atomic_load_relaxed_size(&m_external_seq);
 		retro_atomic_store_relaxed_size(&m_external_seq, seq + 1);
 		retro_atomic_thread_fence_release();
-		const u32 count = std::min<u32>(ext.button_count, pad_external::max_buttons);
 		retro_atomic_store_relaxed_int(&m_external_count, static_cast<int>(count));
 		for (u32 i = 0; i < count; i++)
 		{
@@ -692,8 +740,16 @@ struct Pad
 		retro_atomic_store_release_size(&m_external_seq, seq + 2);
 	}
 
+	// Any thread: which hand-over is the latest; even, and another number
+	// for each one that differed from the one before
+	usz external_seq() const
+	{
+		return retro_atomic_load_acquire_size(&const_cast<Pad*>(this)->m_external_seq);
+	}
+
 	// Any thread: what the frontend's thread last handed over, whole
-	void read_external(pad_external& out) const
+	// and which one it is (external_seq)
+	usz read_external(pad_external& out) const
 	{
 		auto* self = const_cast<Pad*>(this);
 		for (;;)
@@ -718,7 +774,7 @@ struct Pad
 			}
 			retro_atomic_thread_fence_acquire();
 			if (retro_atomic_load_relaxed_size(&self->m_external_seq) == seq)
-				return;
+				return seq;
 		}
 	}
 

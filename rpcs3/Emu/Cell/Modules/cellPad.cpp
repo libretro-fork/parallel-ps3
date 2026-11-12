@@ -396,6 +396,7 @@ error_code cellPadEnd(ppu_thread& ppu)
 void clear_pad_buffer(pad_guest_state& state)
 {
 	state.buffer_cleared = 1;
+	state.applied_seq = pad_external_none; // the frontend's buttons are to be worked into it again
 	state.data = {};
 	state.data.button[CELL_PAD_BTN_OFFSET_ANALOG_LEFT_X] = 128;
 	state.data.button[CELL_PAD_BTN_OFFSET_ANALOG_LEFT_Y] = 128;
@@ -518,9 +519,18 @@ static void pad_get_data(const Pad& pad_ref, pad_guest_state& state, CellPadData
 			}
 		};
 
-		// What the frontend's thread last handed over, read whole without a lock
+		// What the frontend's thread last handed over is worked into the
+		// port's data once: while it hands over nothing that differs (a pad
+		// nobody is touching, and every call after the first within a
+		// frame) the data is already what working it in again would make
+		// it, and nothing is read. The frontend's thread counts its
+		// hand-overs that differ (Pad::external_seq).
+		if (state.applied_seq != pad->external_seq() || state.applied_class != device.class_type)
+		{
+		// Read whole, without a lock
 		pad_external pad_ext;
-		pad->read_external(pad_ext);
+		state.applied_seq = pad->read_external(pad_ext);
+		state.applied_class = device.class_type;
 
 		for (const ButtonExternal& button : pad_ext.button_span())
 		{
@@ -614,6 +624,7 @@ static void pad_get_data(const Pad& pad_ref, pad_guest_state& state, CellPadData
 			default:
 				break;
 			}
+		}
 		}
 
 		if (setting & CELL_PAD_SETTING_SENSOR_ON)
@@ -815,6 +826,8 @@ bool cellPad_port_get_data(Pad& pad, CellPadData* data, bool get_periph_data, pa
 			return false;
 
 		const bool custom = state.ldd != 0;
+		const usz applied_seq = state.applied_seq;
+		const u32 applied_class = state.applied_class;
 
 		pad_get_data(pad, state, data, get_periph_data);
 
@@ -828,9 +841,14 @@ bool cellPad_port_get_data(Pad& pad, CellPadData* data, bool get_periph_data, pa
 		if (shown)
 			*shown = state;
 
-		// Nothing new for the game, so nothing changed. A custom
-		// controller's data is the game's own, given back as it is.
-		if (data->len == CELL_PAD_LEN_NO_CHANGE || custom)
+		// A custom controller's data is the game's own, given back as it is.
+		if (custom)
+			return true;
+
+		// Nothing new for the game, so nothing changed - unless a hand-over
+		// was worked in that made no difference the game sees: that is kept
+		// too, so that it is worked in once
+		if (data->len == CELL_PAD_LEN_NO_CHANGE && state.applied_seq == applied_seq && state.applied_class == applied_class)
 			return true;
 
 		// Something new: the copy in the port's place, if the port is

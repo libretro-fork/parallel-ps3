@@ -412,6 +412,65 @@ int main()
 			registered.load(), static_cast<u32>(threads), shared.load(), failed.load());
 	}
 
+	// A pad nobody is touching: the frontend's thread hands over nothing
+	// that is the same again, and the game's calls work nothing in again
+	{
+		CHECK(code(cellPadSetSensorMode(0, 0)) == CELL_OK);
+		set_buttons(pad, 0);
+		pad.m_buttons[3].m_pressed = true;
+		pad.m_buttons[3].m_value = 77;
+		pads.apply_copilots();
+		CHECK(cellPad_port_get_data(pad, &data, false, nullptr, nullptr, nullptr));
+		CHECK(data.len != CELL_PAD_LEN_NO_CHANGE);
+
+		const usz seq = pad.external_seq();
+		CHECK(!(seq & 1) && guest_of(pad).applied_seq == seq);
+		for (int i = 0; i < 100; i++)
+		{
+			pads.apply_copilots();
+			CHECK(cellPad_port_get_data(pad, &data, false, nullptr, nullptr, nullptr));
+			CHECK(data.len == CELL_PAD_LEN_NO_CHANGE);
+		}
+		CHECK(pad.external_seq() == seq);
+		CHECK(guest_of(pad).applied_seq == seq);
+
+		// The buffer cleared with the button still held and nothing new
+		// handed over: the button is in what the game gets
+		CHECK(code(cellPadClearBuf(0)) == CELL_OK);
+		CHECK(guest_of(pad).applied_seq == pad_external_none);
+		CHECK(cellPad_port_get_data(pad, &data, false, nullptr, nullptr, nullptr));
+		CHECK(data.len != CELL_PAD_LEN_NO_CHANGE);
+		CHECK(data.button[CELL_PAD_BTN_OFFSET_DIGITAL1] == (1u << 3));
+		CHECK(pad.external_seq() == seq && guest_of(pad).applied_seq == seq);
+
+		// A change: one hand-over more, given to the game once
+		pad.m_buttons[9].m_pressed = true;
+		pad.m_buttons[9].m_value = 255;
+		pads.apply_copilots();
+		pads.apply_copilots();
+		CHECK(pad.external_seq() == seq + 2);
+		CHECK(cellPad_port_get_data(pad, &data, false, nullptr, nullptr, nullptr));
+		CHECK(data.len != CELL_PAD_LEN_NO_CHANGE);
+		CHECK(data.button[CELL_PAD_BTN_OFFSET_DIGITAL2] == (1u << 1));
+		CHECK(cellPad_port_get_data(pad, &data, false, nullptr, nullptr, nullptr));
+		CHECK(data.len == CELL_PAD_LEN_NO_CHANGE);
+
+		// A change the game cannot see (a button cellPad has no place for):
+		// handed over and worked in once, with nothing new for the game
+		pad.m_buttons.emplace_back(special_button_offset, std::vector<std::set<u32>>{}, 1);
+		pad.m_buttons.back().m_pressed = true;
+		pad.m_buttons.back().m_value = 9;
+		pads.apply_copilots();
+		CHECK(pad.external_seq() == seq + 4);
+		CHECK(cellPad_port_get_data(pad, &data, false, nullptr, nullptr, nullptr));
+		CHECK(data.len == CELL_PAD_LEN_NO_CHANGE);
+		CHECK(guest_of(pad).applied_seq == seq + 4);
+		pad.m_buttons.pop_back();
+		set_buttons(pad, 0);
+		pads.apply_copilots();
+		CHECK(cellPad_port_get_data(pad, &data, false, nullptr, nullptr, nullptr));
+	}
+
 	// What a call pays to have the port to itself: the pad lock it took
 	// before, taken and given back, against the record read (nothing new
 	// for the game, most calls) and read and replaced (something new). And

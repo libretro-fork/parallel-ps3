@@ -175,6 +175,8 @@ void pad_thread::Init()
 		std::shared_ptr<Pad> pad = std::make_shared<Pad>(handler_type, i, CELL_PAD_STATUS_DISCONNECTED, pad_settings[i].device_capability, pad_settings[i].device_type);
 		// Nobody else has the new pad yet: its first record is written in place
 		pad->m_guest_slots[0] = guest_states[i];
+		// A new pad: what the old one's frontend side handed over is not this one's
+		pad->m_guest_slots[0].applied_seq = pad_external_none;
 		pad->m_guest_slots[0].ldd = 0;
 		m_pads[i] = pad;
 
