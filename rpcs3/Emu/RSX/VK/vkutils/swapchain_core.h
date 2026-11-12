@@ -9,8 +9,12 @@
 #include "image.h"
 #include "util/logs.hpp"
 
+#include "libretro_images.h"
+
 #include <memory>
 #include <mutex>
+#include <string>
+#include <thread>
 
 namespace vk
 {
@@ -178,12 +182,57 @@ namespace vk
 	//   itself goes to the frontend, which samples it in its own frame. It is
 	//   held from the flip until the core gives it back (release_image), which
 	//   it does once the frontend is done with it - so the images are taken
-	//   and returned on different threads, under a lock.
+	//   and returned on different threads.
+	//
+	// The threads share it without a lock (libretro_images.h): the images of
+	// a size are a set, made and published by the renderer's thread, with
+	// which are held as retro_atomics in it; retro_run reads the published
+	// set and gives images back. A set replaced stays whole until retro_run
+	// frees it.
 	class swapchain_LIBRETRO : public native_swapchain_base
 	{
+		struct hw_entry
+		{
+			VkImage image = VK_NULL_HANDLE;
+			VkImageView view = VK_NULL_HANDLE;
+			VkImageViewCreateInfo view_info{};
+		};
+
+		// The images of one size, and which are held
+		struct image_set
+		{
+			lr_retired node{};
+			lr_image_slots slots{};
+			u32 width = 0;
+			u32 height = 0;
+			hw_entry entries[LR_MAX_IMAGES]{};
+			std::vector<std::unique_ptr<image_view>> views;
+			// Once retired: the images themselves, moved out of
+			// swapchain_images
+			std::vector<std::unique_ptr<swapchain_image_RPCS3>> images;
+
+			~image_set()
+			{
+				// Views before the images they look at
+				views.clear();
+				images.clear();
+			}
+
+			static void free(void* owner)
+			{
+				delete static_cast<image_set*>(owner);
+			}
+		};
+
 		bool m_hw = false;
-		mutable std::mutex m_images_mutex;
-		std::vector<std::unique_ptr<image_view>> m_views;
+
+		// The renderer's thread's: the set it draws into
+		std::unique_ptr<image_set> m_current;
+
+		// The set retro_run reads, and whether it is reading it now (a full
+		// destroy waits for that)
+		retro_atomic_ptr_t m_published;
+		retro_atomic_int_t m_readers;
 
 		// Images replaced while the frontend may still show one of them. Until
 		// it has a newer frame, RetroArch shows the last image it was given
@@ -192,35 +241,49 @@ namespace vk
 		// remakes its images (a resolution change). Destroyed there, the next
 		// of those frames read a freed image (NNshi: NVIDIA's driver crashed
 		// in retro_run). They go once the core has moved the frontend on.
-		std::vector<std::unique_ptr<swapchain_image_RPCS3>> m_retired_images;
-		std::vector<std::unique_ptr<image_view>> m_retired_views;
+		retro_atomic_ptr_t m_retired;
 
-		// Under m_images_mutex
-		void free_retired_locked()
+		image_set* published() const
 		{
-			// Views before the images they look at
-			m_retired_views.clear();
-			m_retired_images.clear();
+			return static_cast<image_set*>(retro_atomic_load_acquire_ptr(const_cast<retro_atomic_ptr_t*>(&m_published)));
 		}
 
+		// The renderer's thread: the current set out of use, kept for the
+		// frontend while it may show one of its images
 		void retire_images()
 		{
-			if (m_hw)
+			retro_atomic_store_release_ptr(&m_published, nullptr);
+			while (retro_atomic_load_acquire_int(&m_readers) != 0)
+				std::this_thread::yield();
+
+			if (m_current && m_hw)
 			{
 				for (auto& image : swapchain_images)
 					if (image.second)
-						m_retired_images.emplace_back(std::move(image.second));
-				for (auto& view : m_views)
-					m_retired_views.emplace_back(std::move(view));
+						m_current->images.emplace_back(std::move(image.second));
+				image_set* set = m_current.release();
+				set->node.free_cb = &image_set::free;
+				set->node.owner = set;
+				lr_retired_push(&m_retired, &set->node);
 			}
-			m_views.clear();
+			m_current.reset();
 			swapchain_images.clear();
 		}
 
 	public:
 		swapchain_LIBRETRO(physical_device& gpu, u32 present_queue, u32 graphics_queue, u32 transfer_queue, bool hw = false)
 			: native_swapchain_base(gpu, present_queue, graphics_queue, transfer_queue), m_hw(hw)
-		{}
+		{
+			retro_atomic_ptr_init(&m_published, nullptr);
+			retro_atomic_int_init(&m_readers, 0);
+			retro_atomic_ptr_init(&m_retired, nullptr);
+		}
+
+		~swapchain_LIBRETRO() override
+		{
+			retire_images();
+			lr_retired_free_all(&m_retired);
+		}
 
 		bool init() override
 		{
@@ -230,7 +293,6 @@ namespace vk
 				return false;
 			}
 
-			std::lock_guard lock(m_images_mutex);
 			retire_images();
 
 			// Without a context two is enough to keep one in flight while the
@@ -238,17 +300,29 @@ namespace vk
 			// and the two or three it is still sampling, up to two finished
 			// frames wait for it (vk::libretro::frame_ready), and the renderer
 			// draws into the rest.
-			init_swapchain_images(dev, m_hw ? 8 : 2);
+			init_swapchain_images(dev, m_hw ? LR_MAX_IMAGES : 2);
+
+			auto set = std::make_unique<image_set>();
+			lr_image_slots_init(&set->slots, ::size32(swapchain_images));
+			set->width = m_width;
+			set->height = m_height;
 
 			if (m_hw)
 			{
-				for (auto& image : swapchain_images)
+				for (u32 i = 0; i < swapchain_images.size() && i < LR_MAX_IMAGES; i++)
 				{
-					m_views.emplace_back(std::make_unique<image_view>(dev, image.second->value, VK_IMAGE_VIEW_TYPE_2D, image.second->format(),
+					auto& image = swapchain_images[i];
+					set->views.emplace_back(std::make_unique<image_view>(dev, image.second->value, VK_IMAGE_VIEW_TYPE_2D, image.second->format(),
 						VkComponentMapping{ VK_COMPONENT_SWIZZLE_R, VK_COMPONENT_SWIZZLE_G, VK_COMPONENT_SWIZZLE_B, VK_COMPONENT_SWIZZLE_A },
 						VkImageSubresourceRange{ VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1 }));
+					set->entries[i].image = image.second->value;
+					set->entries[i].view = set->views.back()->value;
+					set->entries[i].view_info = set->views.back()->info;
 				}
 			}
+
+			m_current = std::move(set);
+			retro_atomic_store_release_ptr(&m_published, m_current.get());
 			return true;
 		}
 
@@ -259,13 +333,10 @@ namespace vk
 
 		void destroy(bool full = true) override
 		{
-			{
-				std::lock_guard lock(m_images_mutex);
-				retire_images();
-				// Torn down for good: the frontend is past them by then.
-				if (full)
-					free_retired_locked();
-			}
+			retire_images();
+			// Torn down for good: the frontend is past them by then.
+			if (full)
+				lr_retired_free_all(&m_retired);
 
 			// The device belongs to the swapchain, as with every other one.
 			// Left alive, VKGSRender destroyed the instance under it and
@@ -279,10 +350,15 @@ namespace vk
 				dev.destroy();
 		}
 
-		VkResult acquire_next_swapchain_image(VkSemaphore semaphore, u64 timeout, u32* result) override
+		VkResult acquire_next_swapchain_image(VkSemaphore /*semaphore*/, u64 /*timeout*/, u32* result) override
 		{
-			std::lock_guard lock(m_images_mutex);
-			return native_swapchain_base::acquire_next_swapchain_image(semaphore, timeout, result);
+			if (!m_current)
+				return VK_NOT_READY;
+			const int index = lr_image_slots_acquire(&m_current->slots);
+			if (index < 0)
+				return VK_NOT_READY;
+			*result = static_cast<u32>(index);
+			return VK_SUCCESS;
 		}
 
 		VkResult present(VkSemaphore /*semaphore*/, u32 index) override
@@ -303,11 +379,13 @@ namespace vk
 			return m_hw ? VK_IMAGE_LAYOUT_GENERAL : VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
 		}
 
+		// Either thread: image `index` of the current set free again
 		void release_image(u32 index)
 		{
-			std::lock_guard lock(m_images_mutex);
-			if (index < swapchain_images.size())
-				swapchain_images[index].first = false;
+			retro_atomic_fetch_add_int(&m_readers, 1);
+			if (image_set* set = published())
+				lr_image_slots_release(&set->slots, index);
+			retro_atomic_fetch_sub_int(&m_readers, 1);
 		}
 
 		struct hw_image
@@ -319,50 +397,53 @@ namespace vk
 			u32 height = 0;
 		};
 
-		// What the frontend needs of image `index` for set_image
+		// retro_run: what the frontend needs of image `index` for set_image
 		bool get_hw_image(u32 index, hw_image& out) const
 		{
-			std::lock_guard lock(m_images_mutex);
-			if (!m_hw || index >= m_views.size())
-				return false;
-			out.image = swapchain_images[index].second->value;
-			out.view = m_views[index]->value;
-			out.view_info = m_views[index]->info;
-			out.width = m_width;
-			out.height = m_height;
-			return true;
+			auto& readers = const_cast<retro_atomic_int_t&>(m_readers);
+			retro_atomic_fetch_add_int(&readers, 1);
+			const image_set* set = published();
+			const bool ok = m_hw && set && index < set->slots.count && set->entries[index].view;
+			if (ok)
+			{
+				out.image = set->entries[index].image;
+				out.view = set->entries[index].view;
+				out.view_info = set->entries[index].view_info;
+				out.width = set->width;
+				out.height = set->height;
+			}
+			retro_atomic_fetch_sub_int(&readers, 1);
+			return ok;
 		}
 
-		// For the flip's wait on a free image: which images are held, and a
-		// way out when nothing is ever going to give one back
+		// For the flip's wait on a free image (the renderer's thread): which
+		// images are held, and a way out when nothing is ever going to give
+		// one back
 		std::string describe_images() const
 		{
-			std::lock_guard lock(m_images_mutex);
 			std::string result;
-			for (const auto& image : swapchain_images)
-				result += image.first ? 'H' : '-';
+			if (m_current)
+				for (u32 i = 0; i < m_current->slots.count; i++)
+					result += lr_image_slots_held(&m_current->slots, i) ? 'H' : '-';
 			return result;
 		}
 
-		// Once the frontend shows an image made after the retired ones, and has
-		// stopped sampling the ones it showed before
+		// retro_run: once the frontend shows an image made after the retired
+		// ones, and has stopped sampling the ones it showed before
 		void free_retired()
 		{
-			std::lock_guard lock(m_images_mutex);
-			free_retired_locked();
+			lr_retired_free_all(&m_retired);
 		}
 
 		bool has_retired() const
 		{
-			std::lock_guard lock(m_images_mutex);
-			return !m_retired_images.empty() || !m_retired_views.empty();
+			return lr_retired_any(const_cast<retro_atomic_ptr_t*>(&m_retired));
 		}
 
 		void release_all_images()
 		{
-			std::lock_guard lock(m_images_mutex);
-			for (auto& image : swapchain_images)
-				image.first = false;
+			if (m_current)
+				lr_image_slots_release_all(&m_current->slots);
 		}
 	};
 

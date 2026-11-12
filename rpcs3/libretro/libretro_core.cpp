@@ -2585,7 +2585,12 @@ static void vk_present_frame()
     static u32 s_generation = 0;
     static u64 s_frame = 0;
     static unsigned s_width = 1280, s_height = 720;
-    static std::deque<std::pair<u32, u64>> s_replaced;
+    // The images the frontend was shown before the current one, and the
+    // frame each was replaced in: given back once the frontend is past them.
+    // A fixed ring, oldest first - never more than the swapchain's images.
+    struct replaced_image { u32 index; u64 frame; };
+    static replaced_image s_replaced[LR_MAX_IMAGES];
+    static u32 s_replaced_first = 0, s_replaced_count = 0;
     static struct retro_vulkan_image s_image{};
     s_frame++;
 
@@ -2594,7 +2599,7 @@ static void vk_present_frame()
     if (const u32 generation = vk::libretro::image_generation(); generation != s_generation)
     {
         s_generation = generation;
-        s_replaced.clear();
+        s_replaced_count = 0;
         s_shown = umax;
     }
 
@@ -2611,7 +2616,18 @@ static void vk_present_frame()
         s_vk_iface->set_image(s_vk_iface->handle, &s_image, 0, nullptr, VK_QUEUE_FAMILY_IGNORED);
 
         if (s_shown != umax)
-            s_replaced.emplace_back(s_shown, s_frame);
+        {
+            // Full only if images were never given back; the oldest goes then
+            if (s_replaced_count == LR_MAX_IMAGES)
+            {
+                if (swapchain)
+                    swapchain->release_image(s_replaced[s_replaced_first].index);
+                s_replaced_first = (s_replaced_first + 1) % LR_MAX_IMAGES;
+                s_replaced_count--;
+            }
+            s_replaced[(s_replaced_first + s_replaced_count) % LR_MAX_IMAGES] = {s_shown, s_frame};
+            s_replaced_count++;
+        }
         s_shown = index;
         s_width = image.width;
         s_height = image.height;
@@ -2629,10 +2645,11 @@ static void vk_present_frame()
         u32 in_flight = 3;
         if (s_vk_iface && s_vk_iface->get_sync_index_mask)
             in_flight = std::max(1, std::popcount(s_vk_iface->get_sync_index_mask(s_vk_iface->handle)));
-        while (!s_replaced.empty() && s_frame - s_replaced.front().second > in_flight)
+        while (s_replaced_count && s_frame - s_replaced[s_replaced_first].frame > in_flight)
         {
-            swapchain->release_image(s_replaced.front().first);
-            s_replaced.pop_front();
+            swapchain->release_image(s_replaced[s_replaced_first].index);
+            s_replaced_first = (s_replaced_first + 1) % LR_MAX_IMAGES;
+            s_replaced_count--;
         }
 
         // Images replaced by a restart or a resize stay alive while the

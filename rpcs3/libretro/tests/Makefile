@@ -18,7 +18,7 @@ LRC_DEFS := -DHAVE_SSL -DHAVE_RETROSSL -DHAVE_CRYPTO \
 	-DHAVE_RWAV -DHAVE_RFLAC -DHAVE_RVORBIS -DHAVE_ROPUS -DHAVE_RMP3 -DHAVE_RAAC \
 	-DHAVE_RMP4 -DHAVE_RAC3 -DHAVE_RWMA -DHAVE_RWEBM -DHAVE_RATRAC3 -DHAVE_RATRAC3P
 
-TESTS := test_zstd test_deflate test_rxml test_png_rows test_images test_jpg_rows test_http test_bcn test_tls_duplex test_yaml test_font test_np2 test_rsx_scale test_vpost test_atracx test_vdec test_media test_record test_config_database test_vblank_list test_video_sink test_video_sink_tsan
+TESTS := test_zstd test_deflate test_rxml test_png_rows test_images test_jpg_rows test_http test_bcn test_tls_duplex test_yaml test_font test_np2 test_rsx_scale test_vpost test_atracx test_vdec test_media test_record test_config_database test_vblank_list test_video_sink test_video_sink_tsan test_vk_images test_vk_images_tsan
 
 test_zstd_LRC := \
 	$(LRC)/encodings/encoding_rzstd.c \
@@ -410,6 +410,15 @@ test_video_sink: $(VIDEO_SINK_DEPS)
 test_video_sink_tsan: $(VIDEO_SINK_DEPS)
 	$(CXX) $(VIDEO_SINK_FLAGS) -fsanitize=thread -o $@ test_video_sink.cpp -x c -std=gnu99 $(LRC)/queues/retro_spsc.c -x none -lpthread
 
+# The libretro swapchain's image bookkeeping, also under ThreadSanitizer
+VK_IMAGES_DEPS := test_vk_images.c test_common.h ../../Emu/RSX/VK/vkutils/libretro_images.h $(LRC)/include/retro_atomic.h
+
+test_vk_images: $(VK_IMAGES_DEPS)
+	$(CC) $(CFLAGS) $(TEST_STD) $(SANITIZE) -o $@ test_vk_images.c $(LDFLAGS) $(LDLIBS) -lpthread
+
+test_vk_images_tsan: $(VK_IMAGES_DEPS)
+	$(CC) $(CFLAGS) $(TEST_STD) -fsanitize=thread -o $@ test_vk_images.c $(LDFLAGS) $(LDLIBS) -lpthread
+
 # Each test also writes what the new code produces, for the reference
 # tools to read back
 check: all
@@ -437,6 +446,8 @@ check: all
 	./test_vblank_list ../vblank_unlock.txt
 	./test_video_sink
 	./test_video_sink_tsan
+	./test_vk_images
+	./test_vk_images_tsan
 
 clean:
 	rm -rf obj $(TESTS) *_out.* rec_out
