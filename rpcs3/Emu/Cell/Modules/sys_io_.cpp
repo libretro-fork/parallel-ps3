@@ -7,11 +7,68 @@
 #include "Emu/Cell/lv2/sys_ppu_thread.h"
 #include "Emu/Cell/Modules/sysPrxForUser.h"
 
+#include <retro_atomic.h>
+
+#include <thread>
+
 LOG_CHANNEL(sys_io);
 
 extern void cellPad_init();
 extern void cellKb_init();
 extern void cellMouse_init();
+
+// sys_config_start and sys_config_stop are the game's calls: they make and
+// take down the event queue and its thread with lv2 calls that put the
+// calling thread to sleep, one at a time, behind mtx - a mutex as the PS3's
+// own would be, which only the game's threads wait on.
+//
+// retro_run does not: a pad connected or disconnected is sent to the queue
+// from the frontend's thread, and sys_config_stop holds mtx while it waits
+// for the game's handler thread to end. The queue is behind a gate instead,
+// one word: sys_io_gate_closed while there is no queue (or it is being taken
+// down), else how many sends are under way. A send that finds the gate
+// closed sends nothing, as when sys_io is not started; it never waits.
+// sys_config_stop closes the gate once no send is under way - the game's
+// thread giving way to the frontend's for the length of one send - and only
+// then destroys the queue, so a send never reaches a queue made since under
+// the same id.
+enum : int { sys_io_gate_closed = 1 << 30 };
+
+static inline bool sys_io_gate_enter(retro_atomic_int_t* gate)
+{
+	for (;;)
+	{
+		const int now = retro_atomic_load_acquire_int(gate);
+
+		if (now & sys_io_gate_closed)
+			return false;
+
+		if (retro_atomic_cas_int(gate, now, now + 1))
+			return true;
+	}
+}
+
+static inline void sys_io_gate_leave(retro_atomic_int_t* gate)
+{
+	retro_atomic_fetch_sub_int(gate, 1);
+}
+
+static inline void sys_io_gate_open(retro_atomic_int_t* gate)
+{
+	retro_atomic_store_release_int(gate, 0);
+}
+
+// Once no send is under way; none starts after
+static inline void sys_io_gate_close(retro_atomic_int_t* gate)
+{
+	while (!retro_atomic_cas_int(gate, 0, sys_io_gate_closed))
+	{
+		if (retro_atomic_load_acquire_int(gate) & sys_io_gate_closed)
+			return;
+
+		std::this_thread::yield();
+	}
+}
 
 struct libio_sys_config
 {
@@ -19,6 +76,7 @@ struct libio_sys_config
 	s32 init_ctr = 0;
 	u32 ppu_id = 0;
 	u32 queue_id = 0;
+	retro_atomic_int_t gate{sys_io_gate_closed};
 
 	~libio_sys_config() noexcept
 	{
@@ -27,6 +85,15 @@ struct libio_sys_config
 	void save_or_load(utils::serial& ar)
 	{
 		ar(init_ctr, ppu_id, queue_id);
+
+		if (!ar.is_writing())
+		{
+			// As it was saved: started, with its queue, or not
+			if (init_ctr)
+				sys_io_gate_open(&gate);
+			else
+				sys_io_gate_close(&gate);
+		}
 	}
 };
 
@@ -130,15 +197,16 @@ extern void send_sys_io_connect_event(usz index, u32 state)
 
 	auto& cfg = g_fxo->get<libio_sys_config>();
 
-	auto lock = lock_lv2_mutex_alike(cfg.mtx, cpu_thread::get_current<ppu_thread>());
+	// The frontend's thread: no lock, no wait
+	if (!sys_io_gate_enter(&cfg.gate))
+		return;
 
-	if (cfg.init_ctr)
+	if (auto port = idm::get_unlocked<lv2_obj, lv2_event_queue>(cfg.queue_id))
 	{
-		if (auto port = idm::get_unlocked<lv2_obj, lv2_event_queue>(cfg.queue_id))
-		{
-			port->send(0, 1, index, state);
-		}
+		port->send(0, 1, index, state);
 	}
+
+	sys_io_gate_leave(&cfg.gate);
 }
 
 error_code sys_config_start(ppu_thread& ppu)
@@ -169,6 +237,9 @@ error_code sys_config_start(ppu_thread& ppu)
 		ppu.check_state();
 
 		cfg.ppu_id = static_cast<u32>(*_tid);
+
+		// The queue is there for retro_run's events
+		sys_io_gate_open(&cfg.gate);
 	}
 
 	return CELL_OK;
@@ -184,6 +255,9 @@ error_code sys_config_stop(ppu_thread& ppu)
 
 	if (cfg.init_ctr && cfg.init_ctr-- == 1)
 	{
+		// No more of retro_run's events, and none under way
+		sys_io_gate_close(&cfg.gate);
+
 		ensure(CELL_OK == sys_event_queue_destroy(ppu, cfg.queue_id, SYS_EVENT_QUEUE_DESTROY_FORCE));
 		ppu.check_state();
 		ensure(CELL_OK == sys_ppu_thread_join(ppu, cfg.ppu_id, +vm::var<u64>{}));
