@@ -224,7 +224,7 @@ namespace rsx
 				const auto handler = pad::get_pad_thread();
 				const PadInfo& rinfo = handler->GetInfo();
 
-				const bool ignore_gamepad_input = (!rinfo.now_connect || !input::g_pads_intercepted);
+				const bool ignore_gamepad_input = (!rinfo.now_connect() || !input::g_pads_intercepted);
 
 				const pad_button cross_button  = g_cfg.sys.enter_button_assignment == enter_button_assign::circle ? pad_button::circle : pad_button::cross;
 				const pad_button circle_button = g_cfg.sys.enter_button_assignment == enter_button_assign::circle ? pad_button::cross : pad_button::circle;

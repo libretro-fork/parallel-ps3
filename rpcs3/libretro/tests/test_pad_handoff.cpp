@@ -9,7 +9,10 @@
 // - what is read is what was handed over: buttons, sticks, a copilot's
 //   buttons merged in;
 // - the pad's status, changed by retro_run and by the game at once (an LDD
-//   controller), loses neither's change.
+//   controller), loses neither's change;
+// - while a dialog intercepts the pads, the input it ignores stays ignored:
+//   retro_run letting go of ignore_input (no button held, nothing
+//   intercepting) never undoes the dialog setting it again meanwhile.
 //
 // Built by `make check` from the core's own objects and archives, the same
 // link as the core's with this main.
@@ -160,6 +163,48 @@ int main()
 		retro_atomic_fetch_or_int(&pad->m_port_status, CELL_PAD_STATUS_CONNECTED);
 		game.join();
 		CHECK(pad->port_status() == (CELL_PAD_STATUS_CONNECTED | CELL_PAD_STATUS_ASSIGN_CHANGES));
+	}
+
+	// A dialog intercepting the pads over and over while retro_run runs
+	{
+		// Every pad connected with many buttons, none held: retro_run looks
+		// at all of them between reading the state and letting go, which
+		// leaves the dialog room to intercept again in between
+		for (auto& p : pads.GetPads())
+		{
+			if (!p)
+				p = std::make_shared<Pad>(pad_handler::null, 7, 0, CELL_PAD_CAPABILITY_PS3_CONFORMITY, CELL_PAD_DEV_TYPE_STANDARD);
+			retro_atomic_fetch_or_int(&p->m_port_status, CELL_PAD_STATUS_CONNECTED);
+			p->m_buttons.resize(512);
+		}
+		set_buttons(*pad, 0, false);
+		for (auto& p : pads.GetPads())
+			for (Button& b : p->m_buttons)
+				b.m_pressed = false;
+
+		std::atomic<bool> stop{false};
+		std::thread run([&]
+		{
+			while (!stop)
+				pads.frontend_update(1);
+		});
+		u32 lost = 0;
+		for (int i = 0; i < 20000; i++)
+		{
+			pads.SetIntercepted(true);
+			for (int k = 0; k < 200; k++)
+				if (!pads.GetInfo().ignore_input())
+				{
+					lost++;
+					break;
+				}
+			pads.SetIntercepted(false);
+		}
+		stop = true;
+		run.join();
+		CHECK(lost == 0);
+		CHECK(!(pads.GetInfo().system_info() & CELL_PAD_INFO_INTERCEPTED));
+		std::printf("test_pad_handoff: 20000 interceptions while retro_run let go of ignore_input, %u lost\n", lost);
 	}
 
 	std::printf("test_pad_handoff: %s\n", failures ? "FAIL" : "ok");

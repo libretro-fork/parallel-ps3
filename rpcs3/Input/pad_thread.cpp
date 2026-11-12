@@ -99,7 +99,7 @@ void pad_thread::Init()
 
 	num_ldd_pad = 0;
 
-	m_info.now_connect = 0;
+	retro_atomic_store_release_int(&m_info.now_connect_, 0);
 
 	m_handlers.clear();
 
@@ -261,12 +261,11 @@ void pad_thread::SetIntercepted(bool intercepted)
 {
 	if (intercepted)
 	{
-		m_info.system_info |= CELL_PAD_INFO_INTERCEPTED;
-		m_info.ignore_input = true;
+		retro_atomic_fetch_or_int(&m_info.state_, CELL_PAD_INFO_INTERCEPTED | PadInfo::ignore_input_bit);
 	}
 	else
 	{
-		m_info.system_info &= ~CELL_PAD_INFO_INTERCEPTED;
+		retro_atomic_fetch_and_int(&m_info.state_, ~CELL_PAD_INFO_INTERCEPTED);
 	}
 }
 
@@ -382,7 +381,8 @@ void pad_thread::update_ignore_input()
 	// The ignore_input section is only reached when a dialog was closed and the pads are still intercepted.
 	// As long as any of the listed buttons is pressed, cellPadGetData will ignore all input (needed for Hotline Miami).
 	// ignore_input was added because if we keep the pads intercepted, then some games will enter the menu due to unexpected system interception (tested with Ninja Gaiden Sigma).
-	if (m_info.ignore_input && !(m_info.system_info & CELL_PAD_INFO_INTERCEPTED))
+	const int state = retro_atomic_load_acquire_int(&m_info.state_);
+	if ((state & PadInfo::ignore_input_bit) && !(state & CELL_PAD_INFO_INTERCEPTED))
 	{
 		bool any_button_pressed = false;
 
@@ -409,9 +409,11 @@ void pad_thread::update_ignore_input()
 			}
 		}
 
+		// Only if nothing intercepted the pads again meanwhile: that sets
+		// ignore_input anew, and it stays
 		if (!any_button_pressed)
 		{
-			m_info.ignore_input = false;
+			retro_atomic_cas_int(&m_info.state_, state, state & ~PadInfo::ignore_input_bit);
 		}
 	}
 }
@@ -421,7 +423,7 @@ void pad_thread::frontend_update(u32 connected_devices)
 {
 	// Native overlays (message dialogs, the save data list) ignore the pads
 	// while nothing is counted as connected
-	m_info.now_connect = connected_devices + num_ldd_pad;
+	retro_atomic_store_release_int(&m_info.now_connect_, static_cast<int>(connected_devices + num_ldd_pad));
 
 	if (Emu.IsRunning())
 	{
@@ -651,7 +653,7 @@ void pad_thread::operator()()
 			update_pad_states();
 		}
 
-		m_info.now_connect = connected_devices + num_ldd_pad;
+		retro_atomic_store_release_int(&m_info.now_connect_, static_cast<int>(connected_devices + num_ldd_pad));
 
 		update_ignore_input();
 

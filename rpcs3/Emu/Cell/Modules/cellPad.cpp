@@ -359,7 +359,7 @@ void pad_get_data(u32 port_no, CellPadData* data, bool get_periph_data = false)
 	const auto& pad = handler->GetPads()[port_no];
 	const PadInfo& rinfo = handler->GetInfo();
 
-	if (rinfo.system_info & CELL_PAD_INFO_INTERCEPTED)
+	if (rinfo.system_info() & CELL_PAD_INFO_INTERCEPTED)
 	{
 		data->len = CELL_PAD_LEN_NO_CHANGE;
 		return;
@@ -370,7 +370,7 @@ void pad_get_data(u32 port_no, CellPadData* data, bool get_periph_data = false)
 
 	CellPadData& output = pad->data;
 
-	if (rinfo.ignore_input || !is_input_allowed())
+	if (rinfo.ignore_input() || !is_input_allowed())
 	{
 		// Needed for Hotline Miami and Ninja Gaiden Sigma after dialogs were closed and buttons are still pressed.
 		// Gran Turismo 6 would keep registering the Start button during OSK Dialogs if this wasn't cleared and if we'd return with len as CELL_PAD_LEN_NO_CHANGE.
@@ -750,7 +750,7 @@ error_code cellPadPeriphGetInfo(vm::ptr<CellPadPeriphInfo> info)
 	std::memset(info.get_ptr(), 0, sizeof(CellPadPeriphInfo));
 
 	info->max_connect = config.max_connect;
-	info->system_info = rinfo.system_info;
+	info->system_info = rinfo.system_info();
 
 	u32 now_connect = 0;
 
@@ -959,7 +959,7 @@ error_code cellPadGetInfo(vm::ptr<CellPadInfo> info)
 	const auto handler = pad::get_pad_thread();
 	const PadInfo& rinfo = handler->GetInfo();
 	info->max_connect = config.max_connect;
-	info->system_info = rinfo.system_info;
+	info->system_info = rinfo.system_info();
 
 	u32 now_connect = 0;
 
@@ -1004,7 +1004,7 @@ error_code cellPadGetInfo2(vm::ptr<CellPadInfo2> info)
 	const auto handler = pad::get_pad_thread();
 	const PadInfo& rinfo = handler->GetInfo();
 	info->max_connect = config.get_max_connect(); // Here it is forcibly clamped
-	info->system_info = rinfo.system_info;
+	info->system_info = rinfo.system_info();
 
 	u32 now_connect = 0;
 

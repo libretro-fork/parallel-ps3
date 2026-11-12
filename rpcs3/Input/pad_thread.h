@@ -53,7 +53,7 @@ protected:
 	void* m_curthread = nullptr;
 	void* m_curwindow = nullptr;
 
-	PadInfo m_info{ 0, 0, false };
+	PadInfo m_info;
 	std::array<std::shared_ptr<Pad>, CELL_PAD_MAX_PORT_NUM> m_pads{};
 	std::array<bool, CELL_PAD_MAX_PORT_NUM> m_pads_connected{};
 
