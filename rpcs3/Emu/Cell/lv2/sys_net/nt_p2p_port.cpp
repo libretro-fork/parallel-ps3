@@ -236,8 +236,8 @@ bool nt_p2p_port::recv_data()
 
 	const u16 src_vport = *reinterpret_cast<le_t<u16>*>(p2p_recv_data.data() + sizeof(u16));
 	const u16 vport_flags = *reinterpret_cast<le_t<u16>*>(p2p_recv_data.data() + sizeof(u16) + sizeof(u16));
-	std::vector<u8> p2p_data(recv_res - VPORT_P2P_HEADER_SIZE);
-	memcpy(p2p_data.data(), p2p_recv_data.data() + VPORT_P2P_HEADER_SIZE, p2p_data.size());
+	const u8* const payload = p2p_recv_data.data() + VPORT_P2P_HEADER_SIZE;
+	const u32 payload_size = static_cast<u32>(recv_res - VPORT_P2P_HEADER_SIZE);
 
 	if (vport_flags & P2P_FLAG_P2P)
 	{
@@ -262,7 +262,8 @@ bool nt_p2p_port::recv_data()
 						ensure(sock.get_type() == SYS_NET_SOCK_DGRAM_P2P);
 						auto& sock_p2p = reinterpret_cast<lv2_socket_p2p&>(sock);
 
-						sock_p2p.handle_new_data(p2p_addr, p2p_data);
+						// Copied once, from the receive buffer into the socket's queue
+						sock_p2p.handle_new_data(p2p_addr, payload, payload_size);
 					});
 
 				if (!sock)
@@ -286,6 +287,8 @@ bool nt_p2p_port::recv_data()
 	}
 	else if (vport_flags & P2P_FLAG_P2PS)
 	{
+		std::vector<u8> p2p_data(payload, payload + payload_size);
+
 		if (p2p_data.size() < sizeof(p2ps_encapsulated_tcp))
 		{
 			sys_net.notice("Received P2P packet targeted at unbound vport(likely) or invalid(vport=%d)", dst_vport);

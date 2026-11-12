@@ -7,6 +7,9 @@
 //   and its queue stays the size it was made;
 // - a P2P stream socket's backlog in a savestate: the bytes a std::deque of
 //   the same ids made, and the same ids read back, in order;
+// - a P2P datagram socket's received packets, against the std::queue of
+//   address and vector they were, and in a savestate - which leaves them
+//   queued;
 // - the patterns the others use (sys_usbd's events, the USB figures'
 //   replies, RSX's two histories), each against the std:: container it
 //   was, a few hundred thousand steps: same contents at every step.
@@ -158,6 +161,83 @@ int main()
 
 		p2ps_backlog_free(&backlog);
 		p2ps_backlog_free(&back);
+	}
+
+	// A P2P datagram socket's received packets: each a block of its own,
+	// against the std::queue of address and vector it was
+	{
+		typedef std::pair<sys_net_sockaddr_in_p2p, std::vector<u8>> as_pair;
+		p2p_packets_t q{};
+		std::deque<as_pair> model;
+		usz wrong = 0;
+
+		for (u32 step = 0; step < 50000; step++)
+		{
+			if ((rnd() & 3) != 0 && model.size() < 100)
+			{
+				sys_net_sockaddr_in_p2p addr{};
+				addr.sin_len = 16;
+				addr.sin_family = 2;
+				addr.sin_port = static_cast<u16>(rnd());
+				addr.sin_addr = rnd();
+				addr.sin_vport = static_cast<u16>(rnd());
+				std::vector<u8> bytes(rnd() % 5 == 0 ? 0 : rnd() % 1400);
+				for (u8& b : bytes)
+					b = static_cast<u8>(rnd());
+				p2p_packets_add(q, addr, bytes.data(), ::size32(bytes));
+				model.emplace_back(addr, std::move(bytes));
+			}
+			else if (!model.empty())
+			{
+				const p2p_packet& packet = *p2p_packets_front(&q);
+				wrong += packet.size != model.front().second.size();
+				wrong += std::memcmp(&packet.addr, &model.front().first, sizeof(packet.addr)) != 0;
+				wrong += packet.size == model.front().second.size() && packet.size && std::memcmp(packet.bytes, model.front().second.data(), packet.size) != 0;
+				p2p_packets_drop_front(q);
+				model.pop_front();
+			}
+			wrong += p2p_packets_count(&q) != model.size();
+		}
+		CHECK(wrong == 0);
+
+		// A savestate with packets waiting: the bytes the std::deque made,
+		// and the packets are still queued afterwards
+		while (model.size() < 12)
+		{
+			sys_net_sockaddr_in_p2p addr{};
+			addr.sin_vport = static_cast<u16>(model.size());
+			std::vector<u8> bytes(model.size() == 5 ? 0 : 3 + model.size() * 97);
+			for (u8& b : bytes)
+				b = static_cast<u8>(rnd());
+			p2p_packets_add(q, addr, bytes.data(), ::size32(bytes));
+			model.emplace_back(addr, std::move(bytes));
+		}
+		const usz queued = p2p_packets_count(&q);
+		utils::serial saved, expected;
+		p2p_packets_save(saved, q);
+		expected(model);
+		CHECK(saved.data.size() == expected.data.size());
+		CHECK(saved.data == expected.data);
+		CHECK(p2p_packets_count(&q) == queued && queued >= 12);
+
+		// Read back: the same packets, in order
+		utils::serial in;
+		in.set_reading_state(std::move(saved.data));
+		p2p_packets_t back{};
+		p2p_packets_load(in, back);
+		CHECK(p2p_packets_count(&back) == model.size());
+		wrong = 0;
+		for (usz i = 0; i < p2p_packets_count(&back) && i < model.size(); i++)
+		{
+			const p2p_packet& packet = *p2p_packets_at(&back, i);
+			wrong += packet.size != model[i].second.size() || std::memcmp(&packet.addr, &model[i].first, sizeof(packet.addr)) != 0;
+			wrong += packet.size == model[i].second.size() && packet.size && std::memcmp(packet.bytes, model[i].second.data(), packet.size) != 0;
+		}
+		CHECK(wrong == 0);
+
+		p2p_packets_end(q);
+		p2p_packets_end(back);
+		CHECK(p2p_packets_empty(&q) && p2p_packets_limit(&q) == 0);
 	}
 
 	// A queue of replies (the USB figures, sys_usbd): pushed and popped in

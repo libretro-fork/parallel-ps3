@@ -21,12 +21,12 @@ lv2_socket_p2p::lv2_socket_p2p(utils::serial& ar, lv2_socket_type type)
 {
 	ar(port, vport, bound_addr);
 
-	auto data_dequeue = ar.pop<std::deque<std::pair<sys_net_sockaddr_in_p2p, std::vector<u8>>>>();
+	p2p_packets_load(ar, data);
+}
 
-	for (; !data_dequeue.empty(); data_dequeue.pop_front())
-	{
-		data.push(std::move(data_dequeue.front()));
-	}
+lv2_socket_p2p::~lv2_socket_p2p() noexcept
+{
+	p2p_packets_end(data);
 }
 
 void lv2_socket_p2p::save(utils::serial& ar)
@@ -34,22 +34,16 @@ void lv2_socket_p2p::save(utils::serial& ar)
 	lv2_socket::save(ar, true);
 	ar(port, vport, bound_addr);
 
-	std::deque<std::pair<sys_net_sockaddr_in_p2p, std::vector<u8>>> data_dequeue;
-
-	for (auto save_data = ::as_rvalue(data); !save_data.empty(); save_data.pop())
-	{
-		data_dequeue.push_back(std::move(save_data.front()));
-	}
-
-	ar(data_dequeue);
+	// The packets stay queued: the game carries on after a savestate here
+	p2p_packets_save(ar, data);
 }
 
-void lv2_socket_p2p::handle_new_data(sys_net_sockaddr_in_p2p p2p_addr, std::vector<u8> p2p_data)
+void lv2_socket_p2p::handle_new_data(const sys_net_sockaddr_in_p2p& p2p_addr, const u8* p2p_data, u32 p2p_size)
 {
 	std::lock_guard lock(mutex);
 
 	sys_net.trace("Received a P2P packet for vport %d and saved it", p2p_addr.sin_vport);
-	data.push(std::make_pair(std::move(p2p_addr), std::move(p2p_data)));
+	p2p_packets_add(data, p2p_addr, p2p_data, p2p_size);
 
 	// Check if poll is happening
 	if (events.test_and_reset(lv2_socket::poll_t::read))
@@ -243,7 +237,7 @@ std::optional<std::tuple<s32, std::vector<u8>, sys_net_sockaddr>> lv2_socket_p2p
 		lock.lock();
 	}
 
-	if (data.empty())
+	if (p2p_packets_empty(&data))
 	{
 		if (so_nbio || (flags & SYS_NET_MSG_DONTWAIT))
 			return {{-SYS_NET_EWOULDBLOCK, {}, {}}};
@@ -251,18 +245,18 @@ std::optional<std::tuple<s32, std::vector<u8>, sys_net_sockaddr>> lv2_socket_p2p
 		return std::nullopt;
 	}
 
-	sys_net.trace("[P2P] p2p_data for vport %d contains %d elements", vport, data.size());
+	sys_net.trace("[P2P] p2p_data for vport %d contains %d elements", vport, p2p_packets_count(&data));
 
 	std::vector<u8> res_buf(len);
 
-	const auto& p2p_data = data.front();
-	s32 native_result    = std::min(len, static_cast<u32>(p2p_data.second.size()));
-	memcpy(res_buf.data(), p2p_data.second.data(), native_result);
+	const p2p_packet& p2p_data = *p2p_packets_front(&data);
+	s32 native_result          = std::min(len, p2p_data.size);
+	memcpy(res_buf.data(), p2p_data.bytes, native_result);
 
 	sys_net_sockaddr sn_addr;
-	memcpy(&sn_addr, &p2p_data.first, sizeof(sn_addr));
+	memcpy(&sn_addr, &p2p_data.addr, sizeof(sn_addr));
 
-	data.pop();
+	p2p_packets_drop_front(data);
 
 	return {{native_result, res_buf, sn_addr}};
 }
@@ -383,9 +377,9 @@ bs_t<lv2_socket::poll_t> lv2_socket_p2p::get_pending_events() const
 {
 	bs_t<lv2_socket::poll_t> pending{};
 
-	if (vport && !data.empty())
+	if (vport && !p2p_packets_empty(&data))
 	{
-		sys_net.trace("[P2P] p2p_data for vport %d contains %d elements", vport, data.size());
+		sys_net.trace("[P2P] p2p_data for vport %d contains %d elements", vport, p2p_packets_count(&data));
 		pending += lv2_socket::poll_t::read;
 	}
 
