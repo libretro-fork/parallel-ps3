@@ -440,13 +440,15 @@ void libretro_wait_for_present_fence()
     if (!fence)
         return;
 
-    if (!glClientWaitSync || !glDeleteSync)
+    if (!glWaitSync || !glDeleteSync)
         return;
 
-    // Use glClientWaitSync to actually wait for RSX GPU work to complete.
-    // Use a very short timeout to avoid blocking audio/main thread
-    constexpr GLuint64 timeout_ns = 1000000; // 1ms max wait
-    glClientWaitSync(fence, GL_SYNC_FLUSH_COMMANDS_BIT, timeout_ns);
+    // The GPU waits, not retro_run: the frontend's context goes on to the
+    // blit only once the renderer's frame is drawn. retro_run used to wait on
+    // the CPU (glClientWaitSync) for up to 1 ms, and past that blitted a frame
+    // the GPU had perhaps not finished. The sync can go at once; the wait
+    // queued on it stays.
+    glWaitSync(fence, 0, GL_TIMEOUT_IGNORED);
     glDeleteSync(fence);
 }
 

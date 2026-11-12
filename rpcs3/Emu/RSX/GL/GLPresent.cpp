@@ -57,18 +57,19 @@ static inline void libretro_bind_hw_fbo()
 	glBindFramebuffer(GL_FRAMEBUFFER, fbo);
 	glDrawBuffer(GL_COLOR_ATTACHMENT0);
 	glReadBuffer(GL_COLOR_ATTACHMENT0);
-	const GLenum fb_status = DSA_CALL2_RET(CheckNamedFramebufferStatus, fbo, GL_FRAMEBUFFER);
-	thread_local u64 tl_call_count = 0;
-	thread_local u32 tl_last_fbo = 0xffffffffu;
-	thread_local GLenum tl_last_status = GL_FRAMEBUFFER_COMPLETE;
-	tl_call_count++;
-	const bool log_this = (tl_call_count <= 120ull) || ((tl_call_count % 60ull) == 0ull) || (static_cast<u32>(fbo) != tl_last_fbo) || (fbo == 0) || (fb_status != tl_last_status) || (fb_status != GL_FRAMEBUFFER_COMPLETE);
-	if (log_this)
+
+	// Checked when the FBO is a new one, not on each of the several binds of
+	// every flip: a status query makes the driver validate the FBO, and the
+	// answer for one that has not changed does not change. Said only when it
+	// is not complete - nothing logged per frame.
+	thread_local GLuint tl_checked_fbo = ~0u;
+	if (fbo != tl_checked_fbo)
 	{
-		rsx_log.notice("[LRRSX_FBO][tid=%llx] libretro_bind_hw_fbo rsx_fbo=0x%x last=0x%x status=0x%x last_status=0x%x call=%llu", lrrsx_present_tid_hash(), static_cast<u32>(fbo), tl_last_fbo, static_cast<u32>(fb_status), static_cast<u32>(tl_last_status), static_cast<unsigned long long>(tl_call_count));
+		tl_checked_fbo = fbo;
+		const GLenum fb_status = DSA_CALL2_RET(CheckNamedFramebufferStatus, fbo, GL_FRAMEBUFFER);
+		if (fbo == 0 || fb_status != GL_FRAMEBUFFER_COMPLETE)
+			rsx_log.error("libretro: the renderer's FBO 0x%x is not complete (status 0x%x)", fbo, static_cast<u32>(fb_status));
 	}
-	tl_last_fbo = static_cast<u32>(fbo);
-	tl_last_status = fb_status;
 }
 #endif
 
