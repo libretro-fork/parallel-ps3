@@ -1,5 +1,6 @@
 #include "stdafx.h"
 #include "libretro_pad_handler.h"
+#include "libretro_pad_values.h"
 #include "libretro_input.h"
 #include "Input/pad_thread.h"
 #include "Input/product_info.h"
@@ -214,65 +215,51 @@ std::unordered_map<u32, u16> LibretroPadHandler::get_button_values(const std::sh
     std::unordered_map<u32, u16> values;
     if (!device)
         return values;
-    button_values_t now{};
-    read_button_values(*device, now);
-    for (u32 i = 0; i < now.size(); i++)
-        values[i] = now[i];
+    lr_pad_values pad;
+    read_pad_values(*device, pad);
+
+    static constexpr struct { LibretroButton button; u8 id; } kButtons[] = {
+        { LibretroButton::B, RETRO_DEVICE_ID_JOYPAD_B }, { LibretroButton::Y, RETRO_DEVICE_ID_JOYPAD_Y },
+        { LibretroButton::Select, RETRO_DEVICE_ID_JOYPAD_SELECT }, { LibretroButton::Start, RETRO_DEVICE_ID_JOYPAD_START },
+        { LibretroButton::Up, RETRO_DEVICE_ID_JOYPAD_UP }, { LibretroButton::Down, RETRO_DEVICE_ID_JOYPAD_DOWN },
+        { LibretroButton::Left, RETRO_DEVICE_ID_JOYPAD_LEFT }, { LibretroButton::Right, RETRO_DEVICE_ID_JOYPAD_RIGHT },
+        { LibretroButton::A, RETRO_DEVICE_ID_JOYPAD_A }, { LibretroButton::X, RETRO_DEVICE_ID_JOYPAD_X },
+        { LibretroButton::L1, RETRO_DEVICE_ID_JOYPAD_L }, { LibretroButton::R1, RETRO_DEVICE_ID_JOYPAD_R },
+        { LibretroButton::L2, RETRO_DEVICE_ID_JOYPAD_L2 }, { LibretroButton::R2, RETRO_DEVICE_ID_JOYPAD_R2 },
+        { LibretroButton::L3, RETRO_DEVICE_ID_JOYPAD_L3 }, { LibretroButton::R3, RETRO_DEVICE_ID_JOYPAD_R3 },
+    };
+    for (const auto& b : kButtons)
+        values[static_cast<u32>(b.button)] = pad.button[b.id];
+
+    // The sticks as halves, which this interface has them as
+    static constexpr LibretroButton kHalves[4][2] = {
+        { LibretroButton::LSXNeg, LibretroButton::LSXPos }, { LibretroButton::LSYNeg, LibretroButton::LSYPos },
+        { LibretroButton::RSXNeg, LibretroButton::RSXPos }, { LibretroButton::RSYNeg, LibretroButton::RSYPos },
+    };
+    for (unsigned i = 0; i < LR_PAD_AXES; i++)
+    {
+        const int a = pad.axis[i];
+        values[static_cast<u32>(kHalves[i][0])] = static_cast<u16>(a < 128 ? std::min(255, (128 - a) * 2) : 0);
+        values[static_cast<u32>(kHalves[i][1])] = static_cast<u16>(a > 128 ? std::min(255, (a - 128) * 2 + 1) : 0);
+    }
     return values;
 }
 
-// retro_run, each frame: the frontend's buttons and sticks into @values, in
-// place. As a map, made and thrown away each frame for each pad, they were
-// two dozen allocations a pad a frame.
-void LibretroPadHandler::read_button_values(const PadDevice& pad_device, button_values_t& values)
+// retro_run, each frame: the frontend's buttons and sticks as the pad's
+// values, in place, at the frontend's precision (libretro_pad_values.c).
+// As a map, made and thrown away each frame for each pad, they were two
+// dozen allocations a pad a frame.
+void LibretroPadHandler::read_pad_values(const PadDevice& device, lr_pad_values& pad)
 {
-    const PadDevice* const device = &pad_device;
-
     // The RetroArch port that drives this player (ports trade places in the
     // arcade shooter mode, see libretro_input_port_for_player)
-    unsigned port = libretro_input_port_for_player(device->player_id);
+    unsigned port = libretro_input_port_for_player(device.player_id);
     if (port >= LIBRETRO_MAX_PADS)
         port = 0;
 
     const auto& state = libretro_input_get_state(port);
 
-    // Digital buttons (0 or 255)
-    values[static_cast<u64>(LibretroButton::B)]      = state.buttons[RETRO_DEVICE_ID_JOYPAD_B] ? 255 : 0;
-    values[static_cast<u64>(LibretroButton::Y)]      = state.buttons[RETRO_DEVICE_ID_JOYPAD_Y] ? 255 : 0;
-    values[static_cast<u64>(LibretroButton::Select)] = state.buttons[RETRO_DEVICE_ID_JOYPAD_SELECT] ? 255 : 0;
-    values[static_cast<u64>(LibretroButton::Start)]  = state.buttons[RETRO_DEVICE_ID_JOYPAD_START] ? 255 : 0;
-    values[static_cast<u64>(LibretroButton::Up)]     = state.buttons[RETRO_DEVICE_ID_JOYPAD_UP] ? 255 : 0;
-    values[static_cast<u64>(LibretroButton::Down)]   = state.buttons[RETRO_DEVICE_ID_JOYPAD_DOWN] ? 255 : 0;
-    values[static_cast<u64>(LibretroButton::Left)]   = state.buttons[RETRO_DEVICE_ID_JOYPAD_LEFT] ? 255 : 0;
-    values[static_cast<u64>(LibretroButton::Right)]  = state.buttons[RETRO_DEVICE_ID_JOYPAD_RIGHT] ? 255 : 0;
-    values[static_cast<u64>(LibretroButton::A)]      = state.buttons[RETRO_DEVICE_ID_JOYPAD_A] ? 255 : 0;
-    values[static_cast<u64>(LibretroButton::X)]      = state.buttons[RETRO_DEVICE_ID_JOYPAD_X] ? 255 : 0;
-    values[static_cast<u64>(LibretroButton::L1)]     = state.buttons[RETRO_DEVICE_ID_JOYPAD_L] ? 255 : 0;
-    values[static_cast<u64>(LibretroButton::R1)]     = state.buttons[RETRO_DEVICE_ID_JOYPAD_R] ? 255 : 0;
-    values[static_cast<u64>(LibretroButton::L2)]     = state.buttons[RETRO_DEVICE_ID_JOYPAD_L2] ? 255 : 0;
-    values[static_cast<u64>(LibretroButton::R2)]     = state.buttons[RETRO_DEVICE_ID_JOYPAD_R2] ? 255 : 0;
-    values[static_cast<u64>(LibretroButton::L3)]     = state.buttons[RETRO_DEVICE_ID_JOYPAD_L3] ? 255 : 0;
-    values[static_cast<u64>(LibretroButton::R3)]     = state.buttons[RETRO_DEVICE_ID_JOYPAD_R3] ? 255 : 0;
-
-    // Analog sticks - state.analog[] contains values in range -32768 to 32767
-    // Left stick X: analog[0], Y: analog[1]
-    // Right stick X: analog[2], Y: analog[3]
-    int16_t lsx = state.analog[0];
-    int16_t lsy = state.analog[1];
-    int16_t rsx = state.analog[2];
-    int16_t rsy = state.analog[3];
-
-    // Convert to directional values (0-255 range)
-    // Negative X = left, Positive X = right
-    // Negative Y = up, Positive Y = down (libretro uses Y-down convention)
-    values[static_cast<u64>(LibretroButton::LSXNeg)] = lsx < 0 ? static_cast<u16>((-lsx * 255) / 32768) : 0;
-    values[static_cast<u64>(LibretroButton::LSXPos)] = lsx > 0 ? static_cast<u16>((lsx * 255) / 32767) : 0;
-    values[static_cast<u64>(LibretroButton::LSYNeg)] = lsy < 0 ? static_cast<u16>((-lsy * 255) / 32768) : 0;
-    values[static_cast<u64>(LibretroButton::LSYPos)] = lsy > 0 ? static_cast<u16>((lsy * 255) / 32767) : 0;
-    values[static_cast<u64>(LibretroButton::RSXNeg)] = rsx < 0 ? static_cast<u16>((-rsx * 255) / 32768) : 0;
-    values[static_cast<u64>(LibretroButton::RSXPos)] = rsx > 0 ? static_cast<u16>((rsx * 255) / 32767) : 0;
-    values[static_cast<u64>(LibretroButton::RSYNeg)] = rsy < 0 ? static_cast<u16>((-rsy * 255) / 32768) : 0;
-    values[static_cast<u64>(LibretroButton::RSYPos)] = rsy > 0 ? static_cast<u16>((rsy * 255) / 32767) : 0;
+    lr_pad_values_read(state.pressure.data(), state.buttons.data(), state.analog.data(), &pad);
 }
 
 pad_preview_values LibretroPadHandler::get_preview_values(const std::unordered_map<u32, u16>& data, const std::vector<std::string>& /*buttons*/)
@@ -346,8 +333,8 @@ void LibretroPadHandler::process()
         apply_rumble(*binding.pad, libretro_input_port_for_player(static_cast<unsigned>(i)));
 
         // Get button values from libretro input
-        button_values_t button_values{};
-        read_button_values(*binding.device, button_values);
+        lr_pad_values now;
+        read_pad_values(*binding.device, now);
 
         // Update pad button states in m_buttons vector
         for (auto& button : binding.pad->m_buttons)
@@ -359,28 +346,28 @@ void LibretroPadHandler::process()
             case CELL_PAD_BTN_OFFSET_DIGITAL1:
                 switch (button.m_outKeyCode)
                 {
-                case CELL_PAD_CTRL_UP:     value = button_values[static_cast<u64>(LibretroButton::Up)];     break;
-                case CELL_PAD_CTRL_DOWN:   value = button_values[static_cast<u64>(LibretroButton::Down)];   break;
-                case CELL_PAD_CTRL_LEFT:   value = button_values[static_cast<u64>(LibretroButton::Left)];   break;
-                case CELL_PAD_CTRL_RIGHT:  value = button_values[static_cast<u64>(LibretroButton::Right)];  break;
-                case CELL_PAD_CTRL_SELECT: value = button_values[static_cast<u64>(LibretroButton::Select)]; break;
-                case CELL_PAD_CTRL_START:  value = button_values[static_cast<u64>(LibretroButton::Start)];  break;
-                case CELL_PAD_CTRL_L3:     value = button_values[static_cast<u64>(LibretroButton::L3)];     break;
-                case CELL_PAD_CTRL_R3:     value = button_values[static_cast<u64>(LibretroButton::R3)];     break;
+                case CELL_PAD_CTRL_UP:     value = now.button[RETRO_DEVICE_ID_JOYPAD_UP];     break;
+                case CELL_PAD_CTRL_DOWN:   value = now.button[RETRO_DEVICE_ID_JOYPAD_DOWN];   break;
+                case CELL_PAD_CTRL_LEFT:   value = now.button[RETRO_DEVICE_ID_JOYPAD_LEFT];   break;
+                case CELL_PAD_CTRL_RIGHT:  value = now.button[RETRO_DEVICE_ID_JOYPAD_RIGHT];  break;
+                case CELL_PAD_CTRL_SELECT: value = now.button[RETRO_DEVICE_ID_JOYPAD_SELECT]; break;
+                case CELL_PAD_CTRL_START:  value = now.button[RETRO_DEVICE_ID_JOYPAD_START];  break;
+                case CELL_PAD_CTRL_L3:     value = now.button[RETRO_DEVICE_ID_JOYPAD_L3];     break;
+                case CELL_PAD_CTRL_R3:     value = now.button[RETRO_DEVICE_ID_JOYPAD_R3];     break;
                 default: break;
                 }
                 break;
             case CELL_PAD_BTN_OFFSET_DIGITAL2:
                 switch (button.m_outKeyCode)
                 {
-                case CELL_PAD_CTRL_CROSS:    value = button_values[static_cast<u64>(LibretroButton::B)];  break;
-                case CELL_PAD_CTRL_CIRCLE:   value = button_values[static_cast<u64>(LibretroButton::A)];  break;
-                case CELL_PAD_CTRL_SQUARE:   value = button_values[static_cast<u64>(LibretroButton::Y)];  break;
-                case CELL_PAD_CTRL_TRIANGLE: value = button_values[static_cast<u64>(LibretroButton::X)];  break;
-                case CELL_PAD_CTRL_L1:       value = button_values[static_cast<u64>(LibretroButton::L1)]; break;
-                case CELL_PAD_CTRL_R1:       value = button_values[static_cast<u64>(LibretroButton::R1)]; break;
-                case CELL_PAD_CTRL_L2:       value = button_values[static_cast<u64>(LibretroButton::L2)]; break;
-                case CELL_PAD_CTRL_R2:       value = button_values[static_cast<u64>(LibretroButton::R2)]; break;
+                case CELL_PAD_CTRL_CROSS:    value = now.button[RETRO_DEVICE_ID_JOYPAD_B];  break;
+                case CELL_PAD_CTRL_CIRCLE:   value = now.button[RETRO_DEVICE_ID_JOYPAD_A];  break;
+                case CELL_PAD_CTRL_SQUARE:   value = now.button[RETRO_DEVICE_ID_JOYPAD_Y];  break;
+                case CELL_PAD_CTRL_TRIANGLE: value = now.button[RETRO_DEVICE_ID_JOYPAD_X];  break;
+                case CELL_PAD_CTRL_L1:       value = now.button[RETRO_DEVICE_ID_JOYPAD_L]; break;
+                case CELL_PAD_CTRL_R1:       value = now.button[RETRO_DEVICE_ID_JOYPAD_R]; break;
+                case CELL_PAD_CTRL_L2:       value = now.button[RETRO_DEVICE_ID_JOYPAD_L2]; break;
+                case CELL_PAD_CTRL_R2:       value = now.button[RETRO_DEVICE_ID_JOYPAD_R2]; break;
                 default: break;
                 }
                 break;
@@ -392,22 +379,13 @@ void LibretroPadHandler::process()
             button.m_pressed = value > 0;
         }
 
-        // Update analog sticks
-        // Convert from directional 0-255 to centered 0-255 format (128 = center)
-        u16 lsx_neg = button_values[static_cast<u64>(LibretroButton::LSXNeg)];
-        u16 lsx_pos = button_values[static_cast<u64>(LibretroButton::LSXPos)];
-        u16 lsy_neg = button_values[static_cast<u64>(LibretroButton::LSYNeg)];
-        u16 lsy_pos = button_values[static_cast<u64>(LibretroButton::LSYPos)];
-        u16 rsx_neg = button_values[static_cast<u64>(LibretroButton::RSXNeg)];
-        u16 rsx_pos = button_values[static_cast<u64>(LibretroButton::RSXPos)];
-        u16 rsy_neg = button_values[static_cast<u64>(LibretroButton::RSYNeg)];
-        u16 rsy_pos = button_values[static_cast<u64>(LibretroButton::RSYPos)];
-
-        // Convert to centered format: 128 = center, 0 = full left/up, 255 = full right/down
-        u16 lx = static_cast<u16>(128 + (lsx_pos / 2) - (lsx_neg / 2));
-        u16 ly = static_cast<u16>(128 + (lsy_pos / 2) - (lsy_neg / 2));
-        u16 rx = static_cast<u16>(128 + (rsx_pos / 2) - (rsx_neg / 2));
-        u16 ry = static_cast<u16>(128 + (rsy_pos / 2) - (rsy_neg / 2));
+        // The sticks' axes: 128 at rest, 0 full left or up, 255 full right or
+        // down, straight from the frontend's 16 bits. They went through two
+        // halves of 255 steps, each halved again: full left came out as 1
+        u16 lx = now.axis[0];
+        u16 ly = now.axis[1];
+        u16 rx = now.axis[2];
+        u16 ry = now.axis[3];
 
         // A stick reports a circle, which a DualShock 3 does not: pushed all
         // the way diagonally it gave about 70 % on each axis, and games that

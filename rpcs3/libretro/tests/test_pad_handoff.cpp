@@ -17,7 +17,13 @@
 //   of runs - counted in retro_runs, not by the host's clock - stops, and a
 //   new request starts it again;
 // - reading the frontend's buttons into the pads each retro_run
-//   (LibretroPadHandler::process) allocates nothing.
+//   (LibretroPadHandler::process) allocates nothing;
+// - nothing of the frontend's precision is lost that a DualShock 3 has: a
+//   trigger or button the frontend reports half pressed reaches the game
+//   half pressed (128), not fully (255); one it reports as a button only is
+//   255; a stick's full range is the pad's full range, 0 to 255 with 128 at
+//   rest, pushed all the way left or up being 0 (it was 1), and a small tilt
+//   moves it (the first 1 % was lost).
 //
 // Built by `make check` from the core's own objects and archives, the same
 // link as the core's with this main.
@@ -52,6 +58,40 @@ static bool environment(unsigned cmd, void* data)
 		return false;
 	static_cast<retro_rumble_interface*>(data)->set_rumble_state = set_rumble_state;
 	return true;
+}
+
+// The frontend's input, as the test sets it
+static int16_t s_pressure[16]; // RETRO_DEVICE_INDEX_ANALOG_BUTTON, 0..0x7fff
+static bool s_digital[16];
+static int16_t s_stick[4];     // left x, left y, right x, right y
+
+static int16_t RETRO_CALLCONV input_state(unsigned port, unsigned device, unsigned index, unsigned id)
+{
+	if (port != 0)
+		return 0;
+	if (device == RETRO_DEVICE_JOYPAD)
+		return id < 16 ? (s_digital[id] || s_pressure[id] > 0) : 0;
+	if (device == RETRO_DEVICE_ANALOG && index == RETRO_DEVICE_INDEX_ANALOG_BUTTON)
+		return id < 16 ? s_pressure[id] : 0;
+	if (device == RETRO_DEVICE_ANALOG && index <= RETRO_DEVICE_INDEX_ANALOG_RIGHT)
+		return s_stick[index * 2 + (id == RETRO_DEVICE_ID_ANALOG_Y)];
+	return 0;
+}
+
+static u16 button_value(Pad& pad, u32 offset, u32 code)
+{
+	for (const Button& b : pad.m_buttons)
+		if (b.m_offset == offset && b.m_outKeyCode == code)
+			return b.m_value;
+	return 0xffff;
+}
+
+static u16 stick_value(Pad& pad, u32 offset)
+{
+	for (const AnalogStick& st : pad.m_sticks)
+		if (st.m_offset == offset)
+			return st.m_value;
+	return 0xffff;
 }
 
 static thread_local bool t_counting = false;
@@ -269,6 +309,87 @@ int main()
 		t_counting = false;
 		CHECK(t_allocations == 0);
 		std::printf("test_pad_handoff: 1000 frames of input read, %llu allocations\n", static_cast<unsigned long long>(t_allocations));
+
+		// The frontend's precision, kept
+		{
+			libretro_input_init();
+			const auto frame = [&] { libretro_input_poll(input_state); handler.process(); };
+
+			// A trigger half pressed, a button the frontend has as a button only
+			s_pressure[RETRO_DEVICE_ID_JOYPAD_R2] = 0x4000;
+			s_digital[RETRO_DEVICE_ID_JOYPAD_B] = true;
+			frame();
+			const u16 r2 = button_value(*rumbled, CELL_PAD_BTN_OFFSET_DIGITAL2, CELL_PAD_CTRL_R2);
+			const u16 cross = button_value(*rumbled, CELL_PAD_BTN_OFFSET_DIGITAL2, CELL_PAD_CTRL_CROSS);
+			const u16 l2 = button_value(*rumbled, CELL_PAD_BTN_OFFSET_DIGITAL2, CELL_PAD_CTRL_L2);
+			CHECK(r2 == 128);
+			CHECK(cross == 255);
+			CHECK(l2 == 0);
+
+			// Barely pressed is pressed, fully is 255
+			s_pressure[RETRO_DEVICE_ID_JOYPAD_R2] = 1;
+			frame();
+			CHECK(button_value(*rumbled, CELL_PAD_BTN_OFFSET_DIGITAL2, CELL_PAD_CTRL_R2) == 1);
+			s_pressure[RETRO_DEVICE_ID_JOYPAD_R2] = 0x7fff;
+			frame();
+			CHECK(button_value(*rumbled, CELL_PAD_BTN_OFFSET_DIGITAL2, CELL_PAD_CTRL_R2) == 255);
+			s_pressure[RETRO_DEVICE_ID_JOYPAD_R2] = 0;
+			s_digital[RETRO_DEVICE_ID_JOYPAD_B] = false;
+
+			// One axis at a time (the other at rest): full range to full range
+			const auto left_x = [&](int16_t v)
+			{
+				s_stick[0] = v;
+				frame();
+				return stick_value(*rumbled, CELL_PAD_BTN_OFFSET_ANALOG_LEFT_X);
+			};
+			const u16 rest = left_x(0), full_left = left_x(-32768), full_right = left_x(32767);
+			const u16 small_tilt = left_x(400), small_left = left_x(-400);
+			CHECK(rest == 128);
+			CHECK(full_left == 0);
+			CHECK(full_right == 255);
+			CHECK(small_tilt > 128);
+			CHECK(small_left < 128);
+			u32 backwards = 0, reached = 0;
+			bool seen[256] = {};
+			u16 last = 0;
+			for (int v = -32768; v <= 32767; v += 16)
+			{
+				const u16 x = left_x(static_cast<int16_t>(v));
+				if (x < last)
+					backwards++;
+				last = x;
+				if (x < 256 && !seen[x])
+				{
+					seen[x] = true;
+					reached++;
+				}
+			}
+			CHECK(backwards == 0);
+			CHECK(reached == 256);
+			s_stick[0] = 0;
+			frame();
+			std::printf("test_pad_handoff: half-pressed R2 reads %u, a button-only Cross %u; the stick reads %u at rest, %u full left, %u full right, %u at a 1%% tilt, %u of 256 values reached\n",
+				r2, cross, rest, full_left, full_right, small_tilt, reached);
+		}
+
+		// PAD_BENCH=1: the time of a frame's read, for comparing builds
+		if (std::getenv("PAD_BENCH"))
+		{
+			s_stick[0] = 12345;
+			s_stick[3] = -4321;
+			s_digital[RETRO_DEVICE_ID_JOYPAD_B] = true;
+			libretro_input_poll(input_state);
+			const auto from = std::chrono::steady_clock::now();
+			for (int i = 0; i < 2000000; i++)
+				handler.process();
+			const double ns = std::chrono::duration<double, std::nano>(std::chrono::steady_clock::now() - from).count();
+			std::printf("test_pad_handoff: %.1f ns a frame's read of one pad\n", ns / 2000000.0);
+			s_stick[0] = s_stick[3] = 0;
+			s_digital[RETRO_DEVICE_ID_JOYPAD_B] = false;
+			libretro_input_poll(input_state);
+			handler.process();
+		}
 
 		pads.SetRumble(0, 255, 0);
 		u32 runs = 0;

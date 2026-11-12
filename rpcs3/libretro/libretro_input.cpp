@@ -92,6 +92,18 @@ void libretro_input_poll(retro_input_state_t input_state_cb)
             }
         }
 
+        // How far each pressure-sensitive button of a DualShock 3 is pressed,
+        // where the frontend has it as analog (a trigger, mostly): the game
+        // gets the pressure, not pressed or not. Select, Start, L3 and R3 are
+        // switches on the pad too.
+        static constexpr u8 kPressure[] = {
+            RETRO_DEVICE_ID_JOYPAD_B, RETRO_DEVICE_ID_JOYPAD_Y, RETRO_DEVICE_ID_JOYPAD_A, RETRO_DEVICE_ID_JOYPAD_X,
+            RETRO_DEVICE_ID_JOYPAD_UP, RETRO_DEVICE_ID_JOYPAD_DOWN, RETRO_DEVICE_ID_JOYPAD_LEFT, RETRO_DEVICE_ID_JOYPAD_RIGHT,
+            RETRO_DEVICE_ID_JOYPAD_L, RETRO_DEVICE_ID_JOYPAD_R, RETRO_DEVICE_ID_JOYPAD_L2, RETRO_DEVICE_ID_JOYPAD_R2,
+        };
+        for (const u8 btn : kPressure)
+            state.pressure[btn] = input_state_cb(port, RETRO_DEVICE_ANALOG, RETRO_DEVICE_INDEX_ANALOG_BUTTON, btn);
+
         // Poll analog sticks
         state.analog[0] = input_state_cb(port, RETRO_DEVICE_ANALOG, RETRO_DEVICE_INDEX_ANALOG_LEFT, RETRO_DEVICE_ID_ANALOG_X);
         state.analog[1] = input_state_cb(port, RETRO_DEVICE_ANALOG, RETRO_DEVICE_INDEX_ANALOG_LEFT, RETRO_DEVICE_ID_ANALOG_Y);

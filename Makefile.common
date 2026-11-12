@@ -765,6 +765,7 @@ SOURCES_LIBRETRO := \
 	$(CORE_DIR)/rpcs3/libretro/libretro_input.cpp \
 	$(CORE_DIR)/rpcs3/libretro/libretro_mouse_handler.cpp \
 	$(CORE_DIR)/rpcs3/libretro/libretro_pad_handler.cpp \
+	$(CORE_DIR)/rpcs3/libretro/libretro_pad_values.c \
 	$(CORE_DIR)/rpcs3/libretro/libretro_patch_manager.cpp \
 	$(CORE_DIR)/rpcs3/libretro/libretro_sw_frames.c \
 	$(CORE_DIR)/rpcs3/libretro/libretro_vfs.cpp \

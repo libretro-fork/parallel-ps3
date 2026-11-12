@@ -16,6 +16,7 @@ constexpr unsigned LIBRETRO_MAX_KEYS = 320;
 struct LibretroInputState
 {
     std::array<int16_t, 16> buttons{};  // RETRO_DEVICE_ID_JOYPAD_*
+    std::array<int16_t, 16> pressure{}; // the same as analog buttons, 0..0x7fff; 0 where the frontend has none
     std::array<int16_t, 4> analog{};    // Left X, Left Y, Right X, Right Y
     bool connected = false;
 };

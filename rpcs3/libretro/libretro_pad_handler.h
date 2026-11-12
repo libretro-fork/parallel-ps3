@@ -4,6 +4,7 @@
 
 #include <array>
 #include "libretro_input.h"
+#include "libretro_pad_values.h"
 
 // Libretro pad handler - connects libretro input to RPCS3's pad system
 class LibretroPadHandler final : public PadHandlerBase
@@ -54,8 +55,7 @@ private:
     std::unordered_map<u32, u16> get_button_values(const std::shared_ptr<PadDevice>& device) override;
     pad_preview_values get_preview_values(const std::unordered_map<u32, u16>& data, const std::vector<std::string>& buttons) override;
 
-    using button_values_t = std::array<u16, static_cast<usz>(LibretroButton::Count)>;
-    void read_button_values(const PadDevice& device, button_values_t& values);
+    void read_pad_values(const PadDevice& device, struct lr_pad_values& pad);
 
     void apply_rumble(Pad& pad, unsigned port);
 
