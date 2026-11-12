@@ -10,6 +10,11 @@
 #include "util/asm.hpp"
 #include <unordered_map>
 
+#ifdef _WIN32
+// VirtualQuery: vulkan.h no longer brings windows.h, without a Win32 surface
+#include <windows.h>
+#endif
+
 namespace vk
 {
 	static constexpr usz s_dma_block_length = 0x00010000;

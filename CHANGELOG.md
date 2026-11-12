@@ -4,6 +4,7 @@ What changed in the libretro core of this fork, newest first. Changes that come 
 
 ## Unreleased
 
+- The Windows build compiles again. Without a Win32 surface the Vulkan headers no longer bring `windows.h`, which `VKDMA.cpp` (VirtualQuery) and `vkutils/shared.cpp` (DebugBreak) had relied on: they include it themselves. The Win32 full-screen-exclusive code of the window swapchain, which the core never makes, is left out of the core. Every Vulkan, OpenGL and core source compiles with MinGW.
 - The core knows no window system and links no graphics library. OpenGL is libretro's alone.
   - Every OpenGL function, OpenGL 1.0's included, comes from the frontend's get_proc_address into one table, on every platform. GLEW is gone from the tree; the GL types come from Khronos' `glcorearb.h` and `glext.h`. Nothing links libGL, libOpenGL, libEGL or opengl32 any more.
   - The renderer's contexts, for its own thread and RPCS3's shader compiler threads, come from the frontend through RETRO_ENVIRONMENT_GET_HW_SHARED_CONTEXT_INTERFACE (RetroArch's, from this release on). Eight are made in context_reset and handed out and back without a lock. The core's own EGL, GLX and WGL context code, its X11 run-time loader (`libretro_x11_runtime.cpp`) and their locks are gone.

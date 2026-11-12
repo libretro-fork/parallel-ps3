@@ -151,7 +151,7 @@ namespace vk
 
 	std::pair<VkSurfaceCapabilitiesKHR, bool> swapchain_WSI::init_surface_capabilities()
 	{
-#ifdef _WIN32
+#if defined(_WIN32) && !defined(LIBRETRO_CORE) // the Win32 surface's: the core has none
 		if (g_cfg.video.vk.exclusive_fullscreen_mode != vk_exclusive_fs_mode::unspecified && dev.get_surface_capabilities_2_support())
 		{
 			HMONITOR hmonitor = MonitorFromWindow(window_handle, MONITOR_DEFAULTTOPRIMARY);
@@ -309,7 +309,7 @@ namespace vk
 		swap_info.imageExtent.width = std::max(m_width, surface_descriptors.minImageExtent.width);
 		swap_info.imageExtent.height = std::max(m_height, surface_descriptors.minImageExtent.height);
 
-#ifdef _WIN32
+#if defined(_WIN32) && !defined(LIBRETRO_CORE) // the Win32 surface's: the core has none
 		VkSurfaceFullScreenExclusiveInfoEXT full_screen_exclusive_info = {};
 		if (should_specify_exclusive_full_screen_mode)
 		{
