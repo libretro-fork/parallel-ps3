@@ -267,8 +267,9 @@ namespace utils
 			{
 				// Shuffle once if necessary
 				media_log.notice("audio_decoder: shuffling initial playlist...");
-				std::random_device rd;
-				auto engine = std::default_random_engine{rd()};
+				// Seeded from the clock: std::random_device keeps its state
+				// on the stack, 5 KiB, past the core's 4 KiB stack frame
+				auto engine = std::default_random_engine{static_cast<std::default_random_engine::result_type>(std::chrono::steady_clock::now().time_since_epoch().count())};
 				std::shuffle(std::begin(m_context.playlist), std::end(m_context.playlist), engine);
 			}
 

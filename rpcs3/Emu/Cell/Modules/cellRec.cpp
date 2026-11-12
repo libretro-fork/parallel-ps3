@@ -577,8 +577,11 @@ void rec_info::start_video_provider()
 		const bool use_external_video = !param.use_internal_video();
 		const bool use_ring_buffer = param.ring_sec > 0;
 		const usz frame_size = input_format.pitch * input_format.height;
-		audio_block buffer_external{}; // for cellRec input
-		audio_block buffer_internal{}; // for cellAudio input
+		// The two audio blocks, made once as the recording starts: 4 KiB on
+		// the stack put this thread's frame past the core's 4 KiB
+		const auto blocks = std::make_unique<std::array<audio_block, 2>>();
+		audio_block& buffer_external = (*blocks)[0]; // for cellRec input
+		audio_block& buffer_internal = (*blocks)[1]; // for cellAudio input
 		s64 last_video_pts = -1;
 		s64 last_audio_pts = -1;
 		// Buffers that go round between this thread, the sinks and the ring:

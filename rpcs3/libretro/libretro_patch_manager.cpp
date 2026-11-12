@@ -212,7 +212,10 @@ namespace libretro_patches
         // The definitions, in the order the options were made
         for (const patch_option& option : s_options)
         {
-            retro_core_option_v2_definition def{};
+            // Made in place: a definition is 2 KiB with its 128 value slots,
+            // and two of them on the stack put this past the core's 4 KiB
+            // stack frame
+            retro_core_option_v2_definition& def = s_definitions.emplace_back();
             def.key = keep(option.key);
             def.category_key = "patches";
 
@@ -229,14 +232,13 @@ namespace libretro_patches
             def.values[0] = {"disabled", nullptr};
             def.values[1] = {"enabled", nullptr};
             def.default_value = "disabled";
-            s_definitions.push_back(def);
 
             for (const auto& [description, configs] : option.config_values)
             {
                 const patch_engine::patch_info& info = *first_info.at(description);
                 for (const config_value_option& config : configs)
                 {
-                    retro_core_option_v2_definition value_def{};
+                    retro_core_option_v2_definition& value_def = s_definitions.emplace_back();
                     value_def.key = keep(config.key);
                     value_def.category_key = "patches";
                     value_def.desc = keep(fmt::format("%s: %s", description, config.name));
@@ -253,7 +255,6 @@ namespace libretro_patches
                             value_def.default_value = value_def.values[index].value;
                         index++;
                     }
-                    s_definitions.push_back(value_def);
                 }
             }
         }

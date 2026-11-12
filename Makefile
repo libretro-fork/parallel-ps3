@@ -385,6 +385,12 @@ ifneq ($(OBJ_GLEW),)
 $(OBJ_GLEW):     FLAGS := $(FLAGS_GLEW)
 endif
 $(OBJ_LIBRETRO): FLAGS := $(FLAGS_LIBRETRO)
+
+# The core's 4 KiB stack frame, held to by the core's own code and the RPCS3
+# code reworked for it: a frame past it does not build
+STACK_CHECKED := $(filter-out %/libretro_ui_icons.o %/libretro_config_database.o %/libretro_patches.o %/libretro_vblank_unlock.o,$(OBJ_LIBRETRO)) \
+	$(addprefix $(CORE_DIR)/rpcs3/,Emu/Cell/Modules/cellRec.o util/media_utils.o util/video_provider.o Emu/RSX/VK/VKLibretro.o Emu/Io/MouseHandler.o)
+$(STACK_CHECKED): FLAGS += -Wframe-larger-than=4096 -Werror=frame-larger-than=4096
 $(call objs,$(filter %.c,$(SOURCES_LIBRETRO) $(OS_LIBRETRO))): FLAGS := $(FLAGS_RPCS3_C)
 
 # Built without RTTI, as LLVM is (rpcs3/Emu/CMakeLists.txt)
