@@ -1380,7 +1380,7 @@ void gem_config_data::operator()()
 		if (state && !video_conversion_in_progress)
 		{
 			constexpr u64 update_timeout_us = 100'000; // Update controllers at 10Hz
-			const u64 now_us = get_system_time();
+			const u64 now_us = get_hw_clock_time();
 			const u64 elapsed_us = now_us - last_update_us;
 
 			if (elapsed_us < update_timeout_us)
@@ -3715,7 +3715,7 @@ error_code cellGemReadExternalPortDeviceInfo(u32 gem_num, vm::ptr<u32> ext_id, v
 		return CELL_GEM_NOT_CONNECTED;
 	}
 
-	const u64 start = get_system_time();
+	const u64 start = get_hw_clock_time();
 
 	auto& controller = gem.controllers[gem_num];
 
@@ -3765,7 +3765,7 @@ error_code cellGemReadExternalPortDeviceInfo(u32 gem_num, vm::ptr<u32> ext_id, v
 			}
 
 			// We wait for 300ms at most
-			if (const u64 elapsed_us = get_system_time() - start; elapsed_us > 300'000)
+			if (const u64 elapsed_us = get_hw_clock_time() - start; elapsed_us > 300'000)
 			{
 				cellGem.warning("cellGemReadExternalPortDeviceInfo(gem_num=%d): timeout", gem_num);
 				break;

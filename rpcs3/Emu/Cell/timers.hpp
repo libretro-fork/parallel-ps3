@@ -22,3 +22,15 @@ u64 get_slaved_system_time();
 // How long of the host's time to wait for @guest_us of the guest's to pass
 u64 libretro_guest_wait_as_host(u64 guest_us);
 #endif
+
+// The microseconds emulated hardware paces itself by (the RSX audio path's
+// periods, the PS Move's updates): in the core the guest's clock, which
+// follows retro_run; standalone the host's
+inline u64 get_hw_clock_time()
+{
+#ifdef LIBRETRO_CORE
+	return get_slaved_system_time();
+#else
+	return get_system_time();
+#endif
+}

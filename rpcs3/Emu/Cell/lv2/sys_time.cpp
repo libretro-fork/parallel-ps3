@@ -298,10 +298,6 @@ static constexpr u64 g_timebase_freq = /*79800000*/ 80000000ull; // 80 Mhz
 // Convert time is microseconds to timebased time
 u64 convert_to_timebased_time(u64 time)
 {
-#ifdef LIBRETRO_CORE
-	// The host's microseconds (sys_rsxaudio's) as the guest's
-	time = host_to_slaved_time(time);
-#endif
 	const u64 result = time * (g_timebase_freq / 1000000ull) * g_cfg.core.clocks_scale / 100u;
 	ensure(result >= g_timebase_offs);
 	return result - g_timebase_offs;

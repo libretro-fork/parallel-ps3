@@ -816,7 +816,7 @@ rsxaudio_data_thread& rsxaudio_data_thread::operator=(thread_state /* state */)
 
 void rsxaudio_data_thread::advance_all_timers()
 {
-	const u64 crnt_time = get_system_time();
+	const u64 crnt_time = get_hw_clock_time();
 
 	timer.vtimer_skip_periods(static_cast<u32>(RsxaudioPort::SERIAL), crnt_time);
 	timer.vtimer_skip_periods(static_cast<u32>(RsxaudioPort::SPDIF_0), crnt_time);
@@ -849,7 +849,7 @@ void rsxaudio_data_thread::extract_audio_data()
 
 	rsxaudio_shmem* sh_page = rsxaudio_obj->get_rw_shared_page();
 	const auto hw_cfg       = hw_param_ts.get_current();
-	const u64 crnt_time     = get_system_time();
+	const u64 crnt_time     = get_hw_clock_time();
 
 	auto process_rb = [&](RsxaudioPort dst, bool dma_en)
 	{
@@ -989,7 +989,7 @@ void rsxaudio_data_thread::update_hw_param(std::function<void(rsxaudio_hw_param_
 
 		timer.vtimer_access_sec([&]()
 		{
-			const u64 crnt_time = get_system_time();
+			const u64 crnt_time = get_hw_clock_time();
 
 			if (serial_active)
 			{
@@ -1945,6 +1945,12 @@ void rsxaudio_backend_thread::reset_service_time()
 void rsxaudio_periodic_tmr::sched_timer()
 {
 	u64 interval = get_rel_next_time();
+#ifdef LIBRETRO_CORE
+	// The guest's time until the next period: waited for at the pace
+	// retro_run comes
+	if (interval != 0 && interval != UINT64_MAX)
+		interval = libretro_guest_wait_as_host(interval);
+#endif
 
 	if (interval == 0)
 	{
@@ -2221,7 +2227,7 @@ rsxaudio_periodic_tmr::wait_result rsxaudio_periodic_tmr::wait(const std::functi
 
 u64 rsxaudio_periodic_tmr::get_rel_next_time()
 {
-	const u64 crnt_time = get_system_time();
+	const u64 crnt_time = get_hw_clock_time();
 	u64 next_time = UINT64_MAX;
 
 	for (vtimer& vtimer : vtmr_pool)

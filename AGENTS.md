@@ -158,6 +158,29 @@ Measure against what the work needs and what the hardware can do, not against th
 - **Acceptance.** Exact output and preserved lifetimes first. Then the measured benefit. A smaller copy count, a C rewrite or a microbenchmark win alone does not show smoother play.
 - **Stop conditions.** Keep the copy if the consumer outlives the borrow. Keep the barrier if its proof is missing. Keep the interpreter if the equivalence is incomplete. Keep the fallback when the new method loses.
 
+## No quantization the PS3 does not do
+
+A value is carried at the precision its source has to the precision its consumer takes, and rounded once, where the consumer's format demands it. Precision lost on the way that the console would not have lost is a defect, whatever its size. Look for it in every path a change touches:
+
+- **Input:** the frontend's analog values reach the game as analog. A DualShock 3's buttons and triggers are pressure-sensitive (0-255): a trigger or a button the frontend reports as analog is never cut to pressed or not. Sticks and sensors are scaled with rounding from the frontend's 16 bits to the pad's range, once, full range to full range.
+- **Audio:** the game's float samples go to the frontend as floats when it takes them; converted to 16 bits only for a frontend that takes nothing else, once, with rounding and saturation. No resampling, mixing or volume step in a narrower format than its input, and no conversion there and back.
+- **Video and textures:** a frame leaves in the format the renderer made it in where the frontend takes that; no 10-bit or float target narrowed to 8 bits, no RGB565 or 5551 step, no scale to another size and back, no sRGB-linear conversion there and back, no lossy recompression of a texture the game supplied. A conversion the frontend's format demands happens once, at the hand-over.
+- **Time and rates:** rates are kept as the exact ratio (60000/1001, not 59.94), fractions are carried, not dropped each frame; a duration is not rounded to milliseconds on its way between two microsecond or tick clocks.
+- What the PS3 itself quantizes (its 8-bit pad axes, its output formats, its audio's 48 kHz floats) stays as the console has it: that is accuracy, not a defect.
+
+A fix here has a test with values that tell the difference: a half-pressed trigger, a sample between two 16-bit steps, a gradient finer than 8 bits.
+
+## C++ to C89, gradually
+
+The core's code moves from C++ to C89 that MSVC compiles, a piece at a time, as work passes through it. Not a rewrite for its own sake: each piece converted is also made faster, and shown to be.
+
+- **What moves.** The core's own glue in `rpcs3/libretro/` first, then self-contained parts of the emulator a change is already in (a decoder, a table lookup, a ring, a cache, a format reader). A piece is converted when it can stand alone behind a C interface: a struct and functions, with narrow typed C++ glue where upstream's C++ still calls it. A header a C unit includes compiles as C and as C++.
+- **The STL goes.** `std::vector`, `std::string`, `std::unordered_map`, `std::map`, `std::function`, `std::shared_ptr`, `std::mutex`, `std::thread` and iostreams are replaced as the code is converted: fixed arrays and caller-owned buffers, a pointer and a length, tables indexed by an enum, function pointers with a context, `retro_atomic` and libretro-common's rings, lists, strings (`stdstring`, `strl`), file streams and threads. Use what libretro-common has before writing anything; what it lacks goes into RetroArch's libretro-common first.
+- **Compare the codegen, then beat it.** Before converting, read what the compiler makes of the C++ on the hot path (`objdump -d`, the same flags as the build): instructions, calls, allocations, bytes copied, stack frame. The C89 has to come out ahead on those, or at worst the same, and the commit says by how much. A conversion that only matches is finished when the next step - a copy removed, an allocation gone, a table in place of a hash - puts it ahead.
+- **The principles apply to every piece converted**: zero-copy and borrowed lends, no intermediate buffer without a consumer, no CPU-GPU round trip or other round trip (thread to thread and back, format to format and back, file to memory to file) that the result does not need, nothing allocated mid-game, lock-free hand-overs, speed of light as the measure.
+- **Behaviour is held exactly.** The conversion's test compares the C89 against the C++ it replaces on the same inputs (kept as the test's reference until the C++ is deleted), and the guest sees no difference. Accuracy outranks the conversion.
+- **As you go.** A change that touches C++ code of the core's own leaves that code more C89 than it found it, and removes what STL it touches. New files are `.c`.
+
 ## Ownership and threads
 
 - **Change ownership, not the lock.** One thread owns a structure's mutation; others send it requests and read immutable publications. SPSC where there is one producer and one consumer, MPSC where there really are several. New code uses libretro-common's `retro_atomic`, rings and eventcount, not `std::mutex`, `std::condition_variable`, `shared_mutex`, OS critical sections or `Interlocked*`; a lock only where there is truly no alternative, said so in a comment.

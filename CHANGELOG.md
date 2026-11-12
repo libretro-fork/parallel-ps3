@@ -4,6 +4,7 @@ What changed in the libretro core of this fork, newest first. Changes that come 
 
 ## Unreleased
 
+- The RSX audio path's periods (`sys_rsxaudio`, for games that go around cellAudio) and the PS Move's update and time-outs (`cellGem`) go by the PS3's clock, which follows retro_run, as the rest of the game's time does: they stop while the frontend is paused and follow fast-forward. The RSX audio ring's timestamps are made from that clock directly, not from a host time converted. `test_guest_clock` checks at all three paces that such a timestamp is the timebase's value then, and that the clock stops through a pause. cellAudio's own periods stay on the host's clock, as they were while the movies were checked.
 - Reading the frontend's buttons into the pads allocates nothing. Each retro_run made a map of the 24 buttons and stick directions for each pad and threw it away: 26 allocations a pad a frame. They are read into an array in place. `test_pad_handoff` counts the allocations of a thousand frames of input: 26000 before, none now.
 - The files the core installs at start (the game patches, the settings database) are compared with what is on disk a piece at a time, not read whole into a buffer of their own first.
 - Movies play again (Demon's Souls' title screen movie and the first of a new game played neither) with the PS3's clock following retro_run. Two faults in that clock:

@@ -19,7 +19,12 @@
 // - so a timed wait of the game's: its deadline 50 ms away has 50 ms left
 //   (lv2_obj::deadline_left, which lv2_obj::wait_timeout goes by), and a
 //   20 ms wait takes 20 ms of the guest's time, with retro_run at the
-//   declared rate, a little faster, and in fast-forward.
+//   declared rate, a little faster, and in fast-forward;
+// - the clock emulated hardware paces itself by (get_hw_clock_time: the RSX
+//   audio path's periods, the PS Move's updates) is the guest's: it stops
+//   through a pause, and a time of it as the timebase's
+//   (convert_to_timebased_time, the RSX audio ring's timestamps) is the
+//   timebase then, at every pace.
 //
 // Built by `make check` from the core's own objects and archives, the same
 // link as the core's with this main.
@@ -61,11 +66,13 @@ int main()
 	libretro_guest_clock_grant(kFrame);
 	const u64 paused_from = get_timebased_time();
 	const u64 slaved_from = get_slaved_system_time();
+	const u64 hw_from = get_hw_clock_time();
 	sleep_ms(120);
 	const u64 paused_to = get_timebased_time();
 	const double paused = tb_seconds(paused_from, paused_to);
 	CHECK(paused <= kFrame + 0.001);
 	CHECK(get_slaved_system_time() - slaved_from <= 17000);
+	CHECK(get_hw_clock_time() - hw_from <= 17000);
 
 	// On from where it stopped, not ahead by the pause
 	libretro_guest_clock_grant(kFrame);
@@ -178,6 +185,20 @@ int main()
 			});
 			sleep_ms(100); // the guest's clock ahead by now, where it gets ahead
 
+			// The hardware's clock as the timebase's: the timebase then
+			u32 wrong_stamps = 0;
+			for (int i = 0; i < 200; i++)
+			{
+				const u64 before = get_timebased_time();
+				const u64 stamp = convert_to_timebased_time(get_hw_clock_time());
+				const u64 after = get_timebased_time();
+				// To the microsecond the stamp is made from (80 ticks)
+				if (stamp + 160 < before || stamp > after + 160)
+					wrong_stamps++;
+				std::this_thread::sleep_for(std::chrono::microseconds(300));
+			}
+			CHECK(wrong_stamps == 0);
+
 			u32 expired_at_once = 0, wrong_left = 0, wrong_wait = 0;
 			u64 waited_sum = 0;
 			// On one of the emulator's threads, as a game's thread is
@@ -208,8 +229,8 @@ int main()
 			CHECK(wrong_left == 0);
 			CHECK(wrong_wait == 0);
 			std::printf("test_guest_clock: retro_run %s: of 20 deadlines 50 ms away %u expired at once, %u had the wrong time left; "
-				"20 ms waits took %.1f ms of the guest's time, %u wrong\n",
-				pace.name, expired_at_once, wrong_left, waited_sum / 20000.0, wrong_wait);
+				"20 ms waits took %.1f ms of the guest's time, %u wrong; %u of 200 hardware timestamps off the timebase\n",
+				pace.name, expired_at_once, wrong_left, waited_sum / 20000.0, wrong_wait, wrong_stamps);
 		}
 	}
 
