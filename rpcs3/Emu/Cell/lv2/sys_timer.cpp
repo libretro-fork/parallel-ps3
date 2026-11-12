@@ -13,16 +13,67 @@
 #include "sys_process.h"
 
 #include <thread>
-#include <deque>
+#include <new>
+#include <queues/retro_deque.h>
 
 LOG_CHANNEL(sys_timer);
+
+// A timer the timer thread holds on to: a shared_ptr<lv2_timer> kept as
+// its bytes, so that it sits in a retro_deque and is moved as plain data.
+// Made by timer_hold and ended by timer_drop, once each.
+struct lv2_timer_held
+{
+	alignas(shared_ptr<lv2_timer>) uchar bytes[sizeof(shared_ptr<lv2_timer>)];
+};
+
+RETRO_DEQUE_DEFINE(lv2_timers, lv2_timer_held);
+
+static const shared_ptr<lv2_timer>& timer_of(const lv2_timer_held* held)
+{
+	return *std::launder(reinterpret_cast<const shared_ptr<lv2_timer>*>(held->bytes));
+}
+
+static lv2_timer_held timer_hold(shared_ptr<lv2_timer>&& timer)
+{
+	lv2_timer_held held;
+	new (held.bytes) shared_ptr<lv2_timer>(std::move(timer));
+	return held;
+}
+
+static void timer_drop(lv2_timer_held* held)
+{
+	std::launder(reinterpret_cast<shared_ptr<lv2_timer>*>(held->bytes))->~shared_ptr<lv2_timer>();
+}
 
 struct lv2_timer_thread
 {
 	shared_mutex mutex;
-	std::deque<shared_ptr<lv2_timer>> timers;
+	lv2_timers_t timers{}; // room for every timer there can be: never grows
 
 	lv2_timer_thread();
+	~lv2_timer_thread();
+
+	// Where @timer is in the list, or its count
+	usz find(const lv2_timer* timer) const
+	{
+		const usz count = lv2_timers_count(&timers);
+
+		for (usz i = 0; i < count; i++)
+		{
+			if (timer_of(lv2_timers_at(&timers, i)).get() == timer)
+			{
+				return i;
+			}
+		}
+
+		return count;
+	}
+
+	void add(shared_ptr<lv2_timer>&& timer)
+	{
+		const lv2_timer_held held = timer_hold(std::move(timer));
+		ensure(lv2_timers_push_back(&timers, &held));
+	}
 	void operator()();
 
 	//SAVESTATE_INIT_POS(46); // FREE SAVESTATE_INIT_POS number
@@ -105,13 +156,26 @@ u64 lv2_timer::check_unlocked(u64 _now) noexcept
 
 lv2_timer_thread::lv2_timer_thread()
 {
+	ensure(lv2_timers_init(&timers, lv2_timer::id_count));
+
 	Emu.PostponeInitCode([this]()
 	{
 		idm::select<lv2_obj, lv2_timer>([&](u32 id, lv2_timer&)
 		{
-			timers.emplace_back(idm::get_unlocked<lv2_obj, lv2_timer>(id));
+			add(idm::get_unlocked<lv2_obj, lv2_timer>(id));
 		});
 	});
+}
+
+lv2_timer_thread::~lv2_timer_thread()
+{
+	while (!lv2_timers_empty(&timers))
+	{
+		timer_drop(lv2_timers_front(&timers));
+		lv2_timers_pop_front(&timers);
+	}
+
+	lv2_timers_free(&timers);
 }
 
 void lv2_timer_thread::operator()()
@@ -148,8 +212,10 @@ void lv2_timer_thread::operator()()
 
 		reader_lock lock(mutex);
 
-		for (const auto& timer : timers)
+		for (usz i = 0, count = lv2_timers_count(&timers); i < count; i++)
 		{
+			const shared_ptr<lv2_timer>& timer = timer_of(lv2_timers_at(&timers, i));
+
 			while (lv2_obj::check(timer))
 			{
 				if (thread_ctrl::state() == thread_state::aborting)
@@ -184,9 +250,9 @@ error_code sys_timer_create(ppu_thread& ppu, vm::ptr<u32> timer_id)
 			std::lock_guard lock(thread.mutex);
 
 			// Theoretically could have been destroyed by sys_timer_destroy by now
-			if (auto it = std::find(thread.timers.begin(), thread.timers.end(), ptr); it == thread.timers.end())
+			if (thread.find(ptr.get()) == lv2_timers_count(&thread.timers))
 			{
-				thread.timers.emplace_back(std::move(ptr));
+				thread.add(std::move(ptr));
 			}
 		}
 
@@ -228,9 +294,10 @@ error_code sys_timer_destroy(ppu_thread& ppu, u32 timer_id)
 	auto& thread = g_fxo->get<named_thread<lv2_timer_thread>>();
 	std::lock_guard lock(thread.mutex);
 
-	if (auto it = std::find(thread.timers.begin(), thread.timers.end(), timer.ptr); it != thread.timers.end())
+	if (const usz i = thread.find(timer.ptr.get()); i != lv2_timers_count(&thread.timers))
 	{
-		thread.timers.erase(it);
+		timer_drop(lv2_timers_at(&thread.timers, i));
+		lv2_timers_erase(&thread.timers, i);
 	}
 
 	return CELL_OK;

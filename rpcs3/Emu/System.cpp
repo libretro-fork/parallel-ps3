@@ -105,8 +105,6 @@ extern atomic_t<bool> g_big_picture_mode_active;
 
 fs::file g_tty;
 atomic_t<s64> g_tty_size{0};
-std::array<std::deque<std::string>, 16> g_tty_input;
-std::mutex g_tty_mutex;
 thread_local std::string_view g_tls_serialize_name;
 
 extern thread_local std::string(*g_tls_log_prefix)();

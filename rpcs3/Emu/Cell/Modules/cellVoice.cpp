@@ -43,13 +43,110 @@ void voice_manager::reset()
 	id_ctr = 0;
 	port_source = 0;
 	ports.clear();
-	queue_keys.clear();
+	voice_notifies_clear(&queue_keys);
 }
 
 void voice_manager::save(utils::serial& ar)
 {
 	GET_OR_USE_SERIALIZATION_VERSION(ar.is_writing(), cellVoice);
-	ar(id_ctr, port_source, ports, queue_keys, voice_service_started);
+	ar(id_ctr, port_source, ports);
+
+	if (ar.is_writing())
+	{
+		save_queue_keys(ar);
+	}
+	else
+	{
+		load_queue_keys(ar);
+	}
+
+	ar(voice_service_started);
+}
+
+// In a savestate as the std::unordered_map<u64, std::deque<u64>> they were:
+// how many keys, then for each its key, how many sources, and the sources
+void voice_manager::save_queue_keys(utils::serial& ar)
+{
+	const usz count = voice_notifies_count(&queue_keys);
+	usz keys = 0;
+
+	// A key is written where it is first met, with every source it has
+	const auto first_of = [&](usz i)
+	{
+		for (usz j = 0; j < i; j++)
+		{
+			if (voice_notifies_at(&queue_keys, j)->key == voice_notifies_at(&queue_keys, i)->key)
+			{
+				return false;
+			}
+		}
+
+		return true;
+	};
+
+	for (usz i = 0; i < count; i++)
+	{
+		keys += first_of(i);
+	}
+
+	ar.serialize_vle(keys);
+
+	for (usz i = 0; i < count; i++)
+	{
+		if (!first_of(i))
+		{
+			continue;
+		}
+
+		const u64 key = voice_notifies_at(&queue_keys, i)->key;
+		usz sources = 0;
+
+		for (usz j = i; j < count; j++)
+		{
+			sources += voice_notifies_at(&queue_keys, j)->key == key;
+		}
+
+		ar(key);
+		ar.serialize_vle(sources);
+
+		for (usz j = i; j < count; j++)
+		{
+			if (voice_notifies_at(&queue_keys, j)->key == key)
+			{
+				ar(voice_notifies_at(&queue_keys, j)->source);
+			}
+		}
+	}
+}
+
+void voice_manager::load_queue_keys(utils::serial& ar)
+{
+	voice_notifies_clear(&queue_keys);
+
+	usz keys = 0;
+
+	if (!ar.deserialize_vle<28>(keys))
+	{
+		return;
+	}
+
+	for (usz i = 0; i < keys && ar.is_valid(); i++)
+	{
+		voice_notify notify{};
+		usz sources = 0;
+		ar(notify.key);
+
+		if (!ar.deserialize_vle<28>(sources))
+		{
+			return;
+		}
+
+		for (usz j = 0; j < sources && ar.is_valid(); j++)
+		{
+			ar(notify.source);
+			ensure(voice_notifies_push_back_growing(&queue_keys, &notify));
+		}
+	}
 }
 
 error_code cellVoiceConnectIPortToOPort(u32 ips, u32 ops)
@@ -247,14 +344,13 @@ error_code cellVoiceEnd()
 
 	if (std::exchange(manager.voice_service_started, false))
 	{
-		for (auto& key_pair : manager.queue_keys)
+		for (usz i = 0, count = voice_notifies_count(&manager.queue_keys); i < count; i++)
 		{
-			if (auto queue = lv2_event_queue::find(key_pair.first))
+			const voice_notify& notify = *voice_notifies_at(&manager.queue_keys, i);
+
+			if (auto queue = lv2_event_queue::find(notify.key))
 			{
-				for (const auto& source : key_pair.second)
-				{
-					queue->send(source, CELLVOICE_EVENT_SERVICE_DETACHED, 0, 0);
-				}
+				queue->send(notify.source, CELLVOICE_EVENT_SERVICE_DETACHED, 0, 0);
 			}
 		}
 	}
@@ -484,7 +580,7 @@ error_code cellVoiceRemoveNotifyEventQueue(u64 key)
 	if (!manager.is_init)
 		return CELL_VOICE_ERROR_LIBVOICE_NOT_INIT;
 
-	if (manager.queue_keys.erase(key) == 0)
+	if (manager.remove_queue_key(key) == 0)
 		return CELL_VOICE_ERROR_EVENT_QUEUE;
 
 	return CELL_OK;
@@ -639,7 +735,8 @@ error_code cellVoiceSetNotifyEventQueue(u64 key, u64 source)
 		manager.port_source = (manager.port_source + 1) % lv2_event_port::id_count;
 	}
 
-	manager.queue_keys[key].push_back(source);
+	const voice_notify notify{key, source};
+	ensure(voice_notifies_push_back_growing(&manager.queue_keys, &notify));
 	return CELL_OK;
 }
 
@@ -688,14 +785,13 @@ error_code VoiceStart(voice_manager& manager)
 	if (std::exchange(manager.voice_service_started, true))
 		return CELL_OK;
 
-	for (auto& key_pair : manager.queue_keys)
+	for (usz i = 0, count = voice_notifies_count(&manager.queue_keys); i < count; i++)
 	{
-		if (auto queue = lv2_event_queue::find(key_pair.first))
+		const voice_notify& notify = *voice_notifies_at(&manager.queue_keys, i);
+
+		if (auto queue = lv2_event_queue::find(notify.key))
 		{
-			for (const auto& source : key_pair.second)
-			{
-				queue->send(source, CELLVOICE_EVENT_SERVICE_ATTACHED, 0, 0);
-			}
+			queue->send(notify.source, CELLVOICE_EVENT_SERVICE_ATTACHED, 0, 0);
 		}
 	}
 
@@ -749,14 +845,13 @@ error_code cellVoiceStop()
 	if (!std::exchange(manager.voice_service_started, false))
 		return CELL_OK;
 
-	for (auto& key_pair : manager.queue_keys)
+	for (usz i = 0, count = voice_notifies_count(&manager.queue_keys); i < count; i++)
 	{
-		if (auto queue = lv2_event_queue::find(key_pair.first))
+		const voice_notify& notify = *voice_notifies_at(&manager.queue_keys, i);
+
+		if (auto queue = lv2_event_queue::find(notify.key))
 		{
-			for (const auto& source : key_pair.second)
-			{
-				queue->send(source, CELLVOICE_EVENT_SERVICE_DETACHED, 0, 0);
-			}
+			queue->send(notify.source, CELLVOICE_EVENT_SERVICE_DETACHED, 0, 0);
 		}
 	}
 

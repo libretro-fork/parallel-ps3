@@ -195,18 +195,16 @@ struct sysutil_cb_manager
 		std::shared_ptr<atomic_t<bool>> call_active;
 	};
 
-	std::deque<lf_queue<std::shared_ptr<atomic_t<bool>>>> registered_callbacks_abort_handles = []()
+	// One for every callback id handed out, made once: an array (the queues do not move)
+	const usz registered_callbacks_count = g_sysutil_callback_id_assigner;
+	const std::unique_ptr<lf_queue<std::shared_ptr<atomic_t<bool>>>[]> registered_callbacks_abort_handles =
+		std::make_unique<lf_queue<std::shared_ptr<atomic_t<bool>>>[]>(registered_callbacks_count);
+
+	lf_queue<std::shared_ptr<atomic_t<bool>>>& abort_handles(usz call_id) const
 	{
-		// Do resize for deque (cheap container which can store all non-movable value types)
-		std::deque<lf_queue<std::shared_ptr<atomic_t<bool>>>> result;
-
-		for (usz i = 0 ; i < g_sysutil_callback_id_assigner; i++)
-		{
-			result.emplace_back();
-		}
-
-		return result;
-	}();
+		ensure(call_id < registered_callbacks_count);
+		return registered_callbacks_abort_handles[call_id];
+	}
 
 	lf_queue<dispatcher_cb> registered;
 
@@ -238,7 +236,7 @@ void sysutil_register_cb_with_id_internal(std::function<s32(ppu_thread&)>&& cb, 
 	if (call_id != umax)
 	{
 		info.call_active = std::make_shared<atomic_t<bool>>(true);
-		::at32(cbm.registered_callbacks_abort_handles, call_id).push(info.call_active);
+		cbm.abort_handles(call_id).push(info.call_active);
 	}
 
 	cbm.registered.push(std::move(info));
@@ -253,7 +251,7 @@ extern void sysutil_unregister_cb_with_id_internal(usz call_id)
 		return;
 	}
 
-	for (auto&& abort_handle : ::at32(cbm->registered_callbacks_abort_handles, call_id).pop_all())
+	for (auto&& abort_handle : cbm->abort_handles(call_id).pop_all())
 	{
 		// Deactivate the existing event once
 		abort_handle->store(false);

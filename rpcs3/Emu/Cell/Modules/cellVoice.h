@@ -1,5 +1,16 @@
 #pragma once
 
+#include <queues/retro_deque.h>
+
+// An event queue (by its key) to notify, and the source to notify it as
+struct voice_notify
+{
+	u64 key;
+	u64 source;
+};
+
+RETRO_DEQUE_DEFINE(voice_notifies, voice_notify);
+
 // libvoice = 0x80310801 - 0x803108ff
 // libvoice version 100
 
@@ -190,7 +201,32 @@ struct voice_manager
 	u32 port_source = 0;
 
 	std::unordered_map<u16, port_t> ports;
-	std::unordered_map<u64, std::deque<u64>> queue_keys;
+	// For every queue set with cellVoiceSetNotifyEventQueue, in the order set
+	voice_notifies_t queue_keys{};
+
+	// Forgets @key's entries; how many there were
+	usz remove_queue_key(u64 key)
+	{
+		usz removed = 0;
+
+		for (usz i = 0; i < voice_notifies_count(&queue_keys);)
+		{
+			if (voice_notifies_at(&queue_keys, i)->key == key)
+			{
+				voice_notifies_erase(&queue_keys, i);
+				removed++;
+			}
+			else
+			{
+				i++;
+			}
+		}
+
+		return removed;
+	}
+
+	void save_queue_keys(utils::serial& ar);
+	void load_queue_keys(utils::serial& ar);
 	bool voice_service_started = false;
 
 	port_t* access_port(u32 id)
@@ -213,6 +249,9 @@ struct voice_manager
 	SAVESTATE_INIT_POS(17);
 
 	voice_manager() = default;
+	~voice_manager() { voice_notifies_free(&queue_keys); }
+	voice_manager(const voice_manager&) = delete;
+	voice_manager& operator=(const voice_manager&) = delete;
 	voice_manager(utils::serial& ar) { save(ar); }
 	void save(utils::serial& ar);
 };

@@ -13,8 +13,6 @@ LOG_CHANNEL(sys_tty);
 
 extern fs::file g_tty;
 extern atomic_t<s64> g_tty_size;
-extern std::array<std::deque<std::string>, 16> g_tty_input;
-extern std::mutex g_tty_mutex;
 
 error_code sys_tty_read(s32 ch, vm::ptr<char> buf, u32 len, vm::ptr<u32> preadlen)
 {
@@ -35,43 +33,10 @@ error_code sys_tty_read(s32 ch, vm::ptr<char> buf, u32 len, vm::ptr<u32> preadle
 		sys_tty.warning("sys_tty_read called with system channel %d", ch);
 	}
 
-	usz chars_to_read = 0; // number of chars that will be read from the input string
-	std::string tty_read;     // string for storage of read chars
-
-	if (len > 0)
-	{
-		std::lock_guard lock(g_tty_mutex);
-
-		if (!g_tty_input[ch].empty())
-		{
-			// reference to our first queue element
-			std::string& input = g_tty_input[ch].front();
-
-			// we have to stop reading at either a new line, the param len, or our input string size
-			usz new_line_pos = input.find_first_of('\n');
-
-			if (new_line_pos != input.npos)
-			{
-				chars_to_read = std::min(new_line_pos, static_cast<usz>(len));
-			}
-			else
-			{
-				chars_to_read = std::min(input.size(), static_cast<usz>(len));
-			}
-
-			// read the previously calculated number of chars from the beginning of the input string
-			tty_read = input.substr(0, chars_to_read);
-
-			// remove the just read text from the input string
-			input = input.substr(chars_to_read, input.size() - 1);
-
-			if (input.empty())
-			{
-				// pop the first queue element if it was completely consumed
-				g_tty_input[ch].pop_front();
-			}
-		}
-	}
+	// A frontend has no console to type into: there is never input to read
+	// (standalone RPCS3's debugger window was the one source)
+	const usz chars_to_read = 0;
+	const std::string tty_read;
 
 	if (!preadlen)
 	{
