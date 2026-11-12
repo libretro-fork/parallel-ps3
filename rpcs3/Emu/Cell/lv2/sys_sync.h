@@ -453,6 +453,10 @@ public:
 
 	static bool wait_timeout(u64 usec, ppu_thread* cpu = {}, bool scale = true, bool is_usleep = false);
 
+	// The guest's microseconds left until its deadline @end_time (a timed
+	// wait's, in get_guest_system_time's clock); 0 once it has passed
+	static u64 deadline_left(u64 end_time);
+
 	static void notify_all() noexcept;
 
 	// Can be called before the actual sleep call in order to move it out of mutex scope

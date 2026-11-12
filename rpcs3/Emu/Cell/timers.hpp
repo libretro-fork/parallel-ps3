@@ -18,4 +18,7 @@ void libretro_guest_clock_grant(double frame_seconds);
 // The guest's microseconds, unscaled: how much of the guest's time has
 // passed, which stops when retro_run does
 u64 get_slaved_system_time();
+
+// How long of the host's time to wait for @guest_us of the guest's to pass
+u64 libretro_guest_wait_as_host(u64 guest_us);
 #endif

@@ -8,14 +8,28 @@
 //   is had (fast-forward);
 // - at the frontend's pace it keeps the frames asked for;
 // - inside a frame it moves, as the PS3's timebase does;
-// - it never goes backwards on any thread, grants and all.
+// - it never goes backwards on any thread, grants and all;
+// - a host time taken as the guest's (get_guest_system_time(time), which
+//   deadlines, VBlank and audio timestamps go through) is the guest's time
+//   then, never later than now - also while the guest's clock is ahead of
+//   the host's, as it is whenever retro_run comes a little faster than the
+//   frame rate the core declares (a 60 Hz display, 59.94 declared). It came
+//   out as zero then: every timed wait of the game's ended at once, and
+//   Demon's Souls played none of its movies;
+// - so a timed wait of the game's: its deadline 50 ms away has 50 ms left
+//   (lv2_obj::deadline_left, which lv2_obj::wait_timeout goes by), and a
+//   20 ms wait takes 20 ms of the guest's time, with retro_run at the
+//   declared rate, a little faster, and in fast-forward.
 //
 // Built by `make check` from the core's own objects and archives, the same
 // link as the core's with this main.
 
 #include "stdafx.h"
 #include "Emu/Cell/timers.hpp"
+#include "Emu/Cell/lv2/sys_sync.h"
+#include "Utilities/Thread.h"
 
+#include <algorithm>
 #include <atomic>
 #include <chrono>
 #include <cstdio>
@@ -113,6 +127,91 @@ int main()
 	// Sixty frames asked for: no more than those, no fewer than all but one
 	CHECK(paced <= 61.0 * kFrame);
 	CHECK(paced >= 58.9 * kFrame);
+
+	// retro_run a little faster than the declared rate, as on a 60 Hz display
+	// with 59.94 declared - and much faster, as in fast-forward: the guest's
+	// clock gets ahead of the host's
+	u32 bad_conversions = 0, late_conversions = 0;
+	u64 worst = 0;
+	for (int i = 0; i < 240; i++)
+	{
+		libretro_guest_clock_grant(i < 120 ? 1.0 / 59.94 : kFrame);
+		if (i < 120)
+			std::this_thread::sleep_for(std::chrono::microseconds(16000));
+		else if (i % 4 == 0)
+			sleep_ms(1);
+
+		const u64 before = get_guest_system_time();
+		const u64 converted = get_guest_system_time(get_system_time());
+		const u64 after = get_guest_system_time();
+		// The guest's time at that moment: between the two readings around it
+		if (converted > after)
+			late_conversions++;
+		const u64 off = converted < before ? before - converted : 0;
+		worst = std::max(worst, off);
+		if (off > 1000)
+			bad_conversions++;
+	}
+	CHECK(late_conversions == 0);
+	CHECK(bad_conversions == 0);
+	std::printf("test_guest_clock: 240 host times taken as the guest's while it runs ahead: %u later than now, %u off by over 1 ms (worst %llu us)\n",
+		late_conversions, bad_conversions, static_cast<unsigned long long>(worst));
+
+	// The game's timed waits, with retro_run at three paces from a thread of
+	// its own
+	{
+		static const struct { const char* name; int frame_us; int sleep_us; } paces[] = {
+			{ "at the declared rate", 16683, 16683 },
+			{ "a little faster (60 Hz display)", 16683, 16000 },
+			{ "fast-forward", 16683, 4000 },
+		};
+		for (const auto& pace : paces)
+		{
+			std::atomic<bool> run{true};
+			std::thread frontend([&]
+			{
+				while (run)
+				{
+					libretro_guest_clock_grant(pace.frame_us / 1000000.0);
+					std::this_thread::sleep_for(std::chrono::microseconds(pace.sleep_us));
+				}
+			});
+			sleep_ms(100); // the guest's clock ahead by now, where it gets ahead
+
+			u32 expired_at_once = 0, wrong_left = 0, wrong_wait = 0;
+			u64 waited_sum = 0;
+			// On one of the emulator's threads, as a game's thread is
+			named_thread game("Game", [&]
+			{
+			for (int i = 0; i < 20; i++)
+			{
+				// A deadline 50 ms of the guest's time away
+				const u64 left = lv2_obj::deadline_left(get_guest_system_time() + 50000);
+				if (!left)
+					expired_at_once++;
+				else if (left < 49000 || left > 50000)
+					wrong_left++;
+
+				// A 20 ms sleep: 20 ms of the guest's time
+				const u64 from = get_guest_system_time();
+				lv2_obj::wait_timeout(20000, nullptr, true, true);
+				const u64 waited = get_guest_system_time() - from;
+				waited_sum += waited;
+				if (waited < 19500 || waited > 40000)
+					wrong_wait++;
+			}
+			});
+			game();
+			run = false;
+			frontend.join();
+			CHECK(expired_at_once == 0);
+			CHECK(wrong_left == 0);
+			CHECK(wrong_wait == 0);
+			std::printf("test_guest_clock: retro_run %s: of 20 deadlines 50 ms away %u expired at once, %u had the wrong time left; "
+				"20 ms waits took %.1f ms of the guest's time, %u wrong\n",
+				pace.name, expired_at_once, wrong_left, waited_sum / 20000.0, wrong_wait);
+		}
+	}
 
 	std::printf("test_guest_clock: paused 120 ms, guest moved %.1f ms; 10 frames at once, %.1f had; "
 		"60 at an uneven pace, %.1f had; %llu reads on 4 threads, %u backwards\n",

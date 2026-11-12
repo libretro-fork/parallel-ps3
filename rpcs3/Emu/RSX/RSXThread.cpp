@@ -1066,7 +1066,13 @@ namespace rsx
 		}
 		else
 		{
+#ifdef LIBRETRO_CORE
+			// VBlank is posted by retro_run now: the guest's clock now
+			(void)post_event_time;
+			sys_rsx_context_attribute(0x55555555, 0xFED, 1, get_guest_system_time(), 0, 0);
+#else
 			sys_rsx_context_attribute(0x55555555, 0xFED, 1, get_guest_system_time(post_event_time), 0, 0);
+#endif
 		}
 	}
 

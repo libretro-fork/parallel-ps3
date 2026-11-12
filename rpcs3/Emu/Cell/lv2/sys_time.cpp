@@ -32,6 +32,11 @@ static retro_atomic_int_t s_clock_seq;
 static retro_atomic_size_t s_clock_lag;
 static retro_atomic_size_t s_clock_floor;
 static retro_atomic_size_t s_clock_grant;
+// How fast the guest's time has been passing against the host's, 16.16
+// (retro_run's pace: 1 at the declared rate, 4 in a 4x fast-forward), and
+// the host's TSC at the last grant; retro_run's own
+static retro_atomic_int_t s_clock_speed;
+static u64 s_clock_last_grant_tsc;
 
 struct clock_slave
 {
@@ -77,6 +82,7 @@ void libretro_guest_clock_grant(double frame_seconds)
 	u64 grant = retro_atomic_load_relaxed_size(&s_clock_grant);
 	u64 floor;
 
+	int speed = 1 << 16;
 	if (!grant)
 	{
 		// Continuous with the host's clock the guest had until now
@@ -90,7 +96,12 @@ void libretro_guest_clock_grant(double frame_seconds)
 		// (paused), pulled forward to it when behind (fast-forward)
 		floor = grant;
 		lag   = tsc - floor;
+		// A frame of the guest's time for the host's time since the last
+		const u64 host = std::max<u64>(tsc - s_clock_last_grant_tsc, 1);
+		speed = static_cast<int>(std::clamp<u64>((frame << 16) / host, 1 << 12, 64 << 16));
 	}
+	s_clock_last_grant_tsc = tsc;
+	retro_atomic_store_release_int(&s_clock_speed, speed);
 	grant = floor + frame;
 
 	const int seq = retro_atomic_load_relaxed_int(&s_clock_seq);
@@ -100,6 +111,24 @@ void libretro_guest_clock_grant(double frame_seconds)
 	retro_atomic_store_relaxed_size(&s_clock_floor, floor);
 	retro_atomic_store_relaxed_size(&s_clock_grant, grant);
 	retro_atomic_store_release_int(&s_clock_seq, seq + 2);
+}
+
+// How long of the host's time to wait for @guest_us of the guest's to pass,
+// at the pace retro_run has been coming: a quarter of it in a 4x
+// fast-forward, where waiting it out by the host's clock made every sleep of
+// the game's four times too long. While the guest's clock stands still at
+// the end of its frame (the frontend paused or slow), a millisecond at
+// least, until the next look.
+u64 libretro_guest_wait_as_host(u64 guest_us)
+{
+	const int speed = retro_atomic_load_acquire_int(&s_clock_speed);
+	if (speed <= 0)
+		return guest_us;
+	u64 host_us = std::max<u64>((std::min<u64>(guest_us, u64{umax} >> 16) << 16) / static_cast<u64>(speed), 1);
+	const clock_slave c = read_clock_slave();
+	if (c.grant && utils::get_tsc() - c.lag - c.floor >= c.grant - c.floor)
+		host_us = std::max<u64>(host_us, 1000);
+	return host_us;
 }
 
 // The guest's microseconds, as get_system_time's but slaved: unscaled, for
@@ -114,7 +143,12 @@ u64 get_slaved_system_time()
 	return get_system_time();
 }
 
-// The host's microseconds @time as the guest's: the lag taken off
+// The host's microseconds @time as the guest's: the lag taken off, and never
+// past the frame granted, where the guest's clock itself stops. The lag is
+// signed: the guest's clock is ahead of the host's whenever retro_run comes
+// faster than the declared frame rate (a 60 Hz display with 59.94 declared,
+// fast-forward). Taken as unsigned it came out as hours, every host time
+// became zero, and every timed wait of the game's ended at once.
 static u64 host_to_slaved_time(u64 time)
 {
 	const u64 freq = utils::get_tsc_freq();
@@ -123,8 +157,11 @@ static u64 host_to_slaved_time(u64 time)
 	const clock_slave c = read_clock_slave();
 	if (!c.grant)
 		return time;
-	const u64 lag_us = c.lag / freq * 1000000ull + c.lag % freq * 1000000ull / freq;
-	return time - std::min(time, lag_us);
+	const s64 lag = static_cast<s64>(c.lag);
+	const s64 sfreq = static_cast<s64>(freq);
+	const s64 lag_us = lag / sfreq * 1000000ll + lag % sfreq * 1000000ll / sfreq;
+	const u64 grant_us = c.grant / freq * 1000000ull + c.grant % freq * 1000000ull / freq;
+	return std::min<u64>(time - static_cast<u64>(lag_us), grant_us);
 }
 #endif
 
