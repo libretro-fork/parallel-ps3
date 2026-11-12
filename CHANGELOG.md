@@ -4,6 +4,7 @@ What changed in the libretro core of this fork, newest first. Changes that come 
 
 ## Unreleased
 
+- The Windows build links again. The OpenGL frames' header brought in GLEW's, which turned every GL call in `libretro_video.cpp` into a call through GLEW, and the Windows build has no GLEW: 176 undefined references to `__glewUseProgram` and the rest. On Windows the header now takes the GL types as RPCS3's OpenGL.h does there (`gl.h` and `glext.h`), so the calls stay RPCS3's own. A MinGW compile of `libretro_video.cpp` had 765 references to GLEW before, none after.
 - No host clock and no sleep left in what retro_run drives.
   - The pause watchdog is gone. It read the host's clock on a thread of its own to tell when RetroArch had stopped calling retro_run, and paused the game then; nothing needs it now that VBlank comes only from retro_run, so a frontend that stops calling it stops the game where it stands.
   - The Vulkan renderer no longer waits for retro_run to take a frame, nor sleeps while the frontend is away: a finished frame is queued, the newest two kept, and the renderer goes on. The game is held by VBlank, not by the handoff.

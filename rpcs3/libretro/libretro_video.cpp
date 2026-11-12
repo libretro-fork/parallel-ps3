@@ -210,25 +210,25 @@ static bool s_drawn_since_flip = false;
 
 // The GL functions, through GLEW, called when they are called: GLEW loads
 // them on the renderer's thread after these are handed over
-static void GLAPIENTRY lr_gen_textures(GLsizei n, GLuint* t) { glGenTextures(n, t); }
-static void GLAPIENTRY lr_delete_textures(GLsizei n, const GLuint* t) { glDeleteTextures(n, t); }
-static void GLAPIENTRY lr_bind_texture(GLenum target, GLuint t) { glBindTexture(target, t); }
-static void GLAPIENTRY lr_tex_image_2d(GLenum target, GLint level, GLint internal, GLsizei w, GLsizei h, GLint border, GLenum format, GLenum type, const void* data) { glTexImage2D(target, level, internal, w, h, border, format, type, data); }
-static void GLAPIENTRY lr_tex_parameteri(GLenum target, GLenum name, GLint value) { glTexParameteri(target, name, value); }
-static void GLAPIENTRY lr_gen_framebuffers(GLsizei n, GLuint* f) { glGenFramebuffers(n, f); }
-static void GLAPIENTRY lr_delete_framebuffers(GLsizei n, const GLuint* f) { glDeleteFramebuffers(n, f); }
-static void GLAPIENTRY lr_bind_framebuffer(GLenum target, GLuint f) { glBindFramebuffer(target, f); }
-static void GLAPIENTRY lr_framebuffer_texture_2d(GLenum target, GLenum attachment, GLenum textarget, GLuint t, GLint level) { glFramebufferTexture2D(target, attachment, textarget, t, level); }
-static void GLAPIENTRY lr_gen_renderbuffers(GLsizei n, GLuint* r) { glGenRenderbuffers(n, r); }
-static void GLAPIENTRY lr_delete_renderbuffers(GLsizei n, const GLuint* r) { glDeleteRenderbuffers(n, r); }
-static void GLAPIENTRY lr_bind_renderbuffer(GLenum target, GLuint r) { glBindRenderbuffer(target, r); }
-static void GLAPIENTRY lr_renderbuffer_storage(GLenum target, GLenum format, GLsizei w, GLsizei h) { glRenderbufferStorage(target, format, w, h); }
-static void GLAPIENTRY lr_framebuffer_renderbuffer(GLenum target, GLenum attachment, GLenum rbtarget, GLuint r) { glFramebufferRenderbuffer(target, attachment, rbtarget, r); }
-static void GLAPIENTRY lr_blit_framebuffer(GLint sx0, GLint sy0, GLint sx1, GLint sy1, GLint dx0, GLint dy0, GLint dx1, GLint dy1, GLbitfield mask, GLenum filter) { glBlitFramebuffer(sx0, sy0, sx1, sy1, dx0, dy0, dx1, dy1, mask, filter); }
-static GLsync GLAPIENTRY lr_fence_sync(GLenum condition, GLbitfield flags) { return glFenceSync(condition, flags); }
-static void GLAPIENTRY lr_wait_sync(GLsync sync, GLbitfield flags, GLuint64 timeout) { glWaitSync(sync, flags, timeout); }
-static void GLAPIENTRY lr_delete_sync(GLsync sync) { glDeleteSync(sync); }
-static void GLAPIENTRY lr_flush() { glFlush(); }
+static void LR_GL_APIENTRY lr_gen_textures(GLsizei n, GLuint* t) { glGenTextures(n, t); }
+static void LR_GL_APIENTRY lr_delete_textures(GLsizei n, const GLuint* t) { glDeleteTextures(n, t); }
+static void LR_GL_APIENTRY lr_bind_texture(GLenum target, GLuint t) { glBindTexture(target, t); }
+static void LR_GL_APIENTRY lr_tex_image_2d(GLenum target, GLint level, GLint internal, GLsizei w, GLsizei h, GLint border, GLenum format, GLenum type, const void* data) { glTexImage2D(target, level, internal, w, h, border, format, type, data); }
+static void LR_GL_APIENTRY lr_tex_parameteri(GLenum target, GLenum name, GLint value) { glTexParameteri(target, name, value); }
+static void LR_GL_APIENTRY lr_gen_framebuffers(GLsizei n, GLuint* f) { glGenFramebuffers(n, f); }
+static void LR_GL_APIENTRY lr_delete_framebuffers(GLsizei n, const GLuint* f) { glDeleteFramebuffers(n, f); }
+static void LR_GL_APIENTRY lr_bind_framebuffer(GLenum target, GLuint f) { glBindFramebuffer(target, f); }
+static void LR_GL_APIENTRY lr_framebuffer_texture_2d(GLenum target, GLenum attachment, GLenum textarget, GLuint t, GLint level) { glFramebufferTexture2D(target, attachment, textarget, t, level); }
+static void LR_GL_APIENTRY lr_gen_renderbuffers(GLsizei n, GLuint* r) { glGenRenderbuffers(n, r); }
+static void LR_GL_APIENTRY lr_delete_renderbuffers(GLsizei n, const GLuint* r) { glDeleteRenderbuffers(n, r); }
+static void LR_GL_APIENTRY lr_bind_renderbuffer(GLenum target, GLuint r) { glBindRenderbuffer(target, r); }
+static void LR_GL_APIENTRY lr_renderbuffer_storage(GLenum target, GLenum format, GLsizei w, GLsizei h) { glRenderbufferStorage(target, format, w, h); }
+static void LR_GL_APIENTRY lr_framebuffer_renderbuffer(GLenum target, GLenum attachment, GLenum rbtarget, GLuint r) { glFramebufferRenderbuffer(target, attachment, rbtarget, r); }
+static void LR_GL_APIENTRY lr_blit_framebuffer(GLint sx0, GLint sy0, GLint sx1, GLint sy1, GLint dx0, GLint dy0, GLint dx1, GLint dy1, GLbitfield mask, GLenum filter) { glBlitFramebuffer(sx0, sy0, sx1, sy1, dx0, dy0, dx1, dy1, mask, filter); }
+static GLsync LR_GL_APIENTRY lr_fence_sync(GLenum condition, GLbitfield flags) { return glFenceSync(condition, flags); }
+static void LR_GL_APIENTRY lr_wait_sync(GLsync sync, GLbitfield flags, GLuint64 timeout) { glWaitSync(sync, flags, timeout); }
+static void LR_GL_APIENTRY lr_delete_sync(GLsync sync) { glDeleteSync(sync); }
+static void LR_GL_APIENTRY lr_flush() { glFlush(); }
 
 static void set_gl_frames_procs()
 {

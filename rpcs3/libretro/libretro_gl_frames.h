@@ -7,15 +7,27 @@
  * texture the frontend has yet to copy. A texture is resized only when the
  * renderer draws a frame of another size into it.
  *
- * The GL functions are the caller's (lr_gl_frames_procs): GLEW's in the core,
- * EGL's in the test. One renderer thread, one retro_run thread. C89. */
+ * The GL functions are the caller's (lr_gl_frames_procs): the renderer's in
+ * the core, EGL's in the test. One renderer thread, one retro_run thread. C89. */
 
 #ifndef LIBRETRO_GL_FRAMES_H
 #define LIBRETRO_GL_FRAMES_H
 
 #include <stddef.h>
 
+#ifdef _WIN32
+/* The GL types as RPCS3's OpenGL.h has them on Windows: its functions are
+ * its own there, and GLEW's header turned every one the including file calls
+ * into GLEW's, which a Windows build does not have (undefined references to
+ * __glewUseProgram and the rest) */
+#include <windows.h>
+#include <GL/gl.h>
+#include <glext.h>
+#define LR_GL_APIENTRY APIENTRY
+#else
 #include <GL/glew.h>
+#define LR_GL_APIENTRY GLAPIENTRY
+#endif
 
 #include <boolean.h>
 
@@ -25,25 +37,25 @@ extern "C" {
 
 struct lr_gl_frames_procs
 {
-   void   (GLAPIENTRY *gen_textures)(GLsizei, GLuint*);
-   void   (GLAPIENTRY *delete_textures)(GLsizei, const GLuint*);
-   void   (GLAPIENTRY *bind_texture)(GLenum, GLuint);
-   void   (GLAPIENTRY *tex_image_2d)(GLenum, GLint, GLint, GLsizei, GLsizei, GLint, GLenum, GLenum, const void*);
-   void   (GLAPIENTRY *tex_parameteri)(GLenum, GLenum, GLint);
-   void   (GLAPIENTRY *gen_framebuffers)(GLsizei, GLuint*);
-   void   (GLAPIENTRY *delete_framebuffers)(GLsizei, const GLuint*);
-   void   (GLAPIENTRY *bind_framebuffer)(GLenum, GLuint);
-   void   (GLAPIENTRY *framebuffer_texture_2d)(GLenum, GLenum, GLenum, GLuint, GLint);
-   void   (GLAPIENTRY *gen_renderbuffers)(GLsizei, GLuint*);
-   void   (GLAPIENTRY *delete_renderbuffers)(GLsizei, const GLuint*);
-   void   (GLAPIENTRY *bind_renderbuffer)(GLenum, GLuint);
-   void   (GLAPIENTRY *renderbuffer_storage)(GLenum, GLenum, GLsizei, GLsizei);
-   void   (GLAPIENTRY *framebuffer_renderbuffer)(GLenum, GLenum, GLenum, GLuint);
-   void   (GLAPIENTRY *blit_framebuffer)(GLint, GLint, GLint, GLint, GLint, GLint, GLint, GLint, GLbitfield, GLenum);
-   GLsync (GLAPIENTRY *fence_sync)(GLenum, GLbitfield);
-   void   (GLAPIENTRY *wait_sync)(GLsync, GLbitfield, GLuint64);
-   void   (GLAPIENTRY *delete_sync)(GLsync);
-   void   (GLAPIENTRY *flush)(void);
+   void   (LR_GL_APIENTRY *gen_textures)(GLsizei, GLuint*);
+   void   (LR_GL_APIENTRY *delete_textures)(GLsizei, const GLuint*);
+   void   (LR_GL_APIENTRY *bind_texture)(GLenum, GLuint);
+   void   (LR_GL_APIENTRY *tex_image_2d)(GLenum, GLint, GLint, GLsizei, GLsizei, GLint, GLenum, GLenum, const void*);
+   void   (LR_GL_APIENTRY *tex_parameteri)(GLenum, GLenum, GLint);
+   void   (LR_GL_APIENTRY *gen_framebuffers)(GLsizei, GLuint*);
+   void   (LR_GL_APIENTRY *delete_framebuffers)(GLsizei, const GLuint*);
+   void   (LR_GL_APIENTRY *bind_framebuffer)(GLenum, GLuint);
+   void   (LR_GL_APIENTRY *framebuffer_texture_2d)(GLenum, GLenum, GLenum, GLuint, GLint);
+   void   (LR_GL_APIENTRY *gen_renderbuffers)(GLsizei, GLuint*);
+   void   (LR_GL_APIENTRY *delete_renderbuffers)(GLsizei, const GLuint*);
+   void   (LR_GL_APIENTRY *bind_renderbuffer)(GLenum, GLuint);
+   void   (LR_GL_APIENTRY *renderbuffer_storage)(GLenum, GLenum, GLsizei, GLsizei);
+   void   (LR_GL_APIENTRY *framebuffer_renderbuffer)(GLenum, GLenum, GLenum, GLuint);
+   void   (LR_GL_APIENTRY *blit_framebuffer)(GLint, GLint, GLint, GLint, GLint, GLint, GLint, GLint, GLbitfield, GLenum);
+   GLsync (LR_GL_APIENTRY *fence_sync)(GLenum, GLbitfield);
+   void   (LR_GL_APIENTRY *wait_sync)(GLsync, GLbitfield, GLuint64);
+   void   (LR_GL_APIENTRY *delete_sync)(GLsync);
+   void   (LR_GL_APIENTRY *flush)(void);
 };
 
 /* Either thread, once, before anything else */
