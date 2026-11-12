@@ -1,6 +1,7 @@
 #include "stdafx.h"
 #include "libretro_sw_frames.h"
 #include "libretro_gl_frames.h"
+#include "libretro_gl_fallback.h"
 #include <retro_atomic.h>
 
 #include "libretro_video.h"
@@ -157,8 +158,11 @@ static bool libretro_gl_init(retro_environment_t environ_cb)
     if (!environ_cb(RETRO_ENVIRONMENT_GET_HW_SHARED_CONTEXT_INTERFACE, &s_shared_iface) || !s_shared_iface
         || s_shared_iface->interface_version < RETRO_HW_SHARED_CONTEXT_INTERFACE_VERSION)
     {
-        s_shared_iface = nullptr;
-        return false;
+        // A frontend from before that call: made as they always were, through
+        // the window system behind its context (libretro_gl_fallback.c)
+        s_shared_iface = lr_gl_fallback_interface();
+        if (!s_shared_iface)
+            return false;
     }
 
     s_shared_count = 0;

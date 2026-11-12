@@ -784,7 +784,8 @@ SOURCES_RPCS3_DARWIN  := $(CORE_DIR)/darwin/util/sysinfo_darwin.mm $(CORE_DIR)/r
 
 # The video unit: OpenGL, or the same interface without it where there is
 # no desktop GL renderer (macOS, which draws through MoltenVK)
-SOURCES_LIBRETRO_GL   := $(CORE_DIR)/rpcs3/libretro/libretro_video.cpp $(CORE_DIR)/rpcs3/libretro/libretro_gl_frames.c
+SOURCES_LIBRETRO_GL   := $(CORE_DIR)/rpcs3/libretro/libretro_video.cpp $(CORE_DIR)/rpcs3/libretro/libretro_gl_frames.c \
+	$(CORE_DIR)/rpcs3/libretro/libretro_gl_fallback.c
 SOURCES_LIBRETRO_NOGL := $(CORE_DIR)/rpcs3/libretro/libretro_video_sw.cpp
 
 # Made by the build (rpcs3/libretro/make/embed.c): the data compiled in

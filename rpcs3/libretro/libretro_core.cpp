@@ -1980,14 +1980,14 @@ static void forget_state();
 static void context_reset()
 {
     // The GL functions and the renderer's contexts, from the frontend. The
-    // renderer draws on a thread of its own, and only a frontend that makes
-    // contexts for a core's threads (GET_HW_SHARED_CONTEXT_INTERFACE) has
-    // one for it.
+    // renderer draws on a thread of its own: its contexts come from the
+    // frontend (GET_HW_SHARED_CONTEXT_INTERFACE), or from an older one's
+    // window system, as they always did.
     if (!libretro_video_init(hw_render.get_current_framebuffer, hw_render.get_proc_address, environ_cb))
     {
         if (log_cb)
-            log_cb(RETRO_LOG_ERROR, "RPCS3: the frontend makes no OpenGL contexts for the renderer's thread; use the Vulkan renderer\n");
-        libretro_show_message("OpenGL needs a newer RetroArch; use the Vulkan renderer", 600);
+            log_cb(RETRO_LOG_ERROR, "RPCS3: no OpenGL contexts could be made for the renderer's thread; use the Vulkan renderer\n");
+        libretro_show_message("OpenGL could not start here; use the Vulkan renderer", 600);
         pending_game_boot = false;
         return;
     }
