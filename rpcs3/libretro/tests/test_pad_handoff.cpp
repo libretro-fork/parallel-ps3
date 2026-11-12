@@ -351,6 +351,106 @@ int main()
 				r2, cross, rest, full_left, full_right, small_tilt, reached);
 		}
 
+		// Against the code this replaced, kept here as the reference: for
+		// each of a pad's buttons the nested switch on its offset and code,
+		// and RPCS3's squircle worked out for each stick each frame. Every
+		// position of both sticks (256 by 256, the right stick's mirrored),
+		// with the buttons changing along.
+		{
+			libretro_input_init();
+			u32 wrong_buttons = 0, wrong_sticks = 0;
+
+			const auto reference_button = [](const lr_pad_values& now, u32 offset, u32 code) -> u16
+			{
+				switch (offset)
+				{
+				case CELL_PAD_BTN_OFFSET_DIGITAL1:
+					switch (code)
+					{
+					case CELL_PAD_CTRL_UP:     return now.button[RETRO_DEVICE_ID_JOYPAD_UP];
+					case CELL_PAD_CTRL_DOWN:   return now.button[RETRO_DEVICE_ID_JOYPAD_DOWN];
+					case CELL_PAD_CTRL_LEFT:   return now.button[RETRO_DEVICE_ID_JOYPAD_LEFT];
+					case CELL_PAD_CTRL_RIGHT:  return now.button[RETRO_DEVICE_ID_JOYPAD_RIGHT];
+					case CELL_PAD_CTRL_SELECT: return now.button[RETRO_DEVICE_ID_JOYPAD_SELECT];
+					case CELL_PAD_CTRL_START:  return now.button[RETRO_DEVICE_ID_JOYPAD_START];
+					case CELL_PAD_CTRL_L3:     return now.button[RETRO_DEVICE_ID_JOYPAD_L3];
+					case CELL_PAD_CTRL_R3:     return now.button[RETRO_DEVICE_ID_JOYPAD_R3];
+					default: break;
+					}
+					break;
+				case CELL_PAD_BTN_OFFSET_DIGITAL2:
+					switch (code)
+					{
+					case CELL_PAD_CTRL_CROSS:    return now.button[RETRO_DEVICE_ID_JOYPAD_B];
+					case CELL_PAD_CTRL_CIRCLE:   return now.button[RETRO_DEVICE_ID_JOYPAD_A];
+					case CELL_PAD_CTRL_SQUARE:   return now.button[RETRO_DEVICE_ID_JOYPAD_Y];
+					case CELL_PAD_CTRL_TRIANGLE: return now.button[RETRO_DEVICE_ID_JOYPAD_X];
+					case CELL_PAD_CTRL_L1:       return now.button[RETRO_DEVICE_ID_JOYPAD_L];
+					case CELL_PAD_CTRL_R1:       return now.button[RETRO_DEVICE_ID_JOYPAD_R];
+					case CELL_PAD_CTRL_L2:       return now.button[RETRO_DEVICE_ID_JOYPAD_L2];
+					case CELL_PAD_CTRL_R2:       return now.button[RETRO_DEVICE_ID_JOYPAD_R2];
+					default: break;
+					}
+					break;
+				default:
+					break;
+				}
+				return 0;
+			};
+
+			u32 n = 0;
+			for (int y = 0; y < 256; y++)
+			{
+				for (int x = 0; x < 256; x++, n++)
+				{
+					// The stick values that read as exactly x and y
+					s_stick[0] = static_cast<int16_t>(x * 257 - 32768);
+					s_stick[1] = static_cast<int16_t>(y * 257 - 32768);
+					s_stick[2] = static_cast<int16_t>((255 - y) * 257 - 32768);
+					s_stick[3] = static_cast<int16_t>(x * 257 - 32768);
+					for (int b = 0; b < 16; b++)
+					{
+						s_digital[b] = ((n * 2654435761u) >> (b + 8)) & 1;
+						s_pressure[b] = (n + b) % 5 == 0 ? static_cast<int16_t>((n * 40503u + b * 977u) & 0x7fff) : 0;
+					}
+
+					libretro_input_poll(input_state);
+					handler.process();
+
+					const LibretroInputState* state = libretro_input_get_state(libretro_input_port_for_player(0));
+					lr_pad_values now;
+					lr_pad_values_read(state->pressure, state->buttons, state->analog, &now);
+
+					for (const Button& button : rumbled->m_buttons)
+					{
+						const u16 value = reference_button(now, button.m_offset, button.m_outKeyCode);
+						wrong_buttons += button.m_value != value || button.m_pressed != (value > 0);
+					}
+
+					u16 lx = now.axis[0], ly = now.axis[1], rx = now.axis[2], ry = now.axis[3];
+					PadHandlerBase::ConvertToSquirclePoint(lx, ly, 4000);
+					PadHandlerBase::ConvertToSquirclePoint(rx, ry, 4000);
+					wrong_sticks += lx != stick_value(*rumbled, CELL_PAD_BTN_OFFSET_ANALOG_LEFT_X) || ly != stick_value(*rumbled, CELL_PAD_BTN_OFFSET_ANALOG_LEFT_Y)
+						|| rx != stick_value(*rumbled, CELL_PAD_BTN_OFFSET_ANALOG_RIGHT_X) || ry != stick_value(*rumbled, CELL_PAD_BTN_OFFSET_ANALOG_RIGHT_Y);
+					if (n == 0)
+						CHECK(now.axis[0] == 0 && now.axis[1] == 0 && now.axis[2] == 255);
+				}
+			}
+
+			CHECK(wrong_buttons == 0);
+			CHECK(wrong_sticks == 0);
+			std::printf("test_pad_handoff: 65536 stick positions and buttons against the code replaced: %u buttons and %u sticks differ\n", wrong_buttons, wrong_sticks);
+
+			for (int b = 0; b < 16; b++)
+			{
+				s_digital[b] = false;
+				s_pressure[b] = 0;
+			}
+			s_stick[0] = s_stick[1] = s_stick[2] = s_stick[3] = 0;
+			libretro_input_poll(input_state);
+			handler.process();
+		}
+
 		// PAD_BENCH=1: the time of a frame's read, for comparing builds
 		if (std::getenv("PAD_BENCH"))
 		{
@@ -363,6 +463,19 @@ int main()
 				handler.process();
 			const double ns = std::chrono::duration<double, std::nano>(std::chrono::steady_clock::now() - from).count();
 			std::printf("test_pad_handoff: %.1f ns a frame's read of one pad\n", ns / 2000000.0);
+			// And with the sticks somewhere else every frame
+			const auto from2 = std::chrono::steady_clock::now();
+			for (int i = 0; i < 2000000; i++)
+			{
+				LibretroInputState* st = const_cast<LibretroInputState*>(libretro_input_get_state(libretro_input_port_for_player(0)));
+				st->analog[0] = static_cast<int16_t>(i * 37);
+				st->analog[1] = static_cast<int16_t>(i * 101);
+				st->analog[2] = static_cast<int16_t>(i * 13);
+				st->analog[3] = static_cast<int16_t>(i * 71);
+				handler.process();
+			}
+			const double ns2 = std::chrono::duration<double, std::nano>(std::chrono::steady_clock::now() - from2).count();
+			std::printf("test_pad_handoff: %.1f ns with both sticks moving every frame\n", ns2 / 2000000.0);
 			s_stick[0] = s_stick[3] = 0;
 			s_digital[RETRO_DEVICE_ID_JOYPAD_B] = false;
 			libretro_input_poll(input_state);

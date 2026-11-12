@@ -33,6 +33,41 @@ struct lr_pad_values
 void lr_pad_values_read(const int16_t *pressure, const int16_t *pressed,
       const int16_t *stick, struct lr_pad_values *out);
 
+/* --- a pad's frame ------------------------------------------------------
+ *
+ * The same readings as the pad has them: its buttons' values in the pad's
+ * own order, and its sticks after the squircle - a stick reports a circle,
+ * a DualShock 3 does not, and RPCS3 pushes the circle out toward a square
+ * (PadHandlerBase::ConvertToSquirclePoint: an arctangent, a square root,
+ * two sines, a cosine and three powers a stick). A stick has 256 by 256
+ * positions, so that is a table here, filled once from RPCS3's own function
+ * and read with one load a stick a frame. */
+
+#define LR_PAD_FRAME_BUTTONS 17   /* a pad's buttons: sixteen and PS */
+#define LR_PAD_NO_BUTTON     0xff /* in an order: a button the frontend has none for */
+
+struct lr_pad_frame
+{
+   uint8_t button[LR_PAD_FRAME_BUTTONS];
+   uint8_t axis[LR_PAD_AXES];
+};
+
+/* One stick position squircled, in place */
+typedef void (*lr_pad_squircle_t)(uint16_t *x, uint16_t *y);
+
+/* Fills the table with @convert for every position, the first time it is
+ * called; at start, before the first frame. Until then a stick is passed
+ * through as it is. */
+void lr_pad_squircle_fill(lr_pad_squircle_t convert);
+
+/* A stick position through the table */
+void lr_pad_squircle(uint8_t *x, uint8_t *y);
+
+/* @order: for each of the pad's buttons, the RETRO_DEVICE_ID_JOYPAD_* it is
+ * (below LR_PAD_BUTTONS) or LR_PAD_NO_BUTTON. The rest as lr_pad_values_read. */
+void lr_pad_frame_read(const int16_t *pressure, const int16_t *pressed,
+      const int16_t *stick, const uint8_t *order, struct lr_pad_frame *out);
+
 #ifdef __cplusplus
 }
 #endif

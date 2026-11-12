@@ -57,6 +57,21 @@ private:
 
     void read_pad_values(const PadDevice& device, struct lr_pad_values& pad);
 
+    // retro_run's, per pad bound: which of the frontend's buttons each of
+    // the pad's buttons is, and which axis each of its sticks' values, in
+    // the pad's own order - worked out when the pad is bound (and again
+    // should its buttons be another number), not for every button every
+    // frame
+    struct pad_order
+    {
+        u8 button[LR_PAD_FRAME_BUTTONS]{};
+        u8 axis[LR_PAD_AXES]{};
+        u32 buttons = ~0u; // how many buttons the pad had when it was worked out
+    };
+    std::array<pad_order, LIBRETRO_MAX_PADS> m_order{};
+
+    static void work_out_order(const Pad& pad, pad_order& order);
+
     void apply_rumble(Pad& pad, unsigned port);
 
     // retro_run's: the runs a request lasts without being renewed (3 s of

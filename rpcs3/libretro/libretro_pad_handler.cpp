@@ -9,6 +9,10 @@
 LibretroPadHandler::LibretroPadHandler()
     : PadHandlerBase(pad_handler::keyboard)  // Use keyboard type as base since we're a custom handler
 {
+    // The squircle as a table, from RPCS3's own conversion at standalone's
+    // default factor: once, before any frame
+    lr_pad_squircle_fill([](uint16_t* x, uint16_t* y) { ConvertToSquirclePoint(*x, *y, 4000); });
+
     m_name_string = "Libretro";
     m_max_devices = LIBRETRO_MAX_PADS;
     m_trigger_threshold = 0;
@@ -306,6 +310,66 @@ void LibretroPadHandler::apply_rumble(Pad& pad, unsigned port)
     libretro_input_set_rumble(port, static_cast<u16>(std::clamp(strong, 0.0f, 255.0f) * 257.0f), small ? 0xffff : 0);
 }
 
+// Which of the frontend's buttons a pad's button is
+static u8 frontend_button(u32 offset, u32 code)
+{
+    switch (offset)
+    {
+    case CELL_PAD_BTN_OFFSET_DIGITAL1:
+        switch (code)
+        {
+        case CELL_PAD_CTRL_UP:     return RETRO_DEVICE_ID_JOYPAD_UP;
+        case CELL_PAD_CTRL_DOWN:   return RETRO_DEVICE_ID_JOYPAD_DOWN;
+        case CELL_PAD_CTRL_LEFT:   return RETRO_DEVICE_ID_JOYPAD_LEFT;
+        case CELL_PAD_CTRL_RIGHT:  return RETRO_DEVICE_ID_JOYPAD_RIGHT;
+        case CELL_PAD_CTRL_SELECT: return RETRO_DEVICE_ID_JOYPAD_SELECT;
+        case CELL_PAD_CTRL_START:  return RETRO_DEVICE_ID_JOYPAD_START;
+        case CELL_PAD_CTRL_L3:     return RETRO_DEVICE_ID_JOYPAD_L3;
+        case CELL_PAD_CTRL_R3:     return RETRO_DEVICE_ID_JOYPAD_R3;
+        default: break;
+        }
+        break;
+    case CELL_PAD_BTN_OFFSET_DIGITAL2:
+        switch (code)
+        {
+        case CELL_PAD_CTRL_CROSS:    return RETRO_DEVICE_ID_JOYPAD_B;
+        case CELL_PAD_CTRL_CIRCLE:   return RETRO_DEVICE_ID_JOYPAD_A;
+        case CELL_PAD_CTRL_SQUARE:   return RETRO_DEVICE_ID_JOYPAD_Y;
+        case CELL_PAD_CTRL_TRIANGLE: return RETRO_DEVICE_ID_JOYPAD_X;
+        case CELL_PAD_CTRL_L1:       return RETRO_DEVICE_ID_JOYPAD_L;
+        case CELL_PAD_CTRL_R1:       return RETRO_DEVICE_ID_JOYPAD_R;
+        case CELL_PAD_CTRL_L2:       return RETRO_DEVICE_ID_JOYPAD_L2;
+        case CELL_PAD_CTRL_R2:       return RETRO_DEVICE_ID_JOYPAD_R2;
+        default: break;
+        }
+        break;
+    default:
+        break;
+    }
+
+    return LR_PAD_NO_BUTTON; // PS: always 0
+}
+
+void LibretroPadHandler::work_out_order(const Pad& pad, pad_order& order)
+{
+    for (usz k = 0; k < LR_PAD_FRAME_BUTTONS; k++)
+        order.button[k] = k < pad.m_buttons.size() ? frontend_button(pad.m_buttons[k].m_offset, pad.m_buttons[k].m_outKeyCode) : u8{LR_PAD_NO_BUTTON};
+
+    for (usz k = 0; k < LR_PAD_AXES; k++)
+    {
+        switch (pad.m_sticks[k].m_offset)
+        {
+        case CELL_PAD_BTN_OFFSET_ANALOG_LEFT_X:  order.axis[k] = 0; break;
+        case CELL_PAD_BTN_OFFSET_ANALOG_LEFT_Y:  order.axis[k] = 1; break;
+        case CELL_PAD_BTN_OFFSET_ANALOG_RIGHT_X: order.axis[k] = 2; break;
+        case CELL_PAD_BTN_OFFSET_ANALOG_RIGHT_Y: order.axis[k] = 3; break;
+        default: order.axis[k] = LR_PAD_NO_BUTTON; break; // not a stick's: left as it is
+        }
+    }
+
+    order.buttons = static_cast<u32>(pad.m_buttons.size());
+}
+
 void LibretroPadHandler::process()
 {
     // Process each bound pad
@@ -330,86 +394,51 @@ void LibretroPadHandler::process()
             continue;
         }
 
-        apply_rumble(*binding.pad, libretro_input_port_for_player(static_cast<unsigned>(i)));
+        // The RetroArch port that drives this player (ports trade places in
+        // the arcade shooter mode, see libretro_input_port_for_player)
+        const unsigned port = libretro_input_port_for_player(static_cast<unsigned>(i));
 
-        // Get button values from libretro input
-        lr_pad_values now;
-        read_pad_values(*binding.device, now);
+        apply_rumble(*binding.pad, port);
 
-        // Update pad button states in m_buttons vector
-        for (auto& button : binding.pad->m_buttons)
+        Pad& pad = *binding.pad;
+        pad_order& order = m_order[i < m_order.size() ? i : 0];
+
+        if (order.buttons != pad.m_buttons.size())
+            work_out_order(pad, order);
+
+        // The frontend's buttons and sticks as this pad's values, in the
+        // pad's order, at the frontend's precision; the sticks squircled, as
+        // standalone RPCS3 does for every pad handler (convert_stick_values,
+        // a factor of 4000 by default): pushed all the way diagonally a
+        // stick's circle gave about 70 % on each axis, and games that run at
+        // a full tilt walked instead (Ratchet & Clank, NNshi). All of it in
+        // libretro_pad_values.c: no switch a button and no trigonometry a
+        // stick, each frame.
+        const LibretroInputState* state = libretro_input_get_state(port < LIBRETRO_MAX_PADS ? port : 0);
+
+        lr_pad_frame now;
+        lr_pad_frame_read(state->pressure, state->buttons, state->analog, order.button, &now);
+
+        const usz buttons = std::min<usz>(pad.m_buttons.size(), LR_PAD_FRAME_BUTTONS);
+
+        for (usz k = 0; k < buttons; k++)
         {
-            u16 value = 0;
-
-            switch (button.m_offset)
-            {
-            case CELL_PAD_BTN_OFFSET_DIGITAL1:
-                switch (button.m_outKeyCode)
-                {
-                case CELL_PAD_CTRL_UP:     value = now.button[RETRO_DEVICE_ID_JOYPAD_UP];     break;
-                case CELL_PAD_CTRL_DOWN:   value = now.button[RETRO_DEVICE_ID_JOYPAD_DOWN];   break;
-                case CELL_PAD_CTRL_LEFT:   value = now.button[RETRO_DEVICE_ID_JOYPAD_LEFT];   break;
-                case CELL_PAD_CTRL_RIGHT:  value = now.button[RETRO_DEVICE_ID_JOYPAD_RIGHT];  break;
-                case CELL_PAD_CTRL_SELECT: value = now.button[RETRO_DEVICE_ID_JOYPAD_SELECT]; break;
-                case CELL_PAD_CTRL_START:  value = now.button[RETRO_DEVICE_ID_JOYPAD_START];  break;
-                case CELL_PAD_CTRL_L3:     value = now.button[RETRO_DEVICE_ID_JOYPAD_L3];     break;
-                case CELL_PAD_CTRL_R3:     value = now.button[RETRO_DEVICE_ID_JOYPAD_R3];     break;
-                default: break;
-                }
-                break;
-            case CELL_PAD_BTN_OFFSET_DIGITAL2:
-                switch (button.m_outKeyCode)
-                {
-                case CELL_PAD_CTRL_CROSS:    value = now.button[RETRO_DEVICE_ID_JOYPAD_B];  break;
-                case CELL_PAD_CTRL_CIRCLE:   value = now.button[RETRO_DEVICE_ID_JOYPAD_A];  break;
-                case CELL_PAD_CTRL_SQUARE:   value = now.button[RETRO_DEVICE_ID_JOYPAD_Y];  break;
-                case CELL_PAD_CTRL_TRIANGLE: value = now.button[RETRO_DEVICE_ID_JOYPAD_X];  break;
-                case CELL_PAD_CTRL_L1:       value = now.button[RETRO_DEVICE_ID_JOYPAD_L]; break;
-                case CELL_PAD_CTRL_R1:       value = now.button[RETRO_DEVICE_ID_JOYPAD_R]; break;
-                case CELL_PAD_CTRL_L2:       value = now.button[RETRO_DEVICE_ID_JOYPAD_L2]; break;
-                case CELL_PAD_CTRL_R2:       value = now.button[RETRO_DEVICE_ID_JOYPAD_R2]; break;
-                default: break;
-                }
-                break;
-            default:
-                break;
-            }
-
-            button.m_value = value;
-            button.m_pressed = value > 0;
+            Button& button = pad.m_buttons[k];
+            button.m_value = now.button[k];
+            button.m_pressed = now.button[k] > 0;
         }
 
-        // The sticks' axes: 128 at rest, 0 full left or up, 255 full right or
-        // down, straight from the frontend's 16 bits. They went through two
-        // halves of 255 steps, each halved again: full left came out as 1
-        u16 lx = now.axis[0];
-        u16 ly = now.axis[1];
-        u16 rx = now.axis[2];
-        u16 ry = now.axis[3];
-
-        // A stick reports a circle, which a DualShock 3 does not: pushed all
-        // the way diagonally it gave about 70 % on each axis, and games that
-        // run at a full tilt walked instead (Ratchet & Clank, NNshi).
-        // Standalone RPCS3 turns the circle into a squircle for every pad
-        // handler (convert_stick_values), with a factor of 4000 by default.
-        ConvertToSquirclePoint(lx, ly, 4000);
-        ConvertToSquirclePoint(rx, ry, 4000);
-        const u8 analog_left_x = static_cast<u8>(lx);
-        const u8 analog_left_y = static_cast<u8>(ly);
-        const u8 analog_right_x = static_cast<u8>(rx);
-        const u8 analog_right_y = static_cast<u8>(ry);
-
-        // Update analog stick axes in m_sticks array
-        for (auto& stick : binding.pad->m_sticks)
+        // A pad with more buttons than a pad has: the rest are not pressed
+        for (usz k = buttons; k < pad.m_buttons.size(); k++)
         {
-            switch (stick.m_offset)
-            {
-            case CELL_PAD_BTN_OFFSET_ANALOG_LEFT_X:  stick.m_value = analog_left_x;  break;
-            case CELL_PAD_BTN_OFFSET_ANALOG_LEFT_Y:  stick.m_value = analog_left_y;  break;
-            case CELL_PAD_BTN_OFFSET_ANALOG_RIGHT_X: stick.m_value = analog_right_x; break;
-            case CELL_PAD_BTN_OFFSET_ANALOG_RIGHT_Y: stick.m_value = analog_right_y; break;
-            default: break;
-            }
+            pad.m_buttons[k].m_value = 0;
+            pad.m_buttons[k].m_pressed = false;
+        }
+
+        for (usz k = 0; k < LR_PAD_AXES; k++)
+        {
+            if (order.axis[k] < LR_PAD_AXES)
+                pad.m_sticks[k].m_value = now.axis[order.axis[k]];
         }
     }
 }
