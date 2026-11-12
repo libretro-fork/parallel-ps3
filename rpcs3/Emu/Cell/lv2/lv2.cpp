@@ -1358,11 +1358,27 @@ thread_local DECLARE(lv2_obj::g_to_notify){};
 thread_local DECLARE(lv2_obj::g_postpone_notify_barrier){};
 thread_local DECLARE(lv2_obj::g_to_awake);
 
-// Scheduler queue for timeouts (wait until -> thread)
-static std::deque<std::pair<u64, class cpu_thread*>> g_waiting;
+// A thread is in each of the two lists below once at most, so neither is
+// ever longer than there can be threads: room for all of them is set aside
+// here, and nothing is allocated when a thread goes to sleep with a timeout
+// or wakes from one. They were std::deque, which takes a block from the
+// heap and gives one back as its contents move along - every few dozen
+// sleeps, all through play, under the scheduler's lock.
+static constexpr usz g_max_cpu_threads = ppu_thread::id_count + spu_thread::id_count;
+
+template <typename T>
+static std::vector<T> with_room_for_all_threads()
+{
+	std::vector<T> list;
+	list.reserve(g_max_cpu_threads);
+	return list;
+}
+
+// Scheduler queue for timeouts (wait until -> thread), the earliest first
+static std::vector<std::pair<u64, class cpu_thread*>> g_waiting = with_room_for_all_threads<std::pair<u64, class cpu_thread*>>();
 
 // Threads which must call lv2_obj::sleep before the scheduler starts
-static std::deque<class cpu_thread*> g_to_sleep;
+static std::vector<class cpu_thread*> g_to_sleep = with_room_for_all_threads<class cpu_thread*>();
 static atomic_t<bool> g_scheduler_ready = false;
 static atomic_t<u64> s_yield_frequency = 0;
 static atomic_t<u64> s_max_allowed_yield_tsc = 0;
@@ -1949,7 +1965,7 @@ void lv2_obj::schedule_all(u64 current_time)
 		if (pair->first <= current_time)
 		{
 			const auto target = pair->second;
-			g_waiting.pop_front();
+			g_waiting.erase(g_waiting.begin());
 
 			if (target != cpu_thread::get_current())
 			{
