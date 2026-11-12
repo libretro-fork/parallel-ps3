@@ -1495,13 +1495,6 @@ void retro_set_environment(retro_environment_t cb)
             log_cb(RETRO_LOG_WARN, "RPCS3: the frontend has no rumble interface, so the controller will not vibrate\n");
     }
 
-    // Initialize sensor interface for gyro/accelerometer support
-    if (libretro_input_init_sensors(cb))
-    {
-    }
-    else
-    {
-    }
 
 
 
@@ -3080,7 +3073,6 @@ void retro_run(void)
     // Poll input
     input_poll_cb();
     libretro_input_poll(input_state_cb);
-    libretro_input_poll_sensors();  // Poll gyro/accelerometer data
     libretro_mouse_update();  // Light guns to the PS3 mice
 
     // Process pad handler to update RPCS3's pad states from libretro input

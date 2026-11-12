@@ -257,9 +257,9 @@ void LibretroPadHandler::read_pad_values(const PadDevice& device, lr_pad_values&
     if (port >= LIBRETRO_MAX_PADS)
         port = 0;
 
-    const auto& state = libretro_input_get_state(port);
+    const LibretroInputState* state = libretro_input_get_state(port);
 
-    lr_pad_values_read(state.pressure.data(), state.buttons.data(), state.analog.data(), &pad);
+    lr_pad_values_read(state->pressure, state->buttons, state->analog, &pad);
 }
 
 pad_preview_values LibretroPadHandler::get_preview_values(const std::unordered_map<u32, u16>& data, const std::vector<std::string>& /*buttons*/)

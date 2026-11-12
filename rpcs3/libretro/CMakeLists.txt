@@ -31,7 +31,7 @@ add_library(rpcs3_libretro SHARED
     ${CMAKE_CURRENT_BINARY_DIR}/libretro_vblank_unlock.cpp
     ${LIBRETRO_VIDEO_SRC}
     libretro_audio.cpp
-    libretro_input.cpp
+    libretro_input.c
     libretro_pad_handler.cpp
     libretro_pad_values.c
     libretro_mouse_handler.cpp

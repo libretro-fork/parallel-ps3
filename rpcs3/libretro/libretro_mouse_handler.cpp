@@ -104,7 +104,7 @@ void LibretroMouseHandler::update()
 
     for (u32 i = 0; i < count && i < max_guns; i++)
     {
-        const LibretroGunState& gun = libretro_input_get_gun(libretro_input_port_for_player(i));
+        const LibretroGunState& gun = *libretro_input_get_gun(libretro_input_port_for_player(i));
         last_state& last = m_last[i];
 
         // Off the screen the mouse stays where it last was, so a shot fired

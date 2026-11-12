@@ -492,13 +492,19 @@ $(TARGET): $(OBJ_LIBRETRO) $(ARCHIVES)
 	$(SAY) LINK $@
 	$(Q)$(CXX) -o $@ $(OBJ_LIBRETRO) $(GROUP_START) $(ARCHIVES) $(GROUP_END) $(LDFLAGS) $(fpic) $(SHARED) $(LIBS)
 
+# The C rule first, and a C++ source that is gone is not an error: a source
+# converted from C++ to C is still named in the .d file of a tree built
+# before, and that tree would stop at "No rule to make target". Its object
+# is rebuilt from the .c.
+%.o: %.c
+	$(SAY) CC $<
+	$(Q)$(CC) -c -o $@ $< $(COMMON) $(FLAGS)
+
 %.o: %.cpp
 	$(SAY) CXX $<
 	$(Q)$(CXX) -c -o $@ $< $(COMMON) $(FLAGS)
 
-%.o: %.c
-	$(SAY) CC $<
-	$(Q)$(CC) -c -o $@ $< $(COMMON) $(FLAGS)
+%.cpp: ;
 
 %.o: %.mm
 	$(SAY) OBJCXX $<
