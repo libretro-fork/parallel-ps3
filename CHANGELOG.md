@@ -4,6 +4,7 @@ What changed in the libretro core of this fork, newest first. Changes that come 
 
 ## Unreleased
 
+- The LLVM built into the core builds where valgrind is not installed. Its Linux config said `valgrind/valgrind.h` was there, because the machine it was generated on had it, and the Makefile build stopped at `Valgrind.cpp` on GitHub's runners. The generator leaves it out of the Linux config now; the core does not run valgrind's client requests.
 - A first build no longer deletes the embedded sources it made (`generated/libretro_patches.cpp` and the other three) at its end, as make does with intermediate files; the next build found them missing, made them again and fetched the patches again. `make check` fails when they are gone after a build.
 - The PS3's clock follows retro_run. Each retro_run grants the game one frame of its time; inside the frame the timebase, the system time, lv2 timers and sleeps run smoothly at the host's rate, as on the console, but the clock stops at the frame's end until the next retro_run, and when retro_run comes faster than real time it is pulled forward to every frame asked for.
   - Pausing RetroArch now stops the game's clock. It used to keep running, and the game saw the whole pause pass at once when it resumed.

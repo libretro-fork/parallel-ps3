@@ -263,7 +263,13 @@ def write_headers(linux, mingw):
     open(os.path.join(inc, "common", "llvm", "Support", "VCSRevision.h"), "w").write(
         "#undef LLVM_REVISION\n#undef LLVM_REPOSITORY\n")
 
-    systems = {"linux": cfg(linux, "config.h"), "windows": cfg(mingw, "config.h")}
+    # What the machine that configured it happened to have installed is not
+    # what a build machine has: valgrind's header among them (a build without
+    # it stopped at Valgrind.cpp). The core does not run under valgrind's
+    # client requests.
+    linux_cfg = re.sub(r"#define HAVE_VALGRIND_VALGRIND_H 1", "/* #undef HAVE_VALGRIND_VALGRIND_H */",
+                       cfg(linux, "config.h"))
+    systems = {"linux": linux_cfg, "windows": cfg(mingw, "config.h")}
     systems["darwin"] = darwin_config(systems["linux"])
     for system, text in systems.items():
         d = os.path.join(inc, system, "llvm", "Config")
