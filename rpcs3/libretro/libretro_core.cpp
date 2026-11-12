@@ -1116,8 +1116,18 @@ static bool file_has_contents(const std::string &path, const void *data, std::si
     fs::file file(path);
     if (!file)
         return false;
-    std::vector<u8> current(size);
-    return file.read(current.data(), size) == size && std::memcmp(current.data(), data, size) == 0;
+    // Compared a piece at a time: not read whole into memory of its own
+    // (the patches are megabytes)
+    u8 piece[2048];
+    const u8* want = static_cast<const u8*>(data);
+    for (std::size_t done = 0; done < size;)
+    {
+        const std::size_t n = std::min(sizeof(piece), size - done);
+        if (file.read(piece, n) != n || std::memcmp(piece, want + done, n) != 0)
+            return false;
+        done += n;
+    }
+    return true;
 }
 
 static void install_ui_icons()

@@ -208,12 +208,25 @@ u16 LibretroPadHandler::ConvertAnalogValue(int16_t value)
     return static_cast<u16>((normalized * 255) / 65535);
 }
 
+// The handler's interface (the settings' preview): the same values in a map
 std::unordered_map<u32, u16> LibretroPadHandler::get_button_values(const std::shared_ptr<PadDevice>& device)
 {
     std::unordered_map<u32, u16> values;
-
     if (!device)
         return values;
+    button_values_t now{};
+    read_button_values(*device, now);
+    for (u32 i = 0; i < now.size(); i++)
+        values[i] = now[i];
+    return values;
+}
+
+// retro_run, each frame: the frontend's buttons and sticks into @values, in
+// place. As a map, made and thrown away each frame for each pad, they were
+// two dozen allocations a pad a frame.
+void LibretroPadHandler::read_button_values(const PadDevice& pad_device, button_values_t& values)
+{
+    const PadDevice* const device = &pad_device;
 
     // The RetroArch port that drives this player (ports trade places in the
     // arcade shooter mode, see libretro_input_port_for_player)
@@ -260,8 +273,6 @@ std::unordered_map<u32, u16> LibretroPadHandler::get_button_values(const std::sh
     values[static_cast<u64>(LibretroButton::RSXPos)] = rsx > 0 ? static_cast<u16>((rsx * 255) / 32767) : 0;
     values[static_cast<u64>(LibretroButton::RSYNeg)] = rsy < 0 ? static_cast<u16>((-rsy * 255) / 32768) : 0;
     values[static_cast<u64>(LibretroButton::RSYPos)] = rsy > 0 ? static_cast<u16>((rsy * 255) / 32767) : 0;
-
-    return values;
 }
 
 pad_preview_values LibretroPadHandler::get_preview_values(const std::unordered_map<u32, u16>& data, const std::vector<std::string>& /*buttons*/)
@@ -335,7 +346,8 @@ void LibretroPadHandler::process()
         apply_rumble(*binding.pad, libretro_input_port_for_player(static_cast<unsigned>(i)));
 
         // Get button values from libretro input
-        auto button_values = get_button_values(binding.device);
+        button_values_t button_values{};
+        read_button_values(*binding.device, button_values);
 
         // Update pad button states in m_buttons vector
         for (auto& button : binding.pad->m_buttons)

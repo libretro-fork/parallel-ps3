@@ -15,7 +15,9 @@
 //   intercepting) never undoes the dialog setting it again meanwhile;
 // - rumble the game asks for runs as long as it asks: one not renewed for 3 s
 //   of runs - counted in retro_runs, not by the host's clock - stops, and a
-//   new request starts it again.
+//   new request starts it again;
+// - reading the frontend's buttons into the pads each retro_run
+//   (LibretroPadHandler::process) allocates nothing.
 //
 // Built by `make check` from the core's own objects and archives, the same
 // link as the core's with this main.
@@ -29,6 +31,8 @@
 #include <atomic>
 #include <chrono>
 #include <cstdio>
+#include <cstdlib>
+#include <new>
 #include <thread>
 
 static int failures = 0;
@@ -49,6 +53,21 @@ static bool environment(unsigned cmd, void* data)
 	static_cast<retro_rumble_interface*>(data)->set_rumble_state = set_rumble_state;
 	return true;
 }
+
+static thread_local bool t_counting = false;
+static thread_local usz t_allocations = 0;
+
+void* operator new(std::size_t n)
+{
+	if (t_counting)
+		t_allocations++;
+	if (void* p = std::malloc(n ? n : 1))
+		return p;
+	throw std::bad_alloc();
+}
+
+void operator delete(void* p) noexcept { std::free(p); }
+void operator delete(void* p, std::size_t) noexcept { std::free(p); }
 
 #define CHECK(cond) do { if (!(cond)) { std::fprintf(stderr, "%s:%d: check failed: %s\n", __FILE__, __LINE__, #cond); failures++; } } while (0)
 
@@ -241,6 +260,16 @@ int main()
 
 		handler.process();
 		CHECK(s_strong[port] == 0);
+
+		// A thousand frames of input: nothing allocated
+		t_allocations = 0;
+		t_counting = true;
+		for (int i = 0; i < 1000; i++)
+			handler.process();
+		t_counting = false;
+		CHECK(t_allocations == 0);
+		std::printf("test_pad_handoff: 1000 frames of input read, %llu allocations\n", static_cast<unsigned long long>(t_allocations));
+
 		pads.SetRumble(0, 255, 0);
 		u32 runs = 0;
 		for (; runs < 1000; runs++)

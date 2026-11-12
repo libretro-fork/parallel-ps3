@@ -4,6 +4,8 @@ What changed in the libretro core of this fork, newest first. Changes that come 
 
 ## Unreleased
 
+- Reading the frontend's buttons into the pads allocates nothing. Each retro_run made a map of the 24 buttons and stick directions for each pad and threw it away: 26 allocations a pad a frame. They are read into an array in place. `test_pad_handoff` counts the allocations of a thousand frames of input: 26000 before, none now.
+- The files the core installs at start (the game patches, the settings database) are compared with what is on disk a piece at a time, not read whole into a buffer of their own first.
 - Movies play again (Demon's Souls' title screen movie and the first of a new game played neither) with the PS3's clock following retro_run. Two faults in that clock:
   - Whenever retro_run came a little faster than the frame rate the core declares - a 60 Hz display with 59.94 declared is enough - the guest's clock was ahead of the host's, and a host time taken as the guest's came out as zero: the lag between the two was kept unsigned. Every timed wait of the game's with a deadline then ended at once, and VBlank and audio timestamps were wrong. The lag is signed; a deadline and the VBlank time read the guest's clock itself.
   - A sleep of the game's was waited out by the host's clock, so in a 4x fast-forward a 20 ms sleep took 81 ms of the game's time. Sleeps and lv2 timers wait at the pace retro_run comes.

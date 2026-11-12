@@ -54,6 +54,9 @@ private:
     std::unordered_map<u32, u16> get_button_values(const std::shared_ptr<PadDevice>& device) override;
     pad_preview_values get_preview_values(const std::unordered_map<u32, u16>& data, const std::vector<std::string>& buttons) override;
 
+    using button_values_t = std::array<u16, static_cast<usz>(LibretroButton::Count)>;
+    void read_button_values(const PadDevice& device, button_values_t& values);
+
     void apply_rumble(Pad& pad, unsigned port);
 
     // retro_run's: the runs a request lasts without being renewed (3 s of
