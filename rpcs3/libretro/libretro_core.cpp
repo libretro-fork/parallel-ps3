@@ -81,7 +81,6 @@
 #include "Loader/ISO.h"
 
 #include <clocale>
-#include <chrono>
 #include <ctime>
 #include <atomic>
 #include <thread>
@@ -324,41 +323,12 @@ static bool install_pkg_file(const std::string& pkg_path, std::string& eboot_pat
 
     std::deque<std::string> bootable_paths;
 
-    // Show progress updates during extraction
-    char msg_buf[256];
-    int last_progress = -1;
+    // On this thread: RetroArch shows nothing while retro_load_game runs, so
+    // a thread of its own polled for progress messages nobody saw
+    libretro_show_message("Installing PKG...", 120);
+    const bool extracted = package_reader::extract_data(readers, bootable_paths, false).error == package_install_result::error_type::no_error;
 
-    // Start extraction in a separate thread so we can show progress
-    retro_atomic_int_t extraction_done;
-    retro_atomic_int_t extraction_success;
-    retro_atomic_int_init(&extraction_done, 0);
-    retro_atomic_int_init(&extraction_success, 0);
-    std::thread extraction_thread([&]()
-    {
-        auto result = package_reader::extract_data(readers, bootable_paths, false);
-        retro_atomic_store_release_int(&extraction_success, result.error == package_install_result::error_type::no_error ? 1 : 0);
-        retro_atomic_store_release_int(&extraction_done, 1);
-    });
-
-    // Poll progress and show updates - show every 1% change for better feedback
-    while (!retro_atomic_load_acquire_int(&extraction_done))
-    {
-        if (!readers.empty())
-        {
-            int progress = readers.front().get_progress(100);
-            if (progress != last_progress)
-            {
-                snprintf(msg_buf, sizeof(msg_buf), "Installing PKG: %d%%", progress);
-                libretro_show_message(msg_buf, 120);
-                last_progress = progress;
-            }
-        }
-        std::this_thread::sleep_for(std::chrono::milliseconds(50));
-    }
-
-    extraction_thread.join();
-
-    if (!retro_atomic_load_acquire_int(&extraction_success))
+    if (!extracted)
     {
 
         libretro_show_message("PKG installation failed: Extraction error", 300);
@@ -1901,22 +1871,33 @@ void retro_init(void)
 // a thread of its own, which stops the PPU, SPU and RSX threads, unmounts the
 // VFS and only then marks the state fully stopped. Anything that pulls the
 // ground out from under that (dropping the disc device, cleaning up globals)
-// has to wait for it. Bounded, because a core that hangs the frontend on unload
-// is worse than one that lets go early, and the timeout is worth saying out loud.
-static void wait_for_emulation_stop(const char* what)
+// has to wait for it: on the emulator's state, which wakes this at each change.
+template <typename Done>
+static void wait_for_emulator(Done done)
 {
-    constexpr int kStopWaitMs = 5000;
-    int waited = 0;
-    while (!Emu.IsStopped(true) && waited < kStopWaitMs)
+    for (;;)
     {
-        std::this_thread::sleep_for(std::chrono::milliseconds(1));
-        waited++;
+        const u32 events = g_libretro_events;
+        if (done())
+            return;
+        g_libretro_events.wait(events);
     }
-    if (!Emu.IsStopped(true))
-        log_cb(RETRO_LOG_WARN, "RPCS3: emulation did not finish stopping in %d ms; %s anyway\n",
-            kStopWaitMs, what);
-    else if (waited > 0)
-        log_cb(RETRO_LOG_INFO, "RPCS3: emulation stopped after %d ms\n", waited);
+}
+
+static void wait_for_emulation_stop()
+{
+    wait_for_emulator([] { return Emu.IsStopped(true); });
+}
+
+// Stopped at once, not asked to exit first as RPCS3's Stop does: the game's
+// grace for that is a second of the host's clock, and nothing runs it while
+// the frontend is not calling retro_run.
+static void stop_emulation()
+{
+    if (Emu.IsPaused())
+        Emu.Resume();
+    Emu.Kill(false);
+    wait_for_emulation_stop();
 }
 
 // A boot that fails part way - vkCreateDevice refusing a feature the GPU does
@@ -1930,8 +1911,7 @@ static void stop_failed_boot()
 {
     if (!Emu.IsStopped(true))
     {
-        Emu.GracefulShutdown(false, false);
-        wait_for_emulation_stop("giving up on the boot");
+        stop_emulation();
     }
     unload_iso();
     s_iso_path.clear();
@@ -1952,10 +1932,9 @@ void retro_deinit(void)
     // Also when no game loaded: a failed boot may have left threads running
     if (game_loaded || !Emu.IsStopped(true))
     {
-        Emu.GracefulShutdown(false, false);
-        // Same order as retro_unload_game: CleanUp tears down global state the
-        // stopping threads are still standing on.
-        wait_for_emulation_stop("cleaning up");
+        // Stopped before CleanUp, as retro_unload_game does: CleanUp tears
+        // down global state the stopping threads would still be standing on.
+        stop_emulation();
     }
 
     Emulator::CleanUp();
@@ -2304,8 +2283,7 @@ static void vk_release_device_resources()
     // finds it stopped later and only drops the disc.
     if (!Emu.IsStopped())
     {
-        Emu.GracefulShutdown(false, false);
-        wait_for_emulation_stop("the Vulkan context going away");
+        stop_emulation();
     }
 
     // Nothing of the device may be in use, the frontend's last frame included.
@@ -2939,41 +2917,13 @@ static bool do_boot_game(const std::string& path)
     }
 
 
-    // Wait for emulator to transition out of loading/starting states
-    // Poll for up to 30 seconds
-    constexpr int max_wait_ms = 30000;
-    constexpr int poll_interval_ms = 100;
-    int waited_ms = 0;
-
-    // Wait while in loading or starting state
-    while (waited_ms < max_wait_ms)
-    {
-        system_state state = Emu.GetStatus();
-
-        // If running, paused, or ready - we can proceed. Starting too: that is
-        // the emulator compiling the game's PPU modules (ppu_cmd::initialize),
-        // which on a game's first boot can take over a minute, and the PPU
-        // thread ends it itself once they are done. Waiting it out here held
-        // context_reset - RetroArch showed nothing at all until the modules were
-        // compiled, rather than its progress messages (NNshi).
-        if (state == system_state::running || state == system_state::paused ||
-            state == system_state::ready || state == system_state::frozen ||
-            state == system_state::starting)
-        {
-            break;
-        }
-
-        // If stopped, boot failed
-        if (state == system_state::stopped)
-        {
-
-            break;
-        }
-
-        std::this_thread::sleep_for(std::chrono::milliseconds(poll_interval_ms));
-        waited_ms += poll_interval_ms;
-
-    }
+    // Until the boot is past loading. Starting is far enough: that is the
+    // emulator compiling the game's PPU modules (ppu_cmd::initialize), which on
+    // a game's first boot can take over a minute, and the PPU thread ends it
+    // itself once they are done. Waiting it out here held context_reset -
+    // RetroArch showed nothing at all until the modules were compiled, rather
+    // than its progress messages (NNshi).
+    wait_for_emulator([] { return Emu.GetStatus() != system_state::loading; });
 
     system_state final_state = Emu.GetStatus();
 
@@ -3012,22 +2962,15 @@ void retro_unload_game(void)
     forget_state();
     if (game_loaded)
     {
-        Emu.GracefulShutdown(false, false);
+        // Stopped completely before the disc goes: the stop finishes on a
+        // thread of its own ("Emulation Join Thread"), and dropping the disc
+        // device before then pulled the ISO out from under threads still
+        // shutting down - ozzfreak's log ends there, "Unloading ISO" from this
+        // thread and then the join thread reported as too sleepy.
+        stop_emulation();
         game_loaded = false;
         game_path.clear();
 
-        // The teardown does not finish on this thread: Emulator::Kill hands it
-        // to a thread of its own ("Emulation Join Thread"), which stops the PPU,
-        // SPU and RSX threads, unmounts the VFS and only then marks the state
-        // fully stopped. Dropping the disc device before that pulls the ISO out
-        // from under threads that are still shutting down - ozzfreak's log ends
-        // exactly there, "Unloading ISO" from this thread and then the join
-        // thread reported as too sleepy, waiting on something that never comes.
-        //
-        // So wait for the stop to complete. Bounded, because a core that hangs
-        // the frontend on unload is worse than one that lets go early, and the
-        // timeout is worth saying out loud if it is ever hit.
-        wait_for_emulation_stop("unloading the disc");
 
         // Drops the disc device, and with it the handle on the image.
         unload_iso();
@@ -3041,6 +2984,9 @@ void retro_unload_game(void)
 
 void retro_run(void)
 {
+    // A frame of the frontend's: what a wait counted in frames waits for
+    libretro_event();
+
     if (s_pkg_install_only)
     {
         // One frame and the close: RetroArch keeps the install message up for
@@ -3220,8 +3166,7 @@ void retro_reset(void)
         return;
 
 
-    Emu.GracefulShutdown(false, false);
-    wait_for_emulation_stop("restarting");
+    stop_emulation();
 
     // game_path is still what the load booted - for a disc image, its EBOOT
     // inside the image. The stop has dropped the image (Emulator::Kill unloads
@@ -3304,8 +3249,7 @@ static bool make_state()
     // preparation gave up on it and the game runs on: SPU threads that cannot
     // be paused where a state can be taken, a video decoder or a game save in
     // progress. RPCS3 says which on screen.
-    while (!Emu.IsStopped(true) && (Emu.IsClosePending() || Emu.IsStopped()))
-        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    wait_for_emulator([] { return Emu.IsStopped(true) || !(Emu.IsClosePending() || Emu.IsStopped()); });
 
     g_memory_savestate = nullptr;
 
@@ -3379,8 +3323,7 @@ bool retro_unserialize(const void* data, size_t size)
     if (!game_loaded || pending_game_boot || !data || size < 4 || std::memcmp(data, zstd_magic, 4))
         return false;
 
-    Emu.GracefulShutdown(false, false);
-    wait_for_emulation_stop("loading a state");
+    stop_emulation();
 
     // RetroArch's buffer is not ours past this call: the state into the
     // core's, which the boot reads where it lies. A trailing pad of zeros
@@ -3744,7 +3687,7 @@ static void init_emu_callbacks()
     // the title and the time, with a counter when that name is taken.
     callbacks.get_photo_path = [](std::string_view title) -> std::string
     {
-        const std::time_t now = std::time(nullptr);
+        const std::time_t now = std::time(nullptr); // not pacing: the photo's name is the date
         std::tm tm{};
 #ifdef _WIN32
         localtime_s(&tm, &now);

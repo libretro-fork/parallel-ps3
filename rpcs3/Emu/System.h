@@ -73,6 +73,18 @@ struct emu_precompilation_option_t
 	bool is_fast = false;
 };
 
+#ifdef LIBRETRO_CORE
+// Bumped, and its waiters woken, at every change of the emulator's state or
+// of a stop pending, and by every retro_run: a thread waiting for any of them
+// waits on it, untimed, where standalone RPCS3 sleeps and looks again
+extern atomic_t<u32> g_libretro_events;
+inline void libretro_event()
+{
+	g_libretro_events++;
+	g_libretro_events.notify_all();
+}
+#endif
+
 class Emulator final
 {
 	atomic_t<system_state> m_state{system_state::stopped};
@@ -82,6 +94,14 @@ class Emulator final
 	atomic_t<u64> m_stop_ctr{1}; // Increments when emulation is stopped
 	atomic_t<bool> m_emu_state_close_pending = false;
 	atomic_t<u64> m_restrict_emu_state_change{0};
+
+	// The state or a stop pending changed
+	void state_changed()
+	{
+#ifdef LIBRETRO_CORE
+		libretro_event();
+#endif
+	}
 
 	games_config m_games_config;
 
@@ -194,6 +214,7 @@ public:
 	void SetTestMode()
 	{
 		m_state = system_state::running;
+		state_changed();
 	}
 
 	void SetPrecompileCacheOption(emu_precompilation_option_t option)

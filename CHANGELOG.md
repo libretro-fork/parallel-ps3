@@ -4,6 +4,15 @@ What changed in the libretro core of this fork, newest first. Changes that come 
 
 ## Unreleased
 
+- The emulator's waits wake on events instead of sleeping. Every change of the emulator's state now wakes whoever waits for it, and so does every retro_run.
+  - Unloading, resetting, loading a state and the Vulkan context going away wait for the stop to finish on the state itself, untimed. They used to look every millisecond for up to 5 s of the host's clock.
+  - The boot waits for the emulator to be past loading the same way, instead of looking every 100 ms for up to 30 s.
+  - A savestate waits for the stop, or for its preparation giving up, the same way, instead of looking every millisecond.
+  - RPCS3's own waits (`qt_events_aware_op`) look again at each change of state and at each retro_run instead of sleeping between looks. The second the game gets to answer an exit request from its own menu is counted in the frontend's frames.
+  - The core stops the game at once (RPCS3's Kill) instead of asking it to exit first. That grace is a second of the host's clock, and nothing runs the game while the frontend is not calling retro_run.
+  - A PKG installs on the loading thread: RetroArch shows nothing while retro_load_game runs, so the progress messages a second thread polled for every 50 ms were never seen.
+  - RPCS3's Stop Watchdog thread, which looked every 5 ms to report a slow stop to a UI the core does not have, and a 30 ms sleep at the stop, are left out of the core.
+  `test_emu_waits` checks a wait does not look again while nothing happens, looks once per retro_run, and wakes at a change of the emulator's state. `no_host_clock.sh`, run with the library tests, fails when the core's own code reads the host's clock or sleeps; the photo's file name, which is the date, is marked as not pacing.
 - The Windows build links again. The OpenGL frames' header brought in GLEW's, which turned every GL call in `libretro_video.cpp` into a call through GLEW, and the Windows build has no GLEW: 176 undefined references to `__glewUseProgram` and the rest. On Windows the header now takes the GL types as RPCS3's OpenGL.h does there (`gl.h` and `glext.h`), so the calls stay RPCS3's own. A MinGW compile of `libretro_video.cpp` had 765 references to GLEW before, none after.
 - No host clock and no sleep left in what retro_run drives.
   - The pause watchdog is gone. It read the host's clock on a thread of its own to tell when RetroArch had stopped calling retro_run, and paused the game then; nothing needs it now that VBlank comes only from retro_run, so a frontend that stops calling it stops the game where it stands.

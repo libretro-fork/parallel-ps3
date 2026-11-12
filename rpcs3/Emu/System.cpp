@@ -80,6 +80,10 @@ std::string g_cfg_defaults;
 
 atomic_t<u64> g_watchdog_hold_ctr{0};
 
+#ifdef LIBRETRO_CORE
+atomic_t<u32> g_libretro_events{0};
+#endif
+
 extern bool ppu_load_exec(const ppu_exec_object&, bool virtual_load, const std::string&, utils::serial* = nullptr);
 extern void spu_load_exec(const spu_exec_object&);
 extern void spu_load_rel_exec(const spu_rel_object&);
@@ -877,12 +881,14 @@ bool Emulator::BootRsxCapture(const std::string& path)
 	}
 
 	m_state = system_state::loading;
+	state_changed();
 
 	fs::file in_file(path);
 
 	if (!in_file)
 	{
 		m_state = system_state::stopped;
+		state_changed();
 		return false;
 	}
 
@@ -910,6 +916,7 @@ bool Emulator::BootRsxCapture(const std::string& path)
 		if (load.data.empty())
 		{
 			m_state = system_state::stopped;
+			state_changed();
 			sys_log.error("Failed to unzip rsx capture file!");
 			return false;
 		}
@@ -924,6 +931,7 @@ bool Emulator::BootRsxCapture(const std::string& path)
 	if (frame->magic != rsx::c_fc_magic)
 	{
 		m_state = system_state::stopped;
+		state_changed();
 		sys_log.error("Invalid rsx capture file!");
 		return false;
 	}
@@ -931,6 +939,7 @@ bool Emulator::BootRsxCapture(const std::string& path)
 	if (frame->version != rsx::c_fc_version)
 	{
 		m_state = system_state::stopped;
+		state_changed();
 		sys_log.error("Rsx capture file version not supported! Expected %d, found %d", +rsx::c_fc_version, frame->version);
 		return false;
 	}
@@ -938,6 +947,7 @@ bool Emulator::BootRsxCapture(const std::string& path)
 	if (frame->LE_format != u32{std::endian::little == std::endian::native})
 	{
 		m_state = system_state::stopped;
+		state_changed();
 
 		static constexpr std::string_view machines[2]{"Big-Endian", "Little-Endian"};
 
@@ -976,6 +986,7 @@ bool Emulator::BootRsxCapture(const std::string& path)
 
 	// PS3 'executable'
 	m_state = system_state::ready;
+	state_changed();
 	g_emu_callbacks.on_ready();
 
 	g_emu_callbacks.init_gs_render(nullptr);
@@ -985,6 +996,7 @@ bool Emulator::BootRsxCapture(const std::string& path)
 
 	g_emu_callbacks.on_run(false);
 	m_state = system_state::starting;
+	state_changed();
 	m_state.notify_all();
 
 	ensure(g_fxo->init<named_thread<rsx::rsx_replay_thread>>("RSX Replay", std::move(frame)));
@@ -1003,6 +1015,7 @@ bool Emulator::BootBigPictureMode()
 	sys_log.notice("Big Picture Mode: booting window");
 
 	m_state = system_state::loading;
+	state_changed();
 
 	m_path.clear();
 	m_path_old.clear();
@@ -1037,6 +1050,7 @@ bool Emulator::BootBigPictureMode()
 
 	// No PS3 executable is loaded. GSRender/pad_thread only exist to host the Big Picture Mode overlay.
 	m_state = system_state::ready;
+	state_changed();
 	g_emu_callbacks.on_ready();
 
 	g_emu_callbacks.init_gs_render(nullptr);
@@ -1046,6 +1060,7 @@ bool Emulator::BootBigPictureMode()
 
 	g_emu_callbacks.on_run(false);
 	m_state = system_state::starting;
+	state_changed();
 	m_state.notify_all();
 
 	ensure(g_fxo->init<named_thread>("Big Picture Mode"sv, []()
@@ -1243,6 +1258,7 @@ game_boot_result Emulator::Load(const std::string& title_id, bool is_disc_patch,
 			}
 
 			_this->m_state.compare_and_swap_test(system_state::loading, system_state::stopped);
+			_this->state_changed();
 
 			if (_this->IsStopped())
 			{
@@ -1252,6 +1268,7 @@ game_boot_result Emulator::Load(const std::string& title_id, bool is_disc_patch,
 	} cleanup{this, recursion_count};
 
 	ensure(recursion_count != 0 || m_state.compare_and_swap_test(system_state::stopped, system_state::loading));
+	state_changed();
 
 	const auto guard = MakeEmulationStateGuard();
 
@@ -1958,6 +1975,7 @@ game_boot_result Emulator::Load(const std::string& title_id, bool is_disc_patch,
 		if (!launching_from_disc_archive && fs::is_dir(m_path))
 		{
 			m_state = system_state::ready;
+			state_changed();
 			g_emu_callbacks.on_ready();
 			ensure(g_fxo->init<main_ppu_module<lv2_obj>>());
 			vm::init();
@@ -2638,6 +2656,7 @@ game_boot_result Emulator::Load(const std::string& title_id, bool is_disc_patch,
 		}
 
 		m_state = system_state::ready;
+		state_changed();
 
 		ppu_prx_object ppu_prx;
 		ppu_rel_object ppu_rel;
@@ -2912,6 +2931,7 @@ void Emulator::Run(bool start_playtime)
 	rpcs3::utils::configure_logs();
 
 	m_state = system_state::starting;
+	state_changed();
 	m_state.notify_all();
 
 	if (g_cfg.misc.prevent_display_sleep)
@@ -3053,6 +3073,7 @@ void Emulator::FinalizeRunRequest()
 	lv2_obj::make_scheduler_ready();
 
 	m_state.compare_and_swap_test(system_state::starting, system_state::running);
+	state_changed();
 
 	m_ar.reset();
 
@@ -3110,6 +3131,8 @@ bool Emulator::Pause(bool freeze_emulation, bool show_resume_message)
 	{
 		return false;
 	}
+
+	state_changed();
 
 	if (old_state == system_state::ready || old_state == system_state::paused)
 	{
@@ -3255,6 +3278,8 @@ void Emulator::Resume()
 	{
 		return;
 	}
+
+	state_changed();
 
 	// Get pause start time
 	const u64 time = m_pause_start_time.exchange(0);
@@ -3527,6 +3552,8 @@ void Emulator::Kill(bool allow_autoexit, bool savestate, savestate_stage* save_s
 				return;
 			}
 
+			state_changed();
+
 			std::shared_ptr<std::shared_ptr<void>> pause_thread = std::make_shared<std::shared_ptr<void>>();
 
 			*pause_thread = make_ptr(new named_thread("Savestate Prepare Thread"sv, [pause_thread, allow_autoexit, this]() mutable
@@ -3564,6 +3591,7 @@ void Emulator::Kill(bool allow_autoexit, bool savestate, savestate_stage* save_s
 					}
 
 					m_emu_state_close_pending = false;
+					state_changed();
 
 					CallFromMainThread([pause = std::move(pause_thread)]()
 					{
@@ -3608,6 +3636,7 @@ void Emulator::Kill(bool allow_autoexit, bool savestate, savestate_stage* save_s
 					}
 
 					m_emu_state_close_pending = false;
+					state_changed();
 
 					CallFromMainThread([pause = std::move(pause_thread)]()
 					{
@@ -3651,6 +3680,8 @@ void Emulator::Kill(bool allow_autoexit, bool savestate, savestate_stage* save_s
 		return;
 	}
 
+	state_changed();
+
 	const auto reset_emu_state = [this]()
 	{
 		m_ar.reset();
@@ -3667,6 +3698,7 @@ void Emulator::Kill(bool allow_autoexit, bool savestate, savestate_stage* save_s
 		read_used_savestate_versions();
 		m_savestate_extension_flags1 = {};
 		m_emu_state_close_pending = false;
+		state_changed();
 		m_precompilation_option = {};
 	};
 
@@ -3696,6 +3728,8 @@ void Emulator::Kill(bool allow_autoexit, bool savestate, savestate_stage* save_s
 		return;
 	}
 
+	state_changed();
+
 	// Enable logging
 	rpcs3::utils::configure_logs(true);
 
@@ -3718,7 +3752,10 @@ void Emulator::Kill(bool allow_autoexit, bool savestate, savestate_stage* save_s
 	{
 		// Notify progress dialog that we are going to stop emulation
 		g_system_progress_stopping = continuous_savestate_mode ? system_progress_stop_state::stop_state_continuous_savestate : system_progress_stop_state::stop_state_stopping;
+#ifndef LIBRETRO_CORE
+		// (A frame in the core comes from retro_run, not from waiting here)
 		std::this_thread::sleep_for(30ms); // Enough for one frame to be rendered
+#endif
 	}
 
 	// Signal threads
@@ -3761,6 +3798,9 @@ void Emulator::Kill(bool allow_autoexit, bool savestate, savestate_stage* save_s
 		auto join_ended = std::make_shared<bool>(false);
 		auto to_ar = std::make_shared<atomic_ptr<utils::serial>>();
 
+#ifndef LIBRETRO_CORE
+		// (The core has nothing to report a slow stop or a savestate's progress
+		// to, and this only looks every 5 ms to tell it)
 		auto stop_watchdog = make_ptr(new named_thread("Stop Watchdog"sv,
 			[to_ar, init_mtx, join_ended, verbose_message, this]()
 		{
@@ -3815,6 +3855,7 @@ void Emulator::Kill(bool allow_autoexit, bool savestate, savestate_stage* save_s
 
 			*closed_sucessfully = true;
 		}));
+#endif
 
 		// Join threads
 		for (const auto& [type, data] : *g_fxo)
@@ -4289,7 +4330,11 @@ void Emulator::Kill(bool allow_autoexit, bool savestate, savestate_stage* save_s
 		set_progress_message("Resetting Objects");
 
 		// Final termination from main thread (move the last ownership of join thread in order to destroy it)
-		CallFromMainThread([join_thread = std::move(join_thread), reset_emu_state, verbose_message, stop_watchdog, init_mtx, allow_autoexit, return_to_big_picture_mode, this]()
+		CallFromMainThread([join_thread = std::move(join_thread), reset_emu_state, verbose_message,
+#ifndef LIBRETRO_CORE
+			stop_watchdog,
+#endif
+			init_mtx, allow_autoexit, return_to_big_picture_mode, this]()
 		{
 			cpu_thread::cleanup();
 
@@ -4301,7 +4346,9 @@ void Emulator::Kill(bool allow_autoexit, bool savestate, savestate_stage* save_s
 
 			vm::close();
 
+#ifndef LIBRETRO_CORE
 			*stop_watchdog = thread_state::finished;
+#endif
 			static_cast<void>(init_mtx->reset());
 
 			jit_runtime::finalize();
@@ -4346,6 +4393,7 @@ void Emulator::Kill(bool allow_autoexit, bool savestate, savestate_stage* save_s
 
 			// Complete the operation
 			m_state = system_state::stopped;
+			state_changed();
 
 			if (return_to_big_picture_mode)
 			{

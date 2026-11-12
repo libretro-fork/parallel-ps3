@@ -662,6 +662,16 @@ $(MOUSE_HANDOFF_TEST): $(OBJ_MOUSE_HANDOFF_TEST) $(OBJ_LIBRETRO) $(ARCHIVES)
 	$(SAY) LINK $@
 	$(Q)$(CXX) -o $@ $(OBJ_MOUSE_HANDOFF_TEST) $(OBJ_LIBRETRO) $(GROUP_START) $(ARCHIVES) $(GROUP_END) $(LDFLAGS) $(LIBS)
 
+# The emulator's waits on its state and on retro_run (Emu/System.h,
+# libretro_frontend.cpp), linked the same way
+EMU_WAITS_TEST := $(GEN_DIR)/test_emu_waits
+OBJ_EMU_WAITS_TEST := $(CORE_DIR)/rpcs3/libretro/tests/test_emu_waits.o
+$(OBJ_EMU_WAITS_TEST): FLAGS := $(FLAGS_LIBRETRO)
+
+$(EMU_WAITS_TEST): $(OBJ_EMU_WAITS_TEST) $(OBJ_LIBRETRO) $(ARCHIVES)
+	$(SAY) LINK $@
+	$(Q)$(CXX) -o $@ $(OBJ_EMU_WAITS_TEST) $(OBJ_LIBRETRO) $(GROUP_START) $(ARCHIVES) $(GROUP_END) $(LDFLAGS) $(LIBS)
+
 # LLVM, as the core is built with it, compiling and running code through
 # RPCS3's JIT; only when the core has LLVM
 LLVM_JIT_TEST := $(if $(filter 1,$(HAVE_LLVM)),$(GEN_DIR)/test_llvm_jit)
@@ -673,7 +683,7 @@ $(GEN_DIR)/test_llvm_jit: $(OBJ_LLVM_JIT_TEST) $(OBJ_LIBRETRO) $(ARCHIVES)
 	$(SAY) LINK $@
 	$(Q)$(CXX) -o $@ $(OBJ_LLVM_JIT_TEST) $(OBJ_LIBRETRO) $(GROUP_START) $(ARCHIVES) $(GROUP_END) $(LDFLAGS) $(LIBS)
 
-check: $(TARGET) $(SAVESTATE_TEST) $(DECODERS_TEST) $(PATCHES_TEST) $(AUDIO_TEST) $(VK_HANDOFF_TEST) $(PAD_HANDOFF_TEST) $(MOUSE_HANDOFF_TEST) $(LLVM_JIT_TEST)
+check: $(TARGET) $(SAVESTATE_TEST) $(DECODERS_TEST) $(PATCHES_TEST) $(AUDIO_TEST) $(VK_HANDOFF_TEST) $(PAD_HANDOFF_TEST) $(MOUSE_HANDOFF_TEST) $(EMU_WAITS_TEST) $(LLVM_JIT_TEST)
 	@$(MAKE) -q $(EMBED_STAMPS) || { echo "check: the embedded sources are made again on every build"; exit 1; }
 	$(HOST_CC) -O2 -o $(GEN_DIR)/load_test $(CORE_DIR)/rpcs3/libretro/make/load_test.c -ldl
 	$(GEN_DIR)/load_test ./$(TARGET)
@@ -684,9 +694,10 @@ check: $(TARGET) $(SAVESTATE_TEST) $(DECODERS_TEST) $(PATCHES_TEST) $(AUDIO_TEST
 	$(VK_HANDOFF_TEST)
 	$(PAD_HANDOFF_TEST)
 	$(MOUSE_HANDOFF_TEST)
+	$(EMU_WAITS_TEST)
 	$(if $(LLVM_JIT_TEST),$(LLVM_JIT_TEST))
 
--include $(OBJECTS:.o=.d) $(OBJ_SAVESTATE_TEST:.o=.d) $(OBJ_DECODERS_TEST:.o=.d) $(OBJ_PATCHES_TEST:.o=.d) $(OBJ_AUDIO_TEST:.o=.d) $(OBJ_VK_HANDOFF_TEST:.o=.d) $(OBJ_PAD_HANDOFF_TEST:.o=.d) $(OBJ_MOUSE_HANDOFF_TEST:.o=.d) $(OBJ_LLVM_JIT_TEST:.o=.d)
+-include $(OBJECTS:.o=.d) $(OBJ_SAVESTATE_TEST:.o=.d) $(OBJ_DECODERS_TEST:.o=.d) $(OBJ_PATCHES_TEST:.o=.d) $(OBJ_AUDIO_TEST:.o=.d) $(OBJ_VK_HANDOFF_TEST:.o=.d) $(OBJ_PAD_HANDOFF_TEST:.o=.d) $(OBJ_MOUSE_HANDOFF_TEST:.o=.d) $(OBJ_EMU_WAITS_TEST:.o=.d) $(OBJ_LLVM_JIT_TEST:.o=.d)
 
 clean:
 	@$(REMOVE_OBJECTS)

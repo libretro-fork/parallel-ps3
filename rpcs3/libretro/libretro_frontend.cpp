@@ -1,16 +1,15 @@
 #include "stdafx.h"
 
 #include "Emu/Io/pad_config.h"
+#include "Emu/System.h"
 
 #include <atomic>
-#include <chrono>
 #include <cstdio>
 #include <cstdlib>
 #include <functional>
 #include <stdexcept>
 #include <string>
 #include <string_view>
-#include <thread>
 
 cfg_input_configurations g_cfg_input_configs;
 std::string g_input_config_override;
@@ -25,25 +24,23 @@ std::string g_input_config_override;
 	throw std::runtime_error(std::string(text));
 }
 
+// The emulator's waits for its own state (a stop to finish) and for the game
+// (to take an exit request, which it is given a second of): standalone sleeps
+// the given time between looks. Here a look comes at each change of the
+// emulator's state and at each retro_run, so the game's time is counted in
+// the frontend's frames, and nothing sleeps. 0 is a loop doing work in steps,
+// not a wait.
 void qt_events_aware_op(int repeat_duration_ms, std::function<bool()> wrapped_op)
 {
 	if (!wrapped_op)
 		return;
 
-	if (repeat_duration_ms < 0)
-		repeat_duration_ms = 0;
-
-	const auto delay = std::chrono::milliseconds(repeat_duration_ms);
-
-	while (!wrapped_op())
+	for (;;)
 	{
-		if (repeat_duration_ms == 0)
-		{
-			std::this_thread::yield();
-		}
-		else
-		{
-			std::this_thread::sleep_for(delay);
-		}
+		const u32 events = g_libretro_events;
+		if (wrapped_op())
+			return;
+		if (repeat_duration_ms > 0)
+			g_libretro_events.wait(events);
 	}
 }

@@ -433,6 +433,9 @@ test_sw_frames_tsan: $(SW_FRAMES_DEPS)
 test_gl_frames: test_gl_frames.c test_common.h ../libretro_gl_frames.c ../libretro_gl_frames.h $(LRC)/include/retro_atomic.h
 	$(CC) $(CFLAGS) -std=gnu99 -I../../../3rdparty/glew/include $(SANITIZE) -o $@ test_gl_frames.c ../libretro_gl_frames.c $(LDFLAGS) $(LDLIBS) -lEGL -lpthread
 
+# The core's own code, searched for host clocks and sleeps
+CLOCK_FILES := $(filter-out ../libretro.h,$(wildcard ../*.c ../*.cpp ../*.h)) ../../Emu/RSX/VK/VKLibretro.cpp ../../Emu/RSX/VK/VKLibretro.h
+
 # Each test also writes what the new code produces, for the reference
 # tools to read back
 check: all
@@ -465,6 +468,7 @@ check: all
 	./test_sw_frames
 	./test_sw_frames_tsan
 	./test_gl_frames
+	./no_host_clock.sh $(CLOCK_FILES)
 
 clean:
 	rm -rf obj $(TESTS) *_out.* rec_out
