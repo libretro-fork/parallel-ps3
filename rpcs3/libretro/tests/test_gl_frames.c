@@ -10,7 +10,8 @@
  *   half drawn, none mixed with the next one drawn over it;
  * - every frame shown is newer than the last, at the size it was drawn
  *   (the size changes now and then);
- * - neither thread waits for the other on the CPU: the GPU waits on fences.
+ * - neither thread waits for the other on the CPU: the GPU waits on fences;
+ * - the teardown frees the frames' textures, and starts over.
  *
  * This is the protocol on a software rasteriser, not on a GPU's driver.
  *
@@ -144,6 +145,7 @@ int main(void)
    pthread_t t;
    GLuint dst_tex = 0, dst_fbo = 0;
    unsigned shown = 0, last = 0, torn = 0, older = 0, wrong_size = 0;
+   int w_end = 0, h_end = 0;
 
    get_platform_display = (PFNEGLGETPLATFORMDISPLAYEXTPROC)eglGetProcAddress("eglGetPlatformDisplayEXT");
    dpy = get_platform_display ? get_platform_display(EGL_PLATFORM_SURFACELESS_MESA, EGL_DEFAULT_DISPLAY, NULL) : EGL_NO_DISPLAY;
@@ -232,11 +234,26 @@ int main(void)
    printf("gl frames: %u of %u frames shown, %u torn, %u older than the last, %u at the wrong size\n",
          shown, FRAMES, torn, older, wrong_size);
 
-   lr_gl_frames_destroy_show();
-   eglMakeCurrent(dpy, EGL_NO_SURFACE, EGL_NO_SURFACE, draw_ctx);
-   lr_gl_frames_destroy_draw();
+   /* As the core tears down: the renderer's context, then everything else
+    * from the frontend's - and again, to start over */
+   {
+      GLboolean (GLAPIENTRY *is_texture)(GLuint) = PROC(GLboolean (GLAPIENTRY*)(GLuint), "glIsTexture");
+      GLuint name;
+      unsigned before = 0, after = 0;
+      for (name = 1; name < 64; name++)
+         before += is_texture(name) ? 1 : 0;
+      eglDestroyContext(dpy, draw_ctx);
+      lr_gl_frames_destroy();
+      for (name = 1; name < 64; name++)
+         after += is_texture(name) ? 1 : 0;
+      /* the three frames' and the frontend's own; then the frontend's alone */
+      TEST_CHECK(before == 4);
+      TEST_CHECK(after == 1);
+      printf("gl frames: %u textures before the teardown, %u after\n", before, after);
+   }
+   TEST_CHECK(!lr_gl_frames_blit(dst_fbo, &w_end, &h_end));
+   lr_gl_frames_destroy();
    eglMakeCurrent(dpy, EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT);
-   eglDestroyContext(dpy, draw_ctx);
    eglDestroyContext(dpy, show_ctx);
    eglTerminate(dpy);
 

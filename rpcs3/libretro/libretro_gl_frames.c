@@ -187,28 +187,7 @@ size_t lr_gl_frames_published(void)
    return retro_atomic_load_acquire_size(&s_published);
 }
 
-void lr_gl_frames_destroy_draw(void)
-{
-   unsigned i;
-   for (i = 0; i < GL_FRAMES; i++)
-   {
-      struct gl_frame *f = &s_frames[i];
-      if (f->draw_fbo)
-         gl.delete_framebuffers(1, &f->draw_fbo);
-      if (f->depth)
-         gl.delete_renderbuffers(1, &f->depth);
-      if (f->texture)
-         gl.delete_textures(1, &f->texture);
-      if (f->drawn)
-         gl.delete_sync(f->drawn);
-      f->draw_fbo = f->depth = f->texture = 0;
-      f->tex_width = f->tex_height = 0;
-      f->drawn = NULL;
-   }
-   s_draw_width = s_draw_height = 0;
-}
-
-void lr_gl_frames_destroy_show(void)
+void lr_gl_frames_destroy(void)
 {
    unsigned i;
    for (i = 0; i < GL_FRAMES; i++)
@@ -216,9 +195,18 @@ void lr_gl_frames_destroy_show(void)
       struct gl_frame *f = &s_frames[i];
       if (f->show_fbo)
          gl.delete_framebuffers(1, &f->show_fbo);
+      if (f->depth)
+         gl.delete_renderbuffers(1, &f->depth);
+      if (f->texture)
+         gl.delete_textures(1, &f->texture);
+      if (f->drawn)
+         gl.delete_sync(f->drawn);
       if (f->shown)
          gl.delete_sync(f->shown);
-      f->show_fbo = f->show_texture = 0;
-      f->shown = NULL;
+      memset(f, 0, sizeof(*f));
    }
+   s_draw        = 1;
+   s_show        = 2;
+   s_draw_width  = s_draw_height = 0;
+   retro_atomic_store_release_int(&s_ready, 0);
 }

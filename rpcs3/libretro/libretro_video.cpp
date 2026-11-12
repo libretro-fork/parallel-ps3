@@ -560,6 +560,7 @@ void libretro_video_deinit()
     std::lock_guard<std::mutex> lock(s_video_mutex);
     s_get_current_framebuffer = nullptr;
     s_get_proc_address = nullptr;
+    const bool had_gl = s_gl_initialized;
 
 #if defined(__unix__) && !defined(__APPLE__)
     // Now that the frontend is dropping the context, it is safe to destroy the
@@ -611,6 +612,13 @@ void libretro_video_deinit()
     s_context_backend = shared_context_backend::none;
     s_gl_initialized = false;
 #endif
+
+    // The renderer's frames: its contexts are gone above, and the textures
+    // and depth buffers it drew into belong to the share group, so they go
+    // from the frontend's context, current here. They were never freed
+    // before.
+    if (had_gl)
+        lr_gl_frames_destroy();
 }
 
 uintptr_t libretro_get_current_framebuffer()

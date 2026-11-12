@@ -72,10 +72,12 @@ bool lr_gl_frames_blit(GLuint dst_fbo, int *width, int *height);
 /* Every frame published, for retro_run's stall report */
 size_t lr_gl_frames_published(void);
 
-/* Each context's objects, with its context current; the textures go with the
- * renderer's. Neither thread may be using them. */
-void lr_gl_frames_destroy_draw(void);
-void lr_gl_frames_destroy_show(void);
+/* Everything, from the frontend's context, current, once the renderer has
+ * stopped: the textures, depth buffers and fences (objects of the share
+ * group), and this context's framebuffers. The renderer's framebuffers go with
+ * its context; destroy that first, or with it current call this before.
+ * Afterwards it starts over as at first. */
+void lr_gl_frames_destroy(void);
 
 #ifdef __cplusplus
 }
