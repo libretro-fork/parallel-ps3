@@ -2,32 +2,10 @@
 
 #include "Emu/Audio/AudioBackend.h"
 #include "libretro.h"
+#include "libretro_audio_out.h"
 
 #include <retro_atomic.h>
 
-
-// Multi-channel audio (RetroArch since 10 September 2026), from the current
-// libretro.h, which the core's copy predates
-#ifndef RETRO_ENVIRONMENT_GET_AUDIO_SAMPLE_BATCH_MULTI
-#define RETRO_ENVIRONMENT_GET_AUDIO_SAMPLE_BATCH_MULTI (94 | RETRO_ENVIRONMENT_EXPERIMENTAL)
-#define RETRO_AUDIO_SPEAKER_FRONT_LEFT    0x001
-#define RETRO_AUDIO_SPEAKER_FRONT_RIGHT   0x002
-#define RETRO_AUDIO_SPEAKER_FRONT_CENTER  0x004
-#define RETRO_AUDIO_SPEAKER_LOW_FREQUENCY 0x008
-#define RETRO_AUDIO_SPEAKER_BACK_LEFT     0x010
-#define RETRO_AUDIO_SPEAKER_BACK_RIGHT    0x020
-#define RETRO_AUDIO_SPEAKER_SIDE_LEFT     0x200
-#define RETRO_AUDIO_SPEAKER_SIDE_RIGHT    0x400
-typedef size_t (RETRO_CALLCONV *retro_audio_sample_batch_multi_int16_t)(
-      const int16_t *data, size_t frames, unsigned channels, unsigned layout);
-typedef size_t (RETRO_CALLCONV *retro_audio_sample_batch_multi_float_t)(
-      const float *data, size_t frames, unsigned channels, unsigned layout);
-struct retro_audio_sample_multi_callback
-{
-   retro_audio_sample_batch_multi_int16_t batch_int16;
-   retro_audio_sample_batch_multi_float_t batch_float;
-};
-#endif
 
 // Asks the frontend for multi-channel output; true when it takes it, and
 // from then on all audio goes through it (the frontend's rule: one or the
@@ -53,6 +31,9 @@ private:
     // waits for it - it pulls nothing that run and the time is owed to the
     // next - and the other side waits only out of a pull.
     retro_atomic_int_t m_access;
+
+    // The layout's speakers as the frontend names them, worked out at Open
+    unsigned m_speakers = 0;
 
     void begin_exclusive();
     void end_exclusive();
@@ -82,10 +63,10 @@ public:
     bool Initialized() override { return retro_atomic_load_acquire_int(&m_initialized) != 0; }
 
     // retro_run's: up to @max_frames frames of the game's audio into @out
-    // (room for max_frames of eight floats), in the backend's format - floats
-    // when *@is_float, s16 otherwise - and @channels and @layout as they are
-    // for them; the frames given, 0 when there is nothing to give this run
-    size_t GetSamples(void* out, size_t max_frames, bool* is_float, u32* channels, audio_channel_layout* layout);
+    // (room for max_frames of eight floats), in the backend's format, which
+    // @format is told; the frames given, 0 when there is nothing to give
+    // this run
+    size_t GetSamples(void* out, size_t max_frames, lr_audio_format* format);
 };
 
 // Global audio backend instance access

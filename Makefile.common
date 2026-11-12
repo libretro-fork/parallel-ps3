@@ -759,6 +759,7 @@ SOURCES_LIBRETRO := \
 	$(CORE_DIR)/rpcs3/Input/ps_move_tracker.cpp \
 	$(CORE_DIR)/rpcs3/libretro/config_database.c \
 	$(CORE_DIR)/rpcs3/libretro/libretro_audio.cpp \
+	$(CORE_DIR)/rpcs3/libretro/libretro_audio_out.c \
 	$(CORE_DIR)/rpcs3/libretro/libretro_core.cpp \
 	$(CORE_DIR)/rpcs3/libretro/libretro_firmware.cpp \
 	$(CORE_DIR)/rpcs3/libretro/libretro_frontend.cpp \
