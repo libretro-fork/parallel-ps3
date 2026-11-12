@@ -13,6 +13,7 @@
 // - a gun moving flat out on retro_run's thread and the game reading on two
 //   of its own, one of them away for longer than the log at times: the
 //   mouse only ever moves on, never back, and ends where the gun is;
+// - the frontend is asked about the guns only while there are mice;
 // - only the first Init sets the mice up; a mouse that is not connected, and
 //   one that is not there; interception.
 //
@@ -39,8 +40,13 @@ static int failures = 0;
 
 static std::atomic<int> s_x{0}, s_y{0}, s_trigger{0};
 
+static std::atomic<unsigned> s_gun_calls{0};
+
 static int16_t RETRO_CALLCONV gun_state(unsigned port, unsigned device, unsigned, unsigned id)
 {
+	if (device == RETRO_DEVICE_LIGHTGUN)
+		s_gun_calls++;
+
 	if (port != 0 || device != RETRO_DEVICE_LIGHTGUN)
 		return 0;
 	switch (id)
@@ -72,7 +78,30 @@ int main()
 		CHECK(mice.take_data(0, nullptr, 0, true) == -1);
 	}
 
+	// No mice yet: the frontend is not asked about the guns
+	s_gun_calls = 0;
+	frame(mice);
+	frame(mice);
+	CHECK(s_gun_calls == 0);
+
 	mice.Init(7);
+
+	// The run the mice appear in tells the input they are read; the guns are
+	// asked about from the next, and the mice start from where they are then
+	s_x = 500;
+	frame(mice);
+	CHECK(s_gun_calls == 0);
+	{
+		mouse_port p;
+		CHECK(mice.read_port(0, p) && p.mouse.x_pos_pixels == 0 && p.list_count == 0);
+	}
+	frame(mice);
+	CHECK(s_gun_calls > 0);
+	{
+		mouse_port p;
+		CHECK(mice.read_port(0, p) && p.mouse.x_pos_pixels == 500 + 0x7fff && p.list_count == 1);
+		CHECK(mice.take_data(0, nullptr, 0, true) == 0);
+	}
 	CHECK(mice.max_connect() == 7 && mice.now_connect() == 4 && mice.count() == 7);
 	CHECK(mice.status(3) == CELL_MOUSE_STATUS_CONNECTED && mice.status(4) == CELL_MOUSE_STATUS_DISCONNECTED);
 	CHECK(mice.vendor_id(0) == 0x1234 && mice.product_id(0) == 0x1234 && mice.vendor_id(7) == 0);

@@ -48,8 +48,17 @@ void libretro_input_init(void);
 /* Polls do nothing until the next libretro_input_init */
 void libretro_input_deinit(void);
 
-/* Reads the pads and the guns from the frontend */
+/* Reads the pads from the frontend, and the guns while something reads them */
 void libretro_input_poll(retro_input_state_t input_state_cb);
+
+/* Whether anything reads the guns: the PS3's mice, once a game or an
+ * emulated device has set them up. While nothing does (most games) a poll
+ * does not ask the frontend about them - nine calls a port a run - and
+ * every port has no gun. The arcade shooter mode reads them regardless. */
+void libretro_input_set_guns_read(bool read);
+
+/* Whether the last poll asked the frontend about the guns */
+bool libretro_input_guns_polled(void);
 
 /* The frontend answers RETRO_DEVICE_ID_JOYPAD_MASK: one call for a pad's
  * sixteen buttons */

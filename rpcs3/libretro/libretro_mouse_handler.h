@@ -27,6 +27,7 @@ public:
     LibretroMouseHandler();
     explicit LibretroMouseHandler(utils::serial* ar);
     explicit LibretroMouseHandler(utils::serial& ar) : LibretroMouseHandler(&ar) {}
+    ~LibretroMouseHandler() override;
 
     void Init(const u32 max_connect) override;
 
@@ -54,6 +55,7 @@ private:
     // retro_run's alone
     last_state m_last[max_guns]{};
     u32 m_seen_inits = 0;
+    bool m_asked = false; // the frontend was asked about the guns for the run before
 
     // The log: event n of a mouse is at n % log_events, written before the
     // base's m_head goes past n. kind | button << 8 | pressed << 16 | wheel << 24,

@@ -14,6 +14,10 @@ namespace
     enum : u32 { event_move = 1, event_button, event_scroll };
 }
 
+// The handler the emulator has, when it is this one: its address, to tell
+// it from another kind without asking for its type every run
+static retro_atomic_ptr_t s_handler;
+
 LibretroMouseHandler::LibretroMouseHandler()
 {
     init_log();
@@ -23,6 +27,11 @@ LibretroMouseHandler::LibretroMouseHandler(utils::serial* ar)
     : MouseHandlerBase(ar)
 {
     init_log();
+}
+
+LibretroMouseHandler::~LibretroMouseHandler()
+{
+    retro_atomic_cas_ptr(&s_handler, static_cast<MouseHandlerBase*>(this), nullptr);
 }
 
 void LibretroMouseHandler::init_log()
@@ -39,6 +48,7 @@ void LibretroMouseHandler::init_log()
     }
     retro_atomic_int_init(&m_setup, 0);
     retro_atomic_int_init(&m_inits, 0);
+    retro_atomic_store_release_ptr(&s_handler, static_cast<MouseHandlerBase*>(this));
 }
 
 void LibretroMouseHandler::Init(const u32 max_connect)
@@ -75,6 +85,26 @@ void LibretroMouseHandler::push(u32 index, u32 a, u32 b)
 void LibretroMouseHandler::update()
 {
     const u32 mice = count();
+
+    // The frontend is asked about the guns only while there are mice for
+    // them. The run they appear in has no gun read yet: the mice start with
+    // the next, from where the guns are then.
+    libretro_input_set_guns_read(mice != 0);
+
+    if (!mice || !libretro_input_guns_polled())
+    {
+        // And when they are asked about again, the mice are told anew where
+        // they are
+        m_asked = false;
+        return;
+    }
+
+    if (!m_asked)
+    {
+        m_asked = true;
+        for (last_state& last : m_last)
+            last = {};
+    }
 
     // Set up again: the mice start from nothing, and so does what retro_run
     // last handed them
@@ -201,12 +231,14 @@ void LibretroMouseHandler::apply_pending(u32 port, mouse_port& copy)
 
 void libretro_mouse_update()
 {
-    if (Emu.IsStopped())
-        return;
+    MouseHandlerBase* handler = Emu.IsStopped() ? nullptr : g_fxo->try_get<MouseHandlerBase>();
 
-    if (auto* handler = g_fxo->try_get<MouseHandlerBase>())
+    if (handler && handler == retro_atomic_load_acquire_ptr(&s_handler))
     {
-        if (auto* mouse = dynamic_cast<LibretroMouseHandler*>(handler))
-            mouse->update();
+        static_cast<LibretroMouseHandler*>(handler)->update();
+        return;
     }
+
+    // No mice: nothing reads the guns
+    libretro_input_set_guns_read(false);
 }

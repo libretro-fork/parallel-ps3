@@ -143,7 +143,7 @@ static bool environment(unsigned cmd, void *data)
 int main(void)
 {
    unsigned port, n;
-   unsigned calls_mask, calls_each;
+   unsigned calls_idle, calls_mask, calls_each;
    const struct LibretroGunState *gun;
 
    /* Before anything: no gun, and a poll asks nothing */
@@ -155,9 +155,22 @@ int main(void)
    TEST_CHECK(libretro_input_get_gun(0)->offscreen);
    TEST_CHECK(libretro_input_get_state(0)->connected);
 
-   /* The buttons as one mask */
+   /* Nothing reads the guns (no PS3 mice, as in most games): the frontend
+    * is not asked about them, and there is none */
    libretro_input_set_bitmask_supported(true);
    poll();
+   calls_idle = s_total;
+   TEST_CHECK(s_calls[RETRO_DEVICE_LIGHTGUN] == 0 && s_calls[RETRO_DEVICE_MOUSE] == 0);
+   TEST_CHECK(s_total == LIBRETRO_MAX_PADS * 17);
+   TEST_CHECK(!libretro_input_guns_polled());
+   TEST_CHECK(libretro_input_get_gun(0)->offscreen && !libretro_input_get_gun(0)->trigger);
+   for (port = 0; port < LIBRETRO_MAX_PADS; port++)
+      check_pad(port);
+
+   /* Something reads them. The buttons as one mask */
+   libretro_input_set_guns_read(true);
+   poll();
+   TEST_CHECK(libretro_input_guns_polled());
    calls_mask = s_total;
    TEST_CHECK(s_calls[RETRO_DEVICE_JOYPAD]   == LIBRETRO_MAX_PADS);
    TEST_CHECK(s_calls[RETRO_DEVICE_ANALOG]   == LIBRETRO_MAX_PADS * (12 + 4));
@@ -311,7 +324,23 @@ int main(void)
       TEST_CHECK(n == LIBRETRO_MAX_PADS);
    }
 
-   printf("test_input_poll: %u frontend calls a run with the buttons as a mask, %u one by one; %s\n",
-         calls_mask, calls_each, test_failures ? "FAIL" : "ok");
+   /* Nothing reads the guns any more: not asked about, and none left
+    * where the last poll had them */
+   libretro_input_init();
+   libretro_input_set_guns_read(true);
+   poll();
+   TEST_CHECK(!libretro_input_get_gun(0)->offscreen);
+   libretro_input_set_guns_read(false);
+   poll();
+   TEST_CHECK(s_calls[RETRO_DEVICE_LIGHTGUN] == 0 && s_calls[RETRO_DEVICE_MOUSE] == 0);
+   TEST_CHECK(libretro_input_get_gun(0)->offscreen && !libretro_input_get_gun(0)->trigger && libretro_input_get_gun(0)->x == 0);
+   /* The arcade shooter mode reads them whatever the mice */
+   libretro_input_set_usio_shooter(true);
+   poll();
+   TEST_CHECK(s_calls[RETRO_DEVICE_LIGHTGUN] == LIBRETRO_MAX_GUNS * 7);
+   libretro_input_set_usio_shooter(false);
+
+   printf("test_input_poll: %u frontend calls a run with nothing reading the guns, %u with the PS3's mice set up, %u with the buttons one by one; %s\n",
+         calls_idle, calls_mask, calls_each, test_failures ? "FAIL" : "ok");
    return test_failures ? 1 : 0;
 }

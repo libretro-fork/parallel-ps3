@@ -14,6 +14,8 @@ static unsigned s_device_types[LIBRETRO_MAX_PADS];
 static bool s_usio_shooter;
 static bool s_initialized;
 static bool s_bitmask_supported;
+static bool s_guns_read;
+static bool s_guns_polled;
 
 /* What a port there is not reads as: nothing pressed, no gun */
 static const struct LibretroInputState s_no_pad;
@@ -48,6 +50,8 @@ void libretro_input_init(void)
    for (port = 0; port < LIBRETRO_MAX_GUNS; port++)
       s_gun_states[port] = s_no_gun;
 
+   s_guns_read   = false;
+   s_guns_polled = false;
    s_initialized = true;
 }
 
@@ -114,8 +118,22 @@ void libretro_input_poll(retro_input_state_t input_state_cb)
             RETRO_DEVICE_INDEX_ANALOG_RIGHT, RETRO_DEVICE_ID_ANALOG_Y);
    }
 
-   /* Light guns. RetroArch answers these for every port, from a real gun or
-    * from the mouse it binds as one, whatever device the port is set to. */
+   /* Light guns, while something reads them */
+   if (!s_guns_read && !s_usio_shooter)
+   {
+      if (s_guns_polled)
+      {
+         for (port = 0; port < LIBRETRO_MAX_GUNS; port++)
+            s_gun_states[port] = s_no_gun;
+         s_guns_polled = false;
+      }
+      return;
+   }
+
+   s_guns_polled = true;
+
+   /* RetroArch answers these for every port, from a real gun or from the
+    * mouse it binds as one, whatever device the port is set to. */
    for (port = 0; port < LIBRETRO_MAX_GUNS; port++)
    {
       struct LibretroGunState *gun = &s_gun_states[port];
@@ -157,6 +175,16 @@ void libretro_input_poll(retro_input_state_t input_state_cb)
             state->buttons[RETRO_DEVICE_ID_JOYPAD_Y]     = 1;
       }
    }
+}
+
+void libretro_input_set_guns_read(bool read)
+{
+   s_guns_read = read;
+}
+
+bool libretro_input_guns_polled(void)
+{
+   return s_guns_polled;
 }
 
 void libretro_input_set_controller(unsigned port, unsigned device)
