@@ -3,16 +3,25 @@
 #include "Emu/Io/usb_device.h"
 #include "Utilities/mutex.h"
 #include <array>
-#include <queue>
+#include <queues/retro_deque.h>
+
+using sky_query = std::array<u8, 32>;
+RETRO_DEQUE_DEFINE(sky_statuses, u8);
+RETRO_DEQUE_DEFINE(sky_queries, sky_query);
 
 struct skylander
 {
 	fs::file sky_file;
 	u8 status = 0;
-	std::queue<u8> queued_status;
+	sky_statuses_t queued_status{};
 	std::array<u8, 0x40 * 0x10> data{};
 	u32 last_id = 0;
 	void save();
+
+	skylander() { ensure(sky_statuses_init(&queued_status, 16)); }
+	~skylander() { sky_statuses_free(&queued_status); }
+	skylander(const skylander&) = delete;
+	skylander& operator=(const skylander&) = delete;
 };
 
 class sky_portal
@@ -54,5 +63,5 @@ public:
 	void interrupt_transfer(u32 buf_size, u8* buf, u32 endpoint, UsbTransfer* transfer) override;
 
 protected:
-	std::queue<std::array<u8, 32>> q_queries;
+	sky_queries_t q_queries{};
 };

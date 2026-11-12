@@ -16,6 +16,40 @@
 
 #include "lv2_socket_p2p.h"
 
+#include <queues/retro_deque.h>
+
+RETRO_DEQUE_DEFINE(p2ps_backlog, s32);
+
+// The backlog in a savestate, byte for byte as the std::deque it was: how
+// many, then each
+inline void p2ps_backlog_save(utils::serial& ar, const p2ps_backlog_t& backlog)
+{
+	const usz count = p2ps_backlog_count(&backlog);
+	ar.serialize_vle(count);
+
+	for (usz i = 0; i < count; i++)
+	{
+		ar(*p2ps_backlog_at(&backlog, i));
+	}
+}
+
+inline void p2ps_backlog_load(utils::serial& ar, p2ps_backlog_t& backlog)
+{
+	usz count = 0;
+
+	if (!ar.deserialize_vle<28>(count))
+	{
+		return;
+	}
+
+	for (usz i = 0; i < count && ar.is_valid(); i++)
+	{
+		s32 id = 0;
+		ar(id);
+		ensure(p2ps_backlog_push_back_growing(&backlog, &id));
+	}
+}
+
 struct nt_p2p_port;
 
 constexpr be_t<u32> P2PS_U2S_SIG = (static_cast<u32>('U') << 24 | static_cast<u32>('2') << 16 | static_cast<u32>('S') << 8 | static_cast<u32>('0'));
@@ -64,6 +98,7 @@ public:
 	lv2_socket_p2ps(lv2_socket_family family, lv2_socket_type type, lv2_ip_protocol protocol);
 	lv2_socket_p2ps(socket_type socket, u16 port, u16 vport, u32 op_addr, u16 op_port, u16 op_vport, u64 cur_seq, u64 data_beg_seq, s32 so_nbio);
 	lv2_socket_p2ps(utils::serial& ar, lv2_socket_type type);
+	~lv2_socket_p2ps() noexcept override;
 	void save(utils::serial& ar);
 
 	p2ps_stream_status get_status() const;
@@ -105,7 +140,7 @@ private:
 	p2ps_stream_status status = p2ps_stream_status::stream_closed;
 
 	usz max_backlog = 0; // set on listen
-	std::deque<s32> backlog;
+	p2ps_backlog_t backlog{};
 
 	u16 op_port = 0, op_vport = 0;
 	u32 op_addr = 0;

@@ -4,7 +4,10 @@
 #include "Utilities/mutex.h"
 #include <array>
 #include <optional>
-#include <queue>
+#include <queues/retro_deque.h>
+
+using infinity_reply = std::array<u8, 32>;
+RETRO_DEQUE_DEFINE(infinity_replies, infinity_reply);
 
 struct infinity_figure
 {
@@ -49,7 +52,13 @@ private:
 	u32 random_d = 0;
 
 	u8 m_figure_order = 0;
-	std::queue<std::array<u8, 32>> m_figure_added_removed_responses;
+	infinity_replies_t m_figure_added_removed_responses{};
+
+public:
+	infinity_base() { ensure(infinity_replies_init(&m_figure_added_removed_responses, 16)); }
+	~infinity_base() { infinity_replies_free(&m_figure_added_removed_responses); }
+
+private:
 };
 
 extern infinity_base g_infinitybase;
@@ -67,5 +76,5 @@ public:
 	void interrupt_transfer(u32 buf_size, u8* buf, u32 endpoint, UsbTransfer* transfer) override;
 
 protected:
-	std::queue<std::array<u8, 32>> m_queries;
+	infinity_replies_t m_queries{};
 };

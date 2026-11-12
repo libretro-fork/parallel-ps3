@@ -262,11 +262,11 @@ std::optional<std::array<u8, 32>> infinity_base::pop_added_removed_response()
 {
 	std::lock_guard lock(infinity_mutex);
 
-	if (m_figure_added_removed_responses.empty())
+	if (infinity_replies_empty(&m_figure_added_removed_responses))
 		return std::nullopt;
 
-	std::array<u8, 32> response = m_figure_added_removed_responses.front();
-	m_figure_added_removed_responses.pop();
+	std::array<u8, 32> response = *infinity_replies_front(&m_figure_added_removed_responses);
+	infinity_replies_pop_front(&m_figure_added_removed_responses);
 	return response;
 }
 
@@ -290,7 +290,7 @@ bool infinity_base::remove_figure(u8 position)
 
 	std::array<u8, 32> figure_change_response = {0xab, 0x04, position, 0x09, figure.order_added, 0x01};
 	figure_change_response[6] = generate_checksum(figure_change_response, 6);
-	m_figure_added_removed_responses.push(figure_change_response);
+	ensure(infinity_replies_push_back_growing(&m_figure_added_removed_responses, &figure_change_response));
 
 	figure.save();
 	figure.inf_file.close();
@@ -352,7 +352,7 @@ u32 infinity_base::load_figure(const std::array<u8, 0x14 * 0x10>& buf, fs::file 
 
 	std::array<u8, 32> figure_change_response = {0xab, 0x04, position, 0x09, order_added, 0x00};
 	figure_change_response[6] = generate_checksum(figure_change_response, 6);
-	m_figure_added_removed_responses.push(figure_change_response);
+	ensure(infinity_replies_push_back_growing(&m_figure_added_removed_responses, &figure_change_response));
 
 	return number;
 }
@@ -360,6 +360,7 @@ u32 infinity_base::load_figure(const std::array<u8, 0x14 * 0x10>& buf, fs::file 
 usb_device_infinity::usb_device_infinity(const std::array<u8, 7>& location)
 	: usb_device_emulated(location)
 {
+	ensure(infinity_replies_init(&m_queries, 16));
 	device = UsbDescriptorNode(USB_DESCRIPTOR_DEVICE, UsbDeviceDescriptor{0x200, 0x0, 0x0, 0x0, 0x20, 0x0E6F, 0x0129, 0x200, 0x1, 0x2, 0x3, 0x1});
 	auto& config0 = device.add_node(UsbDescriptorNode(USB_DESCRIPTOR_CONFIG, UsbDeviceConfiguration{0x29, 0x1, 0x1, 0x0, 0x80, 0xFA}));
 	config0.add_node(UsbDescriptorNode(USB_DESCRIPTOR_INTERFACE, UsbDeviceInterface{0x0, 0x0, 0x2, 0x3, 0x0, 0x0, 0x0}));
@@ -370,6 +371,7 @@ usb_device_infinity::usb_device_infinity(const std::array<u8, 7>& location)
 
 usb_device_infinity::~usb_device_infinity()
 {
+	infinity_replies_free(&m_queries);
 }
 
 std::shared_ptr<usb_device> usb_device_infinity::make_instance(u32, const std::array<u8, 7>& location)
@@ -404,10 +406,10 @@ void usb_device_infinity::interrupt_transfer(u32 buf_size, u8* buf, u32 endpoint
 		{
 			memcpy(buf, response.value().data(), 0x20);
 		}
-		else if (!m_queries.empty())
+		else if (!infinity_replies_empty(&m_queries))
 		{
-			memcpy(buf, m_queries.front().data(), 0x20);
-			m_queries.pop();
+			memcpy(buf, infinity_replies_front(&m_queries)->data(), 0x20);
+			infinity_replies_pop_front(&m_queries);
 		}
 	}
 	else if (endpoint == 0x01)
@@ -483,6 +485,6 @@ void usb_device_infinity::interrupt_transfer(u32 buf_size, u8* buf, u32 endpoint
 			break;
 		}
 
-		m_queries.push(q_result);
+		ensure(infinity_replies_push_back_growing(&m_queries, &q_result));
 	}
 }

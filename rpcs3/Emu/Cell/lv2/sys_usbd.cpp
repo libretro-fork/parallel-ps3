@@ -3,7 +3,7 @@
 #include "sys_ppu_thread.h"
 #include "sys_sync.h"
 
-#include <queue>
+#include <queues/retro_deque.h>
 #include "Emu/System.h"
 #include "Emu/system_config.h"
 #include "Emu/IdManager.h"
@@ -96,6 +96,16 @@ struct usb_allow_list_entry
 		return std::tuple(id_vendor, id_product_min, id_product_max, device_name, max_device_count, make_instance) < std::tuple(r.id_vendor, r.id_product_min, r.id_product_max, device_name, max_device_count, make_instance);
 	}
 };
+// A pending usbd event
+struct usbd_event
+{
+	u64 arg1;
+	u64 arg2;
+	u64 arg3;
+};
+
+RETRO_DEQUE_DEFINE(usbd_events, usbd_event);
+
 class usb_handler_thread
 {
 public:
@@ -285,7 +295,7 @@ private:
 	std::vector<UsbTransfer*> fake_transfers;
 
 	// Queue of pending usbd events
-	std::queue<std::tuple<u64, u64, u64>> usbd_events;
+	usbd_events_t usbd_events{};
 
 	// List of devices "connected" to the ps3
 	std::array<u8, 7> location{};
@@ -445,6 +455,8 @@ void usb_handler_thread::perform_scan()
 
 usb_handler_thread::usb_handler_thread()
 {
+	ensure(usbd_events_init(&usbd_events, 64));
+
 #if LIBUSB_API_VERSION >= 0x0100010A
 	libusb_init_option log_lv_opt{};
 	log_lv_opt.option = LIBUSB_OPTION_LOG_LEVEL;
@@ -626,6 +638,8 @@ usb_handler_thread::usb_handler_thread()
 
 usb_handler_thread::~usb_handler_thread()
 {
+	usbd_events_free(&usbd_events);
+
 	// Ensures shared_ptr<usb_device> are all cleared before terminating libusb
 	handled_devices.clear();
 	open_pipes.clear();
@@ -853,13 +867,13 @@ const UsbPipe& usb_handler_thread::get_pipe(u32 pipe_id) const
 
 bool usb_handler_thread::get_event(vm::ptr<u64>& arg1, vm::ptr<u64>& arg2, vm::ptr<u64>& arg3)
 {
-	if (!usbd_events.empty())
+	if (!usbd_events_empty(&usbd_events))
 	{
-		const auto& usb_event = usbd_events.front();
-		*arg1                 = std::get<0>(usb_event);
-		*arg2                 = std::get<1>(usb_event);
-		*arg3                 = std::get<2>(usb_event);
-		usbd_events.pop();
+		const usbd_event& usb_event = *usbd_events_front(&usbd_events);
+		*arg1                       = usb_event.arg1;
+		*arg2                       = usb_event.arg2;
+		*arg3                       = usb_event.arg3;
+		usbd_events_pop_front(&usbd_events);
 		sys_usbd.trace("Received event: arg1=0x%x arg2=0x%x arg3=0x%x", *arg1, *arg2, *arg3);
 		return true;
 	}
@@ -883,7 +897,8 @@ void usb_handler_thread::add_event(u64 arg1, u64 arg2, u64 arg3)
 	else
 	{
 		sys_usbd.trace("Sending event: arg1=0x%x arg2=0x%x arg3=0x%x", arg1, arg2, arg3);
-		usbd_events.emplace(arg1, arg2, arg3);
+		const usbd_event usb_event{arg1, arg2, arg3};
+		ensure(usbd_events_push_back_growing(&usbd_events, &usb_event));
 	}
 }
 

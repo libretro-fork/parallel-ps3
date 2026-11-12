@@ -382,7 +382,7 @@ u32 dimensions_toypad::load_figure(const std::array<u8, 0x2D * 0x04>& buf, fs::f
 	std::array<u8, 32> figure_change_response = {0x56, 0x0b, figure.pad, 0x00, figure.index, 0x00,
 		buf[0], buf[1], buf[2], buf[4], buf[5], buf[6], buf[7]};
 	figure_change_response[13] = generate_checksum(figure_change_response, 13);
-	m_figure_added_removed_responses.push(std::move(figure_change_response));
+	ensure(dimensions_replies_push_back_growing(&m_figure_added_removed_responses, &figure_change_response));
 
 	if (lock)
 	{
@@ -412,7 +412,7 @@ bool dimensions_toypad::remove_figure(u8 pad, u8 index, bool full_remove, bool l
 			figure.data[0], figure.data[1], figure.data[2],
 			figure.data[4], figure.data[5], figure.data[6], figure.data[7]};
 		figure_change_response[13] = generate_checksum(figure_change_response, 13);
-		m_figure_added_removed_responses.push(std::move(figure_change_response));
+		ensure(dimensions_replies_push_back_growing(&m_figure_added_removed_responses, &figure_change_response));
 		figure.save();
 		figure.dim_file.close();
 	}
@@ -443,7 +443,7 @@ bool dimensions_toypad::temp_remove(u8 index)
 		figure.data[4], figure.data[5], figure.data[6], figure.data[7]};
 
 	figure_change_response[13] = generate_checksum(figure_change_response, 13);
-	m_figure_added_removed_responses.push(std::move(figure_change_response));
+	ensure(dimensions_replies_push_back_growing(&m_figure_added_removed_responses, &figure_change_response));
 
 	return true;
 }
@@ -462,7 +462,7 @@ bool dimensions_toypad::cancel_remove(u8 index)
 		figure.data[4], figure.data[5], figure.data[6], figure.data[7]};
 
 	figure_change_response[13] = generate_checksum(figure_change_response, 13);
-	m_figure_added_removed_responses.push(std::move(figure_change_response));
+	ensure(dimensions_replies_push_back_growing(&m_figure_added_removed_responses, &figure_change_response));
 
 	return true;
 }
@@ -542,17 +542,18 @@ std::optional<std::array<u8, 32>> dimensions_toypad::pop_added_removed_response(
 {
 	std::lock_guard lock(m_dimensions_mutex);
 
-	if (m_figure_added_removed_responses.empty())
+	if (dimensions_replies_empty(&m_figure_added_removed_responses))
 		return std::nullopt;
 
-	std::array<u8, 32> response = m_figure_added_removed_responses.front();
-	m_figure_added_removed_responses.pop();
+	std::array<u8, 32> response = *dimensions_replies_front(&m_figure_added_removed_responses);
+	dimensions_replies_pop_front(&m_figure_added_removed_responses);
 	return response;
 }
 
 usb_device_dimensions::usb_device_dimensions(const std::array<u8, 7>& location)
 	: usb_device_emulated(location)
 {
+	ensure(dimensions_replies_init(&m_queries, 16));
 	device = UsbDescriptorNode(USB_DESCRIPTOR_DEVICE, UsbDeviceDescriptor{0x200, 0x0, 0x0, 0x0, 0x20, 0x0E6F, 0x0241, 0x200, 0x1, 0x2, 0x3, 0x1});
 	auto& config0 = device.add_node(UsbDescriptorNode(USB_DESCRIPTOR_CONFIG, UsbDeviceConfiguration{0x29, 0x1, 0x1, 0x0, 0x80, 0xFA}));
 	config0.add_node(UsbDescriptorNode(USB_DESCRIPTOR_INTERFACE, UsbDeviceInterface{0x0, 0x0, 0x2, 0x3, 0x0, 0x0, 0x0}));
@@ -563,6 +564,7 @@ usb_device_dimensions::usb_device_dimensions(const std::array<u8, 7>& location)
 
 usb_device_dimensions::~usb_device_dimensions()
 {
+	dimensions_replies_free(&m_queries);
 }
 
 std::shared_ptr<usb_device> usb_device_dimensions::make_instance(u32, const std::array<u8, 7>& location)
@@ -599,10 +601,10 @@ void usb_device_dimensions::interrupt_transfer(u32 buf_size, u8* buf, u32 endpoi
 		{
 			std::memcpy(buf, response.value().data(), 0x20);
 		}
-		else if (!m_queries.empty())
+		else if (!dimensions_replies_empty(&m_queries))
 		{
-			std::memcpy(buf, m_queries.front().data(), 0x20);
-			m_queries.pop();
+			std::memcpy(buf, dimensions_replies_front(&m_queries)->data(), 0x20);
+			dimensions_replies_pop_front(&m_queries);
 		}
 		else
 		{
@@ -692,7 +694,7 @@ void usb_device_dimensions::interrupt_transfer(u32 buf_size, u8* buf, u32 endpoi
 			break;
 		}
 		}
-		m_queries.push(q_result);
+		ensure(dimensions_replies_push_back_growing(&m_queries, &q_result));
 		break;
 	}
 	default:

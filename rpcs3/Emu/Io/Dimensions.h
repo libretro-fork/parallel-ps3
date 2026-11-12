@@ -4,7 +4,10 @@
 #include "Utilities/mutex.h"
 #include <array>
 #include <optional>
-#include <queue>
+#include <queues/retro_deque.h>
+
+using dimensions_reply = std::array<u8, 32>;
+RETRO_DEQUE_DEFINE(dimensions_replies, dimensions_reply);
 
 static constexpr size_t dimensions_figure_count = 7;
 
@@ -60,7 +63,13 @@ private:
 	u32 m_random_d{};
 
 	u8 m_figure_order = 0;
-	std::queue<std::array<u8, 32>> m_figure_added_removed_responses;
+	dimensions_replies_t m_figure_added_removed_responses{};
+
+public:
+	dimensions_toypad() { ensure(dimensions_replies_init(&m_figure_added_removed_responses, 16)); }
+	~dimensions_toypad() { dimensions_replies_free(&m_figure_added_removed_responses); }
+
+private:
 };
 
 extern dimensions_toypad g_dimensionstoypad;
@@ -78,5 +87,5 @@ public:
 	void interrupt_transfer(u32 buf_size, u8* buf, u32 endpoint, UsbTransfer* transfer) override;
 
 protected:
-	std::queue<std::array<u8, 32>> m_queries;
+	dimensions_replies_t m_queries{};
 };

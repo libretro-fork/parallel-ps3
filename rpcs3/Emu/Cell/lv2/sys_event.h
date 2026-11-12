@@ -87,14 +87,7 @@ using lv2_event = std::tuple<u64, u64, u64, u64>;
 // every sixteen taken, while the game runs - cellAudio alone sends each of
 // its queues one every 5.3 ms.
 // C, with C's casts
-#ifndef _MSC_VER
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wold-style-cast"
-#endif
 RETRO_DEQUE_DEFINE(lv2_events, lv2_event);
-#ifndef _MSC_VER
-#pragma GCC diagnostic pop
-#endif
 
 struct lv2_event_port;
 

@@ -297,10 +297,17 @@ lv2_socket_p2ps::lv2_socket_p2ps(socket_type native_socket, u16 port, u16 vport,
 	status             = p2ps_stream_status::stream_connected;
 }
 
+lv2_socket_p2ps::~lv2_socket_p2ps() noexcept
+{
+	p2ps_backlog_free(&backlog);
+}
+
 lv2_socket_p2ps::lv2_socket_p2ps(utils::serial& ar, lv2_socket_type type)
 	: lv2_socket_p2p(ar, type)
 {
-	ar(status, max_backlog, backlog, op_port, op_vport, op_addr, data_beg_seq, received_data, cur_seq);
+	ar(status, max_backlog);
+	p2ps_backlog_load(ar, backlog);
+	ar(op_port, op_vport, op_addr, data_beg_seq, received_data, cur_seq);
 
 	if (GET_SERIALIZATION_VERSION(lv2_net) < 3 && status == p2ps_stream_status::stream_closed && op_addr)
 	{
@@ -311,7 +318,9 @@ lv2_socket_p2ps::lv2_socket_p2ps(utils::serial& ar, lv2_socket_type type)
 void lv2_socket_p2ps::save(utils::serial& ar)
 {
 	static_cast<lv2_socket_p2p*>(this)->save(ar);
-	ar(status, max_backlog, backlog, op_port, op_vport, op_addr, data_beg_seq, received_data, cur_seq);
+	ar(status, max_backlog);
+	p2ps_backlog_save(ar, backlog);
+	ar(op_port, op_vport, op_addr, data_beg_seq, received_data, cur_seq);
 }
 
 void lv2_socket_p2ps::signal_pending_events()
@@ -464,7 +473,7 @@ bool lv2_socket_p2ps::handle_listening(p2ps_encapsulated_tcp* tcp_header, [[mayb
 	// Only valid packet
 	if (tcp_header->flags == static_cast<u8>(p2ps_tcp_flags::SYN))
 	{
-		if (backlog.size() >= max_backlog)
+		if (p2ps_backlog_count(&backlog) >= max_backlog)
 		{
 			// Send a RST packet on backlog full
 			sys_net.trace("[P2PS] Backlog was full, sent a RST packet");
@@ -511,7 +520,7 @@ bool lv2_socket_p2ps::handle_listening(p2ps_encapsulated_tcp* tcp_header, [[mayb
 			sock_lv2->send_u2s_packet(std::move(packet), reinterpret_cast<::sockaddr_in*>(op_addr), send_hdr.seq, true);
 		}
 
-		backlog.push_back(new_sock_id);
+		ensure(p2ps_backlog_push_back_growing(&backlog, &new_sock_id));
 		signal_pending_events();
 	}
 	else
@@ -631,7 +640,7 @@ std::tuple<bool, s32, shared_ptr<lv2_socket>, sys_net_sockaddr> lv2_socket_p2ps:
 		lock.lock();
 	}
 
-	if (backlog.size() == 0)
+	if (p2ps_backlog_empty(&backlog))
 	{
 		if (so_nbio)
 		{
@@ -641,8 +650,8 @@ std::tuple<bool, s32, shared_ptr<lv2_socket>, sys_net_sockaddr> lv2_socket_p2ps:
 		return {false, {}, {}, {}};
 	}
 
-	auto p2ps_client = backlog.front();
-	backlog.pop_front();
+	auto p2ps_client = *p2ps_backlog_front(&backlog);
+	p2ps_backlog_pop_front(&backlog);
 
 	sys_net_sockaddr ps3_addr{};
 	auto* paddr = reinterpret_cast<sys_net_sockaddr_in_p2p*>(&ps3_addr);
@@ -1063,7 +1072,7 @@ bs_t<lv2_socket::poll_t> lv2_socket_p2ps::get_pending_events() const
 	}
 	else if (status == p2ps_stream_status::stream_listening)
 	{
-		if (const auto bsize = backlog.size())
+		if (const auto bsize = p2ps_backlog_count(&backlog))
 		{
 			sys_net.trace("[P2PS] socket has %d clients available", bsize);
 			pending += lv2_socket::poll_t::read;

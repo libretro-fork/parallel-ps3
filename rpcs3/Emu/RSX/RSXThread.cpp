@@ -753,6 +753,8 @@ namespace rsx
 
 	thread::~thread()
 	{
+		rsx_fifo_recoveries_free(&recovered_fifo_cmds_history);
+		rsx_frame_times_free(&frame_times);
 		g_access_violation_handler = nullptr;
 	}
 
@@ -837,6 +839,9 @@ namespace rsx
 	thread::thread(utils::serial* _ar)
 		: cpu_thread(0x5555'5555)
 	{
+		ensure(rsx_fifo_recoveries_init(&recovered_fifo_cmds_history, 20));
+		ensure(rsx_frame_times_init(&frame_times, 64));
+
 		g_access_violation_handler = [this](u32 address, bool is_writing)
 		{
 			return on_access_violation(address, is_writing);
@@ -2938,9 +2943,9 @@ namespace rsx
 
 		const u64 current_time = get_system_time();
 
-		if (recovered_fifo_cmds_history.size() == 20u)
+		if (rsx_fifo_recoveries_count(&recovered_fifo_cmds_history) == 20u)
 		{
-			const auto cmd_info = recovered_fifo_cmds_history.front();
+			const auto cmd_info = *rsx_fifo_recoveries_front(&recovered_fifo_cmds_history);
 
 			// Check timestamp of last tracked cmd
 			// Shorten the range of forbidden difference if driver wake-up delay is used
@@ -2951,7 +2956,7 @@ namespace rsx
 			}
 
 			// Erase the last command from history, keep the size of the queue the same
-			recovered_fifo_cmds_history.pop();
+			rsx_fifo_recoveries_pop_front(&recovered_fifo_cmds_history);
 		}
 
 		if (kill_itself)
@@ -2972,7 +2977,8 @@ namespace rsx
 			rsx::thread::end();
 		}
 
-		recovered_fifo_cmds_history.push({fifo_ctrl->last_cmd(), current_time});
+		const desync_fifo_cmd_info recovered{fifo_ctrl->last_cmd(), current_time};
+		ensure(rsx_fifo_recoveries_push_back(&recovered_fifo_cmds_history, &recovered));
 	}
 
 	void thread::dump_misc(std::string& ret, std::any& custom_data) const
@@ -3657,7 +3663,7 @@ namespace rsx
 
 		if (!max_preempt_count)
 		{
-			frame_times.clear();
+			rsx_frame_times_clear(&frame_times);
 			lv2_obj::set_yield_frequency(0, 0);
 			return;
 		}
@@ -3666,13 +3672,13 @@ namespace rsx
 		const u64 current_tsc = utils::get_tsc();
 		u64 preempt_count = 0;
 
-		if (frame_times.size() >= 60)
+		if (rsx_frame_times_count(&frame_times) >= 60)
 		{
 			u64 diffs = 0;
 
-			for (usz i = 1; i < frame_times.size(); i++)
+			for (usz i = 1; i < rsx_frame_times_count(&frame_times); i++)
 			{
-				const u64 cur_diff = frame_times[i].timestamp - frame_times[i - 1].timestamp;
+				const u64 cur_diff = rsx_frame_times_at(&frame_times, i)->timestamp - rsx_frame_times_at(&frame_times, i - 1)->timestamp;
 				diffs += cur_diff;
 			}
 
@@ -3683,36 +3689,36 @@ namespace rsx
 			bool can_reevaluate = true;
 			u64 prev_preempt_count = umax;
 
-			for (usz i = frame_times.size() - 30; i < frame_times.size(); i++)
+			for (usz i = rsx_frame_times_count(&frame_times) - 30; i < rsx_frame_times_count(&frame_times); i++)
 			{
 				if (prev_preempt_count == umax)
 				{
-					prev_preempt_count = frame_times[i].preempt_count;
+					prev_preempt_count = rsx_frame_times_at(&frame_times, i)->preempt_count;
 					continue;
 				}
 
-				if (prev_preempt_count != frame_times[i].preempt_count)
+				if (prev_preempt_count != rsx_frame_times_at(&frame_times, i)->preempt_count)
 				{
-					if (prev_preempt_count > frame_times[i].preempt_count)
+					if (prev_preempt_count > rsx_frame_times_at(&frame_times, i)->preempt_count)
 					{
 						lowered_delay++;
 					}
-					else if (prev_preempt_count < frame_times[i].preempt_count)
+					else if (prev_preempt_count < rsx_frame_times_at(&frame_times, i)->preempt_count)
 					{
 						raised_delay++;
 					}
 
-					if (i > frame_times.size() - 30)
+					if (i > rsx_frame_times_count(&frame_times) - 30)
 					{
 						// Slow preemption count increase
 						can_reevaluate = false;
 					}
 				}
 
-				prev_preempt_count = frame_times[i].preempt_count;
+				prev_preempt_count = rsx_frame_times_at(&frame_times, i)->preempt_count;
 			}
 
-			preempt_count = std::min<u64>(frame_times.back().preempt_count, max_preempt_count);
+			preempt_count = std::min<u64>(rsx_frame_times_back(&frame_times)->preempt_count, max_preempt_count);
 
 			u32 fails = 0;
 			u32 hard_fails = 0;
@@ -3723,9 +3729,9 @@ namespace rsx
 				return a >= b ? a - b : b - a;
 			};
 
-			for (u32 i = 1; i <= frame_times.size(); i++)
+			for (u32 i = 1; i <= rsx_frame_times_count(&frame_times); i++)
 			{
-				const u64 cur_diff = (i == frame_times.size() ? current_time : frame_times[i].timestamp) - frame_times[i - 1].timestamp;
+				const u64 cur_diff = (i == rsx_frame_times_count(&frame_times) ? current_time : rsx_frame_times_at(&frame_times, i)->timestamp) - rsx_frame_times_at(&frame_times, i - 1)->timestamp;
 
 				if (const u64 diff_of_diff = abs_dst(cur_diff, avg_frame_time);
 					diff_of_diff >= avg_frame_time / 7)
@@ -3735,7 +3741,7 @@ namespace rsx
 						raised_delay++;
 						hard_fails++;
 
-						if (i == frame_times.size())
+						if (i == rsx_frame_times_count(&frame_times))
 						{
 							is_last_frame_a_fail = true;
 						}
@@ -3806,7 +3812,7 @@ namespace rsx
 
 			if (hard_measures_taken)
 			{
-				preempt_fail_old_preempt_count = std::max<u64>(preempt_fail_old_preempt_count, std::min<u64>(frame_times.back().preempt_count, max_preempt_count));
+				preempt_fail_old_preempt_count = std::max<u64>(preempt_fail_old_preempt_count, std::min<u64>(rsx_frame_times_back(&frame_times)->preempt_count, max_preempt_count));
 			}
 			else if (preempt_fail_old_preempt_count)
 			{
@@ -3814,8 +3820,8 @@ namespace rsx
 				preempt_fail_old_preempt_count = 0;
 			}
 
-			const u64 tsc_diff = (current_tsc - frame_times.back().tsc);
-			const u64 time_diff = (current_time - frame_times.back().timestamp);
+			const u64 tsc_diff = (current_tsc - rsx_frame_times_back(&frame_times)->tsc);
+			const u64 time_diff = (current_time - rsx_frame_times_back(&frame_times)->timestamp);
 			const u64 preempt_diff = tsc_diff * (1'000'000 / 30) / (time_diff * std::max<u64>(preempt_count, 1ull));
 
 			if (!preempt_count)
@@ -3847,14 +3853,15 @@ namespace rsx
 				lv2_obj::set_yield_frequency(preempt_diff, current_tsc + (tsc_diff * 88 / 100));
 			}
 
-			frame_times.pop_front();
+			rsx_frame_times_pop_front(&frame_times);
 		}
 		else
 		{
 			lv2_obj::set_yield_frequency(0, 0);
 		}
 
-		frame_times.push_back(frame_time_t{preempt_count, current_time, current_tsc});
+		const frame_time_t frame_time{preempt_count, current_time, current_tsc};
+		ensure(rsx_frame_times_push_back_growing(&frame_times, &frame_time));
 	}
 
 	void vblank_thread::set_thread(std::shared_ptr<named_thread<std::function<void()>>> thread)

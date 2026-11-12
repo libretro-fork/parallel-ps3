@@ -1373,11 +1373,6 @@ struct lv2_deadline
 	cpu_thread* second; // who
 };
 
-// C, with C's casts
-#ifndef _MSC_VER
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wold-style-cast"
-#endif
 RETRO_DEQUE_DEFINE(lv2_deadlines, lv2_deadline);
 RETRO_DEQUE_DEFINE(lv2_threads, cpu_thread*);
 
@@ -1388,9 +1383,6 @@ static lv2_deadlines_t g_waiting;
 static lv2_threads_t g_to_sleep;
 
 static const bool g_lists_made = lv2_deadlines_init(&g_waiting, g_max_cpu_threads) && lv2_threads_init(&g_to_sleep, g_max_cpu_threads);
-#ifndef _MSC_VER
-#pragma GCC diagnostic pop
-#endif
 
 // Where @cpu is in g_to_sleep, or its count
 static usz to_sleep_index(const cpu_thread* cpu)

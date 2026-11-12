@@ -34,8 +34,8 @@ void sky_portal::activate()
 	{
 		if (s.status & 1)
 		{
-			s.queued_status.push(3);
-			s.queued_status.push(1);
+			{ const u8 queued = 3; ensure(sky_statuses_push_back_growing(&s.queued_status, &queued)); }
+			{ const u8 queued = 1; ensure(sky_statuses_push_back_growing(&s.queued_status, &queued)); }
 		}
 	}
 
@@ -49,10 +49,10 @@ void sky_portal::deactivate()
 	for (auto& s : skylanders)
 	{
 		// check if at the end of the updates there would be a figure on the portal
-		if (!s.queued_status.empty())
+		if (!sky_statuses_empty(&s.queued_status))
 		{
-			s.status        = s.queued_status.back();
-			s.queued_status = std::queue<u8>();
+			s.status        = *sky_statuses_back(&s.queued_status);
+			sky_statuses_clear(&s.queued_status);
 		}
 
 		s.status &= 1;
@@ -79,10 +79,10 @@ void sky_portal::get_status(u8* reply_buf)
 	{
 		auto& s = skylanders[i];
 
-		if (!s.queued_status.empty())
+		if (!sky_statuses_empty(&s.queued_status))
 		{
-			s.status = s.queued_status.front();
-			s.queued_status.pop();
+			s.status = *sky_statuses_front(&s.queued_status);
+			sky_statuses_pop_front(&s.queued_status);
 		}
 
 		status <<= 2;
@@ -144,8 +144,8 @@ bool sky_portal::remove_skylander(u8 sky_num)
 	if (thesky.status & 1)
 	{
 		thesky.status = 2;
-		thesky.queued_status.push(2);
-		thesky.queued_status.push(0);
+		{ const u8 queued = 2; ensure(sky_statuses_push_back_growing(&thesky.queued_status, &queued)); }
+		{ const u8 queued = 0; ensure(sky_statuses_push_back_growing(&thesky.queued_status, &queued)); }
 		thesky.sky_file.close();
 		return true;
 	}
@@ -184,8 +184,8 @@ u8 sky_portal::load_skylander(const std::array<u8, 0x40 * 0x10>& data, fs::file 
 	memcpy(thesky.data.data(), data.data(), thesky.data.size());
 	thesky.sky_file = std::move(in_file);
 	thesky.status   = 3;
-	thesky.queued_status.push(3);
-	thesky.queued_status.push(1);
+	{ const u8 queued = 3; ensure(sky_statuses_push_back_growing(&thesky.queued_status, &queued)); }
+	{ const u8 queued = 1; ensure(sky_statuses_push_back_growing(&thesky.queued_status, &queued)); }
 	thesky.last_id = sky_serial;
 
 	return found_slot;
@@ -194,6 +194,7 @@ u8 sky_portal::load_skylander(const std::array<u8, 0x40 * 0x10>& data, fs::file 
 usb_device_skylander::usb_device_skylander(const std::array<u8, 7>& location)
 	: usb_device_emulated(location)
 {
+	ensure(sky_queries_init(&q_queries, 16));
 	device        = UsbDescriptorNode(USB_DESCRIPTOR_DEVICE, UsbDeviceDescriptor{0x0200, 0x00, 0x00, 0x00, 0x40, 0x1430, 0x0150, 0x0100, 0x01, 0x02, 0x00, 0x01});
 	auto& config0 = device.add_node(UsbDescriptorNode(USB_DESCRIPTOR_CONFIG, UsbDeviceConfiguration{0x0029, 0x01, 0x01, 0x00, 0x80, 0xFA}));
 	config0.add_node(UsbDescriptorNode(USB_DESCRIPTOR_INTERFACE, UsbDeviceInterface{0x00, 0x00, 0x02, 0x03, 0x00, 0x00, 0x00}));
@@ -204,6 +205,7 @@ usb_device_skylander::usb_device_skylander(const std::array<u8, 7>& location)
 
 usb_device_skylander::~usb_device_skylander()
 {
+	sky_queries_free(&q_queries);
 }
 
 std::shared_ptr<usb_device> usb_device_skylander::make_instance(u32, const std::array<u8, 7>& location)
@@ -243,7 +245,7 @@ void usb_device_skylander::control_transfer(u8 bmRequestType, u8 bRequest, u16 w
 				ensure(buf_size == 2 || buf_size == 32);
 				q_result = {0x41, buf[1], 0xFF, 0x77, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
 				    0x00, 0x00};
-				q_queries.push(q_result);
+				ensure(sky_queries_push_back_growing(&q_queries, &q_result));
 				g_skyportal.activate();
 				break;
 			}
@@ -259,7 +261,7 @@ void usb_device_skylander::control_transfer(u8 bmRequestType, u8 bRequest, u16 w
 				// Sync status from game?
 				ensure(buf_size == 7);
 				q_result[0] = 0x4A;
-				q_queries.push(q_result);
+				ensure(sky_queries_push_back_growing(&q_queries, &q_result));
 				break;
 			}
 			case 'L':
@@ -276,7 +278,7 @@ void usb_device_skylander::control_transfer(u8 bmRequestType, u8 bRequest, u16 w
 				// play audio on the portal
 				ensure(buf_size == 2);
 				q_result = {0x4D, buf[1], 0x00, 0x19};
-				q_queries.push(q_result);
+				ensure(sky_queries_push_back_growing(&q_queries, &q_result));
 				break;
 			}
 			case 'Q':
@@ -290,7 +292,7 @@ void usb_device_skylander::control_transfer(u8 bmRequestType, u8 bRequest, u16 w
 				ensure(block < 0x40);
 
 				g_skyportal.query_block(sky_num, block, q_result.data());
-				q_queries.push(q_result);
+				ensure(sky_queries_push_back_growing(&q_queries, &q_result));
 				break;
 			}
 			case 'R':
@@ -299,7 +301,7 @@ void usb_device_skylander::control_transfer(u8 bmRequestType, u8 bRequest, u16 w
 				ensure(buf_size == 2 || buf_size == 32);
 				q_result = {
 				    0x52, 0x02, 0x18, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
-				q_queries.push(q_result);
+				ensure(sky_queries_push_back_growing(&q_queries, &q_result));
 				g_skyportal.deactivate();
 				break;
 			}
@@ -326,7 +328,7 @@ void usb_device_skylander::control_transfer(u8 bmRequestType, u8 bRequest, u16 w
 				ensure(block < 0x40);
 
 				g_skyportal.write_block(sky_num, block, &buf[3], q_result.data());
-				q_queries.push(q_result);
+				ensure(sky_queries_push_back_growing(&q_queries, &q_result));
 				break;
 			}
 			default:
@@ -361,10 +363,10 @@ void usb_device_skylander::interrupt_transfer(u32 buf_size, u8* buf, u32 endpoin
 	{
 		// Interrupt transfers are slow(~22ms)
 		transfer->expected_time = get_timestamp() + 22000;
-		if (!q_queries.empty())
+		if (!sky_queries_empty(&q_queries))
 		{
-			memcpy(buf, q_queries.front().data(), 0x20);
-			q_queries.pop();
+			memcpy(buf, sky_queries_front(&q_queries)->data(), 0x20);
+			sky_queries_pop_front(&q_queries);
 		}
 		else
 		{

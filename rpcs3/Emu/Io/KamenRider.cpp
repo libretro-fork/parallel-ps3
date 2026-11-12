@@ -115,13 +115,13 @@ std::optional<std::array<u8, 64>> rider_gate::pop_added_removed_response()
 {
 	std::lock_guard lock(kamen_mutex);
 
-	if (m_figure_added_removed_responses.empty())
+	if (kamen_replies_empty(&m_figure_added_removed_responses))
 	{
 		return std::nullopt;
 	}
 
-	std::array<u8, 64> response = m_figure_added_removed_responses.front();
-	m_figure_added_removed_responses.pop();
+	std::array<u8, 64> response = *kamen_replies_front(&m_figure_added_removed_responses);
+	kamen_replies_pop_front(&m_figure_added_removed_responses);
 	return response;
 }
 
@@ -141,7 +141,7 @@ bool rider_gate::remove_figure(u8 index)
 			std::array<u8, 64> figure_removed_response = {0x56, 0x09, 0x09, 0x00};
 			memcpy(&figure_removed_response[4], figure.uid.data(), figure.uid.size());
 			figure_removed_response[11] = generate_checksum(figure_removed_response, 11);
-			m_figure_added_removed_responses.push(std::move(figure_removed_response));
+			ensure(kamen_replies_push_back_growing(&m_figure_added_removed_responses, &figure_removed_response));
 		}
 		figure.uid = {};
 		return true;
@@ -181,7 +181,7 @@ u8 rider_gate::load_figure(const std::array<u8, 0x14 * 0x10>& buf, fs::file in_f
 			std::array<u8, 64> figure_added_response = {0x56, 0x09, 0x09, 0x01};
 			memcpy(&figure_added_response[4], figure.uid.data(), figure.uid.size());
 			figure_added_response[11] = generate_checksum(figure_added_response, 11);
-			m_figure_added_removed_responses.push(std::move(figure_added_response));
+			ensure(kamen_replies_push_back_growing(&m_figure_added_removed_responses, &figure_added_response));
 		}
 	}
 	return found_slot;
@@ -190,6 +190,7 @@ u8 rider_gate::load_figure(const std::array<u8, 0x14 * 0x10>& buf, fs::file in_f
 usb_device_kamen_rider::usb_device_kamen_rider(const std::array<u8, 7>& location)
 	: usb_device_emulated(location)
 {
+	ensure(kamen_replies_init(&m_queries, 16));
 	device = UsbDescriptorNode(USB_DESCRIPTOR_DEVICE, UsbDeviceDescriptor{
 		.bcdUSB             = 0x0200,
 		.bDeviceClass       = 0x00,
@@ -238,6 +239,7 @@ usb_device_kamen_rider::usb_device_kamen_rider(const std::array<u8, 7>& location
 
 usb_device_kamen_rider::~usb_device_kamen_rider()
 {
+	kamen_replies_free(&m_queries);
 }
 
 std::shared_ptr<usb_device> usb_device_kamen_rider::make_instance(u32, const std::array<u8, 7>& location)
@@ -272,10 +274,10 @@ void usb_device_kamen_rider::interrupt_transfer(u32 buf_size, u8* buf, u32 endpo
 		{
 			memcpy(buf, response.value().data(), 0x40);
 		}
-		else if (!m_queries.empty())
+		else if (!kamen_replies_empty(&m_queries))
 		{
-			memcpy(buf, m_queries.front().data(), 0x20);
-			m_queries.pop();
+			memcpy(buf, kamen_replies_front(&m_queries)->data(), 0x20);
+			kamen_replies_pop_front(&m_queries);
 		}
 		else
 		{
@@ -326,6 +328,6 @@ void usb_device_kamen_rider::interrupt_transfer(u32 buf_size, u8* buf, u32 endpo
 			kamen_rider_log.error("Unhandled Query Type: 0x%02X", command);
 			break;
 		}
-		m_queries.push(std::move(q_result));
+		ensure(kamen_replies_push_back_growing(&m_queries, &q_result));
 	}
 }

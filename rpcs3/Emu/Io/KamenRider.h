@@ -4,7 +4,10 @@
 #include "Utilities/mutex.h"
 #include <array>
 #include <optional>
-#include <queue>
+#include <queues/retro_deque.h>
+
+using kamen_reply = std::array<u8, 64>;
+RETRO_DEQUE_DEFINE(kamen_replies, kamen_reply);
 
 struct kamen_rider_figure
 {
@@ -36,7 +39,13 @@ private:
 	u8 generate_checksum(const std::array<u8, 64>& data, u32 num_of_bytes) const;
 	kamen_rider_figure& get_figure_by_uid(const std::array<u8, 7> uid);
 
-	std::queue<std::array<u8, 64>> m_figure_added_removed_responses;
+	kamen_replies_t m_figure_added_removed_responses{};
+
+public:
+	rider_gate() { ensure(kamen_replies_init(&m_figure_added_removed_responses, 16)); }
+	~rider_gate() { kamen_replies_free(&m_figure_added_removed_responses); }
+
+private:
 
 	bool m_is_awake = false;
 };
@@ -56,5 +65,5 @@ public:
 	void interrupt_transfer(u32 buf_size, u8* buf, u32 endpoint, UsbTransfer* transfer) override;
 
 protected:
-	std::queue<std::array<u8, 64>> m_queries;
+	kamen_replies_t m_queries{};
 };

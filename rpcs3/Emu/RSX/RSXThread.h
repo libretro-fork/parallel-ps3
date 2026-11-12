@@ -1,7 +1,7 @@
 #pragma once
 
-#include <queue>
 #include <deque>
+#include <queues/retro_deque.h>
 
 #include "RSXFIFO.h"
 #include "RSXOffload.h"
@@ -101,6 +101,9 @@ namespace rsx
 		u32 cmd;
 		u64 timestamp;
 	};
+
+	RETRO_DEQUE_DEFINE(rsx_fifo_recoveries, desync_fifo_cmd_info);
+	RETRO_DEQUE_DEFINE(rsx_frame_times, frame_time_t);
 
 	// TODO: This class is a mess, this needs to be broken into smaller chunks, like I did for RSXFIFO and RSXZCULL (kd)
 	class thread : public cpu_thread, public GCM_context, public GRAPH_backend
@@ -323,8 +326,8 @@ namespace rsx
 		atomic_t<bool> pause_on_draw = false;
 		bool in_begin_end = false;
 
-		std::queue<desync_fifo_cmd_info> recovered_fifo_cmds_history;
-		std::deque<frame_time_t> frame_times;
+		rsx_fifo_recoveries_t recovered_fifo_cmds_history{}; // the last 20
+		rsx_frame_times_t frame_times{};                     // the last 60
 		u32 prevent_preempt_increase_tickets = 0;
 		u64 preempt_fail_old_preempt_count = 0;
 
