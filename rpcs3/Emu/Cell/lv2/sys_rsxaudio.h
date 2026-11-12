@@ -2,7 +2,7 @@
 
 #include "sys_sync.h"
 #include "sys_event.h"
-#include "Utilities/simple_ringbuf.h"
+#include "libretro/libretro_audio_ring.h"
 #include "Utilities/transactional_storage.h"
 #include "Utilities/cond.h"
 #include "Emu/system_config_types.h"
@@ -535,8 +535,14 @@ private:
 	shared_mutex  state_update_m{};
 	cond_variable state_update_c{};
 
-	simple_ringbuf ringbuf{};
-	simple_ringbuf aux_ringbuf{};
+	// One thread writes each and one reads, lock-free; what the callback
+	// reads it borrows where it lies when nothing has to be done to it first.
+	// ringbuf: written by the data thread (by this thread when the dump is
+	// on), read by the backend's callback. aux_ringbuf (dump on): written by
+	// the data thread, read by this thread.
+	lr_audio_ring ringbuf{};
+	lr_audio_ring aux_ringbuf{};
+	friend struct rsxaudio_backend_test;
 	std::vector<u8> thread_tmp_buf{};
 	std::vector<f32> callback_tmp_buf{};
 	bool use_aux_ringbuf = false;
@@ -556,6 +562,7 @@ private:
 	void backend_stop();
 	bool backend_playing();
 	u32 write_data_callback(u32 bytes, void* buf);
+	u32 fill_from_ring(const callback_config& cb_cfg, u32 bytes, void* buf);
 	void state_changed_callback(AudioStateEvent event);
 
 	// Time management

@@ -1342,6 +1342,34 @@ rsxaudio_backend_thread::~rsxaudio_backend_thread()
 		backend->SetStateCallback(nullptr);
 		backend = nullptr;
 	}
+
+	lr_audio_ring_free(&ringbuf);
+	lr_audio_ring_free(&aux_ringbuf);
+}
+
+// The room the writer has left
+static usz ring_free_size(const lr_audio_ring& ring)
+{
+	const usz used = lr_audio_ring_used(&ring);
+	return ring.limit > used ? ring.limit - used : 0;
+}
+
+// Made anew for @bytes; neither thread is using it (the backend is closed, the writers are locked out)
+static void ring_set_size(lr_audio_ring& ring, u64 bytes)
+{
+	lr_audio_ring_free(&ring);
+	ensure(lr_audio_ring_init(&ring, static_cast<usz>(std::max<u64>(bytes, 1))));
+}
+
+// The reader's: everything waiting is dropped
+static void ring_reader_drop(lr_audio_ring& ring)
+{
+	const void* lent = nullptr;
+
+	while (const usz have = lr_audio_ring_borrow(&ring, &lent))
+	{
+		lr_audio_ring_consume(&ring, have);
+	}
 }
 
 void rsxaudio_backend_thread::update_emu_cfg()
@@ -1566,8 +1594,8 @@ void rsxaudio_backend_thread::operator()()
 			{
 				void* crnt_buf = thread_tmp_buf.data();
 
-				const u64 bytes_req = ringbuf.get_free_size();
-				const u64 bytes_read = aux_ringbuf.pop(crnt_buf, bytes_req, true);
+				const u64 bytes_req = ring_free_size(ringbuf);
+				const u64 bytes_read = lr_audio_ring_read(&aux_ringbuf, crnt_buf, bytes_req);
 				u64 crnt_buf_size = bytes_read;
 
 				// Dump audio if enabled
@@ -1576,7 +1604,7 @@ void rsxaudio_backend_thread::operator()()
 					dumper.WriteData(crnt_buf, static_cast<u32>(crnt_buf_size));
 				}
 
-				ringbuf.push(crnt_buf, crnt_buf_size);
+				lr_audio_ring_push(&ringbuf, crnt_buf, crnt_buf_size, false);
 
 				update_service_time();
 			}
@@ -1675,18 +1703,18 @@ void rsxaudio_backend_thread::add_data(rsxaudio_data_container& cont)
 	{
 		if (use_aux_ringbuf)
 		{
-			if (aux_ringbuf.get_free_size() >= len)
+			if (ring_free_size(aux_ringbuf) >= len)
 			{
 				cont.get_data(cb_cfg.avport_idx, in_data_blk);
-				aux_ringbuf.push(in_data_blk.data(), len);
+				lr_audio_ring_push(&aux_ringbuf, in_data_blk.data(), len, false);
 			}
 		}
 		else
 		{
-			if (ringbuf.get_free_size() >= len)
+			if (ring_free_size(ringbuf) >= len)
 			{
 				cont.get_data(cb_cfg.avport_idx, in_data_blk);
-				ringbuf.push(in_data_blk.data(), len);
+				lr_audio_ring_push(&ringbuf, in_data_blk.data(), len, false);
 			}
 		}
 	}
@@ -1748,14 +1776,14 @@ void rsxaudio_backend_thread::backend_init(const rsxaudio_state& ra_state, const
 		{
 			const f64 frame_len = std::max<f64>(buffering_len * 0.5, SERVICE_PERIOD_SEC) + cb_frame_len + _10ms;
 			const u64 frame_len_bytes = static_cast<u64>(std::round(frame_len * bytes_per_sec));
-			aux_ringbuf.set_buf_size(frame_len_bytes);
-			ringbuf.set_buf_size(frame_len_bytes);
+			ring_set_size(aux_ringbuf, frame_len_bytes);
+			ring_set_size(ringbuf, frame_len_bytes);
 			thread_tmp_buf.resize(frame_len_bytes);
 		}
 		else
 		{
 			const f64 frame_len = std::max<f64>(buffering_len, cb_frame_len) + _10ms;
-			ringbuf.set_buf_size(static_cast<u64>(std::round(frame_len * bytes_per_sec)));
+			ring_set_size(ringbuf, static_cast<u64>(std::round(frame_len * bytes_per_sec)));
 			thread_tmp_buf.resize(0);
 		}
 
@@ -1782,12 +1810,19 @@ void rsxaudio_backend_thread::backend_start()
 {
 	ensure(backend != nullptr);
 
-	if (use_aux_ringbuf)
 	{
-		aux_ringbuf.reader_flush();
+		// What is waiting is dropped from the writers' side, with the data
+		// thread (add_data) kept out meanwhile; the callback is not asked
+		std::lock_guard lock(ringbuf_mutex);
+
+		if (use_aux_ringbuf)
+		{
+			lr_audio_ring_flush(&aux_ringbuf);
+		}
+
+		lr_audio_ring_flush(&ringbuf);
 	}
 
-	ringbuf.reader_flush();
 	backend->Play();
 }
 
@@ -1827,24 +1862,54 @@ u32 rsxaudio_backend_thread::write_data_callback(u32 bytes, void* buf)
 
 	if (cb_cfg.ready && !mute_state[static_cast<u8>(cb_cfg.avport_idx)] && Emu.IsRunning())
 	{
-		const audio_channel_layout output_channel_layout = static_cast<audio_channel_layout>(cb_cfg.output_channel_layout);
-		const u32 output_ch_cnt = AudioBackend::default_layout_channel_count(output_channel_layout);
-		const u32 bytes_ch_adjusted = bytes / output_ch_cnt * cb_cfg.input_ch_cnt;
-		const u32 bytes_from_rb = cb_cfg.convert_to_s16 ? bytes_ch_adjusted / static_cast<u32>(AudioSampleSize::S16) * static_cast<u32>(AudioSampleSize::FLOAT) : bytes_ch_adjusted;
+		return fill_from_ring(cb_cfg, bytes, buf);
+	}
 
-		ensure(callback_tmp_buf.size() * static_cast<u32>(AudioSampleSize::FLOAT) >= bytes_from_rb);
+	ring_reader_drop(ringbuf);
+	memset(buf, 0, bytes);
+	return bytes;
+}
 
-		const u32 byte_cnt = static_cast<u32>(ringbuf.pop(callback_tmp_buf.data(), bytes_from_rb, true));
-		const u32 sample_cnt = byte_cnt / static_cast<u32>(AudioSampleSize::FLOAT);
-		const u32 sample_cnt_out = sample_cnt / cb_cfg.input_ch_cnt * output_ch_cnt;
+// @bytes of output for the backend out of the ring, as @cb_cfg has it: the bytes written to @buf
+u32 rsxaudio_backend_thread::fill_from_ring(const callback_config& cb_cfg, u32 bytes, void* buf)
+{
+	const audio_channel_layout output_channel_layout = static_cast<audio_channel_layout>(cb_cfg.output_channel_layout);
+	const u32 output_ch_cnt = AudioBackend::default_layout_channel_count(output_channel_layout);
+	const u32 bytes_ch_adjusted = bytes / output_ch_cnt * cb_cfg.input_ch_cnt;
+	const u32 bytes_from_rb = cb_cfg.convert_to_s16 ? bytes_ch_adjusted / static_cast<u32>(AudioSampleSize::S16) * static_cast<u32>(AudioSampleSize::FLOAT) : bytes_ch_adjusted;
 
-		// Buffer is in weird state - drop acquired data
-		if (sample_cnt == 0 || sample_cnt % cb_cfg.input_ch_cnt != 0)
+	ensure(callback_tmp_buf.size() * static_cast<u32>(AudioSampleSize::FLOAT) >= bytes_from_rb);
+
+	// Nothing to do to the samples before they are converted for the
+	// backend (no recording, no downmix, volume at rest): they are
+	// converted straight out of the ring, where they lie. Otherwise they
+	// are copied out to be worked on.
+	const bool untouched = g_recording_mode == recording_mode::stopped && cb_cfg.input_ch_cnt == output_ch_cnt &&
+		cb_cfg.target_volume == cb_cfg.current_volume && cb_cfg.current_volume == callback_config::VOL_NOMINAL;
+
+	const void* lent = nullptr;
+	const usz waiting = lr_audio_ring_borrow(&ringbuf, &lent);
+	const bool direct = untouched && waiting >= bytes_from_rb && reinterpret_cast<uptr>(lent) % alignof(f32) == 0;
+
+	const u32 byte_cnt = direct ? bytes_from_rb : static_cast<u32>(lr_audio_ring_read(&ringbuf, callback_tmp_buf.data(), bytes_from_rb));
+	const f32* const samples = direct ? static_cast<const f32*>(lent) : callback_tmp_buf.data();
+	const u32 sample_cnt = byte_cnt / static_cast<u32>(AudioSampleSize::FLOAT);
+	const u32 sample_cnt_out = sample_cnt / cb_cfg.input_ch_cnt * output_ch_cnt;
+
+	// Buffer is in weird state - drop acquired data
+	if (sample_cnt == 0 || sample_cnt % cb_cfg.input_ch_cnt != 0)
+	{
+		if (direct)
 		{
-			memset(buf, 0, bytes);
-			return bytes;
+			lr_audio_ring_consume(&ringbuf, byte_cnt);
 		}
 
+		memset(buf, 0, bytes);
+		return bytes;
+	}
+
+	if (!direct)
+	{
 		// Record audio if enabled
 		if (g_recording_mode != recording_mode::stopped)
 		{
@@ -1882,20 +1947,28 @@ u32 rsxaudio_backend_thread::write_data_callback(u32 bytes, void* buf)
 		{
 			AudioBackend::apply_volume_static(cb_cfg.current_volume * callback_config::VOL_NOMINAL_INV, sample_cnt_out, callback_tmp_buf.data(), callback_tmp_buf.data());
 		}
-
-		if (cb_cfg.convert_to_s16)
-		{
-			AudioBackend::convert_to_s16(sample_cnt_out, callback_tmp_buf.data(), buf);
-			return sample_cnt_out * static_cast<u32>(AudioSampleSize::S16);
-		}
-
-		AudioBackend::normalize(sample_cnt_out, callback_tmp_buf.data(), static_cast<f32*>(buf));
-		return sample_cnt_out * static_cast<u32>(AudioSampleSize::FLOAT);
 	}
 
-	ringbuf.reader_flush();
-	memset(buf, 0, bytes);
-	return bytes;
+	u32 written;
+
+	if (cb_cfg.convert_to_s16)
+	{
+		AudioBackend::convert_to_s16(sample_cnt_out, samples, buf);
+		written = sample_cnt_out * static_cast<u32>(AudioSampleSize::S16);
+	}
+	else
+	{
+		AudioBackend::normalize(sample_cnt_out, samples, static_cast<f32*>(buf));
+		written = sample_cnt_out * static_cast<u32>(AudioSampleSize::FLOAT);
+	}
+
+	if (direct)
+	{
+		// Converted: the ring has them back
+		lr_audio_ring_consume(&ringbuf, byte_cnt);
+	}
+
+	return written;
 }
 
 void rsxaudio_backend_thread::state_changed_callback(AudioStateEvent event)
