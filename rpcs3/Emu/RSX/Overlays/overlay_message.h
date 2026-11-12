@@ -3,7 +3,7 @@
 #include "overlays.h"
 #include "overlay_manager.h"
 
-#include <deque>
+#include <queues/retro_deque.h>
 
 namespace rsx
 {
@@ -50,9 +50,15 @@ namespace rsx
 			static constexpr u16 m_margin = 6;
 		};
 
+		// Messages queued or on screen, each owned by its list: whoever
+		// takes one out deletes it or puts it in another list
+		RETRO_DEQUE_DEFINE(message_items, message_item*);
+
 		class message final : public overlay
 		{
 		public:
+			~message();
+
 			void update(u64 timestamp_us) override;
 			compiled_resource get_compiled() override;
 
@@ -92,13 +98,13 @@ namespace rsx
 					{
 						if (!message_exists(location, id, allow_refresh, compare_id))
 						{
-							queue->emplace_back(id, expiration, refs, icon);
+							add_item(*queue, new message_item(id, expiration, refs, icon));
 						}
 					}
 				}
 				else if (!message_exists(location, msg_id, allow_refresh, compare_id))
 				{
-					queue->emplace_back(msg_id, expiration, std::move(refs), icon);
+					add_item(*queue, new message_item(msg_id, expiration, std::move(refs), icon));
 				}
 
 				visible = true;
@@ -110,21 +116,28 @@ namespace rsx
 			shared_mutex m_mutex_queue;
 
 			// Top and bottom enqueued sets
-			std::deque<message_item> m_ready_queue_bottom_right;
-			std::deque<message_item> m_ready_queue_bottom_left;
-			std::deque<message_item> m_ready_queue_top_right;
-			std::deque<message_item> m_ready_queue_top_left;
+			message_items_t m_ready_queue_bottom_right{};
+			message_items_t m_ready_queue_bottom_left{};
+			message_items_t m_ready_queue_top_right{};
+			message_items_t m_ready_queue_top_left{};
 
 			// Top and bottom visible sets
-			std::deque<message_item> m_visible_items_bottom_right;
-			std::deque<message_item> m_visible_items_bottom_left;
-			std::deque<message_item> m_visible_items_top_right;
-			std::deque<message_item> m_visible_items_top_left;
+			message_items_t m_visible_items_bottom_right{};
+			message_items_t m_visible_items_bottom_left{};
+			message_items_t m_visible_items_top_right{};
+			message_items_t m_visible_items_top_left{};
 
-			void update_queue(std::deque<message_item>& vis_set, std::deque<message_item>& ready_set, message_pin_location origin);
+			static void add_item(message_items_t& list, message_item* item)
+			{
+				ensure(message_items_push_back_growing(&list, &item));
+			}
 
-			// Stacking. Extends the lifetime of a message instead of inserting a duplicate
-			bool check_lists(message_pin_location location, std::function<bool(std::deque<message_item>& list)> check_list);
+			void update_queue(message_items_t& vis_set, message_items_t& ready_set, message_pin_location origin);
+
+			// Stacking. Extends the lifetime of a message instead of inserting a duplicate.
+			// @match is called with each message_item& of the location's two lists until it returns true
+			template <typename F>
+			bool check_lists(message_pin_location location, F&& match);
 			bool message_exists(message_pin_location location, localized_string_id id, bool allow_refresh, bool compare_id);
 			bool message_exists(message_pin_location location, std::string_view msg, bool allow_refresh, bool compare_id);
 			bool message_exists(message_pin_location location, std::u32string_view msg, bool allow_refresh, bool compare_id);

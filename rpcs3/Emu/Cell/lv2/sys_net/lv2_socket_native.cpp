@@ -912,15 +912,13 @@ std::optional<std::tuple<s32, std::vector<u8>, sys_net_sockaddr>> lv2_socket_nat
 	if (dnshook.is_dns(lv2_id) && dnshook.is_dns_queue(lv2_id))
 	{
 		auto& nph         = g_fxo->get<named_thread<np::np_handler>>();
-		const auto packet = dnshook.get_dns_packet(lv2_id);
-		ensure(packet.size() <= len);
-		memcpy(res_buf.data(), packet.data(), packet.size());
+		const u32 packet_size = dnshook.take_dns_packet(lv2_id, res_buf.data(), len);
 		native_addr.ss_family                                             = AF_INET;
 		(reinterpret_cast<::sockaddr_in*>(&native_addr))->sin_port        = std::bit_cast<u16, be_t<u16>>(53); // htons(53)
 		(reinterpret_cast<::sockaddr_in*>(&native_addr))->sin_addr.s_addr = nph.get_dns_ip();
 		const auto sn_addr                                                = native_addr_to_sys_net_addr(native_addr);
 
-		return {{::narrow<s32>(packet.size()), res_buf, sn_addr}};
+		return {{::narrow<s32>(packet_size), res_buf, sn_addr}};
 	}
 
 	if (flags & SYS_NET_MSG_PEEK)

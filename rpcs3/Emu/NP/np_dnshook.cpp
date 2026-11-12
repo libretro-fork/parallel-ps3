@@ -51,37 +51,103 @@ namespace np
 		}
 	}
 
+	dnshook::~dnshook()
+	{
+		while (!dns_replies_empty(&m_dns_replies))
+		{
+			std::free(dns_replies_front(&m_dns_replies)->bytes);
+			dns_replies_pop_front(&m_dns_replies);
+		}
+
+		dns_replies_free(&m_dns_replies);
+		dns_socks_free(&m_dns_spylist);
+	}
+
+	usz dnshook::find_spy(s32 sock) const
+	{
+		const usz count = dns_socks_count(&m_dns_spylist);
+
+		for (usz i = 0; i < count; i++)
+		{
+			if (*dns_socks_at(&m_dns_spylist, i) == sock)
+			{
+				return i;
+			}
+		}
+
+		return count;
+	}
+
+	usz dnshook::find_reply(s32 sock) const
+	{
+		const usz count = dns_replies_count(&m_dns_replies);
+
+		for (usz i = 0; i < count; i++)
+		{
+			if (dns_replies_at(&m_dns_replies, i)->sock == sock)
+			{
+				return i;
+			}
+		}
+
+		return count;
+	}
+
 	void dnshook::add_dns_spy(u32 sock)
 	{
 		std::lock_guard lock(mutex);
-		m_dns_spylist.emplace(std::make_pair(sock, std::queue<std::vector<u8>>()));
+		const s32 s = static_cast<s32>(sock);
+
+		if (find_spy(s) == dns_socks_count(&m_dns_spylist))
+		{
+			ensure(dns_socks_push_back_growing(&m_dns_spylist, &s));
+		}
 	}
 
 	void dnshook::remove_dns_spy(u32 sock)
 	{
 		std::lock_guard lock(mutex);
-		m_dns_spylist.erase(sock);
+		const s32 s = static_cast<s32>(sock);
+
+		if (const usz i = find_spy(s); i != dns_socks_count(&m_dns_spylist))
+		{
+			dns_socks_erase(&m_dns_spylist, i);
+		}
+
+		// And the replies nobody read
+		for (usz i = find_reply(s); i != dns_replies_count(&m_dns_replies); i = find_reply(s))
+		{
+			std::free(dns_replies_at(&m_dns_replies, i)->bytes);
+			dns_replies_erase(&m_dns_replies, i);
+		}
 	}
 
 	bool dnshook::is_dns(u32 sock)
 	{
 		std::lock_guard lock(mutex);
-		return m_dns_spylist.contains(sock);
+		return find_spy(static_cast<s32>(sock)) != dns_socks_count(&m_dns_spylist);
 	}
 
 	bool dnshook::is_dns_queue(u32 sock)
 	{
 		std::lock_guard lock(mutex);
-		return !::at32(m_dns_spylist, sock).empty();
+		return find_reply(static_cast<s32>(sock)) != dns_replies_count(&m_dns_replies);
 	}
 
-	std::vector<u8> dnshook::get_dns_packet(u32 sock)
+	u32 dnshook::take_dns_packet(u32 sock, u8* out, u32 capacity)
 	{
 		std::lock_guard lock(mutex);
-		auto ret_vec = std::move(::at32(m_dns_spylist, sock).front());
-		::at32(m_dns_spylist, sock).pop();
+		const usz i = find_reply(static_cast<s32>(sock));
+		ensure(i != dns_replies_count(&m_dns_replies));
 
-		return ret_vec;
+		const dns_reply reply = *dns_replies_at(&m_dns_replies, i);
+		ensure(reply.size <= capacity);
+		dns_replies_erase(&m_dns_replies, i);
+
+		// Copied once, into the caller's buffer
+		std::memcpy(out, reply.bytes, reply.size);
+		std::free(reply.bytes);
+		return reply.size;
 	}
 
 	std::optional<u32> dnshook::get_redir(const std::string& hostname)
@@ -161,23 +227,37 @@ namespace np
 		if (auto ip = get_redir(host))
 		{
 			// design fake packet
-			std::vector<u8> fake(len);
-			memcpy(fake.data(), buf, len);
-			dns_header* fake_header = reinterpret_cast<dns_header*>(fake.data());
+			// The query, and one answer after it: written once, into the
+			// block the reply waits in
+			static constexpr u8 answer[12] =
+			{
+				0xC0, 0x0C,             // Ref to name in header
+				0x00, 0x01,             // IPv4
+				0x00, 0x01,             // Class?
+				0x00, 0x00, 0x00, 0x3B, // TTL
+				0x00, 0x04,             // Size of data
+			};
+
+			const dns_reply reply{s, len + ::size32(answer) + 4, static_cast<u8*>(std::malloc(len + sizeof(answer) + 4))};
+			ensure(reply.bytes);
+			memcpy(reply.bytes, buf, len);
+			dns_header* fake_header = reinterpret_cast<dns_header*>(reply.bytes);
 			fake_header->qr         = 1;
 			fake_header->ra         = 1;
 			fake_header->ans_count  = 1;
-			fake.insert(fake.end(), {0xC0, 0x0C});             // Ref to name in header
-			fake.insert(fake.end(), {0x00, 0x01});             // IPv4
-			fake.insert(fake.end(), {0x00, 0x01});             // Class?
-			fake.insert(fake.end(), {0x00, 0x00, 0x00, 0x3B}); // TTL
-			fake.insert(fake.end(), {0x00, 0x04});             // Size of data
+			memcpy(reply.bytes + len, answer, sizeof(answer));
 			u8* ptr_ip = reinterpret_cast<u8*>(&(*ip));
-			fake.insert(fake.end(), ptr_ip, ptr_ip + 4); // IP
+			memcpy(reply.bytes + len + sizeof(answer), ptr_ip, 4); // IP
 
 			dnshook_log.warning("Solving %s to %d.%d.%d.%d", host, ptr_ip[0], ptr_ip[1], ptr_ip[2], ptr_ip[3]);
 
-			m_dns_spylist[s].push(std::move(fake));
+			// As the map did: a socket answered is a socket watched
+			if (find_spy(s) == dns_socks_count(&m_dns_spylist))
+			{
+				ensure(dns_socks_push_back_growing(&m_dns_spylist, &s));
+			}
+
+			ensure(dns_replies_push_back_growing(&m_dns_replies, &reply));
 			return len;
 		}
 		return -1;

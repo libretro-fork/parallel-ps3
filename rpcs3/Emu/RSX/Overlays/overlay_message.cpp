@@ -187,31 +187,50 @@ namespace rsx
 			m_processed = true;
 		}
 
-		void message::update_queue(std::deque<message_item>& vis_set, std::deque<message_item>& ready_set, message_pin_location origin)
+		message::~message()
+		{
+			for (message_items_t* list : {&m_ready_queue_bottom_right, &m_ready_queue_bottom_left, &m_ready_queue_top_right, &m_ready_queue_top_left,
+				&m_visible_items_bottom_right, &m_visible_items_bottom_left, &m_visible_items_top_right, &m_visible_items_top_left})
+			{
+				while (!message_items_empty(list))
+				{
+					delete *message_items_front(list);
+					message_items_pop_front(list);
+				}
+
+				message_items_free(list);
+			}
+		}
+
+		void message::update_queue(message_items_t& vis_set, message_items_t& ready_set, message_pin_location origin)
 		{
 			const u64 cur_time = get_system_time();
 
-			for (auto it = vis_set.begin(); it != vis_set.end();)
+			for (usz i = 0; i < message_items_count(&vis_set);)
 			{
-				if (it->get_expiration() < cur_time)
+				message_item* const item = *message_items_at(&vis_set, i);
+
+				if (item->get_expiration() < cur_time)
 				{
 					// Enusre reference counter is updated on timeout
-					it->ensure_expired();
-					it = vis_set.erase(it);
+					item->ensure_expired();
+					message_items_erase(&vis_set, i);
+					delete item;
 				}
 				else
 				{
-					it++;
+					i++;
 				}
 			}
 
-			while (vis_set.size() < max_visible_items && !ready_set.empty())
+			while (message_items_count(&vis_set) < max_visible_items && !message_items_empty(&ready_set))
 			{
-				vis_set.emplace_back(std::move(ready_set.front()));
-				ready_set.pop_front();
+				// The item itself moves over: nothing is copied
+				add_item(vis_set, *message_items_front(&ready_set));
+				message_items_pop_front(&ready_set);
 			}
 
-			if (vis_set.empty())
+			if (message_items_empty(&vis_set))
 			{
 				return;
 			}
@@ -222,8 +241,10 @@ namespace rsx
 			s16 y_offset = 8;
 			usz index = 0;
 
-			for (auto it = vis_set.rbegin(); it != vis_set.rend(); ++it, ++index)
+			for (usz ri = message_items_count(&vis_set); ri-- > 0; ++index)
 			{
+				message_item* const it = *message_items_at(&vis_set, ri);
+
 				switch (origin)
 				{
 				case message_pin_location::bottom_right:
@@ -260,8 +281,8 @@ namespace rsx
 			update_queue(m_visible_items_top_right, m_ready_queue_top_right, message_pin_location::top_right);
 			update_queue(m_visible_items_top_left, m_ready_queue_top_left, message_pin_location::top_left);
 
-			visible = !m_visible_items_bottom_right.empty() || !m_visible_items_bottom_left.empty() ||
-			          !m_visible_items_top_right.empty() || !m_visible_items_top_left.empty();
+			visible = !message_items_empty(&m_visible_items_bottom_right) || !message_items_empty(&m_visible_items_bottom_left) ||
+			          !message_items_empty(&m_visible_items_top_right) || !message_items_empty(&m_visible_items_top_left);
 		}
 
 		compiled_resource message::get_compiled()
@@ -275,32 +296,44 @@ namespace rsx
 
 			compiled_resource cr{};
 
-			for (auto& item : m_visible_items_bottom_right)
+			for (usz i = 0; i < message_items_count(&m_visible_items_bottom_right); i++)
 			{
-				cr.add(item.get_compiled());
+				cr.add((*message_items_at(&m_visible_items_bottom_right, i))->get_compiled());
 			}
 
-			for (auto& item : m_visible_items_bottom_left)
+			for (usz i = 0; i < message_items_count(&m_visible_items_bottom_left); i++)
 			{
-				cr.add(item.get_compiled());
+				cr.add((*message_items_at(&m_visible_items_bottom_left, i))->get_compiled());
 			}
 
-			for (auto& item : m_visible_items_top_right)
+			for (usz i = 0; i < message_items_count(&m_visible_items_top_right); i++)
 			{
-				cr.add(item.get_compiled());
+				cr.add((*message_items_at(&m_visible_items_top_right, i))->get_compiled());
 			}
 
-			for (auto& item : m_visible_items_top_left)
+			for (usz i = 0; i < message_items_count(&m_visible_items_top_left); i++)
 			{
-				cr.add(item.get_compiled());
+				cr.add((*message_items_at(&m_visible_items_top_left, i))->get_compiled());
 			}
 
 			return cr;
 		}
 
-		bool message::check_lists(message_pin_location location, std::function<bool(std::deque<message_item>& list)> check_list)
+		template <typename F>
+		bool message::check_lists(message_pin_location location, F&& match)
 		{
-			if (!check_list) return false;
+			const auto check_list = [&](message_items_t& list)
+			{
+				for (usz i = 0; i < message_items_count(&list); i++)
+				{
+					if (match(**message_items_at(&list, i)))
+					{
+						return true;
+					}
+				}
+
+				return false;
+			};
 
 			switch (location)
 			{
@@ -319,20 +352,17 @@ namespace rsx
 
 		bool message::message_exists(message_pin_location location, localized_string_id id, bool allow_refresh, bool /*compare_id*/)
 		{
-			const auto check_list = [&](std::deque<message_item>& list)
+			const auto check_list = [&](message_item& item)
 			{
-				return std::any_of(list.begin(), list.end(), [&](message_item& item)
+				if (item.id_matches(id))
 				{
-					if (item.id_matches(id))
+					if (allow_refresh)
 					{
-						if (allow_refresh)
-						{
-							item.reset_expiration();
-						}
-						return true;
+						item.reset_expiration();
 					}
-					return false;
-				});
+					return true;
+				}
+				return false;
 			};
 
 			return check_lists(location, check_list);
@@ -345,20 +375,17 @@ namespace rsx
 
 		bool message::message_exists(message_pin_location location, std::u32string_view msg, bool allow_refresh, bool /*compare_id*/)
 		{
-			const auto check_list = [&](std::deque<message_item>& list)
+			const auto check_list = [&](message_item& item)
 			{
-				return std::any_of(list.begin(), list.end(), [&](message_item& item)
+				if (item.text_matches(msg))
 				{
-					if (item.text_matches(msg))
+					if (allow_refresh)
 					{
-						if (allow_refresh)
-						{
-							item.reset_expiration();
-						}
-						return true;
+						item.reset_expiration();
 					}
-					return false;
-				});
+					return true;
+				}
+				return false;
 			};
 
 			return check_lists(location, check_list);
@@ -368,21 +395,18 @@ namespace rsx
 		{
 			if (compare_id)
 			{
-				const auto check_list = [&](std::deque<message_item>& list)
+				const auto check_list = [&](message_item& item)
 				{
-					return std::any_of(list.begin(), list.end(), [&](message_item& item)
+					if (item.id_matches(container.id))
 					{
-						if (item.id_matches(container.id))
+						if (allow_refresh)
 						{
-							if (allow_refresh)
-							{
-								item.set_label_text(container.str);
-								item.reset_expiration();
-							}
-							return true;
+							item.set_label_text(container.str);
+							item.reset_expiration();
 						}
-						return false;
-					});
+						return true;
+					}
+					return false;
 				};
 
 				return check_lists(location, check_list);

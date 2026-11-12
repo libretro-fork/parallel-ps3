@@ -509,6 +509,14 @@ namespace np
 
 	np_handler::~np_handler()
 	{
+		while (!basic_events_empty(&queue_basic_events))
+		{
+			std::free(basic_events_front(&queue_basic_events)->data);
+			basic_events_pop_front(&queue_basic_events);
+		}
+
+		basic_events_free(&queue_basic_events);
+
 		std::unordered_map<u32, shared_ptr<generic_async_transaction_context>> moved_trans;
 		{
 			std::lock_guard lock(mutex_async_transactions);
@@ -998,37 +1006,49 @@ namespace np
 		return false;
 	}
 
-	void np_handler::queue_basic_event(basic_event to_queue)
+	void np_handler::queue_basic_event(const basic_event& to_queue)
 	{
+		queued_basic_event queued{to_queue.event, to_queue.from, nullptr, ::size32(to_queue.data)};
+
+		if (queued.size)
+		{
+			queued.data = static_cast<u8*>(std::malloc(queued.size));
+			ensure(queued.data);
+			std::memcpy(queued.data, to_queue.data.data(), queued.size);
+		}
+
 		std::lock_guard lock(mutex_queue_basic_events);
-		queue_basic_events.push(std::move(to_queue));
+		ensure(basic_events_push_back_growing(&queue_basic_events, &queued));
 	}
 
 	error_code np_handler::get_basic_event(vm::ptr<s32> event, vm::ptr<SceNpUserInfo> from, vm::ptr<u8> data, vm::ptr<u32> size)
 	{
-		basic_event cur_event;
+		queued_basic_event cur_event;
 		{
 			std::lock_guard lock(mutex_queue_basic_events);
-			if (queue_basic_events.empty())
+			if (basic_events_empty(&queue_basic_events))
 			{
 				return not_an_error(SCE_NP_BASIC_ERROR_NO_EVENT);
 			}
 
-			cur_event = std::move(queue_basic_events.front());
-			queue_basic_events.pop();
+			cur_event = *basic_events_front(&queue_basic_events);
+			basic_events_pop_front(&queue_basic_events);
 		}
+
+		// Its bytes are ours now, until the game has them
+		const std::unique_ptr<u8, void (*)(void*)> cur_data(cur_event.data, std::free);
 
 		*event = cur_event.event;
 		memcpy(from.get_ptr(), &cur_event.from, sizeof(cur_event.from));
 		if (cur_event.event != SCE_NP_BASIC_EVENT_OFFLINE)
 		{
 			const u32 size_avail = *size;
-			const u32 res_size   = std::min(static_cast<u32>(cur_event.data.size()), size_avail);
+			const u32 res_size   = std::min(cur_event.size, size_avail);
 
-			memcpy(data.get_ptr(), cur_event.data.data(), res_size);
+			memcpy(data.get_ptr(), cur_event.data, res_size);
 			*size = res_size;
 
-			if (res_size < cur_event.data.size())
+			if (res_size < cur_event.size)
 			{
 				return SCE_NP_BASIC_ERROR_DATA_LOST;
 			}

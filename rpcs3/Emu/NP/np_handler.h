@@ -1,6 +1,7 @@
 #pragma once
 
 #include <queue>
+#include <queues/retro_deque.h>
 #include <map>
 #include <unordered_map>
 #include <condition_variable>
@@ -93,6 +94,18 @@ namespace np
 		std::vector<u8> data;
 	};
 
+	// A basic event waiting for the game. Plain data: its bytes are a block
+	// of its own, freed by whoever takes the event out of the queue.
+	struct queued_basic_event
+	{
+		s32 event;
+		SceNpUserInfo from;
+		u8* data;
+		u32 size;
+	};
+
+	RETRO_DEQUE_DEFINE(basic_events, queued_basic_event);
+
 	class np_handler
 	{
 	public:
@@ -145,7 +158,7 @@ namespace np
 
 		void register_basic_handler(vm::cptr<SceNpCommunicationId> context, vm::ptr<SceNpBasicEventHandler> handler, vm::ptr<void> arg, bool context_sensitive);
 		SceNpCommunicationId get_basic_handler_context();
-		void queue_basic_event(basic_event to_queue);
+		void queue_basic_event(const basic_event& to_queue);
 		bool send_basic_event(s32 event, s32 retCode, u32 reqId);
 		error_code get_basic_event(vm::ptr<s32> event, vm::ptr<SceNpUserInfo> from, vm::ptr<u8> data, vm::ptr<u32> size);
 
@@ -404,7 +417,7 @@ namespace np
 		std::unordered_map<u32, u32> pending_sign_infos_requests;
 
 		shared_mutex mutex_queue_basic_events;
-		std::queue<basic_event> queue_basic_events;
+		basic_events_t queue_basic_events{};
 
 		bool m_inited_np_handler_dependencies = false;
 
