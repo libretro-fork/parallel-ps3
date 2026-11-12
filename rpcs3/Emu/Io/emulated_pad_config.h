@@ -5,6 +5,16 @@
 #include "pad_types.h"
 #include "MouseHandler.h"
 
+// C, with C's casts
+#ifndef _MSC_VER
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wold-style-cast"
+#endif
+#include <rthreads/retro_seqlock.h>
+#ifndef _MSC_VER
+#pragma GCC diagnostic pop
+#endif
+
 #include <array>
 #include <map>
 #include <set>
@@ -79,6 +89,8 @@ public:
 			if (auto* pbtn = dynamic_cast<cfg_pad_btn<T>*>(n))
 				init_button(pbtn);
 		}
+
+		publish_table();
 	}
 
 	void clear_buttons()
@@ -86,7 +98,7 @@ public:
 		std::lock_guard lock(m_mutex);
 
 		buttons.clear();
-		button_map.clear();
+		publish_table();
 	}
 
 	struct input_value
@@ -116,6 +128,10 @@ public:
 		if (!func || !pad || pad->is_copilot())
 			return;
 
+		// The mapping as it is, whole, for this poll
+		button_table table;
+		read_table(table);
+
 		// What the frontend's thread last handed over, read whole without a lock
 		pad_external pad_ext;
 		pad->read_external(pad_ext);
@@ -124,7 +140,7 @@ public:
 		{
 			if (button.m_pressed || !press_only)
 			{
-				if (handle_input_internal(func, button.m_offset, button.m_outKeyCode, button.m_value, 255, button.m_pressed, true))
+				if (handle_input_internal(func, table, button.m_offset, button.m_outKeyCode, button.m_value, 255, button.m_pressed, true))
 				{
 					return;
 				}
@@ -133,7 +149,7 @@ public:
 
 		for (const AnalogStickExternal& stick : pad_ext.sticks)
 		{
-			if (handle_input_internal(func, stick.m_offset, get_axis_keycode(stick.m_offset, stick.m_value), stick.m_value, 255, true, true))
+			if (handle_input_internal(func, table, stick.m_offset, get_axis_keycode(stick.m_offset, stick.m_value), stick.m_value, 255, true, true))
 			{
 				return;
 			}
@@ -141,7 +157,7 @@ public:
 
 		for (const AnalogSensor& sensor : pad->m_sensors)
 		{
-			if (handle_input_internal(func, sensor.m_offset, sensor.m_keyCode, sensor.m_value, 1023, true, false))
+			if (handle_input_internal(func, table, sensor.m_offset, sensor.m_keyCode, sensor.m_value, 1023, true, false))
 			{
 				return;
 			}
@@ -150,6 +166,9 @@ public:
 
 	void handle_input(const Mouse& mouse, const std::function<void(const input_value&, bool&)>& func) const
 	{
+		button_table table;
+		read_table(table);
+
 		for (int i = 0; i < 8; i++)
 		{
 			const MouseButtonCodes cell_code = get_mouse_button_code(i);
@@ -159,7 +178,7 @@ public:
 				const u32 offset = pad_button_offset(button);
 				const u32 keycode = pad_button_keycode(button);
 
-				if (handle_input_internal(func, offset, keycode, 255, 255, true, true))
+				if (handle_input_internal(func, table, offset, keycode, 255, 255, true, true))
 				{
 					return;
 				}
@@ -168,9 +187,40 @@ public:
 	}
 
 protected:
+	// For the configuration's own threads (loading, saving, the settings):
+	// the list of buttons below. A poll takes no lock.
 	mutable shared_mutex m_mutex;
 	std::vector<cfg_pad_btn<T>*> buttons;
-	std::map<u32, std::map<u32, std::set<const cfg_pad_btn<T>*>>> button_map;
+
+	// The mapping the polls read: each of the controller's buttons with the
+	// pad button it is on, as its offset and key code in the pad's data,
+	// sorted by those (buttons on the same one in the order declared). Made
+	// again whenever the buttons are (publish_table, under m_mutex: one
+	// writer), in atomics under a sequence count that is odd meanwhile; a
+	// poll copies it whole and copies again if the count moved, so it never
+	// waits, holds nothing while the caller's callback runs, and never sees
+	// half of one mapping and half of the next. It holds values, not the
+	// configuration's nodes: a poll does not read those while a load writes
+	// them.
+	static constexpr u32 max_table = 64;
+
+	struct table_entry
+	{
+		u32 offset;
+		u32 keycode;
+		T btn;
+		pad_button pad_btn;
+	};
+
+	struct button_table
+	{
+		u32 count;
+		table_entry entries[max_table];
+	};
+
+	mutable retro_seqlock_t m_table_seq{};
+	mutable retro_atomic_int_t m_table_count{};
+	mutable retro_atomic_int_t m_table[max_table][4]{};
 
 	cfg_pad_btn<T>* get_button(T id)
 	{
@@ -188,37 +238,91 @@ protected:
 	void init_button(cfg_pad_btn<T>* pbtn)
 	{
 		if (!pbtn) return;
-		const u32 offset = pad_button_offset(pbtn->get());
-		const u32 keycode = pad_button_keycode(pbtn->get());
-		button_map[offset][keycode].insert(std::as_const(pbtn));
 		buttons.push_back(pbtn);
 	}
 
-	const std::set<const cfg_pad_btn<T>*>& find_button(u32 offset, u32 keycode) const
+	// m_mutex held
+	void publish_table()
 	{
-		if (const auto it = button_map.find(offset); it != button_map.cend())
+		button_table table{};
+		ensure(buttons.size() <= max_table);
+
+		for (const cfg_pad_btn<T>* item : buttons)
 		{
-			if (const auto it2 = it->second.find(keycode); it2 != it->second.cend() && !it2->second.empty())
+			const pad_button pad_btn = item->get();
+			const table_entry entry{pad_button_offset(pad_btn), pad_button_keycode(pad_btn), item->btn_id(), pad_btn};
+
+			// After the ones before it that are on the same pad button
+			u32 at = table.count;
+			while (at > 0 && (table.entries[at - 1].offset > entry.offset || (table.entries[at - 1].offset == entry.offset && table.entries[at - 1].keycode > entry.keycode)))
 			{
-				return it2->second;
+				table.entries[at] = table.entries[at - 1];
+				at--;
 			}
+			table.entries[at] = entry;
+			table.count++;
 		}
 
-		static const std::set<const cfg_pad_btn<T>*> empty_set;
-		return empty_set;
+		retro_seqlock_write_begin(&m_table_seq);
+		retro_atomic_store_relaxed_int(&m_table_count, static_cast<int>(table.count));
+		for (u32 i = 0; i < table.count; i++)
+		{
+			retro_atomic_store_relaxed_int(&m_table[i][0], static_cast<int>(table.entries[i].offset));
+			retro_atomic_store_relaxed_int(&m_table[i][1], static_cast<int>(table.entries[i].keycode));
+			retro_atomic_store_relaxed_int(&m_table[i][2], static_cast<int>(table.entries[i].btn));
+			retro_atomic_store_relaxed_int(&m_table[i][3], static_cast<int>(table.entries[i].pad_btn));
+		}
+		retro_seqlock_write_end(&m_table_seq);
 	}
 
-	bool handle_input_internal(const std::function<void(const input_value&, bool&)>& func, u32 offset, u32 keycode, u16 value, u16 max_value, bool pressed, bool check_axis) const
+	void read_table(button_table& table) const
+	{
+		int seq;
+		do
+		{
+			seq = retro_seqlock_read_begin(&m_table_seq);
+			table.count = std::min<u32>(static_cast<u32>(retro_atomic_load_relaxed_int(&m_table_count)), max_table);
+			for (u32 i = 0; i < table.count; i++)
+			{
+				table.entries[i].offset = static_cast<u32>(retro_atomic_load_relaxed_int(&m_table[i][0]));
+				table.entries[i].keycode = static_cast<u32>(retro_atomic_load_relaxed_int(&m_table[i][1]));
+				table.entries[i].btn = static_cast<T>(retro_atomic_load_relaxed_int(&m_table[i][2]));
+				table.entries[i].pad_btn = static_cast<pad_button>(retro_atomic_load_relaxed_int(&m_table[i][3]));
+			}
+		}
+		while (retro_seqlock_read_retry(&m_table_seq, seq));
+	}
+
+	// The first of the controller's buttons on a pad button, and how many
+	static const table_entry* find_button(const button_table& table, u32 offset, u32 keycode, u32& count)
+	{
+		u32 lo = 0, hi = table.count;
+		while (lo < hi)
+		{
+			const u32 mid = (lo + hi) / 2;
+			const table_entry& e = table.entries[mid];
+			if (e.offset < offset || (e.offset == offset && e.keycode < keycode))
+				lo = mid + 1;
+			else
+				hi = mid;
+		}
+
+		u32 end = lo;
+		while (end < table.count && table.entries[end].offset == offset && table.entries[end].keycode == keycode)
+			end++;
+
+		count = end - lo;
+		return &table.entries[lo];
+	}
+
+	bool handle_input_internal(const std::function<void(const input_value&, bool&)>& func, const button_table& table, u32 offset, u32 keycode, u16 value, u16 max_value, bool pressed, bool check_axis) const
 	{
 		if (!func) return false;
 
-		m_mutex.lock();
-
-		const auto& btns = find_button(offset, keycode);
-		if (btns.empty())
+		u32 count = 0;
+		const table_entry* btns = find_button(table, offset, keycode, count);
+		if (!count)
 		{
-			m_mutex.unlock();
-
 			if (check_axis)
 			{
 				switch (offset)
@@ -227,7 +331,7 @@ protected:
 				case CELL_PAD_BTN_OFFSET_ANALOG_LEFT_Y:
 				case CELL_PAD_BTN_OFFSET_ANALOG_RIGHT_X:
 				case CELL_PAD_BTN_OFFSET_ANALOG_RIGHT_Y:
-					return handle_input_internal(func, offset, static_cast<u32>(axis_direction::both), value, max_value, pressed, false);
+					return handle_input_internal(func, table, offset, static_cast<u32>(axis_direction::both), value, max_value, pressed, false);
 				default:
 					break;
 				}
@@ -237,24 +341,19 @@ protected:
 
 		bool abort = false;
 
-		for (const auto& btn : btns)
+		for (u32 i = 0; i < count && !abort; i++)
 		{
-			if (btn)
+			const input_value params
 			{
-				const input_value params
-				{
-					.btn = btn->btn_id(),
-					.pad_btn = btn->get(),
-					.value = value,
-					.max_value = max_value,
-					.pressed = pressed
-				};
-				func(params, abort);
-				if (abort) break;
-			}
+				.btn = btns[i].btn,
+				.pad_btn = btns[i].pad_btn,
+				.value = value,
+				.max_value = max_value,
+				.pressed = pressed
+			};
+			func(params, abort);
 		}
 
-		m_mutex.unlock();
 		return abort;
 	}
 };
