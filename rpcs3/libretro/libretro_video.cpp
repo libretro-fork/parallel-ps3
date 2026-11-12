@@ -1,5 +1,6 @@
 #include "stdafx.h"
 #include "libretro_sw_frames.h"
+#include "libretro_gl_frames.h"
 #include <retro_atomic.h>
 
 #include "libretro_video.h"
@@ -193,218 +194,110 @@ static retro_hw_get_proc_address_t s_get_proc_address = nullptr;
 static std::mutex s_video_mutex;
 static bool s_gl_initialized = false;
 
-// Frames the renderer's thread finished, and the last retro_run showed
-static retro_atomic_size_t s_frame_count;
-static retro_atomic_size_t s_last_presented_frame;
-static const bool s_frame_counts_init = []
-{
-    retro_atomic_size_init(&s_frame_count, 0);
-    retro_atomic_size_init(&s_last_presented_frame, 0);
-    return true;
-}();
-
-static retro_atomic_ptr_t s_present_fence; // a GLsync; null as static storage starts
-
-// Shared render texture and FBOs
-// FBOs are NOT shared between GL contexts, but textures ARE.
-// RSX renders to s_rsx_fbo (on RSX context) which has s_shared_texture attached.
-// Main thread uses s_main_read_fbo (on main context) to read from s_shared_texture.
-// retro_run then blits from s_main_read_fbo to RetroArch's actual FBO.
-static GLuint s_shared_texture = 0;
-static GLuint s_rsx_fbo = 0;           // FBO on RSX thread's context
-static GLuint s_main_read_fbo = 0;     // FBO on main thread's context for reading shared texture
+// The renderer's frames to the frontend: three textures shared between the
+// renderer's context and the frontend's, handed over without a lock and
+// fenced on the GPU (libretro_gl_frames.c). FBOs are not shared between GL
+// contexts, but textures are: the renderer draws through its own FBO over a
+// texture, and retro_run blits it into the frontend's FBO through one of its
+// own. Before, one texture was drawn into while the frontend copied it.
 extern bool g_libretro_vulkan_hw;
-static int s_shared_texture_width = 1280;
-static int s_shared_texture_height = 720;
-// Zero, as static storage starts, is "not made yet"
-static retro_atomic_int_t s_rsx_resources_created;
-static retro_atomic_int_t s_main_fbo_created;
 
-// Create the shared render texture (must be called from RSX thread with its context current)
-static GLuint s_depth_stencil_rb = 0;
+// The size the renderer is to draw the next frame at, and whether it has
+// drawn since it last handed a frame over (the renderer's thread's)
+static int s_draw_width = 1280;
+static int s_draw_height = 720;
+static bool s_drawn_since_flip = false;
 
-static void create_rsx_render_resources(int width, int height)
+// The GL functions, through GLEW, called when they are called: GLEW loads
+// them on the renderer's thread after these are handed over
+static void GLAPIENTRY lr_gen_textures(GLsizei n, GLuint* t) { glGenTextures(n, t); }
+static void GLAPIENTRY lr_delete_textures(GLsizei n, const GLuint* t) { glDeleteTextures(n, t); }
+static void GLAPIENTRY lr_bind_texture(GLenum target, GLuint t) { glBindTexture(target, t); }
+static void GLAPIENTRY lr_tex_image_2d(GLenum target, GLint level, GLint internal, GLsizei w, GLsizei h, GLint border, GLenum format, GLenum type, const void* data) { glTexImage2D(target, level, internal, w, h, border, format, type, data); }
+static void GLAPIENTRY lr_tex_parameteri(GLenum target, GLenum name, GLint value) { glTexParameteri(target, name, value); }
+static void GLAPIENTRY lr_gen_framebuffers(GLsizei n, GLuint* f) { glGenFramebuffers(n, f); }
+static void GLAPIENTRY lr_delete_framebuffers(GLsizei n, const GLuint* f) { glDeleteFramebuffers(n, f); }
+static void GLAPIENTRY lr_bind_framebuffer(GLenum target, GLuint f) { glBindFramebuffer(target, f); }
+static void GLAPIENTRY lr_framebuffer_texture_2d(GLenum target, GLenum attachment, GLenum textarget, GLuint t, GLint level) { glFramebufferTexture2D(target, attachment, textarget, t, level); }
+static void GLAPIENTRY lr_gen_renderbuffers(GLsizei n, GLuint* r) { glGenRenderbuffers(n, r); }
+static void GLAPIENTRY lr_delete_renderbuffers(GLsizei n, const GLuint* r) { glDeleteRenderbuffers(n, r); }
+static void GLAPIENTRY lr_bind_renderbuffer(GLenum target, GLuint r) { glBindRenderbuffer(target, r); }
+static void GLAPIENTRY lr_renderbuffer_storage(GLenum target, GLenum format, GLsizei w, GLsizei h) { glRenderbufferStorage(target, format, w, h); }
+static void GLAPIENTRY lr_framebuffer_renderbuffer(GLenum target, GLenum attachment, GLenum rbtarget, GLuint r) { glFramebufferRenderbuffer(target, attachment, rbtarget, r); }
+static void GLAPIENTRY lr_blit_framebuffer(GLint sx0, GLint sy0, GLint sx1, GLint sy1, GLint dx0, GLint dy0, GLint dx1, GLint dy1, GLbitfield mask, GLenum filter) { glBlitFramebuffer(sx0, sy0, sx1, sy1, dx0, dy0, dx1, dy1, mask, filter); }
+static GLsync GLAPIENTRY lr_fence_sync(GLenum condition, GLbitfield flags) { return glFenceSync(condition, flags); }
+static void GLAPIENTRY lr_wait_sync(GLsync sync, GLbitfield flags, GLuint64 timeout) { glWaitSync(sync, flags, timeout); }
+static void GLAPIENTRY lr_delete_sync(GLsync sync) { glDeleteSync(sync); }
+static void GLAPIENTRY lr_flush() { glFlush(); }
+
+static void set_gl_frames_procs()
 {
-    if (retro_atomic_load_acquire_int(&s_rsx_resources_created))
-        return;
-
-    // Create shared texture using standard GL calls
-    glGenTextures(1, &s_shared_texture);
-    glBindTexture(GL_TEXTURE_2D, s_shared_texture);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-    glBindTexture(GL_TEXTURE_2D, 0);
-
-    // Create RSX-side FBO
-    glGenFramebuffers(1, &s_rsx_fbo);
-
-    // Use traditional bind-and-attach method (more reliable than DSA)
-    glBindFramebuffer(GL_FRAMEBUFFER, s_rsx_fbo);
-
-    // Attach color texture
-    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, s_shared_texture, 0);
-
-    // Add depth/stencil renderbuffer
-    glGenRenderbuffers(1, &s_depth_stencil_rb);
-    glBindRenderbuffer(GL_RENDERBUFFER, s_depth_stencil_rb);
-    glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH24_STENCIL8, width, height);
-    glBindRenderbuffer(GL_RENDERBUFFER, 0);
-
-    // Attach depth/stencil renderbuffer
-    glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_STENCIL_ATTACHMENT, GL_RENDERBUFFER, s_depth_stencil_rb);
-
-    // Unbind FBO
-    glBindFramebuffer(GL_FRAMEBUFFER, 0);
-
-    s_shared_texture_width = width;
-    s_shared_texture_height = height;
-    retro_atomic_store_release_int(&s_rsx_resources_created, 1);
+    lr_gl_frames_procs procs{};
+    procs.gen_textures = lr_gen_textures;
+    procs.delete_textures = lr_delete_textures;
+    procs.bind_texture = lr_bind_texture;
+    procs.tex_image_2d = lr_tex_image_2d;
+    procs.tex_parameteri = lr_tex_parameteri;
+    procs.gen_framebuffers = lr_gen_framebuffers;
+    procs.delete_framebuffers = lr_delete_framebuffers;
+    procs.bind_framebuffer = lr_bind_framebuffer;
+    procs.framebuffer_texture_2d = lr_framebuffer_texture_2d;
+    procs.gen_renderbuffers = lr_gen_renderbuffers;
+    procs.delete_renderbuffers = lr_delete_renderbuffers;
+    procs.bind_renderbuffer = lr_bind_renderbuffer;
+    procs.renderbuffer_storage = lr_renderbuffer_storage;
+    procs.framebuffer_renderbuffer = lr_framebuffer_renderbuffer;
+    procs.blit_framebuffer = lr_blit_framebuffer;
+    procs.fence_sync = lr_fence_sync;
+    procs.wait_sync = lr_wait_sync;
+    procs.delete_sync = lr_delete_sync;
+    procs.flush = lr_flush;
+    lr_gl_frames_set_procs(&procs);
 }
 
-// Resize shared texture when game resolution changes (called from RSX thread)
-static void resize_rsx_render_resources(int new_width, int new_height)
-{
-    if (new_width <= 0 || new_height <= 0)
-        return;
-
-    if (new_width == s_shared_texture_width && new_height == s_shared_texture_height)
-        return;
-
-    // Resize texture
-    glBindTexture(GL_TEXTURE_2D, s_shared_texture);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, new_width, new_height, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
-    glBindTexture(GL_TEXTURE_2D, 0);
-
-    // Resize depth/stencil renderbuffer
-    glBindRenderbuffer(GL_RENDERBUFFER, s_depth_stencil_rb);
-    glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH24_STENCIL8, new_width, new_height);
-    glBindRenderbuffer(GL_RENDERBUFFER, 0);
-
-    s_shared_texture_width = new_width;
-    s_shared_texture_height = new_height;
-
-    // Mark main thread FBO as needing recreation (texture changed)
-    retro_atomic_store_release_int(&s_main_fbo_created, 0);
-}
-
-// Sizes the shared texture to the picture being presented, from the RSX
-// thread. It is what the frontend is handed and what LibretroGSFrame reports as
-// the window, so it has to match the picture exactly: at the 1280x720 it was
-// created with, a title drawn at a higher resolution scale was shrunk back into
-// it, and the frontend never saw more than 720p (NNshi). Larger than the
-// picture would leave it in a corner.
+// The renderer's thread, at present: the picture's size. The frame is drawn
+// at exactly that size and handed to the frontend at it: at the 1280x720 the
+// texture was first made at, a title drawn at a higher resolution scale was
+// shrunk back into it, and the frontend never saw more than 720p (NNshi).
 void libretro_ensure_render_size(int width, int height)
 {
     if (width <= 0 || height <= 0)
         return;
-
-    if (!retro_atomic_load_acquire_int(&s_rsx_resources_created))
-    {
-        s_shared_texture_width = width;
-        s_shared_texture_height = height;
-        create_rsx_render_resources(width, height);
-    }
-    else
-    {
-        resize_rsx_render_resources(width, height);
-    }
+    s_draw_width = width;
+    s_draw_height = height;
 }
 
+// The renderer's thread: the FBO to present the frame into
 unsigned int libretro_get_rsx_fbo()
 {
-    // Lazy creation on first call from RSX thread
-    // Use game's native resolution (1280x720) - RetroArch handles final scaling to window
-    if (!retro_atomic_load_acquire_int(&s_rsx_resources_created))
-    {
-        create_rsx_render_resources(s_shared_texture_width, s_shared_texture_height);
-    }
-    return s_rsx_fbo;
+    s_drawn_since_flip = true;
+    return lr_gl_frames_draw_fbo(s_draw_width, s_draw_height);
 }
 
-unsigned int libretro_get_shared_texture()
-{
-    return s_shared_texture;
-}
-
+// The renderer's thread: the size it draws at (the window it reports)
 int libretro_get_shared_texture_width()
 {
-    return s_shared_texture_width;
+    return s_draw_width;
 }
 
 int libretro_get_shared_texture_height()
 {
-    return s_shared_texture_height;
+    return s_draw_height;
 }
 
-// Create main thread's read FBO (must be called from main thread with its context current)
-static void create_main_read_fbo()
+// retro_run: the newest frame finished into RetroArch's FBO, once the GPU has
+// drawn it - the GPU waits on the renderer's fence, not retro_run
+bool libretro_blit_to_frontend(unsigned* width, unsigned* height)
 {
-    if (retro_atomic_load_acquire_int(&s_main_fbo_created) || s_shared_texture == 0)
-        return;
+    if (!s_gl_initialized || !s_get_current_framebuffer)
+        return false;
 
-    // Create FBO on main thread's context
-    glGenFramebuffers(1, &s_main_read_fbo);
-    glBindFramebuffer(GL_FRAMEBUFFER, s_main_read_fbo);
-
-    // Attach the shared texture (texture IS shared between contexts)
-    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, s_shared_texture, 0);
-
-    glCheckFramebufferStatus(GL_FRAMEBUFFER);
-    glBindFramebuffer(GL_FRAMEBUFFER, 0);
-
-    retro_atomic_store_release_int(&s_main_fbo_created, 1);
-}
-
-void libretro_blit_to_frontend()
-{
-    if (!s_gl_initialized || !retro_atomic_load_acquire_int(&s_rsx_resources_created) || !s_get_current_framebuffer)
-        return;
-
-    // Lazy-create main thread's read FBO on first call
-    if (!retro_atomic_load_acquire_int(&s_main_fbo_created))
-    {
-        create_main_read_fbo();
-    }
-
-    if (s_main_read_fbo == 0)
-        return;
-
-    // Get RetroArch's actual FBO
-    GLuint frontend_fbo = static_cast<GLuint>(s_get_current_framebuffer());
-
-    // Blit from main thread's read FBO (which references shared texture) to RetroArch's FBO
-    // NOTE: We use s_main_read_fbo, NOT s_rsx_fbo, because FBOs are context-specific!
-    glBindFramebuffer(GL_READ_FRAMEBUFFER, s_main_read_fbo);
-    glBindFramebuffer(GL_DRAW_FRAMEBUFFER, frontend_fbo);
-
-    glBlitFramebuffer(
-        0, 0, s_shared_texture_width, s_shared_texture_height,  // src
-        0, 0, s_shared_texture_width, s_shared_texture_height,  // dst (same size)
-        GL_COLOR_BUFFER_BIT,
-        GL_NEAREST
-    );
-
-    glBindFramebuffer(GL_FRAMEBUFFER, 0);
-}
-
-void libretro_signal_frame_ready()
-{
-    retro_atomic_fetch_add_size(&s_frame_count, 1);
-}
-
-// Check if a new frame is available (non-blocking, doesn't consume)
-bool libretro_has_new_frame()
-{
-    return retro_atomic_load_acquire_size(&s_frame_count) != retro_atomic_load_acquire_size(&s_last_presented_frame);
-}
-
-// Mark the current frame as presented
-void libretro_mark_frame_presented()
-{
-    retro_atomic_store_release_size(&s_last_presented_frame, retro_atomic_load_acquire_size(&s_frame_count));
+    int w = 0, h = 0;
+    if (!lr_gl_frames_blit(static_cast<GLuint>(s_get_current_framebuffer()), &w, &h))
+        return false;
+    *width = static_cast<unsigned>(w);
+    *height = static_cast<unsigned>(h);
+    return true;
 }
 
 // Clean up GL state before returning control to frontend
@@ -427,29 +320,6 @@ void libretro_cleanup_gl_state()
     // - GL state flags: RSX manages its own state, resetting is redundant
     // The previous implementation was doing 40+ GL calls per frame at 60fps = 2400+ calls/sec
     // which was a major performance bottleneck, especially on some drivers.
-}
-
-void libretro_wait_for_present_fence()
-{
-    if (!s_gl_initialized)
-        return;
-
-    // Take ownership of the latest fence (if any). If RSX produced multiple fences
-    // since the last call, we only wait on the newest.
-    GLsync fence = static_cast<GLsync>(retro_atomic_exchange_ptr(&s_present_fence, nullptr));
-    if (!fence)
-        return;
-
-    if (!glWaitSync || !glDeleteSync)
-        return;
-
-    // The GPU waits, not retro_run: the frontend's context goes on to the
-    // blit only once the renderer's frame is drawn. retro_run used to wait on
-    // the CPU (glClientWaitSync) for up to 1 ms, and past that blitted a frame
-    // the GPU had perhaps not finished. The sync can go at once; the wait
-    // queued on it stays.
-    glWaitSync(fence, 0, GL_TIMEOUT_IGNORED);
-    glDeleteSync(fence);
 }
 
 // Pre-create shared OpenGL contexts while main context is idle
@@ -668,6 +538,7 @@ void libretro_video_init(retro_hw_get_current_framebuffer_t get_fb, retro_hw_get
     std::lock_guard<std::mutex> lock(s_video_mutex);
     s_get_current_framebuffer = get_fb;
     s_get_proc_address = get_proc;
+    set_gl_frames_procs();
 
     if (!s_gl_initialized)
     {
@@ -1060,23 +931,13 @@ void LibretroGSFrame::flip(draw_context_t ctx, bool skip_frame)
     if (skip_frame)
         return;
 
-    if (glFenceSync && glDeleteSync)
+    // The frame presented since the last flip, handed over; a flip with
+    // nothing presented hands over nothing
+    if (s_drawn_since_flip)
     {
-        GLsync fence = glFenceSync(GL_SYNC_GPU_COMMANDS_COMPLETE, 0);
-        glFlush();
-
-        GLsync old = static_cast<GLsync>(retro_atomic_exchange_ptr(&s_present_fence, static_cast<void*>(fence)));
-        if (old)
-            glDeleteSync(old);
+        s_drawn_since_flip = false;
+        lr_gl_frames_publish();
     }
-
-    // RSX uses double-buffering and calls flip() twice per frame
-    // Only signal frame ready every other flip to maintain proper 60fps pacing
-    static thread_local u64 tl_flip_count = 0;
-    tl_flip_count++;
-
-    if ((tl_flip_count % 2) == 0)
-        libretro_signal_frame_ready();
 }
 
 void LibretroGSFrame::update_dimensions_from_fbo()

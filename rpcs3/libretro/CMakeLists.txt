@@ -8,7 +8,7 @@
 if(ANDROID OR APPLE)
     set(LIBRETRO_VIDEO_SRC libretro_video_sw.cpp)
 else()
-    set(LIBRETRO_VIDEO_SRC libretro_video.cpp)
+    set(LIBRETRO_VIDEO_SRC libretro_video.cpp libretro_gl_frames.c)
 endif()
 
 include(${CMAKE_CURRENT_SOURCE_DIR}/embed_ui_icons.cmake)

@@ -20,17 +20,6 @@ uintptr_t libretro_get_current_framebuffer();
 // Get OpenGL proc address
 void* libretro_get_proc_address(const char* sym);
 
-void libretro_wait_for_present_fence();
-
-// Signal that a frame is ready (called from RSX flip)
-void libretro_signal_frame_ready();
-
-// Check if a new frame is available (non-blocking)
-bool libretro_has_new_frame();
-
-// Mark the current frame as presented
-void libretro_mark_frame_presented();
-
 // Clean up GL state before returning control to frontend
 void libretro_cleanup_gl_state();
 
@@ -38,14 +27,11 @@ void libretro_cleanup_gl_state();
 int libretro_get_fbo_width();
 int libretro_get_fbo_height();
 
-// Get the RSX-side FBO that uses the shared render texture
-// RSX should render to THIS FBO, not RetroArch's FBO (FBOs are not shared between GL contexts)
+// The renderer's thread: the FBO to present the next frame into, over one of
+// the textures shared with the frontend's context (libretro_gl_frames.c)
 unsigned int libretro_get_rsx_fbo();
 
-// Get the shared render texture that RSX renders to
-unsigned int libretro_get_shared_texture();
-
-// Get shared texture dimensions (game native resolution)
+// The size the renderer draws the next frame at
 int libretro_get_shared_texture_width();
 int libretro_get_shared_texture_height();
 
@@ -53,9 +39,10 @@ int libretro_get_shared_texture_height();
 // Called when game resolution changes (e.g., resolution scaling)
 void libretro_ensure_render_size(int width, int height);
 
-// Blit the shared render texture to RetroArch's actual FBO
-// Called from retro_run on RetroArch's main thread before video_cb
-void libretro_blit_to_frontend();
+// retro_run: the newest frame finished, blitted into RetroArch's FBO at its
+// own size (*width x *height); false, with nothing blitted, when none has
+// been finished since the last
+bool libretro_blit_to_frontend(unsigned* width, unsigned* height);
 
 // Software present path: hands out the last frame the renderer produced, if
 // one has arrived since the previous call. The pointer stays valid until the

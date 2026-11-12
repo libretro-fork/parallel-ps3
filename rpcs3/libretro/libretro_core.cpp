@@ -3371,44 +3371,29 @@ void retro_run(void)
     // This prevents state conflicts between RSX rendering and RetroArch's rendering
     libretro_cleanup_gl_state();
 
-    // Ensure RSX shared-context GPU work is ordered before RetroArch presents.
-    libretro_wait_for_present_fence();
-
-    // CRITICAL FIX: Only present frames when RSX has actually produced a new one
-    // This prevents showing the same stale frame repeatedly, which causes flickering/flashing
-    // Check if RSX has rendered a new frame since our last presentation
-    const bool has_new_frame = libretro_has_new_frame();
-
-    // What the blit actually wrote. libretro_blit_to_frontend() copies the
-    // shared texture at its own size, so telling the frontend a fixed 1280x720
-    // is right only while the texture happens to be that - and when it is not,
-    // the frontend reads a rectangle that is not the one we drew: too small
-    // crops the image, too large leaves whatever was in the rest of the FBO,
-    // which is black.
-    const unsigned frame_width = static_cast<unsigned>(libretro_get_shared_texture_width());
-    const unsigned frame_height = static_cast<unsigned>(libretro_get_shared_texture_height());
+    // The newest frame the renderer finished, blitted into RetroArch's FBO at
+    // the size it was drawn at (libretro_gl_frames.c): the GPU waits for the
+    // renderer's work, retro_run does not. None since the last run: the
+    // frontend shows the last one again, at its size. That size is what the
+    // blit wrote - telling the frontend a fixed 1280x720 cropped a larger
+    // frame and left black around a smaller one.
+    static unsigned s_gl_width = 1280, s_gl_height = 720;
+    unsigned width = 0, height = 0;
+    const bool has_new_frame = libretro_blit_to_frontend(&width, &height);
+    if (has_new_frame)
+    {
+        s_gl_width = width;
+        s_gl_height = height;
+    }
 
     // The frontend sized its window from retro_get_system_av_info(); if the
     // emulator is drawing something else now, say so, or it keeps scaling to
     // the old shape.
-    report_frame_size(frame_width, frame_height);
+    report_frame_size(s_gl_width, s_gl_height);
 
     libretro_check_frame_stall(has_new_frame);
 
-    if (has_new_frame)
-    {
-        // New frame available - blit from RSX's shared texture to RetroArch's FBO, then present
-        // CRITICAL: FBOs are NOT shared between GL contexts, so RSX renders to a shared texture,
-        // and we blit that texture to RetroArch's actual FBO here on the main thread.
-        libretro_blit_to_frontend();
-        video_cb(RETRO_HW_FRAME_BUFFER_VALID, frame_width, frame_height, 0);
-        libretro_mark_frame_presented();
-    }
-    else
-    {
-        // No new frame - tell RetroArch to reuse the previous frame (frame duping)
-        video_cb(NULL, frame_width, frame_height, 0);
-    }
+    video_cb(has_new_frame ? RETRO_HW_FRAME_BUFFER_VALID : NULL, s_gl_width, s_gl_height, 0);
 }
 
 // A reset is an unload and a load of the same game, done the way those are

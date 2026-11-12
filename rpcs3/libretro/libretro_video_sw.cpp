@@ -47,19 +47,14 @@ void libretro_video_init(retro_hw_get_current_framebuffer_t, retro_hw_get_proc_a
 void libretro_video_deinit() {}
 uintptr_t libretro_get_current_framebuffer() { return 0; }
 void* libretro_get_proc_address(const char*) { return nullptr; }
-void libretro_wait_for_present_fence() {}
-void libretro_signal_frame_ready() {}
-bool libretro_has_new_frame() { return false; }
-void libretro_mark_frame_presented() {}
 void libretro_cleanup_gl_state() {}
 int libretro_get_fbo_width() { return 1280; }
 int libretro_get_fbo_height() { return 720; }
 unsigned int libretro_get_rsx_fbo() { return 0; }
-unsigned int libretro_get_shared_texture() { return 0; }
 int libretro_get_shared_texture_width() { return 1280; }
 int libretro_get_shared_texture_height() { return 720; }
 void libretro_ensure_render_size(int, int) {}
-void libretro_blit_to_frontend() {}
+bool libretro_blit_to_frontend(unsigned*, unsigned*) { return false; }
 
 // --- LibretroGSFrame -------------------------------------------------------
 

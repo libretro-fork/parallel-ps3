@@ -23,6 +23,7 @@ on:
       - 'rpcs3/util/video_sink.h'
       - 'rpcs3/Emu/RSX/VK/vkutils/libretro_images.h'
       - 'rpcs3/libretro/libretro_sw_frames.*'
+      - 'rpcs3/libretro/libretro_gl_frames.*'
       - 'rpcs3/Emu/RSX/Overlays/overlay_font_pack.h'
       - 'rpcs3/Emu/NP/pb_wire.h'
       - 'rpcs3/Emu/NP/generated/**'
@@ -46,6 +47,7 @@ on:
       - 'rpcs3/util/video_sink.h'
       - 'rpcs3/Emu/RSX/VK/vkutils/libretro_images.h'
       - 'rpcs3/libretro/libretro_sw_frames.*'
+      - 'rpcs3/libretro/libretro_gl_frames.*'
       - 'rpcs3/Emu/RSX/Overlays/overlay_font_pack.h'
       - 'rpcs3/Emu/NP/pb_wire.h'
       - 'rpcs3/Emu/NP/generated/**'
@@ -67,8 +69,10 @@ jobs:
       # RPCS3 built it, and stb, the oracle for the image decoders and the
       # font rasterizer, the commit RPCS3 pinned: the Makefile fetches them
       # (zlib for libpng)
+      # Mesa's EGL and software OpenGL, for the OpenGL renderer's frames to
+      # the frontend (test_gl_frames)
       - name: Reference tools
-        run: sudo apt-get update -q && sudo apt-get install -y -q zstd zlib1g-dev ffmpeg
+        run: sudo apt-get update -q && sudo apt-get install -y -q zstd zlib1g-dev ffmpeg libegl-dev libegl-mesa0 libgl1-mesa-dri
 
       - name: Run
         run: make -C rpcs3/libretro/tests -j"$(nproc)" check

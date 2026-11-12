@@ -18,7 +18,7 @@ LRC_DEFS := -DHAVE_SSL -DHAVE_RETROSSL -DHAVE_CRYPTO \
 	-DHAVE_RWAV -DHAVE_RFLAC -DHAVE_RVORBIS -DHAVE_ROPUS -DHAVE_RMP3 -DHAVE_RAAC \
 	-DHAVE_RMP4 -DHAVE_RAC3 -DHAVE_RWMA -DHAVE_RWEBM -DHAVE_RATRAC3 -DHAVE_RATRAC3P
 
-TESTS := test_zstd test_deflate test_rxml test_png_rows test_images test_jpg_rows test_http test_bcn test_tls_duplex test_yaml test_font test_np2 test_rsx_scale test_vpost test_atracx test_vdec test_media test_record test_config_database test_vblank_list test_video_sink test_video_sink_tsan test_vk_images test_vk_images_tsan test_sw_frames test_sw_frames_tsan
+TESTS := test_zstd test_deflate test_rxml test_png_rows test_images test_jpg_rows test_http test_bcn test_tls_duplex test_yaml test_font test_np2 test_rsx_scale test_vpost test_atracx test_vdec test_media test_record test_config_database test_vblank_list test_video_sink test_video_sink_tsan test_vk_images test_vk_images_tsan test_sw_frames test_sw_frames_tsan test_gl_frames
 
 test_zstd_LRC := \
 	$(LRC)/encodings/encoding_rzstd.c \
@@ -428,6 +428,11 @@ test_sw_frames: $(SW_FRAMES_DEPS)
 test_sw_frames_tsan: $(SW_FRAMES_DEPS)
 	$(CC) $(CFLAGS) $(TEST_STD) -fsanitize=thread -o $@ test_sw_frames.c ../libretro_sw_frames.c $(LDFLAGS) $(LDLIBS) -lpthread
 
+# The OpenGL renderer's frames to the frontend, on Mesa's software OpenGL
+# through surfaceless EGL (libegl-dev and Mesa's EGL and drivers)
+test_gl_frames: test_gl_frames.c test_common.h ../libretro_gl_frames.c ../libretro_gl_frames.h $(LRC)/include/retro_atomic.h
+	$(CC) $(CFLAGS) -std=gnu99 -I../../../3rdparty/glew/include $(SANITIZE) -o $@ test_gl_frames.c ../libretro_gl_frames.c $(LDFLAGS) $(LDLIBS) -lEGL -lpthread
+
 # Each test also writes what the new code produces, for the reference
 # tools to read back
 check: all
@@ -459,6 +464,7 @@ check: all
 	./test_vk_images_tsan
 	./test_sw_frames
 	./test_sw_frames_tsan
+	./test_gl_frames
 
 clean:
 	rm -rf obj $(TESTS) *_out.* rec_out
