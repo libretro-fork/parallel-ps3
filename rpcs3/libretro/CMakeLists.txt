@@ -32,6 +32,7 @@ add_library(rpcs3_libretro SHARED
     ${LIBRETRO_VIDEO_SRC}
     libretro_audio.cpp
     libretro_audio_out.c
+    libretro_audio_ring.c
     libretro_input.c
     libretro_pad_handler.cpp
     libretro_pad_values.c

@@ -67,11 +67,21 @@ static size_t pull_samples(void* ctx, void* out, size_t max_frames, lr_audio_for
     return static_cast<LibretroAudioBackend*>(ctx)->GetSamples(out, max_frames, format);
 }
 
+static size_t borrow_samples(void* ctx, const void** ptr, size_t frames, lr_audio_format* format)
+{
+    return static_cast<LibretroAudioBackend*>(ctx)->Borrow(ptr, frames, format);
+}
+
+static void return_samples(void* ctx, size_t frames)
+{
+    static_cast<LibretroAudioBackend*>(ctx)->Return(frames);
+}
+
 void libretro_audio_process(retro_audio_sample_batch_t audio_batch_cb, double frame_rate)
 {
     // The pacing, the silence and the hand-over are libretro_audio_out.c's
     if (s_audio_backend)
-        lr_audio_out_run(audio_batch_cb, pull_samples, s_audio_backend, frame_rate);
+        lr_audio_out_run_lent(audio_batch_cb, pull_samples, borrow_samples, return_samples, s_audio_backend, frame_rate);
 }
 
 LibretroAudioBackend::LibretroAudioBackend()
@@ -140,6 +150,15 @@ void LibretroAudioBackend::SetWriteCallback(std::function<u32(u32, void*)> cb)
     end_exclusive();
 }
 
+void LibretroAudioBackend::SetLendRing(lr_audio_ring* ring)
+{
+    // Once retro_run is out of a pull or a loan: the ring it was given
+    // before is not touched again after this returns
+    begin_exclusive();
+    m_ring = ring;
+    end_exclusive();
+}
+
 void LibretroAudioBackend::SetStateCallback(std::function<void(AudioStateEvent)> cb)
 {
     begin_exclusive();
@@ -183,11 +202,14 @@ size_t LibretroAudioBackend::GetSamples(void* out, size_t max_frames, lr_audio_f
     const u32 ch = get_channels();
     const size_t bytes_per_frame = static_cast<size_t>(ch) * get_sample_size();
 
-    if (Initialized() && m_write_callback && ch && ch <= LR_AUDIO_OUT_CHANNELS)
+    if (Initialized() && (m_ring || m_write_callback) && ch && ch <= LR_AUDIO_OUT_CHANNELS)
     {
-        // Exactly what is due, straight from cellAudio's ring; it pads a
-        // short one with silence, as it does for a sound card
-        const u32 bytes = m_write_callback(static_cast<u32>(max_frames * bytes_per_frame), out);
+        // What is there of what is due, copied out: of cellAudio's ring when
+        // it could not be lent (less than is due, or in two pieces), else
+        // from the write callback
+        const size_t bytes = m_ring
+            ? lr_audio_ring_read(m_ring, out, max_frames * bytes_per_frame)
+            : m_write_callback(static_cast<u32>(max_frames * bytes_per_frame), out);
         frames = bytes / bytes_per_frame;
         format->is_float = m_sample_size == AudioSampleSize::FLOAT;
         format->channels = ch;
@@ -196,4 +218,35 @@ size_t LibretroAudioBackend::GetSamples(void* out, size_t max_frames, lr_audio_f
 
     retro_atomic_store_release_int(&m_access, 0);
     return frames;
+}
+
+size_t LibretroAudioBackend::Borrow(const void** ptr, size_t frames, lr_audio_format* format)
+{
+    if (!IsPlaying() || !Initialized())
+        return 0;
+
+    if (!retro_atomic_cas_int(&m_access, 0, 1))
+        return 0;
+
+    const u32 ch = get_channels();
+    const size_t bytes_per_frame = static_cast<size_t>(ch) * get_sample_size();
+
+    if (Initialized() && m_ring && ch && ch <= LR_AUDIO_OUT_CHANNELS
+        && lr_audio_ring_borrow(m_ring, ptr) >= frames * bytes_per_frame)
+    {
+        format->is_float = m_sample_size == AudioSampleSize::FLOAT;
+        format->channels = ch;
+        format->speakers = m_speakers;
+        m_lent_frame_bytes = bytes_per_frame;
+        return frames; // m_access stays taken until Return
+    }
+
+    retro_atomic_store_release_int(&m_access, 0);
+    return 0;
+}
+
+void LibretroAudioBackend::Return(size_t frames)
+{
+    lr_audio_ring_consume(m_ring, frames * m_lent_frame_bytes);
+    retro_atomic_store_release_int(&m_access, 0);
 }

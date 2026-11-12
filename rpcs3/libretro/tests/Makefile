@@ -18,7 +18,7 @@ LRC_DEFS := -DHAVE_SSL -DHAVE_RETROSSL -DHAVE_CRYPTO \
 	-DHAVE_RWAV -DHAVE_RFLAC -DHAVE_RVORBIS -DHAVE_ROPUS -DHAVE_RMP3 -DHAVE_RAAC \
 	-DHAVE_RMP4 -DHAVE_RAC3 -DHAVE_RWMA -DHAVE_RWEBM -DHAVE_RATRAC3 -DHAVE_RATRAC3P
 
-TESTS := test_zstd test_deflate test_rxml test_png_rows test_images test_jpg_rows test_http test_bcn test_tls_duplex test_yaml test_font test_np2 test_rsx_scale test_vpost test_atracx test_vdec test_media test_record test_config_database test_vblank_list test_video_sink test_video_sink_tsan test_vk_images test_vk_images_tsan test_sw_frames test_sw_frames_tsan test_gl_frames test_gl_fallback test_pad_values test_input_poll test_audio_handover
+TESTS := test_zstd test_deflate test_rxml test_png_rows test_images test_jpg_rows test_http test_bcn test_tls_duplex test_yaml test_font test_np2 test_rsx_scale test_vpost test_atracx test_vdec test_media test_record test_config_database test_vblank_list test_video_sink test_video_sink_tsan test_vk_images test_vk_images_tsan test_sw_frames test_sw_frames_tsan test_gl_frames test_gl_fallback test_pad_values test_input_poll test_audio_handover test_audio_ring test_audio_ring_tsan
 
 test_zstd_LRC := \
 	$(LRC)/encodings/encoding_rzstd.c \
@@ -449,6 +449,21 @@ test_audio_handover: test_audio_handover.c test_common.h ../libretro_audio_out.c
 	$(CC) $(CFLAGS) $(TEST_STD) $(SANITIZE) -c -o obj/libretro_audio_out.o ../libretro_audio_out.c
 	$(CC) $(CFLAGS) -std=gnu99 -w $(SANITIZE) -o $@ obj/test_audio_handover.o obj/libretro_audio_out.o $(LRC)/audio/conversion/float_to_s16.c $(LRC)/features/features_cpu.c $(LDFLAGS) $(LDLIBS)
 
+# The module and the test as C89; libretro-common's ring as it is built
+AUDIO_RING_DEPS := test_audio_ring.c test_common.h ../libretro_audio_ring.c ../libretro_audio_ring.h $(LRC)/queues/retro_spsc.c $(LRC)/include/retro_spsc.h
+
+test_audio_ring: $(AUDIO_RING_DEPS)
+	@mkdir -p obj
+	$(CC) $(CFLAGS) $(TEST_STD) $(SANITIZE) -c -o obj/test_audio_ring.o test_audio_ring.c
+	$(CC) $(CFLAGS) $(TEST_STD) $(SANITIZE) -c -o obj/libretro_audio_ring.o ../libretro_audio_ring.c
+	$(CC) $(CFLAGS) -std=gnu99 $(SANITIZE) -o $@ obj/test_audio_ring.o obj/libretro_audio_ring.o $(LRC)/queues/retro_spsc.c $(LDFLAGS) $(LDLIBS) -lpthread
+
+test_audio_ring_tsan: $(AUDIO_RING_DEPS)
+	@mkdir -p obj
+	$(CC) $(CFLAGS) $(TEST_STD) -fsanitize=thread -c -o obj/test_audio_ring_tsan.o test_audio_ring.c
+	$(CC) $(CFLAGS) $(TEST_STD) -fsanitize=thread -c -o obj/libretro_audio_ring_tsan.o ../libretro_audio_ring.c
+	$(CC) $(CFLAGS) -std=gnu99 -fsanitize=thread -o $@ obj/test_audio_ring_tsan.o obj/libretro_audio_ring_tsan.o $(LRC)/queues/retro_spsc.c $(LDFLAGS) $(LDLIBS) -lpthread
+
 # The core's own code, searched for host clocks and sleeps
 CLOCK_FILES := $(filter-out ../libretro.h,$(wildcard ../*.c ../*.cpp ../*.h)) ../../Emu/RSX/VK/VKLibretro.cpp ../../Emu/RSX/VK/VKLibretro.h
 
@@ -488,12 +503,16 @@ check: all
 	./test_pad_values
 	./test_input_poll
 	./test_audio_handover
+	./test_audio_ring
+	./test_audio_ring_tsan
 	./no_host_clock.sh $(CLOCK_FILES)
 	@# The pads take no lock: pad::g_pad_mutex is gone, and a merge of
 	@# upstream's code that takes it does not bring it back
 	@if grep -rn "g_pad_mutex" ../../Emu ../../Input ../*.cpp ../*.h ../*.c; then echo "pads: pad::g_pad_mutex is back - the pads take no lock (AGENTS.md)"; exit 1; else echo "pads: no pad lock"; fi
 	@# Nor does cellGem take one of its own for what it keeps
 	@if grep -n "gem\.mtx\|lock(mtx)\|tracker\.mutex\|lock(mutex)" ../../Emu/Cell/Modules/cellGem.cpp; then echo "cellGem: a lock of its own is back - what cellGem and its tracker keep are records (AGENTS.md)"; exit 1; else echo "cellGem: no lock of its own"; fi
+	@# cellAudio's ring is the one that lends
+	@if grep -n "simple_ringbuf\|SetWriteCallback" ../../Emu/Cell/Modules/cellAudio.h ../../Emu/Cell/Modules/cellAudio.cpp; then echo "cellAudio: upstream's ring or its write callback is back - its audio is lent from libretro_audio_ring (AGENTS.md)"; exit 1; else echo "cellAudio: its ring lends"; fi
 	@# Nor do the mice: no lock in the handler, none taken by those that read them
 	@if grep -n "shared_mutex\|std::mutex\|lock_guard\|scoped_lock" ../../Emu/Io/MouseHandler.h ../../Emu/Io/MouseHandler.cpp ../libretro_mouse_handler.h ../libretro_mouse_handler.cpp || grep -rn "handler\.mutex\|take_pending()" ../../Emu/Cell/Modules/cellMouse.cpp ../../Emu/Cell/Modules/cellGem.cpp ../../Emu/Io/usio.cpp ../../Emu/Io/GunCon3.cpp ../../Emu/Io/TopShotElite.cpp ../../Emu/Io/TopShotFearmaster.cpp ../../Emu/Io/GameTablet.cpp; then echo "mice: the mouse handler's lock is back - a mouse is a record read whole (AGENTS.md)"; exit 1; else echo "mice: no mouse lock"; fi
 

@@ -66,8 +66,8 @@ unsigned lr_audio_out_speakers(unsigned speakers, unsigned channels)
    return SPK_FL | SPK_FR;
 }
 
-void lr_audio_out_run(retro_audio_sample_batch_t stereo_s16, lr_audio_pull_t pull,
-      void *ctx, double frame_rate)
+void lr_audio_out_run_lent(retro_audio_sample_batch_t stereo_s16, lr_audio_pull_t pull,
+      lr_audio_borrow_t borrow, lr_audio_return_t give_back, void *ctx, double frame_rate)
 {
    size_t remaining;
    void *raw      = LR_ALIGNED(lr_raw_store);
@@ -84,17 +84,41 @@ void lr_audio_out_run(retro_audio_sample_batch_t stereo_s16, lr_audio_pull_t pul
    {
       struct lr_audio_format format;
       const int16_t *s16;
-      size_t want   = remaining < LR_AUDIO_OUT_FRAMES ? remaining : LR_AUDIO_OUT_FRAMES;
-      size_t frames;
+      const void *src = raw;
+      size_t want     = remaining < LR_AUDIO_OUT_FRAMES ? remaining : LR_AUDIO_OUT_FRAMES;
+      size_t frames   = 0;
+      size_t lent     = 0;
 
       format.channels = 2;
       format.speakers = 0;
       format.is_float = 0;
 
-      frames = pull(ctx, raw, want, &format);
+      /* All of it where it lies, or none of it */
+      if (borrow && give_back)
+      {
+         lent = borrow(ctx, &src, want, &format);
 
-      if (frames > want || format.channels == 0 || format.channels > LR_AUDIO_OUT_CHANNELS)
-         frames = 0;
+         if (lent && (lent != want || !src || format.channels == 0
+                  || format.channels > LR_AUDIO_OUT_CHANNELS))
+         {
+            give_back(ctx, 0);
+            lent = 0;
+         }
+
+         frames = lent;
+      }
+
+      if (!lent)
+      {
+         src             = raw;
+         format.channels = 2;
+         format.speakers = 0;
+         format.is_float = 0;
+         frames          = pull(ctx, raw, want, &format);
+
+         if (frames > want || format.channels == 0 || format.channels > LR_AUDIO_OUT_CHANNELS)
+            frames = 0;
+      }
 
       if (frames)
       {
@@ -112,7 +136,8 @@ void lr_audio_out_run(retro_audio_sample_batch_t stereo_s16, lr_audio_pull_t pul
       if (frames < want)
       {
          /* Not playing, short, or set up again just now: silence for the
-          * rest (a float's zero is all bits zero, as an s16's) */
+          * rest (a float's zero is all bits zero, as an s16's). Only what
+          * was pulled comes short. */
          size_t sample = format.is_float ? sizeof(float) : sizeof(int16_t);
          memset((char*)raw + frames * lr_channels * sample, 0,
                (want - frames) * lr_channels * sample);
@@ -122,15 +147,15 @@ void lr_audio_out_run(retro_audio_sample_batch_t stereo_s16, lr_audio_pull_t pul
       if (format.is_float && lr_multi_float)
       {
          /* As the game made them: no conversion */
-         lr_multi_float((const float*)raw, frames, lr_channels, lr_speakers);
+         lr_multi_float((const float*)src, frames, lr_channels, lr_speakers);
       }
       else
       {
-         s16 = (const int16_t*)raw;
+         s16 = (const int16_t*)src;
 
          if (format.is_float)
          {
-            convert_float_to_s16(conv, (const float*)raw, frames * lr_channels);
+            convert_float_to_s16(conv, (const float*)src, frames * lr_channels);
             s16 = conv;
          }
 
@@ -140,6 +165,15 @@ void lr_audio_out_run(retro_audio_sample_batch_t stereo_s16, lr_audio_pull_t pul
             stereo_s16(s16, frames);
       }
 
+      if (lent)
+         give_back(ctx, lent);
+
       remaining -= frames;
    }
+}
+
+void lr_audio_out_run(retro_audio_sample_batch_t stereo_s16, lr_audio_pull_t pull,
+      void *ctx, double frame_rate)
+{
+   lr_audio_out_run_lent(stereo_s16, pull, NULL, NULL, ctx, frame_rate);
 }

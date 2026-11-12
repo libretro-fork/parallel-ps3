@@ -3,7 +3,7 @@
 #include "Emu/Memory/vm_ptr.h"
 #include "Emu/Cell/ErrorCodes.h"
 #include "Utilities/Thread.h"
-#include "Utilities/simple_ringbuf.h"
+#include "libretro/libretro_audio_ring.h"
 #include "Emu/Memory/vm.h"
 #include "Emu/Audio/AudioBackend.h"
 #include "Emu/Audio/AudioDumper.h"
@@ -306,9 +306,10 @@ private:
 
 	std::unique_ptr<float[]> buffer[MAX_AUDIO_BUFFERS]{};
 
-	simple_ringbuf cb_ringbuf{};
+	// To the backend: written here, lent to retro_run where it lies. The
+	// backend having come for audio ("active") is the ring's to tell.
+	lr_audio_ring cb_ringbuf{};
 
-	atomic_t<bool> backend_active = false;
 	atomic_t<bool> backend_device_changed = false;
 	bool playing = false;
 
@@ -325,7 +326,6 @@ private:
 	}
 
 	void commit_data(f32* buf, u32 sample_cnt);
-	u32 backend_write_callback(u32 size, void *buf);
 	void backend_state_callback(AudioStateEvent event);
 
 public:

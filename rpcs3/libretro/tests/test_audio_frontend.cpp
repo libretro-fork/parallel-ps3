@@ -6,6 +6,10 @@
 //   game's floats as they are, bit for bit, in order across runs;
 // - one that takes s16 gets them converted, in order, stereo through the
 //   plain batch callback;
+// - cellAudio's ring is lent, not copied: the frontend is handed pointers
+//   into the ring's own memory, the samples in order across the wrap and
+//   across a flush (nothing written before it is heard after it), and
+//   silence when the ring has less than is due;
 // - while cellAudio's thread opens, closes and sets the callback over and
 //   over, a run never waits for it: no run takes a millisecond.
 //
@@ -40,11 +44,20 @@ static u32 produce(u32 bytes, void* out)
 static std::vector<float> s_got_f32;
 static std::vector<s16> s_got_s16;
 static usz s_got_channels = 0;
+// Where the frontend's floats came from: inside this memory, or not
+static const u8* s_lend_begin = nullptr;
+static const u8* s_lend_end = nullptr;
+static usz s_from_ring = 0, s_not_from_ring = 0;
 static usz s_batch_calls = 0;
 
 static size_t RETRO_CALLCONV take_f32(const float* data, size_t frames, unsigned channels, unsigned)
 {
 	s_got_channels = channels;
+	const u8* p = reinterpret_cast<const u8*>(data);
+	if (p >= s_lend_begin && p + frames * channels * sizeof(float) <= s_lend_end)
+		s_from_ring++;
+	else
+		s_not_from_ring++;
 	s_got_f32.insert(s_got_f32.end(), data, data + frames * channels);
 	return frames;
 }
@@ -175,6 +188,89 @@ int main()
 			silent = silent && v == 0;
 		CHECK(silent);
 		backend.Close();
+	}
+
+	// cellAudio's ring, lent: the frontend reads the ring's own memory
+	{
+		s_offer_float = true;
+		s_got_f32.clear();
+		s_got_s16.clear();
+		CHECK(libretro_audio_negotiate_multi(environ_multi));
+		LibretroAudioBackend backend;
+		CHECK(backend.Open("", AudioFreq::FREQ_48K, AudioSampleSize::FLOAT, AudioChannelCnt::STEREO, audio_channel_layout::automatic));
+
+		lr_audio_ring ring;
+		CHECK(lr_audio_ring_init(&ring, 4800 * 2 * sizeof(float))); // a tenth of a second
+		// The ring's memory, both mappings of it
+		s_lend_begin = ring.q.buffer;
+		s_lend_end = ring.q.buffer + ring.q.capacity * 2;
+		backend.SetLendRing(&ring);
+		backend.Play();
+
+		u32 produced = 0;
+		const auto fill = [&](u32 frames)
+		{
+			std::vector<float> block(frames * 2);
+			for (float& f : block)
+				f = sample_value(produced++);
+			CHECK(lr_audio_ring_push(&ring, block.data(), block.size() * sizeof(float), false) == block.size() * sizeof(float));
+		};
+
+		// 200 runs, the ring filled before each: round its end many times
+		s_from_ring = s_not_from_ring = 0;
+		for (int i = 0; i < 200; i++)
+		{
+			fill(800);
+			libretro_audio_process(take_s16, 60.0);
+		}
+		CHECK(s_got_f32.size() == 200u * 800 * 2);
+		usz wrong = 0;
+		for (usz i = 0; i < s_got_f32.size(); i++)
+			wrong += s_got_f32[i] != sample_value(static_cast<u32>(i));
+		CHECK(wrong == 0);
+		CHECK(ring.q.mirror ? s_from_ring == 200 && s_not_from_ring == 0 : s_from_ring > 0);
+		CHECK(lr_audio_ring_active(&ring));
+		std::printf("test_audio_frontend: 200 runs from cellAudio's ring: %zu handed over from the ring's own memory, %zu from a copy\n", s_from_ring, s_not_from_ring);
+
+		// Less in the ring than is due: what is there, then silence
+		s_got_f32.clear();
+		fill(300);
+		libretro_audio_process(take_s16, 60.0);
+		CHECK(s_got_f32.size() == 800u * 2);
+		wrong = 0;
+		for (usz i = 0; i < 600; i++)
+			wrong += s_got_f32[i] != sample_value(200u * 1600 + static_cast<u32>(i));
+		for (usz i = 600; i < 1600; i++)
+			wrong += s_got_f32[i] != 0.0f;
+		CHECK(wrong == 0);
+
+		// A flush: what was written before it is not heard after it
+		s_got_f32.clear();
+		fill(800);
+		lr_audio_ring_flush(&ring);
+		CHECK(!lr_audio_ring_active(&ring));
+		const u32 after_flush = produced;
+		fill(800);
+		libretro_audio_process(take_s16, 60.0);
+		CHECK(s_got_f32.size() == 800u * 2);
+		wrong = 0;
+		for (usz i = 0; i < s_got_f32.size(); i++)
+			wrong += s_got_f32[i] != sample_value(after_flush + static_cast<u32>(i));
+		CHECK(wrong == 0);
+
+		// The ring taken away: silence, and the ring is not touched again
+		backend.SetLendRing(nullptr);
+		fill(800);
+		const usz used = lr_audio_ring_used(&ring);
+		s_got_f32.clear();
+		s_got_s16.clear();
+		libretro_audio_process(take_s16, 60.0);
+		CHECK(lr_audio_ring_used(&ring) == used);
+		CHECK(s_got_f32.empty() && s_got_s16.size() == 800u * 2);
+
+		backend.Close();
+		lr_audio_ring_free(&ring);
+		s_lend_begin = s_lend_end = nullptr;
 	}
 
 	// cellAudio's thread busy with the backend: no run waits

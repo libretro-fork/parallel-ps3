@@ -8,10 +8,12 @@
  * started yet, being set up) the run hands over silence in the format last
  * handed over, so the frontend's audio keeps its pace too.
  *
- * What is due is pulled in one piece and handed over in one call, where it
- * fits the buffer (1024 frames: every rate from 47 frames a second up).
- * Floats go to a frontend that takes them as the game made them; otherwise
- * they are converted to s16 once, here. */
+ * What is due is handed over in one call, where it fits one piece (1024
+ * frames: every rate from 47 frames a second up). It is borrowed from the
+ * game's side where that can lend it (lr_audio_out_run_lent) - the frontend
+ * then reads the game's own memory - and pulled into a buffer here
+ * otherwise. Floats go to a frontend that takes them as the game made them;
+ * otherwise they are converted to s16 once, here. */
 
 #ifndef LIBRETRO_AUDIO_OUT_H
 #define LIBRETRO_AUDIO_OUT_H
@@ -57,6 +59,21 @@ unsigned lr_audio_out_speakers(unsigned speakers, unsigned channels);
 /* retro_run: one frame's worth, pulled with @pull and handed over. */
 void lr_audio_out_run(retro_audio_sample_batch_t stereo_s16, lr_audio_pull_t pull,
       void *ctx, double frame_rate);
+
+/* The game's samples lent where they lie, with no copy on the way: exactly
+ * @frames frames at *@ptr, the caller's to read until it gives them back
+ * with the return callback, or 0 when that many cannot be lent in one piece
+ * (the run then pulls instead, which copies and can come short). Must not
+ * wait. */
+typedef size_t (*lr_audio_borrow_t)(void *ctx, const void **ptr, size_t frames,
+      struct lr_audio_format *format);
+typedef void (*lr_audio_return_t)(void *ctx, size_t frames);
+
+/* As lr_audio_out_run, borrowing first: the frontend is handed the game's
+ * own memory (floats to a frontend that takes them, s16 as it is), or the
+ * conversion to s16 reads from it. */
+void lr_audio_out_run_lent(retro_audio_sample_batch_t stereo_s16, lr_audio_pull_t pull,
+      lr_audio_borrow_t borrow, lr_audio_return_t give_back, void *ctx, double frame_rate);
 
 RETRO_END_DECLS
 

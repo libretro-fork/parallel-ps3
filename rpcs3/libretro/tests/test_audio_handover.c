@@ -12,6 +12,9 @@
  * - silence, the same amount, when a pull gives nothing or less than asked;
  * - one pull and one call to the frontend a run where the reference made
  *   two (at 60 runs a second);
+ * - the same with the game lending its samples where they lie: the same
+ *   output, the frontend handed the game's own memory, every loan given
+ *   back once, and a pull instead whenever nothing is lent;
  * - what a run costs against the reference (AUDIO_BENCH=1).
  *
  * Usage: test_audio_handover */
@@ -38,6 +41,7 @@ struct recording
    size_t calls, frames;
    unsigned channels, speakers;
    unsigned format_changes;
+   const void *last_data; /* what the frontend was last handed */
 };
 
 static struct recording rec_new, rec_ref;
@@ -55,6 +59,7 @@ static void rec_format(unsigned channels, unsigned speakers)
 static size_t RETRO_CALLCONV take_stereo(const int16_t *data, size_t frames)
 {
    rec->calls++;
+   rec->last_data = data;
    if (rec_on)
    {
       rec_format(2, 3);
@@ -68,6 +73,7 @@ static size_t RETRO_CALLCONV take_stereo(const int16_t *data, size_t frames)
 static size_t RETRO_CALLCONV take_multi_s16(const int16_t *data, size_t frames, unsigned channels, unsigned speakers)
 {
    rec->calls++;
+   rec->last_data = data;
    if (rec_on)
    {
       rec_format(channels, speakers);
@@ -81,6 +87,7 @@ static size_t RETRO_CALLCONV take_multi_s16(const int16_t *data, size_t frames, 
 static size_t RETRO_CALLCONV take_multi_float(const float *data, size_t frames, unsigned channels, unsigned speakers)
 {
    rec->calls++;
+   rec->last_data = data;
    if (rec_on)
    {
       rec_format(channels, speakers);
@@ -142,6 +149,51 @@ static size_t pull_new(void *ctx, void *out, size_t max_frames, struct lr_audio_
    }
    return frames;
 }
+
+/* --- the game lending its samples where they lie ------------------------ */
+
+#define LEND_SAMPLES (1 << 21)
+static float *lend_f32;     /* the stream, sample n at [n] */
+static int16_t *lend_s16;
+static unsigned long lend_borrows, lend_returns, lend_outstanding, lend_refused;
+static unsigned lend_every; /* lends every this-many-th time it is asked; 1: always */
+static int lend_ok = 1;     /* every hand-over read the lent memory itself */
+
+static size_t borrow_new(void *ctx, const void **ptr, size_t frames, struct lr_audio_format *format)
+{
+   struct game *g = (struct game*)ctx;
+   lend_borrows++;
+   if (g->stopped || (lend_every > 1 && lend_borrows % lend_every) || lend_outstanding)
+   {
+      lend_refused++;
+      return 0;
+   }
+   if (g->produced + frames * g->channels > LEND_SAMPLES)
+      return 0;
+   *ptr = g->is_float ? (const void*)(lend_f32 + g->produced) : (const void*)(lend_s16 + g->produced);
+   format->channels = g->channels;
+   format->speakers = g->speakers;
+   format->is_float = g->is_float;
+   lend_outstanding = frames;
+   return frames;
+}
+
+static void return_new(void *ctx, size_t frames)
+{
+   struct game *g = (struct game*)ctx;
+   lend_returns++;
+   if (frames != lend_outstanding)
+      lend_ok = 0;
+   /* The frontend was handed the lent memory itself, unless it had to be
+    * converted to s16 first */
+   if (frames && rec->last_data != (g->is_float ? (const void*)(lend_f32 + g->produced) : (const void*)(lend_s16 + g->produced))
+         && !(g->is_float && rec->s16_count))
+      lend_ok = 0;
+   g->produced     += frames * g->channels;
+   lend_outstanding = 0;
+}
+
+static int lending; /* compare() runs the new code with the lending game */
 
 /* --- the reference: libretro_audio.cpp's libretro_audio_process -------- */
 
@@ -259,7 +311,10 @@ static void compare(const char *name, int multi, int floats_taken, const struct 
 
       rec    = &rec_new;
       before = rec->frames;
-      lr_audio_out_run(take_stereo, pull_new, &g_new, frame_rate);
+      if (lending)
+         lr_audio_out_run_lent(take_stereo, pull_new, borrow_new, return_new, &g_new, frame_rate);
+      else
+         lr_audio_out_run(take_stereo, pull_new, &g_new, frame_rate);
       per_run_new = rec->frames - before;
 
       rec    = &rec_ref;
@@ -453,6 +508,62 @@ int main(void)
    TEST_CHECK(lr_audio_out_speakers(0, 2) == 3 && lr_audio_out_speakers(0, 1) == 4);
    TEST_CHECK(lr_audio_out_speakers(0x60f, 6) == 0x60f && lr_audio_out_speakers(0x60f, 2) == 3);
 
+   /* The same again with the game lending its samples: the same output,
+    * read from the game's own memory, every loan given back once */
+   {
+      unsigned long n;
+      lend_f32 = (float*)malloc(LEND_SAMPLES * sizeof(float));
+      lend_s16 = (int16_t*)malloc(LEND_SAMPLES * sizeof(int16_t));
+      TEST_CHECK(lend_f32 && lend_s16);
+      for (n = 0; n < LEND_SAMPLES; n++)
+      {
+         lend_f32[n] = sample_f32(n);
+         lend_s16[n] = sample_s16(n);
+      }
+      lending = 1;
+
+      memset(&g, 0, sizeof(g));
+      g.channels = 2;
+      g.is_float = 1;
+      lend_every = 1;
+      lend_borrows = lend_returns = lend_refused = 0;
+      compare("lent: floats, stereo, 60", 1, 1, &g, 60.0, 600, 0);
+      TEST_CHECK(rec_new.calls == 600 && rec_new.f32_count == 600 * 800 * 2);
+      TEST_CHECK(lend_borrows == 600 && lend_returns == 600 && lend_refused == 0);
+
+      compare("lent: floats to s16", 1, 0, &g, 60.0, 600, 0);
+      TEST_CHECK(rec_new.s16_count == 600 * 800 * 2);
+      compare("lent: classic stereo", 0, 0, &g, 60.0, 600, 0);
+      compare("lent: 30 runs a second", 1, 1, &g, 30.0, 300, 0);
+      compare("lent: NTSC", 1, 1, &g, ntsc, 600, 0);
+
+      g.is_float = 0;
+      compare("lent: s16 from the game", 1, 1, &g, 60.0, 600, 0);
+      TEST_CHECK(rec_new.s16_count == 600 * 800 * 2);
+      g.is_float = 1;
+
+      g.channels = 6;
+      g.speakers = 0x60f;
+      compare("lent: 5.1 floats", 1, 1, &g, 60.0, 300, 0);
+      TEST_CHECK(rec_new.channels == 6 && rec_new.speakers == 0x60f);
+      g.channels = 2;
+      g.speakers = 0;
+
+      /* Lent only every third time: the rest is pulled, the stream goes on */
+      lend_every = 3;
+      lend_borrows = lend_returns = lend_refused = 0;
+      compare("lent: one time in three", 1, 1, &g, 60.0, 600, 0);
+      TEST_CHECK(lend_refused == 400 && lend_returns == 200);
+      lend_every = 1;
+
+      compare("lent: stopped after 300 runs", 1, 1, &g, 60.0, 600, 300);
+      TEST_CHECK(rec_new.frames == 600 * 800);
+
+      TEST_CHECK(lend_ok);
+      TEST_CHECK(lend_outstanding == 0);
+      lending = 0;
+   }
+
    if (getenv("AUDIO_BENCH"))
    {
       const int runs = 2000000;
@@ -484,10 +595,30 @@ int main(void)
          if ((t1 - t0) / (runs / 10) < best_new[floats]) best_new[floats] = (t1 - t0) / (runs / 10);
          if ((t2 - t1) / (runs / 10) < best_ref[floats]) best_ref[floats] = (t2 - t1) / (runs / 10);
       }
+      {
+         double best_lent = 1e18;
+         lr_audio_out_set_multi(take_multi_s16, take_multi_float);
+         rec = &rec_new;
+         b.is_float = 1;
+         for (pass = 0; pass < 7; pass++)
+         {
+            double t0 = now_ns(), t1;
+            for (i = 0; i < runs / 10; i++)
+            {
+               b.produced = 0;
+               lr_audio_out_run_lent(take_stereo, pull_bench, borrow_new, return_new, &b, 60.0);
+            }
+            t1 = now_ns();
+            if ((t1 - t0) / (runs / 10) < best_lent) best_lent = (t1 - t0) / (runs / 10);
+         }
+         printf("audio out: a run of 800 stereo frames, floats lent:  %.0f ns\n", best_lent);
+      }
       printf("audio out: a run of 800 stereo frames, floats taken: %.0f ns, the reference %.0f ns\n", best_new[1], best_ref[1]);
       printf("audio out: a run of 800 stereo frames, to s16:       %.0f ns, the reference %.0f ns\n", best_new[0], best_ref[0]);
    }
 
+   free(lend_f32);
+   free(lend_s16);
    free(rec_new.f32);
    free(rec_new.s16);
    free(rec_ref.f32);

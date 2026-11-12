@@ -151,8 +151,8 @@ audio_ringbuffer::audio_ringbuffer(cell_audio_config& _cfg)
 		return cfg.audio_min_buffer_duration;
 	}();
 
-	cb_ringbuf.set_buf_size(static_cast<u32>(cfg.backend_ch_cnt * cfg.audio_sampling_rate * cfg.audio_sample_size * buffer_dur_mult));
-	backend->SetWriteCallback(std::bind(&audio_ringbuffer::backend_write_callback, this, std::placeholders::_1, std::placeholders::_2));
+	ensure(lr_audio_ring_init(&cb_ringbuf, static_cast<u32>(cfg.backend_ch_cnt * cfg.audio_sampling_rate * cfg.audio_sample_size * buffer_dur_mult)));
+	backend->SetLendRing(&cb_ringbuf);
 	backend->SetStateCallback(std::bind(&audio_ringbuffer::backend_state_callback, this, std::placeholders::_1));
 }
 
@@ -163,7 +163,10 @@ audio_ringbuffer::~audio_ringbuffer()
 		flush();
 	}
 
+	// The backend is out of the ring before it goes
+	backend->SetLendRing(nullptr);
 	backend->Close();
+	lr_audio_ring_free(&cb_ringbuf);
 }
 
 float* audio_ringbuffer::get_buffer(u32 num) const
@@ -171,13 +174,6 @@ float* audio_ringbuffer::get_buffer(u32 num) const
 	AUDIT(num < cfg.num_allocated_buffers);
 	AUDIT(buffer[num]);
 	return buffer[num].get();
-}
-
-u32 audio_ringbuffer::backend_write_callback(u32 size, void *buf)
-{
-	if (!backend_active.observe()) backend_active = true;
-
-	return static_cast<u32>(cb_ringbuf.pop(buf, size, true));
 }
 
 void audio_ringbuffer::backend_state_callback(AudioStateEvent event)
@@ -201,7 +197,7 @@ float* audio_ringbuffer::get_current_buffer() const
 u64 audio_ringbuffer::get_enqueued_samples() const
 {
 	AUDIT(cfg.buffering_enabled);
-	return cb_ringbuf.get_used_size() / (cfg.audio_sample_size * cfg.backend_ch_cnt);
+	return lr_audio_ring_used(&cb_ringbuf) / (cfg.audio_sample_size * cfg.backend_ch_cnt);
 }
 
 u64 audio_ringbuffer::get_enqueued_playtime() const
@@ -225,7 +221,7 @@ void audio_ringbuffer::enqueue(bool enqueue_silence, bool force)
 		cur_pos = (cur_pos + 1) % cfg.num_allocated_buffers;
 	}
 
-	if (!backend_active.observe() && !force)
+	if (!lr_audio_ring_active(&cb_ringbuf) && !force)
 	{
 		// backend is not ready yet
 		return;
@@ -267,7 +263,7 @@ void audio_ringbuffer::commit_data(f32* buf, u32 sample_cnt)
 		AudioBackend::convert_to_s16(sample_cnt_out, buf, buf);
 	}
 
-	cb_ringbuf.push(buf, sample_cnt_out * cfg.audio_sample_size);
+	lr_audio_ring_push(&cb_ringbuf, buf, sample_cnt_out * cfg.audio_sample_size, false);
 }
 
 void audio_ringbuffer::play()
@@ -285,8 +281,7 @@ void audio_ringbuffer::play()
 void audio_ringbuffer::flush()
 {
 	backend->Pause();
-	cb_ringbuf.writer_flush();
-	backend_active = false;
+	lr_audio_ring_flush(&cb_ringbuf);
 	playing = false;
 }
 
