@@ -792,7 +792,7 @@ $(RSXAUDIO_RING_TEST): $(OBJ_RSXAUDIO_RING_TEST) $(OBJ_LIBRETRO) $(ARCHIVES)
 SHADER_CORPUS_TEST := $(GEN_DIR)/test_shader_corpus
 OBJ_SHADER_CORPUS_TEST := $(CORE_DIR)/rpcs3/libretro/tests/test_shader_corpus.o
 $(OBJ_SHADER_CORPUS_TEST): FLAGS := $(FLAGS_LIBRETRO)
-$(OBJ_SHADER_CORPUS_TEST): $(CORE_DIR)/rpcs3/Emu/RSX/Program/SPIRVCommon.cpp
+$(OBJ_SHADER_CORPUS_TEST): $(CORE_DIR)/rpcs3/Emu/RSX/Program/SPIRVCommon.cpp $(CORE_DIR)/rpcs3/libretro/tests/shader_runner.inc
 
 $(SHADER_CORPUS_TEST): $(OBJ_SHADER_CORPUS_TEST) $(OBJ_LIBRETRO) $(ARCHIVES)
 	$(SAY) LINK $@

@@ -12,7 +12,16 @@
 // - the Vulkan driver takes its module (vkCreateShaderModule).
 // - over all of them its modules are within 2% of the size of glslang's.
 //
-// What it does not show: that the two modules compute the same.
+// - a fragment stage draws the same from both: the two modules are run on
+//   the driver over the same buffers, textures and varyings, filled three
+//   ways, and every target, the depth and the stencil compared byte for
+//   byte (shader_runner.inc).
+//
+// What it does not show: that the vertex and compute stages compute the
+// same, nor the fragment stages it cannot run here - the ones built for
+// barycentric inputs where the driver has none, the shader interpreter's
+// (they run the program in their buffers), and the ones that read an
+// attachment.
 //
 // Gathered: the shader interpreter's vertex and fragment stages for its
 // option sets; every compute task (byte shuffles, depth-stencil gather and
@@ -64,6 +73,8 @@
 #include <cstdlib>
 #include <cstring>
 #include <dlfcn.h>
+#include <functional>
+#include <list>
 #include <map>
 #include <set>
 #include <tuple>
@@ -142,6 +153,11 @@ static interface_t interface_of(const u32* w, usz n)
 static usz s_rslc_refused = 0, s_interface_differs = 0, s_driver_refused = 0;
 static usz s_reference_words = 0, s_rslc_words = 0;
 
+#include "shader_runner.inc"
+
+static usz s_ran = 0, s_run_differs = 0, s_not_run = 0;
+static std::map<std::string, u32> s_not_run_why;
+
 // One gathered source through rslc: compiled, compared, handed to the driver
 static void through_rslc(usz index, const gathered& g, const char* dir)
 {
@@ -198,6 +214,25 @@ static void through_rslc(usz index, const gathered& g, const char* dir)
 		s_driver_refused++;
 	else
 		vkDestroyShaderModule(*vk::g_render_device, module, nullptr);
+
+	// and, for a fragment stage, draws what glslang's module draws
+	if (stage == RSLC_STAGE_FRAGMENT && module)
+	{
+		std::string why;
+		const runner::verdict v = runner::fragment(g.reference, result.spirv, result.spirv_len, why);
+		if (v == runner::verdict::same)
+			s_ran++;
+		else if (v == runner::verdict::not_run)
+		{
+			s_not_run++;
+			s_not_run_why[why]++;
+		}
+		else
+		{
+			s_run_differs++;
+			std::fprintf(stderr, "source %u (%s): %s\n", static_cast<u32>(index), ext, why.c_str());
+		}
+	}
 
 	rslc_result_free(&result, &opts);
 }
@@ -289,6 +324,10 @@ struct fp_inst
 	u32& word(int n) { return n == 0 ? a.HEX : n == 1 ? b.HEX : c.HEX; }
 };
 
+// Whether the programs are built for the renderer interpolating varyings
+// itself, which it does where the driver has barycentric inputs
+static bool s_interpolate = false;
+
 struct fp_program
 {
 	std::vector<u32> words;
@@ -296,7 +335,7 @@ struct fp_program
 
 	fp_program()
 	{
-		prog.ctrl = CELL_GCM_SHADER_CONTROL_32_BITS_EXPORTS | RSX_SHADER_CONTROL_ATTRIBUTE_INTERPOLATION;
+		prog.ctrl = CELL_GCM_SHADER_CONTROL_32_BITS_EXPORTS | (s_interpolate ? u32{RSX_SHADER_CONTROL_ATTRIBUTE_INTERPOLATION} : 0u);
 		prog.mrt_buffers_count = 1;
 		for (u32 i = 0; i < 16; i++)
 			prog.texture_state.set_dimension(rsx::texture_dimension_extended::texture_dimension_2d, i);
@@ -434,16 +473,13 @@ static void fragment_programs()
 		fragment_variant([&](fp_program& p) { p.prog.ctrl |= bit; }, same);
 	}
 	fragment_variant([&](fp_program& p) { p.prog.ctrl |= every; p.prog.mrt_buffers_count = 4; }, same);
-	fragment_variant([&](fp_program& p) { p.prog.ctrl |= every; p.prog.ctrl &= ~RSX_SHADER_CONTROL_ATTRIBUTE_INTERPOLATION; }, same);
 	fragment_variant([&](fp_program& p) { p.prog.ctrl |= RSX_SHADER_CONTROL_PROGRAMMABLE_BLENDING | RSX_SHADER_CONTROL_ROP_MULTISAMPLED | RSX_SHADER_CONTROL_EMULATE_DEPTH_COMPARE; p.prog.mrt_buffers_count = 3; }, same);
-	fragment_variant([](fp_program& p) { p.prog.ctrl &= ~RSX_SHADER_CONTROL_ATTRIBUTE_INTERPOLATION; }, same);
 	fragment_variant([](fp_program& p) { p.prog.two_sided_lighting = true; }, [](fp_inst& i) { i.input(2, 1); });
 
 	// Each varying, as it comes and with the texture coordinate overrides
 	for (u32 attr = 0; attr < 15; attr++)
 	{
 		fragment_variant(plain, [&](fp_inst& i) { i.input(2, attr); });
-		fragment_variant([](fp_program& p) { p.prog.ctrl &= ~RSX_SHADER_CONTROL_ATTRIBUTE_INTERPOLATION; }, [&](fp_inst& i) { i.input(2, attr); });
 	}
 	fragment_variant([](fp_program& p) { p.prog.texcoord_control_mask = 0x3ff; }, [](fp_inst& i) { i.input(2, 5); });
 	fragment_variant([](fp_program& p) { p.prog.texcoord_control_mask = 0x3ff; }, [](fp_inst& i) { i.input(2, 5).swizzle(2, 0, 1, 0, 1); });
@@ -515,6 +551,7 @@ static void fragment_programs()
 		fp_inst last(RSX_FP_OPCODE_ADD, 0, 0x7);
 		last.temp(0, 0).temp(1, 1);
 		last.a.exec_if_eq = 0;
+		last.a.cond_reg_index = reg;
 		p.end(last);
 		p.run();
 	}
@@ -908,6 +945,7 @@ int main()
 	vk::set_current_renderer(device);
 	spirv::initialize_compiler_context();
 
+	runner::start(gpu, device, device.get_graphics_queue(), graphics);
 	shader_corpus_test::interpreter(device);
 
 	// The compute tasks
@@ -961,6 +999,11 @@ int main()
 	compute_source<vk::FidelityFX::easu_pass>();
 	compute_source<vk::FidelityFX::rcas_pass>();
 
+	// The fragment programs both ways: with the varyings as the driver
+	// interpolates them (which a driver without barycentric inputs can also
+	// run), and as the renderer does it itself
+	fragment_programs();
+	s_interpolate = true;
 	fragment_programs();
 	vertex_programs();
 
@@ -983,6 +1026,12 @@ int main()
 	CHECK(s_rslc_words * 50 <= s_reference_words * 51);
 	std::printf("test_shader_corpus: rslc refused %u, differs in interface or layout on %u, the driver refused %u of its modules; %u words where glslang makes %u\n",
 		static_cast<u32>(s_rslc_refused), static_cast<u32>(s_interface_differs), static_cast<u32>(s_driver_refused), static_cast<u32>(s_rslc_words), static_cast<u32>(s_reference_words));
+	CHECK(s_run_differs == 0);
+	CHECK(s_ran >= 200);
+	std::printf("test_shader_corpus: %u fragment stages drew the same from both compilers, %u differed, %u were not run\n",
+		static_cast<u32>(s_ran), static_cast<u32>(s_run_differs), static_cast<u32>(s_not_run));
+	for (const auto& [why, count] : s_not_run_why)
+		std::printf("test_shader_corpus:   %u not run: %s\n", count, why.c_str());
 	std::printf("test_shader_corpus: %u sources gathered, %u refused by the reference compiler\n", ::size32(s_corpus), static_cast<u32>(reference_failed));
 	std::printf("test_shader_corpus: %s\n", failures ? "FAIL" : "ok");
 	std::fflush(stdout);
