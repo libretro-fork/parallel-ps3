@@ -18,7 +18,7 @@ LRC_DEFS := -DHAVE_SSL -DHAVE_RETROSSL -DHAVE_CRYPTO \
 	-DHAVE_RWAV -DHAVE_RFLAC -DHAVE_RVORBIS -DHAVE_ROPUS -DHAVE_RMP3 -DHAVE_RAAC \
 	-DHAVE_RMP4 -DHAVE_RAC3 -DHAVE_RWMA -DHAVE_RWEBM -DHAVE_RATRAC3 -DHAVE_RATRAC3P
 
-TESTS := test_zstd test_deflate test_rxml test_png_rows test_images test_jpg_rows test_http test_bcn test_tls_duplex test_yaml test_font test_np2 test_rsx_scale test_vpost test_atracx test_vdec test_media test_record test_config_database test_vblank_list test_video_sink test_video_sink_tsan test_vk_images test_vk_images_tsan test_sw_frames test_sw_frames_tsan test_gl_frames test_gl_fallback test_pad_values test_input_poll test_audio_handover test_audio_ring test_audio_ring_tsan test_audio_mix test_object_pack test_object_pack_tsan test_eeprom_table test_eeprom_table_tsan test_lf_u64_map test_lf_u64_map_tsan
+TESTS := test_zstd test_deflate test_rxml test_png_rows test_images test_jpg_rows test_http test_bcn test_tls_duplex test_yaml test_font test_np2 test_rsx_scale test_vpost test_atracx test_vdec test_media test_record test_config_database test_vblank_list test_video_sink test_video_sink_tsan test_vk_images test_vk_images_tsan test_sw_frames test_sw_frames_tsan test_gl_frames test_gl_fallback test_pad_values test_input_poll test_audio_handover test_audio_ring test_audio_ring_tsan test_audio_mix test_object_pack test_object_pack_tsan test_eeprom_table test_eeprom_table_tsan test_lf_u64_map test_lf_u64_map_tsan test_lf_item_pool test_lf_item_pool_tsan
 
 test_zstd_LRC := \
 	$(LRC)/encodings/encoding_rzstd.c \
@@ -464,6 +464,20 @@ test_lf_u64_map_tsan: $(LF_U64_MAP_DEPS)
 	$(CC) $(CFLAGS) $(TEST_STD) -fsanitize=thread -c -o obj/lf_u64_map_tsan.o ../../../Utilities/lf_u64_map.c
 	$(CC) $(CFLAGS) -std=gnu99 -fsanitize=thread -o $@ obj/test_lf_u64_map_tsan.o obj/lf_u64_map_tsan.o $(LDFLAGS) $(LDLIBS) -lpthread
 
+LF_ITEM_POOL_DEPS := test_lf_item_pool.c test_common.h ../../../Utilities/lf_item_pool.c ../../../Utilities/lf_item_pool.h
+
+test_lf_item_pool: $(LF_ITEM_POOL_DEPS)
+	@mkdir -p obj
+	$(CC) $(CFLAGS) $(TEST_STD) $(SANITIZE) -c -o obj/test_lf_item_pool.o test_lf_item_pool.c
+	$(CC) $(CFLAGS) $(TEST_STD) $(SANITIZE) -c -o obj/lf_item_pool.o ../../../Utilities/lf_item_pool.c
+	$(CC) $(CFLAGS) -std=gnu99 $(SANITIZE) -o $@ obj/test_lf_item_pool.o obj/lf_item_pool.o $(LDFLAGS) $(LDLIBS) -lpthread
+
+test_lf_item_pool_tsan: $(LF_ITEM_POOL_DEPS)
+	@mkdir -p obj
+	$(CC) $(CFLAGS) $(TEST_STD) -fsanitize=thread -c -o obj/test_lf_item_pool_tsan.o test_lf_item_pool.c
+	$(CC) $(CFLAGS) $(TEST_STD) -fsanitize=thread -c -o obj/lf_item_pool_tsan.o ../../../Utilities/lf_item_pool.c
+	$(CC) $(CFLAGS) -std=gnu99 -fsanitize=thread -o $@ obj/test_lf_item_pool_tsan.o obj/lf_item_pool_tsan.o $(LDFLAGS) $(LDLIBS) -lpthread
+
 # sys_ss's EEPROM table: the module and the test as C89
 EEPROM_TABLE_DEPS := test_eeprom_table.c test_common.h ../../Emu/Cell/lv2/eeprom_table.c ../../Emu/Cell/lv2/eeprom_table.h
 
@@ -555,6 +569,8 @@ check: all
 	./test_audio_ring_tsan
 	./test_lf_u64_map
 	./test_lf_u64_map_tsan
+	./test_lf_item_pool
+	./test_lf_item_pool_tsan
 	./test_eeprom_table
 	./test_eeprom_table_tsan
 	./test_object_pack
@@ -592,6 +608,8 @@ check: all
 	@if grep -n "std::vector<uchar> local_buf" ../../Emu/Cell/lv2/sys_fs.cpp; then echo "sys_fs: a vector allocated and zeroed for every read or write is back in op_read/op_write (CHANGELOG)"; exit 1; else echo "sys_fs: no buffer allocated for a read or a write"; fi
 	@# The Vulkan shader interpreter's caches are looked up and added to with no lock, and time nothing
 	@if grep -n "reader_lock\|shared_mutex\|lock_guard\|std::mutex\|steady_clock" ../../Emu/RSX/VK/VKShaderInterpreter.cpp ../../Emu/RSX/VK/VKShaderInterpreter.h; then echo "interpreter: a lock or a clock is back in the Vulkan shader interpreter - its caches are lock-free (AGENTS.md)"; exit 1; else echo "interpreter: no lock, no clock"; fi
+	@# The pool of spare Vulkan images is put into and taken from with no lock
+	@if grep -n "m_cached_pool_lock\|cached_images_erase\|m_cache_is_exiting" ../../Emu/RSX/VK/VKTextureCache.cpp ../../Emu/RSX/VK/VKTextureCache.h; then echo "image pool: the lock on the Vulkan texture cache's pool of spare images is back - it is a lock-free pool (Utilities/lf_item_pool.h)"; exit 1; else echo "image pool: no lock"; fi
 	@# Nor do the mice: no lock in the handler, none taken by those that read them
 	@if grep -n "shared_mutex\|std::mutex\|lock_guard\|scoped_lock" ../../Emu/Io/MouseHandler.h ../../Emu/Io/MouseHandler.cpp ../libretro_mouse_handler.h ../libretro_mouse_handler.cpp || grep -rn "handler\.mutex\|take_pending()" ../../Emu/Cell/Modules/cellMouse.cpp ../../Emu/Cell/Modules/cellGem.cpp ../../Emu/Io/usio.cpp ../../Emu/Io/GunCon3.cpp ../../Emu/Io/TopShotElite.cpp ../../Emu/Io/TopShotFearmaster.cpp ../../Emu/Io/GameTablet.cpp; then echo "mice: the mouse handler's lock is back - a mouse is a record read whole (AGENTS.md)"; exit 1; else echo "mice: no mouse lock"; fi
 

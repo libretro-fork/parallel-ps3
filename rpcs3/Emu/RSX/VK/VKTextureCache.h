@@ -7,6 +7,7 @@
 #include "vkutils/image_helpers.h"
 
 #include "../Common/texture_cache.h"
+#include "Utilities/lf_item_pool.h"
 #include "../Common/tiled_dma_copy.hpp"
 #include "../Utils/image_utils.hpp"
 
@@ -424,24 +425,28 @@ namespace vk
 			~cached_image_reference_t();
 		};
 
-		// An image the GPU is done with, kept for reuse. Plain data: the
-		// image is owned by the pool, and whoever takes an entry out takes
-		// the image into a unique_ptr or deletes it.
-		struct cached_image_t
+		// Images the GPU is done with, kept for reuse: put in by whichever
+		// thread lets go of one and taken out by the renderer, with no lock
+		// (Utilities/lf_item_pool.c). An image is keyed by its properties,
+		// flagged with its usage bits and weighed by its memory; whoever takes
+		// one out takes it into a unique_ptr or deletes it.
+		static void drop_cached_image(void*, void* image)
 		{
-			u64 key;
-			vk::viewable_image* data;
-		};
+			delete static_cast<vk::viewable_image*>(image);
+		}
 
-		RETRO_DEQUE_DEFINE(cached_images, cached_image_t);
-
-		// Deletes the pool's images from @keep on
+		// Deletes the pool's images but the newest @keep
 		void drop_cached_images(usz keep = 0)
 		{
-			while (cached_images_count(&m_cached_images) > keep)
+			if (keep)
 			{
-				delete cached_images_back(&m_cached_images)->data;
-				cached_images_pop_back(&m_cached_images);
+				lf_item_pool_trim(&m_cached_images, keep, drop_cached_image, nullptr);
+				return;
+			}
+
+			while (void* image = lf_item_pool_take_any(&m_cached_images))
+			{
+				drop_cached_image(nullptr, image);
 			}
 		}
 
@@ -459,7 +464,7 @@ namespace vk
 		~texture_cache()
 		{
 			drop_cached_images();
-			cached_images_free(&m_cached_images);
+			lf_item_pool_free(&m_cached_images);
 		}
 
 	private:
@@ -473,12 +478,7 @@ namespace vk
 
 		// Stuff that has been dereferenced by the GPU goes into these
 		const u32 max_cached_image_pool_size = 256;
-		cached_images_t m_cached_images{};
-		atomic_t<u64> m_cached_memory_size = { 0 };
-		shared_mutex m_cached_pool_lock;
-
-		// Blocks some operations when exiting
-		atomic_t<bool> m_cache_is_exiting = false;
+		lf_item_pool m_cached_images{};
 
 		void clear();
 

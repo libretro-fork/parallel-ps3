@@ -50,17 +50,14 @@ namespace vk
 
 		// Move this object to the cached image pool
 		const auto key = hash_image_properties(data->format(), data->width(), data->height(), data->depth(), data->mipmaps(), data->info.imageType, data->info.flags, data->info.sharingMode);
-		std::lock_guard lock(parent->m_cached_pool_lock);
 
-		if (!parent->m_cache_is_exiting)
+		// A closed or full pool takes nothing: the GPU is done with the image, so it goes
+		if (lf_item_pool_put(&parent->m_cached_images, key, data->info.usage, data->memory->size(), data.get()))
 		{
-			parent->m_cached_memory_size += data->memory->size();
-			const cached_image_t cached{key, data.release()};
-			ensure(cached_images_push_front_growing(&parent->m_cached_images, &cached));
+			data.release();
 		}
 		else
 		{
-			// Destroy if the cache is closed. The GPU is done with this resource anyway.
 			data.reset();
 		}
 	}
@@ -402,14 +399,11 @@ namespace vk
 
 	void texture_cache::clear()
 	{
-		{
-			std::lock_guard lock(m_cached_pool_lock);
-			m_cache_is_exiting = true;
-		}
+		// What is let go of from here on is deleted, not kept
+		lf_item_pool_close(&m_cached_images);
 		baseclass::clear();
 
 		drop_cached_images();
-		m_cached_memory_size = 0;
 	}
 
 	void texture_cache::copy_transfer_regions_impl(vk::command_buffer& cmd, vk::image* dst, const rsx::simple_array<copy_region_descriptor>& sections_to_transfer) const
@@ -672,28 +666,8 @@ namespace vk
 
 	std::unique_ptr<vk::viewable_image> texture_cache::find_cached_image(VkFormat format, u16 w, u16 h, u16 d, u16 mipmaps, VkImageType type, VkImageCreateFlags create_flags, VkImageUsageFlags usage, VkSharingMode sharing)
 	{
-		reader_lock lock(m_cached_pool_lock);
-
-		if (!cached_images_empty(&m_cached_images))
-		{
-			const u64 desired_key = hash_image_properties(format, w, h, d, mipmaps, type, create_flags, sharing);
-			lock.upgrade();
-
-			for (usz i = 0, count = cached_images_count(&m_cached_images); i < count; i++)
-			{
-				const cached_image_t& cached = *cached_images_at(&m_cached_images, i);
-
-				if (cached.key == desired_key && (cached.data->info.usage & usage) == usage)
-				{
-					std::unique_ptr<vk::viewable_image> ret(cached.data);
-					cached_images_erase(&m_cached_images, i);
-					m_cached_memory_size -= ret->memory->size();
-					return ret;
-				}
-			}
-		}
-
-		return {};
+		const u64 desired_key = hash_image_properties(format, w, h, d, mipmaps, type, create_flags, sharing);
+		return std::unique_ptr<vk::viewable_image>(static_cast<vk::viewable_image*>(lf_item_pool_take(&m_cached_images, desired_key, usage)));
 	}
 
 	std::unique_ptr<vk::viewable_image> texture_cache::create_temporary_subresource_storage(
@@ -1503,7 +1477,7 @@ namespace vk
 		m_texture_upload_heap = &upload_heap;
 
 		// Room for the pool at its fullest between two frame ends
-		ensure(cached_images_reserve(&m_cached_images, max_cached_image_pool_size * 2));
+		ensure(m_cached_images.slots || lf_item_pool_init(&m_cached_images, max_cached_image_pool_size * 2));
 	}
 
 	void texture_cache::destroy()
@@ -1552,14 +1526,14 @@ namespace vk
 		auto any_released = baseclass::handle_memory_pressure(severity);
 
 		// TODO: This can cause invalidation of in-flight resources
-		if (severity <= rsx::problem_severity::low || !m_cached_memory_size)
+		if (severity <= rsx::problem_severity::low || !lf_item_pool_weight(&m_cached_images))
 		{
 			// Nothing left to do
 			return any_released;
 		}
 
 		constexpr u64 _1M = 0x100000;
-		if (severity <= rsx::problem_severity::moderate && m_cached_memory_size < (64 * _1M))
+		if (severity <= rsx::problem_severity::moderate && lf_item_pool_weight(&m_cached_images) < (64 * _1M))
 		{
 			// Some memory is consumed by the temporary resources, but no need to panic just yet
 			return any_released;
@@ -1574,14 +1548,12 @@ namespace vk
 
 		// Nuke temporary resources. They will still be visible to the GPU.
 		auto gc = vk::get_resource_manager();
-		any_released |= !cached_images_empty(&m_cached_images);
-		while (!cached_images_empty(&m_cached_images))
+		while (void* cached = lf_item_pool_take_any(&m_cached_images))
 		{
-			std::unique_ptr<vk::viewable_image> image(cached_images_front(&m_cached_images)->data);
-			cached_images_pop_front(&m_cached_images);
+			std::unique_ptr<vk::viewable_image> image(static_cast<vk::viewable_image*>(cached));
 			gc->dispose(image);
+			any_released = true;
 		}
-		m_cached_memory_size = 0;
 
 		any_released |= !m_temporary_subresource_cache.empty();
 		for (auto& e : m_temporary_subresource_cache)
@@ -1603,18 +1575,12 @@ namespace vk
 			purge_unreleased_sections();
 		}
 
-		if (cached_images_count(&m_cached_images) > max_cached_image_pool_size ||
-			m_cached_memory_size > 256 * 0x100000)
+		if (const usz count = lf_item_pool_held(&m_cached_images);
+			count > max_cached_image_pool_size ||
+			lf_item_pool_weight(&m_cached_images) > 256 * 0x100000)
 		{
-			std::lock_guard lock(m_cached_pool_lock);
-
-			const auto new_size = cached_images_count(&m_cached_images) / 2;
-			for (usz i = new_size; i < cached_images_count(&m_cached_images); ++i)
-			{
-				m_cached_memory_size -= cached_images_at(&m_cached_images, i)->data->memory->size();
-			}
-
-			drop_cached_images(new_size);
+			// The older half goes
+			drop_cached_images(count / 2);
 		}
 
 		baseclass::on_frame_end();
@@ -1707,13 +1673,13 @@ namespace vk
 
 	u32 texture_cache::get_unreleased_textures_count() const
 	{
-		return baseclass::get_unreleased_textures_count() + static_cast<u32>(cached_images_count(&m_cached_images));
+		return baseclass::get_unreleased_textures_count() + static_cast<u32>(lf_item_pool_held(&m_cached_images));
 	}
 
 	u64 texture_cache::get_temporary_memory_in_use() const
 	{
 		// TODO: Technically incorrect, we should have separate metrics for cached evictable resources (this value) and temporary active resources.
-		return m_cached_memory_size;
+		return lf_item_pool_weight(&m_cached_images);
 	}
 
 	bool texture_cache::is_overallocated() const
