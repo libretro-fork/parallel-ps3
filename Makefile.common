@@ -421,6 +421,7 @@ SOURCES_RPCS3 := \
 	$(CORE_DIR)/rpcs3/Emu/Cell/lv2/sys_semaphore.cpp \
 	$(CORE_DIR)/rpcs3/Emu/Cell/lv2/sys_sm.cpp \
 	$(CORE_DIR)/rpcs3/Emu/Cell/lv2/sys_spu.cpp \
+	$(CORE_DIR)/rpcs3/Emu/Cell/lv2/eeprom_table.c \
 	$(CORE_DIR)/rpcs3/Emu/Cell/lv2/sys_ss.cpp \
 	$(CORE_DIR)/rpcs3/Emu/Cell/lv2/sys_storage.cpp \
 	$(CORE_DIR)/rpcs3/Emu/Cell/lv2/sys_time.cpp \

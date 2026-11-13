@@ -18,7 +18,7 @@ LRC_DEFS := -DHAVE_SSL -DHAVE_RETROSSL -DHAVE_CRYPTO \
 	-DHAVE_RWAV -DHAVE_RFLAC -DHAVE_RVORBIS -DHAVE_ROPUS -DHAVE_RMP3 -DHAVE_RAAC \
 	-DHAVE_RMP4 -DHAVE_RAC3 -DHAVE_RWMA -DHAVE_RWEBM -DHAVE_RATRAC3 -DHAVE_RATRAC3P
 
-TESTS := test_zstd test_deflate test_rxml test_png_rows test_images test_jpg_rows test_http test_bcn test_tls_duplex test_yaml test_font test_np2 test_rsx_scale test_vpost test_atracx test_vdec test_media test_record test_config_database test_vblank_list test_video_sink test_video_sink_tsan test_vk_images test_vk_images_tsan test_sw_frames test_sw_frames_tsan test_gl_frames test_gl_fallback test_pad_values test_input_poll test_audio_handover test_audio_ring test_audio_ring_tsan test_audio_mix test_object_pack test_object_pack_tsan
+TESTS := test_zstd test_deflate test_rxml test_png_rows test_images test_jpg_rows test_http test_bcn test_tls_duplex test_yaml test_font test_np2 test_rsx_scale test_vpost test_atracx test_vdec test_media test_record test_config_database test_vblank_list test_video_sink test_video_sink_tsan test_vk_images test_vk_images_tsan test_sw_frames test_sw_frames_tsan test_gl_frames test_gl_fallback test_pad_values test_input_poll test_audio_handover test_audio_ring test_audio_ring_tsan test_audio_mix test_object_pack test_object_pack_tsan test_eeprom_table test_eeprom_table_tsan
 
 test_zstd_LRC := \
 	$(LRC)/encodings/encoding_rzstd.c \
@@ -449,6 +449,21 @@ test_audio_handover: test_audio_handover.c test_common.h ../libretro_audio_out.c
 	$(CC) $(CFLAGS) $(TEST_STD) $(SANITIZE) -c -o obj/libretro_audio_out.o ../libretro_audio_out.c
 	$(CC) $(CFLAGS) -std=gnu99 -w $(SANITIZE) -o $@ obj/test_audio_handover.o obj/libretro_audio_out.o $(LRC)/audio/conversion/float_to_s16.c $(LRC)/features/features_cpu.c $(LDFLAGS) $(LDLIBS)
 
+# sys_ss's EEPROM table: the module and the test as C89
+EEPROM_TABLE_DEPS := test_eeprom_table.c test_common.h ../../Emu/Cell/lv2/eeprom_table.c ../../Emu/Cell/lv2/eeprom_table.h
+
+test_eeprom_table: $(EEPROM_TABLE_DEPS)
+	@mkdir -p obj
+	$(CC) $(CFLAGS) $(TEST_STD) $(SANITIZE) -c -o obj/test_eeprom_table.o test_eeprom_table.c
+	$(CC) $(CFLAGS) $(TEST_STD) $(SANITIZE) -c -o obj/eeprom_table.o ../../Emu/Cell/lv2/eeprom_table.c
+	$(CC) $(CFLAGS) -std=gnu99 $(SANITIZE) -o $@ obj/test_eeprom_table.o obj/eeprom_table.o $(LDFLAGS) $(LDLIBS) -lpthread
+
+test_eeprom_table_tsan: $(EEPROM_TABLE_DEPS)
+	@mkdir -p obj
+	$(CC) $(CFLAGS) $(TEST_STD) -fsanitize=thread -c -o obj/test_eeprom_table_tsan.o test_eeprom_table.c
+	$(CC) $(CFLAGS) $(TEST_STD) -fsanitize=thread -c -o obj/eeprom_table_tsan.o ../../Emu/Cell/lv2/eeprom_table.c
+	$(CC) $(CFLAGS) -std=gnu99 -fsanitize=thread -o $@ obj/test_eeprom_table_tsan.o obj/eeprom_table_tsan.o $(LDFLAGS) $(LDLIBS) -lpthread
+
 # The object cache's pack file: the module and the test as C89
 OBJECT_PACK_DEPS := test_object_pack.c test_common.h ../../../Utilities/object_pack.c ../../../Utilities/object_pack.h
 
@@ -523,6 +538,8 @@ check: all
 	./test_audio_handover
 	./test_audio_ring
 	./test_audio_ring_tsan
+	./test_eeprom_table
+	./test_eeprom_table_tsan
 	./test_object_pack
 	./test_object_pack_tsan
 	./test_audio_mix

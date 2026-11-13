@@ -1,5 +1,6 @@
 #include "stdafx.h"
 #include "sys_ss.h"
+#include "eeprom_table.h"
 
 #include "sys_process.h"
 #include "Emu/IdManager.h"
@@ -29,6 +30,13 @@ struct lv2_update_manager
 			system_sw_version <<= 40;
 		else
 			system_sw_version = 0;
+
+		// system language (*i think* this gives english): 00 00 00 01
+		// vsh target (seems it can be 0xFFFFFFFE, 0xFFFFFFFF, 0x00000001 default: 0x00000000 / vsh sets it to 0x00000000 on boot if it isn't 0x00000000)
+		for (u32 offset = 0x48C18; offset <= 0x48C1F; offset++)
+		{
+			eeprom_table_write(&eeprom, offset, offset == 0x48C1B ? 0x01 : 0x00);
+		}
 	}
 
 	lv2_update_manager(const lv2_update_manager&) = delete;
@@ -37,24 +45,9 @@ struct lv2_update_manager
 
 	u64 system_sw_version;
 
-	std::unordered_map<u32, u8> eeprom_map // offset, value
-	{
-		// system language
-		// *i think* this gives english
-		{0x48C18, 0x00},
-		{0x48C19, 0x00},
-		{0x48C1A, 0x00},
-		{0x48C1B, 0x01},
-		// system language end
-
-		// vsh target (seems it can be 0xFFFFFFFE, 0xFFFFFFFF, 0x00000001 default: 0x00000000 / vsh sets it to 0x00000000 on boot if it isn't 0x00000000)
-		{0x48C1C, 0x00},
-		{0x48C1D, 0x00},
-		{0x48C1E, 0x00},
-		{0x48C1F, 0x00}
-		// vsh target end
-	};
-	mutable std::shared_mutex eeprom_mutex;
+	// What games write to the EEPROM, read and written with no lock
+	// (eeprom_table.h)
+	eeprom_table eeprom{};
 
 	std::unordered_set<u32> malloc_set;
 	mutable std::shared_mutex malloc_mutex;
@@ -440,15 +433,8 @@ error_code sys_ss_update_manager(ppu_thread& ppu, u64 pkg_id, u64 a1, u64 a2, u6
 			return CELL_EFAULT;
 		}
 
-		u8 value_out = 0xFF; // 0xFF if not set
-		{
-			std::shared_lock shared_lock(update_manager.eeprom_mutex);
-
-			if (const auto iterator = update_manager.eeprom_map.find(offset); iterator != update_manager.eeprom_map.end())
-			{
-				value_out = iterator->second;
-			}
-		}
+		// 0xFF if not set
+		const u8 value_out = eeprom_table_read(&update_manager.eeprom, offset);
 
 		static_cast<void>(ppu.test_stopped());
 		vm::write8(value_ptr, value_out);
@@ -461,12 +447,9 @@ error_code sys_ss_update_manager(ppu_thread& ppu, u64 pkg_id, u64 a1, u64 a2, u6
 		const auto value = ::narrow<u8>(a2);
 
 		ppu.state += cpu_flag::wait;
-		std::unique_lock unique_lock(update_manager.eeprom_mutex);
 
-		if (value != 0xFF)
-			update_manager.eeprom_map[offset] = value;
-		else
-			update_manager.eeprom_map.erase(offset); // 0xFF: unset
+		// 0xFF: unset, which is how an offset never written reads
+		eeprom_table_write(&update_manager.eeprom, offset, value);
 
 		break;
 	}
