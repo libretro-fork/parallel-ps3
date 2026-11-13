@@ -7,9 +7,9 @@
  * RetroArch's ATRAC3plus test streams so every channel carries a
  * different signal; the reference holds the first 256 and the last 256
  * samples of the two frames, in the LLE's order:
- *   - float output: within 1e-6 of FFmpeg's, clipped as the LLE clips;
+ *   - float output: within 3e-7 of FFmpeg's, clipped as the LLE clips;
  *   - 16, 24 and 32-bit output: within what that difference makes at
- *     each width (1, 8 and 4096), from FFmpeg's samples converted as
+ *     each width (1, 2 and 512), from FFmpeg's samples converted as
  *     the module converted them;
  * which also holds every channel where the module put it. Then frames
  * games handed the decoder, which it once refused, the last of each
@@ -206,8 +206,8 @@ int main(int argc, char **argv)
 
       printf("test_atracx: %u channel%s: float within %.1e of FFmpeg's, 16-bit %ld, 24-bit %ld, 32-bit %ld\n",
             nch, nch > 1 ? "s" : "", worst_f, worst[2], worst[3], worst[4]);
-      TEST_CHECK(worst_f <= 1e-6);
-      TEST_CHECK(worst[2] <= 1 && worst[3] <= 8 && worst[4] <= 4096);
+      TEST_CHECK(worst_f <= 3e-7);
+      TEST_CHECK(worst[2] <= 1 && worst[3] <= 2 && worst[4] <= 512);
 
       /* a broken frame: refused, and no samples to write */
       memset(frames, 0xff, ba);
@@ -222,9 +222,9 @@ int main(int argc, char **argv)
       free(ref);
    }
 
-   game_frames(dir, "ttt2", 1368, 8, 5, 1e-3);
-   game_frames(dir, "t5dr", 688, 2, 2, 1e-3);
-   game_frames(dir, "ttt2music", 1368, 2, 2, 1e-3);
+   game_frames(dir, "ttt2", 1368, 8, 5, 1e-5);
+   game_frames(dir, "t5dr", 688, 2, 2, 1e-5);
+   game_frames(dir, "ttt2music", 1368, 2, 2, 1e-5);
 
    if (test_failures)
    {

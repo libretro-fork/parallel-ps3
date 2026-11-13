@@ -283,6 +283,7 @@ obj/cellAtracXdec_pcm.o: ../../Emu/Cell/Modules/cellAtracXdec_pcm.c ../../Emu/Ce
 	@mkdir -p $(@D)
 	$(CC) $(CFLAGS) $(TEST_STD) $(SANITIZE) -c -o $@ $<
 
+obj/formats/atrac3p/ratrac3p.o: $(LRC)/formats/atrac3p/ratrac3p_tables.h
 obj/test_atracx.o: test_atracx.c test_common.h ../../Emu/Cell/Modules/cellAtracXdec_pcm.h
 
 test_atracx: obj/test_atracx.o obj/cellAtracXdec_pcm.o $(call lrc_objs,$(test_atracx_LRC))
