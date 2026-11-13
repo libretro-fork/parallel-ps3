@@ -11,9 +11,13 @@
  *   - 16, 24 and 32-bit output: within what that difference makes at
  *     each width (1, 8 and 4096), from FFmpeg's samples converted as
  *     the module converted them;
- * which also holds every channel where the module put it. And on its
- * own: a frame that does not parse gives -1, and nothing is written for
- * it. C89. */
+ * which also holds every channel where the module put it. Then eight
+ * frames of the 5.1 sound of a game's opening movie (stereo, mono,
+ * stereo, mono blocks, the second channel of the first block taking
+ * every tone band from the first), which the decoder once refused: the
+ * last of them against FFmpeg's, in the LLE's order. And on its own: a
+ * frame that does not parse gives -1, and nothing is written for it.
+ * C89. */
 
 #include <math.h>
 
@@ -160,6 +164,44 @@ int main(int argc, char **argv)
 
       for (w = 0; w < 4; w++)
          ratrac3p_free(d[w]);
+      free(frames);
+      free(ref);
+   }
+
+   {
+      enum { BA = 1368, N = 8, NCH = 6 };
+      uint8_t    *frames = fixture(dir, "frames_ttt2.raw", (size_t)BA * N);
+      uint8_t    *ref    = fixture(dir, "ffmpeg_ttt2.f32",
+            (size_t)RATRAC3P_SAMPLES * NCH * 4);
+      ratrac3p_t *d      = ratrac3p_new(NCH, BA);
+      double      worst  = 0, peak[NCH];
+      unsigned    f, i, ch;
+      TEST_CHECK(d != NULL);
+      for (f = 0; d && f < N; f++)
+         TEST_CHECK(ratrac3p_decode_float(d, frames + (size_t)f * BA, BA, pcm)
+               == RATRAC3P_SAMPLES);
+      atxpcm_convert(out, pcm, 5, 0x84, RATRAC3P_SAMPLES);
+      for (ch = 0; ch < NCH; ch++)
+         peak[ch] = 0;
+      for (i = 0; i < RATRAC3P_SAMPLES * NCH; i++)
+      {
+         float    v, r = le_float(ref + (size_t)i * 4);
+         uint32_t u    = (uint32_t)be_word(out + (size_t)i * 4, 4);
+         double   dd;
+         memcpy(&v, &u, 4);
+         dd = fabs((double)v - r);
+         if (dd > worst)
+            worst = dd;
+         if (fabs(r) > peak[i % NCH])
+            peak[i % NCH] = fabs(r);
+      }
+      printf("test_atracx: a game's 5.1 frames: float within %.1e of FFmpeg's\n",
+            worst);
+      /* the stream is quiet and its channels differ in level, so a
+       * channel in the wrong place is far outside this */
+      for (ch = 0; ch < NCH; ch++)
+         TEST_CHECK(peak[ch] > 0 && worst < peak[ch] * 1e-3);
+      ratrac3p_free(d);
       free(frames);
       free(ref);
    }
