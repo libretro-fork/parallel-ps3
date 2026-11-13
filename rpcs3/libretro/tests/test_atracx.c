@@ -11,11 +11,13 @@
  *   - 16, 24 and 32-bit output: within what that difference makes at
  *     each width (1, 8 and 4096), from FFmpeg's samples converted as
  *     the module converted them;
- * which also holds every channel where the module put it. Then eight
- * frames of the 5.1 sound of a game's opening movie (stereo, mono,
- * stereo, mono blocks, the second channel of the first block taking
- * every tone band from the first), which the decoder once refused: the
- * last of them against FFmpeg's, in the LLE's order. And on its own: a
+ * which also holds every channel where the module put it. Then frames
+ * games handed the decoder, which it once refused, the last of each
+ * against FFmpeg's in the LLE's order: eight of the 5.1 sound of a
+ * game's opening movie (stereo, mono, stereo, mono blocks, the second
+ * channel of the first block taking every tone band from the first),
+ * and two games' music frames with a tone frequency at the top of its
+ * range, each followed by itself. And on its own: a
  * frame that does not parse gives -1, and nothing is written for it.
  * C89. */
 
@@ -75,6 +77,58 @@ static long convert(float v, unsigned word)
          return v >= 1.0f ? 2147483647L : v <= -1.0f ? -2147483647L - 1
             : (long)floor(v * 2147483648.0);
    }
+}
+
+/* Frames a game handed the decoder: all decode, and the last is
+ * FFmpeg's in the LLE's order, within tol of each channel's peak (the
+ * channels differ in level, so one in the wrong place is far outside
+ * that). */
+static void game_frames(const char *dir, const char *name, unsigned ba,
+      unsigned n, unsigned cfg, double tol)
+{
+   static float   pcm[RATRAC3P_SAMPLES * 8];
+   static uint8_t out[RATRAC3P_SAMPLES * 8 * 4];
+   char        file[64];
+   unsigned    nch = atxpcm_channels(cfg), f, i, ch;
+   uint8_t    *frames, *ref;
+   ratrac3p_t *d   = ratrac3p_new(nch, ba);
+   double      worst = 0, peak[8];
+
+   sprintf(file, "frames_%.40s.raw", name);
+   frames = fixture(dir, file, (size_t)ba * n);
+   sprintf(file, "ffmpeg_%.40s.f32", name);
+   ref    = fixture(dir, file, (size_t)RATRAC3P_SAMPLES * nch * 4);
+   TEST_CHECK(d != NULL);
+   for (f = 0; d && f < n; f++)
+      TEST_CHECK(ratrac3p_decode_float(d, frames + (size_t)f * ba, ba, pcm)
+            == RATRAC3P_SAMPLES);
+   atxpcm_convert(out, pcm, cfg, 0x84, RATRAC3P_SAMPLES);
+   for (ch = 0; ch < nch; ch++)
+      peak[ch] = 0;
+   for (i = 0; i < RATRAC3P_SAMPLES * nch; i++)
+   {
+      float    v, r = le_float(ref + (size_t)i * 4);
+      uint32_t u    = (uint32_t)be_word(out + (size_t)i * 4, 4);
+      double   dd;
+      memcpy(&v, &u, 4);
+      /* clipped as the LLE clips */
+      if (r >= 0.99999994f)
+         r = 0.99999994f;
+      if (r <= -1.0f)
+         r = -1.0f;
+      dd = fabs((double)v - r);
+      if (dd > worst)
+         worst = dd;
+      if (fabs(r) > peak[i % nch])
+         peak[i % nch] = fabs(r);
+   }
+   printf("test_atracx: a game's frames (%s): float within %.1e of FFmpeg's\n",
+         name, worst);
+   for (ch = 0; ch < nch; ch++)
+      TEST_CHECK(peak[ch] > 0 && worst < peak[ch] * tol);
+   ratrac3p_free(d);
+   free(frames);
+   free(ref);
 }
 
 int main(int argc, char **argv)
@@ -168,43 +222,9 @@ int main(int argc, char **argv)
       free(ref);
    }
 
-   {
-      enum { BA = 1368, N = 8, NCH = 6 };
-      uint8_t    *frames = fixture(dir, "frames_ttt2.raw", (size_t)BA * N);
-      uint8_t    *ref    = fixture(dir, "ffmpeg_ttt2.f32",
-            (size_t)RATRAC3P_SAMPLES * NCH * 4);
-      ratrac3p_t *d      = ratrac3p_new(NCH, BA);
-      double      worst  = 0, peak[NCH];
-      unsigned    f, i, ch;
-      TEST_CHECK(d != NULL);
-      for (f = 0; d && f < N; f++)
-         TEST_CHECK(ratrac3p_decode_float(d, frames + (size_t)f * BA, BA, pcm)
-               == RATRAC3P_SAMPLES);
-      atxpcm_convert(out, pcm, 5, 0x84, RATRAC3P_SAMPLES);
-      for (ch = 0; ch < NCH; ch++)
-         peak[ch] = 0;
-      for (i = 0; i < RATRAC3P_SAMPLES * NCH; i++)
-      {
-         float    v, r = le_float(ref + (size_t)i * 4);
-         uint32_t u    = (uint32_t)be_word(out + (size_t)i * 4, 4);
-         double   dd;
-         memcpy(&v, &u, 4);
-         dd = fabs((double)v - r);
-         if (dd > worst)
-            worst = dd;
-         if (fabs(r) > peak[i % NCH])
-            peak[i % NCH] = fabs(r);
-      }
-      printf("test_atracx: a game's 5.1 frames: float within %.1e of FFmpeg's\n",
-            worst);
-      /* the stream is quiet and its channels differ in level, so a
-       * channel in the wrong place is far outside this */
-      for (ch = 0; ch < NCH; ch++)
-         TEST_CHECK(peak[ch] > 0 && worst < peak[ch] * 1e-3);
-      ratrac3p_free(d);
-      free(frames);
-      free(ref);
-   }
+   game_frames(dir, "ttt2", 1368, 8, 5, 1e-3);
+   game_frames(dir, "t5dr", 688, 2, 2, 1e-3);
+   game_frames(dir, "ttt2music", 1368, 2, 2, 1e-3);
 
    if (test_failures)
    {
