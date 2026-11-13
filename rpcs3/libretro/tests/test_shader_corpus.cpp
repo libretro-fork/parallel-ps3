@@ -10,6 +10,7 @@
 //   offset, with the same array and matrix strides - what the renderer's
 //   buffers and descriptor sets are laid out to;
 // - the Vulkan driver takes its module (vkCreateShaderModule).
+// - over all of them its modules are within 2% of the size of glslang's.
 //
 // What it does not show: that the two modules compute the same.
 //
@@ -978,6 +979,8 @@ int main()
 	CHECK(s_interface_differs == 0);
 	CHECK(s_driver_refused == 0);
 
+	// and its modules are no larger than glslang's by more than a fiftieth
+	CHECK(s_rslc_words * 50 <= s_reference_words * 51);
 	std::printf("test_shader_corpus: rslc refused %u, differs in interface or layout on %u, the driver refused %u of its modules; %u words where glslang makes %u\n",
 		static_cast<u32>(s_rslc_refused), static_cast<u32>(s_interface_differs), static_cast<u32>(s_driver_refused), static_cast<u32>(s_rslc_words), static_cast<u32>(s_reference_words));
 	std::printf("test_shader_corpus: %u sources gathered, %u refused by the reference compiler\n", ::size32(s_corpus), static_cast<u32>(reference_failed));
