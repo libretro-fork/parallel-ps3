@@ -14,6 +14,13 @@
 #include "Crypto/unzip.h"
 #include "Utilities/File.h"
 #include "Utilities/object_pack.h"
+#include "Emu/IdManager.h"
+#include "Emu/system_config.h"
+#include "Emu/Cell/PPUAnalyser.h"
+#include "Emu/Cell/lv2/sys_sync.h"
+#include "Emu/Cell/SPURecompiler.h"
+
+#include <time.h> // not pacing: the benchmark's stopwatch
 
 #include <cstdio>
 #include <filesystem>
@@ -93,6 +100,95 @@ static std::unique_ptr<llvm::Module> make_module(llvm::LLVMContext& ctx)
 
 	CHECK(!llvm::verifyModule(*mod, &llvm::errs()));
 	return mod;
+}
+
+// SPU programs to compile: straight runs of the arithmetic a game's SPU code
+// is mostly made of, each ending in a return (bi $lr)
+static spu_program spu_function(u32 index, u32 length)
+{
+	spu_program prog{};
+	prog.entry_point = 0x1000 + index * 0x400 % 0x30000;
+	prog.lower_bound = prog.entry_point;
+
+	u32 x = index * 2654435761u + 12345;
+	const auto next = [&]() { x ^= x << 13; x ^= x >> 17; x ^= x << 5; return x; };
+
+	// 11-bit opcodes, rb ra rt: a sf and or xor nor fa fs fm shl rotm ceq cgt mpy andc
+	static constexpr u32 rr[] = {0x0c0, 0x040, 0x0c1, 0x041, 0x241, 0x049, 0x2c4, 0x2c5, 0x2c6, 0x05b, 0x059, 0x3c0, 0x240, 0x3c4, 0x2c1};
+
+	for (u32 i = 0; i + 1 < length; i++)
+	{
+		const u32 r = next();
+		u32 op;
+		if (r % 8 == 0)
+		{
+			// ai rt, ra, imm
+			op = 0x1cu << 24 | (r >> 8 & 0x3ff) << 14 | (r >> 20 & 0x3f) << 7 | (r >> 26 & 0x3f);
+		}
+		else if (r % 8 == 1)
+		{
+			// lqd / stqd rt, imm(r1)
+			op = ((r & 0x100) ? 0x34u : 0x24u) << 24 | (r >> 9 & 0xff) << 14 | 1u << 7 | (r >> 20 & 0x3f);
+		}
+		else
+		{
+			op = rr[(r >> 3) % std::size(rr)] << 21 | (r >> 8 & 0x3f) << 14 | (r >> 14 & 0x3f) << 7 | (r >> 20 & 0x3f);
+		}
+		prog.data.push_back(std::bit_cast<u32>(be_t<u32>{op}));
+	}
+
+	prog.data.push_back(std::bit_cast<u32>(be_t<u32>{0x1a8u << 21}));
+	return prog;
+}
+
+static double stopwatch()
+{
+	timespec t;
+	clock_gettime(CLOCK_MONOTONIC, &t); // not pacing: the benchmark's stopwatch
+	return t.tv_sec * 1e3 + t.tv_nsec / 1e6;
+}
+
+// Compiles the SPU functions, last first if asked, with a recompiler and a
+// runtime of their own as a boot has; returns the time taken
+static double spu_functions(const std::string& cache, bool backwards)
+{
+	g_fxo->reset();
+	g_fxo->init<main_ppu_module<lv2_obj>>();
+	g_fxo->get<main_ppu_module<lv2_obj>>().cache = cache;
+	g_fxo->init<spu_cache>();
+	g_fxo->init<spu_runtime>();
+
+	const auto compiler = spu_recompiler_base::make_llvm_recompiler();
+	compiler->init();
+
+	constexpr u32 count = 200;
+	const double a = stopwatch();
+	u32 made = 0;
+	for (u32 n = 0; n < count; n++)
+	{
+		// As an SPU thread does it: the program in local storage, analysed
+		// there, then compiled
+		const u32 i = backwards ? count - 1 - n : n;
+		static std::vector<be_t<u32>> ls(SPU_LS_SIZE / 4);
+		std::fill(ls.begin(), ls.end(), be_t<u32>{0});
+		const spu_program prog = spu_function(i, 40 + i % 7 * 60);
+		std::memcpy(&ls[prog.entry_point / 4], prog.data.data(), prog.data.size() * 4);
+		made += !!compiler->compile(compiler->analyse(ls.data(), prog.entry_point));
+	}
+	const double b = stopwatch();
+	CHECK(made == count);
+	return b - a;
+}
+
+// How many objects a directory's pack holds
+static usz pack_records(const std::string& pack)
+{
+	std::vector<u8> image;
+	if (fs::file f{pack, fs::read})
+		image = f.to_vector<u8>();
+	usz count = 0;
+	object_pack_scan(image.data(), image.size(), nullptr, 0, &count);
+	return count;
 }
 
 int main()
@@ -241,6 +337,46 @@ int main()
 		CHECK(runs(dir + "again") && runs(object));
 
 		jit_compiler::close_object_packs();
+		std::filesystem::remove_all(dir);
+	}
+
+	// The SPU recompiler's objects are kept too, each under a name made from
+	// the module it was compiled from: a later boot loads every one of them
+	// and compiles nothing, in whatever order the functions come; a setting
+	// that changes what a function compiles to makes it another object, and
+	// the old one is not taken for it.
+	{
+		const std::string dir = fmt::format("%s/test_spu_jit_%u/", std::filesystem::temp_directory_path().string(), static_cast<u32>(getpid()));
+		const std::string pack = dir + "llvm/objects.pack";
+		std::filesystem::create_directories(dir);
+		g_cfg.core.spu_cache.set(true);
+		g_cfg.core.spu_debug.set(false);
+
+		const double first = spu_functions(dir, false);
+		jit_compiler::close_object_packs();
+		const usz made = pack_records(pack);
+		CHECK(made == 200);
+
+		const double second = spu_functions(dir, true);
+		jit_compiler::close_object_packs();
+		CHECK(pack_records(pack) == made);
+		// Loading is many times faster than compiling; twice, to leave a
+		// loaded machine room
+		CHECK(second * 2 < first);
+
+		const auto accuracy = g_cfg.core.spu_xfloat_accuracy.get();
+		g_cfg.core.spu_xfloat_accuracy.set(accuracy == xfloat_accuracy::accurate ? xfloat_accuracy::approximate : xfloat_accuracy::accurate);
+		spu_functions(dir, false);
+		jit_compiler::close_object_packs();
+		const usz other = pack_records(pack);
+		CHECK(other > made + 100);
+		spu_functions(dir, false);
+		jit_compiler::close_object_packs();
+		CHECK(pack_records(pack) == other);
+		g_cfg.core.spu_xfloat_accuracy.set(accuracy);
+
+		std::printf("test_llvm_jit: 200 SPU functions compiled in %.0f ms, loaded from their objects in %.0f ms\n", first, second);
+		g_fxo->clear();
 		std::filesystem::remove_all(dir);
 	}
 

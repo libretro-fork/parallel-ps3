@@ -1404,9 +1404,12 @@ spu_runtime::spu_runtime()
 		return;
 	}
 
+	// Where the LLVM recompiler keeps the objects it compiles (one pack file)
+	const bool had_objects = !fs::create_dir(m_cache_path + "llvm/");
+
 	if (g_cfg.core.spu_debug && g_cfg.core.spu_decoder != spu_decoder_type::dynamic && g_cfg.core.spu_decoder != spu_decoder_type::_static)
 	{
-		if (!fs::create_dir(m_cache_path + "llvm/"))
+		if (had_objects)
 		{
 			fs::remove_all(m_cache_path + "llvm/", false);
 		}

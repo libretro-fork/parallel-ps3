@@ -42,6 +42,8 @@ const extern spu_decoder<spu_iflag> g_spu_iflag;
 #include <llvm/Analysis/PostDominators.h>
 #include <llvm/IR/InlineAsm.h>
 #include <llvm/IR/Verifier.h>
+#include <llvm/Bitcode/BitcodeWriter.h>
+#include <llvm/Config/llvm-config.h>
 #include <llvm/TargetParser/Host.h>
 #include <llvm/Transforms/Utils/BasicBlockUtils.h>
 #include <llvm/Analysis/CGSCCPassManager.h>
@@ -1740,7 +1742,13 @@ public:
 
 		std::string function_log;
 
-		this->dump(func, function_log);
+		// The function's listing is made for the debug files or the log, not
+		// for every function compiled when there is neither
+		if (g_cfg.core.spu_debug || spu_log.notice)
+		{
+			this->dump(func, function_log);
+		}
+
 		bool to_log_func = false;
 
 		if (g_cfg.core.spu_debug && !add_loc->logged.exchange(1))
@@ -1752,9 +1760,9 @@ public:
 			}
 		}
 
-		for (u32 data : func.data)
+		for (usz i = 0; spu_log.notice && i < func.data.size(); i++)
 		{
-			const spu_opcode_t op{std::bit_cast<be_t<u32>>(data)};
+			const spu_opcode_t op{std::bit_cast<be_t<u32>>(func.data[i])};
 
 			const auto itype = g_spu_itype.decode(op.opcode);
 
@@ -3835,44 +3843,82 @@ public:
 			m_function_table->eraseFromParent();
 		}
 
-		// Create the analysis managers.
-		// These must be declared in this order so that they are destroyed in the
-		// correct order due to inter-analysis-manager references.
-		LoopAnalysisManager lam;
-		FunctionAnalysisManager fam;
-		CGSCCAnalysisManager cgam;
-		ModuleAnalysisManager mam;
+		// The object this module compiles to is kept, so that the next boot
+		// loads it and does not make it again: code generation is four fifths
+		// of a function's compile and the passes most of the rest. The object
+		// is named by a hash of the module as it stands here, written out as
+		// bitcode, with the CPU and the LLVM it is compiled for - so whatever
+		// the module was built from, a setting, another version of this
+		// recompiler, it is found only when it is this very module's. (The
+		// name used to be the SPU code's hash alone, which is why upstream
+		// keeps the cache for testing.) When the object is there, the passes
+		// and the verifier are not run on a module nothing will be made of.
+		const bool use_object_cache = !g_cfg.core.spu_debug && g_cfg.core.spu_cache && !m_spurt->get_cache_path().empty();
+		bool have_object = false;
 
-		// Create the new pass manager builder.
-		// Take a look at the PassBuilder constructor parameters for more
-		// customization, e.g. specifying a TargetMachine or various debugging
-		// options.
-		PassBuilder pb;
-
-		// Register all the basic analyses with the managers.
-		pb.registerModuleAnalyses(mam);
-		pb.registerCGSCCAnalyses(cgam);
-		pb.registerFunctionAnalyses(fam);
-		pb.registerLoopAnalyses(lam);
-		pb.crossRegisterProxies(lam, fam, cgam, mam);
-
-		FunctionPassManager fpm;
-		// Basic optimizations
-		fpm.addPass(EarlyCSEPass(true));
-		fpm.addPass(SimplifyCFGPass());
-		fpm.addPass(DSEPass());
-		fpm.addPass(createFunctionToLoopPassAdaptor(LICMPass(LICMOptions()), true));
-		fpm.addPass(ADCEPass());
-
-		for (auto& f : *m_module)
+		if (use_object_cache)
 		{
-			run_transforms(f);
+			llvm::SmallVector<char, 0> bitcode;
+			{
+				llvm::raw_svector_ostream os(bitcode);
+				llvm::WriteBitcodeToFile(*_module, os);
+			}
+
+			const std::string target = jit_compiler::cpu(g_cfg.core.llvm_cpu.to_string()) + " " LLVM_VERSION_STRING " v1";
+
+			sha1_context ctx;
+			u8 output[20];
+
+			sha1_starts(&ctx);
+			sha1_update(&ctx, reinterpret_cast<const u8*>(bitcode.data()), bitcode.size());
+			sha1_update(&ctx, reinterpret_cast<const u8*>(target.data()), target.size());
+			sha1_finish(&ctx, output);
+
+			_module->setModuleIdentifier(fmt::format("spu-%s.obj", fmt::base57(output)));
+			have_object = jit_compiler::check(m_spurt->get_cache_path() + "llvm/" + _module->getModuleIdentifier());
 		}
 
-		for (const auto& func : m_functions)
+		if (!have_object)
 		{
-			const auto f = func.second.fn ? func.second.fn : func.second.chunk;
-			fpm.run(*f, fam);
+			// Create the analysis managers.
+			// These must be declared in this order so that they are destroyed in the
+			// correct order due to inter-analysis-manager references.
+			LoopAnalysisManager lam;
+			FunctionAnalysisManager fam;
+			CGSCCAnalysisManager cgam;
+			ModuleAnalysisManager mam;
+
+			// Create the new pass manager builder.
+			// Take a look at the PassBuilder constructor parameters for more
+			// customization, e.g. specifying a TargetMachine or various debugging
+			// options.
+			PassBuilder pb;
+
+			// Register all the basic analyses with the managers.
+			pb.registerModuleAnalyses(mam);
+			pb.registerCGSCCAnalyses(cgam);
+			pb.registerFunctionAnalyses(fam);
+			pb.registerLoopAnalyses(lam);
+			pb.crossRegisterProxies(lam, fam, cgam, mam);
+
+			FunctionPassManager fpm;
+			// Basic optimizations
+			fpm.addPass(EarlyCSEPass(true));
+			fpm.addPass(SimplifyCFGPass());
+			fpm.addPass(DSEPass());
+			fpm.addPass(createFunctionToLoopPassAdaptor(LICMPass(LICMOptions()), true));
+			fpm.addPass(ADCEPass());
+
+			for (auto& f : *m_module)
+			{
+				run_transforms(f);
+			}
+
+			for (const auto& func : m_functions)
+			{
+				const auto f = func.second.fn ? func.second.fn : func.second.chunk;
+				fpm.run(*f, fam);
+			}
 		}
 
 		if (m_test_state->use_empty())
@@ -3898,12 +3944,27 @@ public:
 		std::string& llvm_log = function_log;
 		raw_string_ostream out(llvm_log);
 
-		fmt::append(llvm_log, "LLVM IR at 0x%x:\n", func.entry_point);
-		out << *_module; // print IR
-		out << "\n\n";
-
-		if (verifyModule(*_module, &out))
+		// The module is printed for the debug file, or when it does not
+		// verify - not for every function compiled
+		const auto print_ir = [&]()
 		{
+			fmt::append(llvm_log, "LLVM IR at 0x%x:\n", func.entry_point);
+			out << *_module; // print IR
+			out << "\n\n";
+		};
+
+		if (g_cfg.core.spu_debug)
+		{
+			print_ir();
+		}
+
+		if (!have_object && verifyModule(*_module, &out))
+		{
+			if (!g_cfg.core.spu_debug)
+			{
+				print_ir();
+			}
+
 			out.flush();
 			spu_log.error("LLVM: Verification failed at 0x%x:\n%s", func.entry_point, llvm_log);
 
@@ -3948,9 +4009,8 @@ public:
 				bool added = false;
 				std::string& llvm_error = g_spu_llvm_compile_context->llvm_error;
 
-				if (g_cfg.core.spu_debug)
+				if (use_object_cache)
 				{
-					// Testing only
 					added = m_jit.try_add(std::move(_module), m_spurt->get_cache_path() + "llvm/", llvm_error);
 				}
 				else
@@ -3970,9 +4030,8 @@ public:
 			}
 			else
 			{
-				if (g_cfg.core.spu_debug)
+				if (use_object_cache)
 				{
-					// Testing only
 					m_jit.add(std::move(_module), m_spurt->get_cache_path() + "llvm/");
 				}
 				else
@@ -3983,9 +4042,8 @@ public:
 				m_jit.fin();
 			}
 #else
-			if (g_cfg.core.spu_debug)
+			if (use_object_cache)
 			{
-				// Testing only
 				m_jit.add(std::move(_module), m_spurt->get_cache_path() + "llvm/");
 			}
 			else
