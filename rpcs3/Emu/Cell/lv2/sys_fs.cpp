@@ -764,16 +764,18 @@ u64 lv2_file::op_read(const fs::file& file, vm::ptr<void> buf, u64 size, u64 opt
 	}
 
 	// Copy data from intermediate buffer (avoid passing vm pointer to a native API)
-	std::vector<uchar> local_buf(std::min<u64>(size, 65536));
+	// The buffer is on the stack: it was a vector, allocated and zeroed for
+	// every read that came this way
+	uchar local_buf[65536];
 
 	u64 result = 0;
 
 	while (result < size)
 	{
-		const u64 block = std::min<u64>(size - result, local_buf.size());
-		const u64 nread = (opt_pos == umax ? file.read(local_buf.data(), block) : file.read_at(opt_pos + result, local_buf.data(), block));
+		const u64 block = std::min<u64>(size - result, sizeof(local_buf));
+		const u64 nread = (opt_pos == umax ? file.read(local_buf, block) : file.read_at(opt_pos + result, local_buf, block));
 
-		std::memcpy(static_cast<uchar*>(buf.get_ptr()) + result, local_buf.data(), nread);
+		std::memcpy(static_cast<uchar*>(buf.get_ptr()) + result, local_buf, nread);
 		result += nread;
 
 		if (nread < block)
@@ -796,15 +798,16 @@ u64 lv2_file::op_write(const fs::file& file, vm::cptr<void> buf, u64 size)
 	}
 
 	// Copy data to intermediate buffer (avoid passing vm pointer to a native API)
-	std::vector<uchar> local_buf(std::min<u64>(size, 65536));
+	// On the stack, as in op_read
+	uchar local_buf[65536];
 
 	u64 result = 0;
 
 	while (result < size)
 	{
-		const u64 block = std::min<u64>(size - result, local_buf.size());
-		std::memcpy(local_buf.data(), static_cast<const uchar*>(buf.get_ptr()) + result, block);
-		const u64 nwrite = file.write(+local_buf.data(), block);
+		const u64 block = std::min<u64>(size - result, sizeof(local_buf));
+		std::memcpy(local_buf, static_cast<const uchar*>(buf.get_ptr()) + result, block);
+		const u64 nwrite = file.write(+local_buf, block);
 		result += nwrite;
 
 		if (nwrite < block)

@@ -588,6 +588,8 @@ check: all
 	@if ! grep -q "if (ppu.syscall_history.count_debug_arguments) \[\[unlikely\]\] {" ../../Emu/Cell/PPUFunction.h; then echo "calls: every HLE call and syscall writes itself into the thread's history again, kept or not (CHANGELOG)"; exit 1; else echo "calls: history written only when kept"; fi
 	@# atomic_t waits and notifies through libretro-common, with no engine of its own
 	@if grep -n "futex\|s_hashtable\|NtWaitFor\|cond_handle" ../../util/atomic.cpp; then echo "atomics: RPCS3's own wait engine is back in util/atomic.cpp - waits and notifies go through libretro-common's retro_waitaddr (AGENTS.md)"; exit 1; else echo "atomics: wait and notify through retro_waitaddr"; fi
+	@# A file read or write that goes through a buffer of the core's does not allocate one
+	@if grep -n "std::vector<uchar> local_buf" ../../Emu/Cell/lv2/sys_fs.cpp; then echo "sys_fs: a vector allocated and zeroed for every read or write is back in op_read/op_write (CHANGELOG)"; exit 1; else echo "sys_fs: no buffer allocated for a read or a write"; fi
 	@# Nor do the mice: no lock in the handler, none taken by those that read them
 	@if grep -n "shared_mutex\|std::mutex\|lock_guard\|scoped_lock" ../../Emu/Io/MouseHandler.h ../../Emu/Io/MouseHandler.cpp ../libretro_mouse_handler.h ../libretro_mouse_handler.cpp || grep -rn "handler\.mutex\|take_pending()" ../../Emu/Cell/Modules/cellMouse.cpp ../../Emu/Cell/Modules/cellGem.cpp ../../Emu/Io/usio.cpp ../../Emu/Io/GunCon3.cpp ../../Emu/Io/TopShotElite.cpp ../../Emu/Io/TopShotFearmaster.cpp ../../Emu/Io/GameTablet.cpp; then echo "mice: the mouse handler's lock is back - a mouse is a record read whole (AGENTS.md)"; exit 1; else echo "mice: no mouse lock"; fi
 
