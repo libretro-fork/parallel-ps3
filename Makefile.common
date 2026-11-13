@@ -151,51 +151,6 @@ SOURCES_ASMJIT := \
 	$(CORE_DIR)/3rdparty/asmjit/asmjit/src/asmjit/x86/x86operand.cpp \
 	$(CORE_DIR)/3rdparty/asmjit/asmjit/src/asmjit/x86/x86rapass.cpp
 
-SOURCES_GLSLANG := \
-	$(CORE_DIR)/3rdparty/glslang/glslang/SPIRV/CInterface/spirv_c_interface.cpp \
-	$(CORE_DIR)/3rdparty/glslang/glslang/SPIRV/GlslangToSpv.cpp \
-	$(CORE_DIR)/3rdparty/glslang/glslang/SPIRV/InReadableOrder.cpp \
-	$(CORE_DIR)/3rdparty/glslang/glslang/SPIRV/Logger.cpp \
-	$(CORE_DIR)/3rdparty/glslang/glslang/SPIRV/SpvBuilder.cpp \
-	$(CORE_DIR)/3rdparty/glslang/glslang/SPIRV/SpvPostProcess.cpp \
-	$(CORE_DIR)/3rdparty/glslang/glslang/SPIRV/SpvTools.cpp \
-	$(CORE_DIR)/3rdparty/glslang/glslang/SPIRV/disassemble.cpp \
-	$(CORE_DIR)/3rdparty/glslang/glslang/SPIRV/doc.cpp \
-	$(CORE_DIR)/3rdparty/glslang/glslang/glslang/CInterface/glslang_c_interface.cpp \
-	$(CORE_DIR)/3rdparty/glslang/glslang/glslang/GenericCodeGen/CodeGen.cpp \
-	$(CORE_DIR)/3rdparty/glslang/glslang/glslang/GenericCodeGen/Link.cpp \
-	$(CORE_DIR)/3rdparty/glslang/glslang/glslang/MachineIndependent/Constant.cpp \
-	$(CORE_DIR)/3rdparty/glslang/glslang/glslang/MachineIndependent/InfoSink.cpp \
-	$(CORE_DIR)/3rdparty/glslang/glslang/glslang/MachineIndependent/Initialize.cpp \
-	$(CORE_DIR)/3rdparty/glslang/glslang/glslang/MachineIndependent/IntermTraverse.cpp \
-	$(CORE_DIR)/3rdparty/glslang/glslang/glslang/MachineIndependent/Intermediate.cpp \
-	$(CORE_DIR)/3rdparty/glslang/glslang/glslang/MachineIndependent/ParseContextBase.cpp \
-	$(CORE_DIR)/3rdparty/glslang/glslang/glslang/MachineIndependent/ParseHelper.cpp \
-	$(CORE_DIR)/3rdparty/glslang/glslang/glslang/MachineIndependent/PoolAlloc.cpp \
-	$(CORE_DIR)/3rdparty/glslang/glslang/glslang/MachineIndependent/RemoveTree.cpp \
-	$(CORE_DIR)/3rdparty/glslang/glslang/glslang/MachineIndependent/Scan.cpp \
-	$(CORE_DIR)/3rdparty/glslang/glslang/glslang/MachineIndependent/ShaderLang.cpp \
-	$(CORE_DIR)/3rdparty/glslang/glslang/glslang/MachineIndependent/SpirvIntrinsics.cpp \
-	$(CORE_DIR)/3rdparty/glslang/glslang/glslang/MachineIndependent/SymbolTable.cpp \
-	$(CORE_DIR)/3rdparty/glslang/glslang/glslang/MachineIndependent/Versions.cpp \
-	$(CORE_DIR)/3rdparty/glslang/glslang/glslang/MachineIndependent/attribute.cpp \
-	$(CORE_DIR)/3rdparty/glslang/glslang/glslang/MachineIndependent/glslang_tab.cpp \
-	$(CORE_DIR)/3rdparty/glslang/glslang/glslang/MachineIndependent/intermOut.cpp \
-	$(CORE_DIR)/3rdparty/glslang/glslang/glslang/MachineIndependent/iomapper.cpp \
-	$(CORE_DIR)/3rdparty/glslang/glslang/glslang/MachineIndependent/limits.cpp \
-	$(CORE_DIR)/3rdparty/glslang/glslang/glslang/MachineIndependent/linkValidate.cpp \
-	$(CORE_DIR)/3rdparty/glslang/glslang/glslang/MachineIndependent/parseConst.cpp \
-	$(CORE_DIR)/3rdparty/glslang/glslang/glslang/MachineIndependent/preprocessor/Pp.cpp \
-	$(CORE_DIR)/3rdparty/glslang/glslang/glslang/MachineIndependent/preprocessor/PpAtom.cpp \
-	$(CORE_DIR)/3rdparty/glslang/glslang/glslang/MachineIndependent/preprocessor/PpContext.cpp \
-	$(CORE_DIR)/3rdparty/glslang/glslang/glslang/MachineIndependent/preprocessor/PpScanner.cpp \
-	$(CORE_DIR)/3rdparty/glslang/glslang/glslang/MachineIndependent/preprocessor/PpTokens.cpp \
-	$(CORE_DIR)/3rdparty/glslang/glslang/glslang/MachineIndependent/propagateNoContraction.cpp \
-	$(CORE_DIR)/3rdparty/glslang/glslang/glslang/MachineIndependent/reflection.cpp \
-	$(CORE_DIR)/3rdparty/glslang/glslang/glslang/ResourceLimits/ResourceLimits.cpp \
-	$(CORE_DIR)/3rdparty/glslang/glslang/glslang/ResourceLimits/resource_limits_c.cpp \
-	$(CORE_DIR)/3rdparty/glslang/glslang/glslang/stub.cpp
-
 SOURCES_LIBUSB := \
 	$(CORE_DIR)/3rdparty/libusb/libusb/libusb/core.c \
 	$(CORE_DIR)/3rdparty/libusb/libusb/libusb/descriptor.c \
@@ -777,9 +732,6 @@ SOURCES_LIBRETRO := \
 	$(CORE_DIR)/rpcs3/rpcs3_version.cpp
 
 # The files that are not on every platform
-SOURCES_GLSLANG_UNIX    := $(CORE_DIR)/3rdparty/glslang/glslang/glslang/OSDependent/Unix/ossource.cpp
-SOURCES_GLSLANG_WINDOWS := $(CORE_DIR)/3rdparty/glslang/glslang/glslang/OSDependent/Windows/ossource.cpp
-
 SOURCES_LIBUSB_LINUX   := $(addprefix $(CORE_DIR)/3rdparty/libusb/libusb/libusb/os/,linux_usbfs.c linux_netlink.c threads_posix.c events_posix.c)
 SOURCES_LIBUSB_DARWIN  := $(addprefix $(CORE_DIR)/3rdparty/libusb/libusb/libusb/os/,darwin_usb.c threads_posix.c events_posix.c)
 SOURCES_LIBUSB_WINDOWS := $(addprefix $(CORE_DIR)/3rdparty/libusb/libusb/libusb/os/,events_windows.c windows_usbdk.c windows_common.c windows_winusb.c threads_windows.c)
@@ -813,9 +765,6 @@ FLAGS_LIBUSB  := -std=gnu99 -fvisibility=hidden -w \
 	-I$(CORE_DIR)/rpcs3/libretro/make/libusb \
 	-I$(CORE_DIR)/3rdparty/libusb/libusb/libusb \
 	-I$(CORE_DIR)/3rdparty/libusb/libusb/libusb/os
-FLAGS_GLSLANG := -std=c++17 -fno-rtti -fno-exceptions -w -DENABLE_OPT=0 -DENABLE_SPIRV \
-	-I$(CORE_DIR)/3rdparty/glslang/glslang \
-	-I$(CORE_DIR)/rpcs3/libretro/make/include
 # asmjit and RtMidi are linked into the core, not their own DLLs: without
 # ASMJIT_STATIC, and with RtMidi's RTMIDI_EXPORT, a Windows core exports their
 # classes along with its retro_* functions
@@ -833,7 +782,6 @@ INCLUDES_RPCS3 := \
 	-I$(CORE_DIR)/3rdparty \
 	-I$(CORE_DIR)/3rdparty/libusb/libusb/libusb \
 	-I$(CORE_DIR)/rpcs3/libretro/libretro-common/include \
-	-I$(CORE_DIR)/3rdparty/glslang/glslang \
 	-I$(CORE_DIR)/rpcs3/libretro/make/include \
 	-I$(CORE_DIR)/3rdparty/rtmidi/rtmidi \
 	-isystem $(CORE_DIR)/3rdparty/asmjit/asmjit/src \

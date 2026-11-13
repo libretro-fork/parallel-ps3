@@ -685,7 +685,6 @@ target_link_libraries(rpcs3_emu
         libretro_common
         Threads::Threads
     PRIVATE
-        3rdparty::glslang
         3rdparty::rtmidi
 )
 

@@ -60,10 +60,6 @@ else()
 endif()
 
 
-# glslang
-add_subdirectory(glslang EXCLUDE_FROM_ALL)
-
-
 # OpenGL: the core has every function through the frontend's
 # get_proc_address, so only the headers (GL/glcorearb.h, glext.h), and no GL
 # or window system library is linked. Android and macOS have no GL renderer.
@@ -119,7 +115,6 @@ if(USE_SYSTEM_LIBUSB)
 else()
 	add_library(3rdparty::libusb ALIAS usb-1.0-static)
 endif()
-add_library(3rdparty::glslang ALIAS 3rdparty_glslang)
 add_library(3rdparty::opengl ALIAS 3rdparty_opengl)
 add_library(3rdparty::vulkan ALIAS ${VULKAN_TARGET})
 add_library(3rdparty::rtmidi ALIAS rtmidi)

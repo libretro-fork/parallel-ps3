@@ -1,205 +1,114 @@
 #include "stdafx.h"
 
-#ifdef _MSC_VER
-#pragma warning(push, 0)
-#else
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wall"
-#pragma GCC diagnostic ignored "-Wextra"
-#pragma GCC diagnostic ignored "-Wold-style-cast"
-#pragma GCC diagnostic ignored "-Wsuggest-override"
-#ifdef __clang__
-#pragma clang diagnostic ignored "-Winconsistent-missing-override"
-#endif
-#endif
-#include <SPIRV/GlslangToSpv.h>
-#include <glslang/Include/ResourceLimits.h>
-#include <glslang/Public/ShaderLang.h>
-#ifdef _MSC_VER
-#pragma warning(pop)
-#else
-#pragma GCC diagnostic pop
-#endif
-
 #include "SPIRVCommon.h"
 #include "Emu/RSX/Program/GLSLTypes.h"
 
+#include <gfx/shaders/rslc.h>
+
+#include <cstdlib>
+#include <cstring>
+#include <memory>
+
+// The renderer's GLSL goes to SPIR-V through libretro-common's rslc.
+//
+// A thread that compiles keeps one block for it: rslc's working state takes
+// the first part and the module it hands back the second, so a compile takes
+// nothing from the heap once the thread has compiled before. The block is as
+// large as rslc lets a compile grow by default; a source that needs more -
+// none the renderer makes does - is compiled again from the heap.
+namespace
+{
+	struct compile_memory
+	{
+		static constexpr usz arena_size = RSLC_ARENA_CAP_DEFAULT;
+		static constexpr usz result_size = 8u << 20;
+
+		std::unique_ptr<u8[]> block{new u8[arena_size + result_size]};
+		usz used = 0;
+
+		u8* results() const { return block.get() + arena_size; }
+
+		static void* take(void* ud, size_t len)
+		{
+			compile_memory* m = static_cast<compile_memory*>(ud);
+			len = (len + 15) & ~usz{15};
+			if (len > result_size - m->used)
+				return std::malloc(len);
+			void* at = m->results() + m->used;
+			m->used += len;
+			return at;
+		}
+
+		static void give(void* ud, void* ptr)
+		{
+			const compile_memory* m = static_cast<compile_memory*>(ud);
+			const u8* at = static_cast<const u8*>(ptr);
+			if (at < m->results() || at >= m->results() + result_size)
+				std::free(ptr);
+		}
+	};
+}
+
 namespace spirv
 {
-	static TBuiltInResource g_default_config;
-
-	void init_default_resources(TBuiltInResource& rsc)
-	{
-		rsc.maxLights = 32;
-		rsc.maxClipPlanes = 6;
-		rsc.maxTextureUnits = 32;
-		rsc.maxTextureCoords = 32;
-		rsc.maxVertexAttribs = 64;
-		rsc.maxVertexUniformComponents = 4096;
-		rsc.maxVaryingFloats = 64;
-		rsc.maxVertexTextureImageUnits = 32;
-		rsc.maxCombinedTextureImageUnits = 80;
-		rsc.maxTextureImageUnits = 32;
-		rsc.maxFragmentUniformComponents = 4096;
-		rsc.maxDrawBuffers = 32;
-		rsc.maxVertexUniformVectors = 128;
-		rsc.maxVaryingVectors = 8;
-		rsc.maxFragmentUniformVectors = 16;
-		rsc.maxVertexOutputVectors = 16;
-		rsc.maxFragmentInputVectors = 15;
-		rsc.minProgramTexelOffset = -8;
-		rsc.maxProgramTexelOffset = 7;
-		rsc.maxClipDistances = 8;
-		rsc.maxComputeWorkGroupCountX = 65535;
-		rsc.maxComputeWorkGroupCountY = 65535;
-		rsc.maxComputeWorkGroupCountZ = 65535;
-		rsc.maxComputeWorkGroupSizeX = 1024;
-		rsc.maxComputeWorkGroupSizeY = 1024;
-		rsc.maxComputeWorkGroupSizeZ = 64;
-		rsc.maxComputeUniformComponents = 1024;
-		rsc.maxComputeTextureImageUnits = 16;
-		rsc.maxComputeImageUniforms = 8;
-		rsc.maxComputeAtomicCounters = 8;
-		rsc.maxComputeAtomicCounterBuffers = 1;
-		rsc.maxVaryingComponents = 60;
-		rsc.maxVertexOutputComponents = 64;
-		rsc.maxGeometryInputComponents = 64;
-		rsc.maxGeometryOutputComponents = 128;
-		rsc.maxFragmentInputComponents = 128;
-		rsc.maxImageUnits = 8;
-		rsc.maxCombinedImageUnitsAndFragmentOutputs = 8;
-		rsc.maxCombinedShaderOutputResources = 8;
-		rsc.maxImageSamples = 0;
-		rsc.maxVertexImageUniforms = 0;
-		rsc.maxTessControlImageUniforms = 0;
-		rsc.maxTessEvaluationImageUniforms = 0;
-		rsc.maxGeometryImageUniforms = 0;
-		rsc.maxFragmentImageUniforms = 8;
-		rsc.maxCombinedImageUniforms = 8;
-		rsc.maxGeometryTextureImageUnits = 16;
-		rsc.maxGeometryOutputVertices = 256;
-		rsc.maxGeometryTotalOutputComponents = 1024;
-		rsc.maxGeometryUniformComponents = 1024;
-		rsc.maxGeometryVaryingComponents = 64;
-		rsc.maxTessControlInputComponents = 128;
-		rsc.maxTessControlOutputComponents = 128;
-		rsc.maxTessControlTextureImageUnits = 16;
-		rsc.maxTessControlUniformComponents = 1024;
-		rsc.maxTessControlTotalOutputComponents = 4096;
-		rsc.maxTessEvaluationInputComponents = 128;
-		rsc.maxTessEvaluationOutputComponents = 128;
-		rsc.maxTessEvaluationTextureImageUnits = 16;
-		rsc.maxTessEvaluationUniformComponents = 1024;
-		rsc.maxTessPatchComponents = 120;
-		rsc.maxPatchVertices = 32;
-		rsc.maxTessGenLevel = 64;
-		rsc.maxViewports = 16;
-		rsc.maxVertexAtomicCounters = 0;
-		rsc.maxTessControlAtomicCounters = 0;
-		rsc.maxTessEvaluationAtomicCounters = 0;
-		rsc.maxGeometryAtomicCounters = 0;
-		rsc.maxFragmentAtomicCounters = 8;
-		rsc.maxCombinedAtomicCounters = 8;
-		rsc.maxAtomicCounterBindings = 1;
-		rsc.maxVertexAtomicCounterBuffers = 0;
-		rsc.maxTessControlAtomicCounterBuffers = 0;
-		rsc.maxTessEvaluationAtomicCounterBuffers = 0;
-		rsc.maxGeometryAtomicCounterBuffers = 0;
-		rsc.maxFragmentAtomicCounterBuffers = 1;
-		rsc.maxCombinedAtomicCounterBuffers = 1;
-		rsc.maxAtomicCounterBufferSize = 16384;
-		rsc.maxTransformFeedbackBuffers = 4;
-		rsc.maxTransformFeedbackInterleavedComponents = 64;
-		rsc.maxCullDistances = 8;
-		rsc.maxCombinedClipAndCullDistances = 8;
-		rsc.maxSamples = 4;
-
-		rsc.limits.nonInductiveForLoops = true;
-		rsc.limits.whileLoops = true;
-		rsc.limits.doWhileLoops = true;
-		rsc.limits.generalUniformIndexing = true;
-		rsc.limits.generalAttributeMatrixVectorIndexing = true;
-		rsc.limits.generalVaryingIndexing = true;
-		rsc.limits.generalSamplerIndexing = true;
-		rsc.limits.generalVariableIndexing = true;
-		rsc.limits.generalConstantMatrixVectorIndexing = true;
-	}
-
 	bool compile_glsl_to_spv(std::vector<u32>& spv, std::string& shader, ::glsl::program_domain domain, ::glsl::glsl_rules rules)
 	{
-		EShLanguage lang = (domain == ::glsl::glsl_fragment_program)
-			? EShLangFragment
-			: (domain == ::glsl::glsl_vertex_program)
-				? EShLangVertex
-				: EShLangCompute;
+		ensure(rules == ::glsl::glsl_rules_vulkan);
 
-		glslang::EShClient client;
-		glslang::EShTargetClientVersion target_version;
-		glslang::EShTargetLanguageVersion spirv_version;
-		EShMessages msg;
-
-		if (rules == ::glsl::glsl_rules_vulkan)
+		rslc_stage stage;
+		switch (domain)
 		{
-			client = glslang::EShClientVulkan;
-			target_version = glslang::EShTargetClientVersion::EShTargetVulkan_1_2;
-			spirv_version = glslang::EShTargetLanguageVersion::EShTargetSpv_1_5;
-			msg = static_cast<EShMessages>(EShMsgVulkanRules | EShMsgSpvRules | EShMsgEnhanced);
-		}
-		else
-		{
-			client = glslang::EShClientOpenGL;
-			target_version = glslang::EShTargetClientVersion::EShTargetOpenGL_450;
-			spirv_version = glslang::EShTargetLanguageVersion::EShTargetSpv_1_0;
-			msg = static_cast<EShMessages>(EShMsgDefault | EShMsgSpvRules | EShMsgEnhanced);
+		case ::glsl::glsl_vertex_program:
+			stage = RSLC_STAGE_VERTEX;
+			break;
+		case ::glsl::glsl_fragment_program:
+			stage = RSLC_STAGE_FRAGMENT;
+			break;
+		case ::glsl::glsl_compute_program:
+			stage = RSLC_STAGE_COMPUTE;
+			break;
+		default:
+			rsx_log.fatal("Unexpected domain %d", +domain);
+			return false;
 		}
 
-		glslang::TProgram program;
-		glslang::TShader shader_object(lang);
+		thread_local std::unique_ptr<compile_memory> memory;
+		if (!memory)
+			memory = std::make_unique<compile_memory>();
+		memory->used = 0;
 
-		shader_object.setEnvInput(glslang::EShSourceGlsl, lang, client, 100); // NOTE: 100 here is the spec revision of GL_KHR_vulkan_glsl. There is only one version (100) for the past 10 years.
-		shader_object.setEnvClient(client, target_version);
-		shader_object.setEnvTarget(glslang::EshTargetSpv, spirv_version);
+		char err[256]{};
+		rslc_opts opts{};
+		opts.dst = RSLC_DST_SPIRV;
+		opts.err = err;
+		opts.err_cap = sizeof(err);
+		opts.alloc = &compile_memory::take;
+		opts.free_fn = &compile_memory::give;
+		opts.ud = memory.get();
+		opts.arena = memory->block.get();
+		opts.arena_len = compile_memory::arena_size;
 
-		bool success = false;
-		const char* shader_text = shader.data();
-		shader_object.setStrings(&shader_text, 1);
+		rslc_result result{};
+		bool ok = rslc_compile(shader.data(), shader.size(), stage, &opts, &result);
 
-		if (shader_object.parse(&g_default_config, 430, EProfile::ECoreProfile, false, true, msg))
+		if (!ok && std::strstr(err, "arena"))
 		{
-			program.addShader(&shader_object);
-			success = program.link(msg);
-			if (success)
-			{
-				glslang::SpvOptions options;
-				options.disableOptimizer = true;
-				options.optimizeSize = true;
-				glslang::GlslangToSpv(*program.getIntermediate(lang), spv, &options);
-
-				// Now we optimize
-				//spvtools::Optimizer optimizer(SPV_ENV_VULKAN_1_0);
-				//optimizer.RegisterPass(spvtools::CreateUnifyConstantPass());      // Remove duplicate constants
-				//optimizer.RegisterPass(spvtools::CreateMergeReturnPass());        // Huge savings in vertex interpreter and likely normal vertex shaders
-				//optimizer.RegisterPass(spvtools::CreateAggressiveDCEPass());      // Remove dead code
-				//optimizer.Run(spv.data(), spv.size(), &spv);
-			}
-		}
-		else
-		{
-			rsx_log.error("%s", shader_object.getInfoLog());
-			rsx_log.error("%s", shader_object.getInfoDebugLog());
+			// More working state than the block holds
+			opts.arena = nullptr;
+			opts.arena_len = 0;
+			opts.arena_cap = usz{16} * RSLC_ARENA_CAP_DEFAULT;
+			err[0] = 0;
+			ok = rslc_compile(shader.data(), shader.size(), stage, &opts, &result);
 		}
 
-		return success;
-	}
+		if (!ok)
+		{
+			rsx_log.error("%s", err);
+			return false;
+		}
 
-	void initialize_compiler_context()
-	{
-		glslang::InitializeProcess();
-		init_default_resources(g_default_config);
-	}
-
-	void finalize_compiler_context()
-	{
-		glslang::FinalizeProcess();
+		spv.assign(result.spirv, result.spirv + result.spirv_len);
+		rslc_result_free(&result, &opts);
+		return true;
 	}
 }

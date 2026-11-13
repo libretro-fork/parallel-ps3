@@ -1,23 +1,27 @@
-// The Vulkan renderer's shaders without glslang: every GLSL source the
-// renderer makes, gathered without a game at the one place they all pass
-// (spirv::compile_glsl_to_spv, which this test stands in for), goes through
-// both glslang - still what the core uses - and libretro-common's rslc,
-// which is to replace it.
+// The Vulkan renderer's shaders through libretro-common's rslc, which is
+// what compiles them: every GLSL source the renderer makes, gathered without
+// a game at the one place they all pass (spirv::compile_glsl_to_spv, which
+// this test wraps).
 //
-// - rslc compiles every one of them;
-// - its module has the interface glslang's has: the same bindings, sets,
+// - the core's compile takes every one of them;
+// - the Vulkan driver takes the module (vkCreateShaderModule);
+// - the module runs (shader_runner.c): a fragment stage draws, a vertex
+//   stage puts out its position and outputs, a compute stage runs a group.
+//
+// With SHADER_CORPUS_GLSLANG=<a glslang executable> each source is also
+// compiled by glslang, which the core used before rslc and no longer has,
+// and the two are held to each other:
+//
+// - rslc's module has the interface glslang's has: the same bindings, sets,
 //   locations and built-ins by name, and every block member at the same
 //   offset, with the same array and matrix strides - what the renderer's
 //   buffers and descriptor sets are laid out to;
-// - the Vulkan driver takes its module (vkCreateShaderModule).
-// - over all of them its modules are within 2% of the size of glslang's.
-//
-// - run on the driver, the two modules make the same (shader_runner.inc):
-//   over the same buffers, textures and inputs, filled three ways, a
-//   fragment stage draws the same into every target, depth and stencil; a
-//   vertex stage puts out the same position and outputs, captured by
-//   transform feedback; a compute stage leaves the same in every buffer and
-//   image. Byte for byte.
+// - over all of them its modules are within 2% of the size of glslang's;
+// - run on the driver over the same buffers, textures and inputs, filled
+//   three ways, the two modules make the same, byte for byte: what a
+//   fragment stage draws into every target, depth and stencil, what a
+//   vertex stage puts out (captured by transform feedback), what a compute
+//   stage leaves in every buffer and image.
 //
 // What it does not show: the stages it cannot run here - the fragment
 // stages built for barycentric inputs where the driver has none, the shader
@@ -33,8 +37,8 @@
 // console's microcode (fragment_programs, vertex_programs). Needs a
 // Vulkan driver (a software one will do); without one it says so and
 // passes.
-// SHADER_CORPUS_DIR=<dir> writes each source and both modules there, and a
-// source the reference compiler refuses as refused.glsl.
+// SHADER_CORPUS_DIR=<dir> writes each source and its modules there, and a
+// source the core's compile refuses as refused.glsl.
 //
 // Built by `make check` from the core's own objects and archives, the same
 // link as the core's with this main.
@@ -43,7 +47,7 @@
 
 // The compiler the renderer calls, under another name: the test's own stands
 // where it was
-#define compile_glsl_to_spv compile_glsl_to_spv_reference
+#define compile_glsl_to_spv compile_glsl_to_spv_core
 #include "../../Emu/RSX/Program/SPIRVCommon.cpp"
 #undef compile_glsl_to_spv
 
@@ -74,13 +78,13 @@
 #include <cstdlib>
 #include <cstring>
 #include <dlfcn.h>
-#include <functional>
-#include <list>
+#include <filesystem>
+#include <unistd.h>
 #include <map>
 #include <set>
 #include <tuple>
 
-#include <gfx/shaders/rslc.h>
+#include "shader_runner.h"
 
 static int failures = 0;
 #define CHECK(cond) do { if (!(cond)) { std::fprintf(stderr, "%s:%d: check failed: %s\n", __FILE__, __LINE__, #cond); failures++; } } while (0)
@@ -88,9 +92,9 @@ static int failures = 0;
 struct gathered
 {
 	std::string source;
-	std::vector<u32> reference;
+	std::vector<u32> compiled;
 	::glsl::program_domain domain;
-	bool reference_ok;
+	bool ok;
 };
 
 static std::vector<gathered> s_corpus;
@@ -99,7 +103,7 @@ namespace spirv
 {
 	bool compile_glsl_to_spv(std::vector<u32>& spv, std::string& shader, ::glsl::program_domain domain, ::glsl::glsl_rules rules)
 	{
-		const bool ok = compile_glsl_to_spv_reference(spv, shader, domain, rules);
+		const bool ok = compile_glsl_to_spv_core(spv, shader, domain, rules);
 		s_corpus.push_back({shader, spv, domain, ok});
 		if (!ok && std::getenv("SHADER_CORPUS_DIR"))
 			fs::write_file(std::string(std::getenv("SHADER_CORPUS_DIR")) + "/refused.glsl", fs::rewrite, shader);
@@ -151,83 +155,141 @@ static interface_t interface_of(const u32* w, usz n)
 	return out;
 }
 
-static usz s_rslc_refused = 0, s_interface_differs = 0, s_driver_refused = 0;
+static usz s_refused = 0, s_interface_differs = 0, s_driver_refused = 0, s_reference_failed = 0;
 static usz s_reference_words = 0, s_rslc_words = 0;
-
-#include "shader_runner.inc"
-
 static usz s_ran = 0, s_ran_vertex = 0, s_ran_compute = 0, s_run_differs = 0, s_not_run = 0;
 static bool s_can_run = false;
 static std::map<std::string, u32> s_not_run_why;
 
-// One gathered source through rslc: compiled, compared, handed to the driver
-static void through_rslc(usz index, const gathered& g, const char* dir)
+// The vertex stage the runner draws a fragment stage with, through the core's compile
+static int compile_for_runner(void*, const char* glsl, size_t len, uint32_t** words, size_t* count)
 {
-	char err[512]{};
-	rslc_opts opts{};
-	rslc_result result{};
-	opts.dst = RSLC_DST_SPIRV;
-	opts.err = err;
-	opts.err_cap = sizeof(err);
+	std::vector<u32> spv;
+	std::string source(glsl, len);
+	if (!spirv::compile_glsl_to_spv_core(spv, source, ::glsl::program_domain::glsl_vertex_program, ::glsl::glsl_rules_vulkan))
+		return 0;
+	*words = static_cast<uint32_t*>(std::malloc(spv.size() * 4));
+	std::memcpy(*words, spv.data(), spv.size() * 4);
+	*count = spv.size();
+	return 1;
+}
 
-	const rslc_stage stage = g.domain == ::glsl::glsl_vertex_program ? RSLC_STAGE_VERTEX : g.domain == ::glsl::glsl_fragment_program ? RSLC_STAGE_FRAGMENT : RSLC_STAGE_COMPUTE;
-	const char* ext = stage == RSLC_STAGE_VERTEX ? "vert" : stage == RSLC_STAGE_FRAGMENT ? "frag" : "comp";
+// Every source through the glslang executable given: a file in and a module
+// out for each, as many at a time as there are processors
+static std::vector<std::vector<u32>> s_reference;
 
-	if (dir)
+static void reference_compile_all(const char* tool)
+{
+	const std::string dir = fmt::format("%s/shader_corpus_%u", std::filesystem::temp_directory_path().string(), static_cast<u32>(getpid()));
+	std::filesystem::create_directories(dir);
+	s_reference.resize(s_corpus.size());
+
+	for (usz i = 0; i < s_corpus.size(); i++)
 	{
-		fs::write_file(fmt::format("%s/%03u.%s", dir, index, ext), fs::rewrite, g.source);
-		fs::file(fmt::format("%s/%03u.%s.ref.spv", dir, index, ext), fs::rewrite).write(g.reference.data(), g.reference.size() * 4);
+		const gathered& g = s_corpus[i];
+		const char* ext = g.domain == ::glsl::glsl_vertex_program ? "vert" : g.domain == ::glsl::glsl_fragment_program ? "frag" : "comp";
+		fs::write_file(fmt::format("%s/%u.%s", dir, static_cast<u32>(i), ext), fs::rewrite, g.source);
 	}
 
-	if (!rslc_compile(g.source.data(), g.source.size(), stage, &opts, &result))
+	const std::string command = fmt::format("cd '%s' && ls | xargs -P \"$(nproc)\" -I{} '%s' -V --target-env vulkan1.2 -o {}.spv {} > /dev/null 2>&1", dir, tool);
+	[[maybe_unused]] const int status = std::system(command.c_str());
+
+	for (usz i = 0; i < s_corpus.size(); i++)
 	{
-		std::fprintf(stderr, "source %u (%s): rslc refuses it: %s\n", static_cast<u32>(index), ext, err);
-		s_rslc_refused++;
+		const gathered& g = s_corpus[i];
+		const char* ext = g.domain == ::glsl::glsl_vertex_program ? "vert" : g.domain == ::glsl::glsl_fragment_program ? "frag" : "comp";
+		if (std::FILE* m = std::fopen(fmt::format("%s/%u.%s.spv", dir, static_cast<u32>(i), ext).c_str(), "rb"))
+		{
+			std::fseek(m, 0, SEEK_END);
+			const long size = std::ftell(m);
+			std::fseek(m, 0, SEEK_SET);
+			s_reference[i].resize(size > 0 ? size / 4 : 0);
+			if (std::fread(s_reference[i].data(), 4, s_reference[i].size(), m) != s_reference[i].size())
+				s_reference[i].clear();
+			std::fclose(m);
+		}
+	}
+
+	std::filesystem::remove_all(dir);
+}
+
+// One gathered source: taken by the driver, held to glslang's where there is
+// one, and run
+static void check_source(usz index, const gathered& g, const char* dir, const char* tool)
+{
+	const char* ext = g.domain == ::glsl::glsl_vertex_program ? "vert" : g.domain == ::glsl::glsl_fragment_program ? "frag" : "comp";
+
+	if (dir)
+		fs::write_file(fmt::format("%s/%03u.%s", dir, index, ext), fs::rewrite, g.source);
+
+	if (!g.ok)
+	{
+		std::fprintf(stderr, "source %u (%s): the core's compile refuses it\n", static_cast<u32>(index), ext);
+		s_refused++;
 		return;
 	}
 
 	if (dir)
-		fs::file(fmt::format("%s/%03u.%s.rslc.spv", dir, index, ext), fs::rewrite).write(result.spirv, result.spirv_len * 4);
-
-	s_reference_words += g.reference.size();
-	s_rslc_words += result.spirv_len;
-
-	const interface_t reference = interface_of(g.reference.data(), g.reference.size());
-	const interface_t mine = interface_of(result.spirv, result.spirv_len);
-
-	if (reference != mine)
-	{
-		s_interface_differs++;
-		for (const auto& [name, member, what, value] : reference)
-			if (!mine.count({name, member, what, value}))
-				std::fprintf(stderr, "source %u (%s): glslang has %s%s%s decoration %u = %u, rslc does not\n", static_cast<u32>(index), ext, name.c_str(), member.empty() ? "" : ".", member.c_str(), what, value);
-		for (const auto& [name, member, what, value] : mine)
-			if (!reference.count({name, member, what, value}))
-				std::fprintf(stderr, "source %u (%s): rslc has %s%s%s decoration %u = %u, glslang does not\n", static_cast<u32>(index), ext, name.c_str(), member.empty() ? "" : ".", member.c_str(), what, value);
-	}
+		fs::file(fmt::format("%s/%03u.%s.rslc.spv", dir, index, ext), fs::rewrite).write(g.compiled.data(), g.compiled.size() * 4);
 
 	VkShaderModuleCreateInfo info{};
 	info.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
-	info.codeSize = result.spirv_len * sizeof(u32);
-	info.pCode = result.spirv;
+	info.codeSize = g.compiled.size() * sizeof(u32);
+	info.pCode = g.compiled.data();
 	VkShaderModule module = VK_NULL_HANDLE;
 
 	if (vkCreateShaderModule(*vk::g_render_device, &info, nullptr, &module) != VK_SUCCESS || !module)
-		s_driver_refused++;
-	else
-		vkDestroyShaderModule(*vk::g_render_device, module, nullptr);
-
-	// and makes what glslang's module makes, run on the driver
-	if (s_can_run && module)
 	{
-		std::string why;
-		const bool fragment = stage == RSLC_STAGE_FRAGMENT;
-		const runner::verdict v = fragment ? runner::fragment(g.reference, result.spirv, result.spirv_len, why)
-			: stage == RSLC_STAGE_VERTEX ? runner::vertex(g.reference, result.spirv, result.spirv_len, why)
-			: runner::compute(g.reference, result.spirv, result.spirv_len, why);
-		if (v == runner::verdict::same)
-			(fragment ? s_ran : stage == RSLC_STAGE_VERTEX ? s_ran_vertex : s_ran_compute)++;
-		else if (v == runner::verdict::not_run)
+		s_driver_refused++;
+		return;
+	}
+	vkDestroyShaderModule(*vk::g_render_device, module, nullptr);
+
+	// glslang's module of it, where there is a glslang
+	std::vector<u32> reference;
+	if (tool)
+	{
+		reference = s_reference[index];
+		if (reference.empty())
+		{
+			std::fprintf(stderr, "source %u (%s): the reference compiler refuses it\n", static_cast<u32>(index), ext);
+			s_reference_failed++;
+			return;
+		}
+
+		if (dir)
+			fs::file(fmt::format("%s/%03u.%s.ref.spv", dir, index, ext), fs::rewrite).write(reference.data(), reference.size() * 4);
+
+		s_reference_words += reference.size();
+		s_rslc_words += g.compiled.size();
+
+		const interface_t theirs = interface_of(reference.data(), reference.size());
+		const interface_t mine = interface_of(g.compiled.data(), g.compiled.size());
+
+		if (theirs != mine)
+		{
+			s_interface_differs++;
+			for (const auto& [name, member, what, value] : theirs)
+				if (!mine.count({name, member, what, value}))
+					std::fprintf(stderr, "source %u (%s): glslang has %s%s%s decoration %u = %u, rslc does not\n", static_cast<u32>(index), ext, name.c_str(), member.empty() ? "" : ".", member.c_str(), what, value);
+			for (const auto& [name, member, what, value] : mine)
+				if (!theirs.count({name, member, what, value}))
+					std::fprintf(stderr, "source %u (%s): rslc has %s%s%s decoration %u = %u, glslang does not\n", static_cast<u32>(index), ext, name.c_str(), member.empty() ? "" : ".", member.c_str(), what, value);
+		}
+	}
+
+	// Run: against glslang's module, or on its own
+	if (s_can_run)
+	{
+		char why[200]{};
+		const std::vector<u32>& first = tool ? reference : g.compiled;
+		const shader_run_verdict v = g.domain == ::glsl::glsl_fragment_program
+			? shader_run_fragment(first.data(), first.size(), g.compiled.data(), g.compiled.size(), compile_for_runner, nullptr, why, sizeof(why))
+			: g.domain == ::glsl::glsl_vertex_program ? shader_run_vertex(first.data(), first.size(), g.compiled.data(), g.compiled.size(), why, sizeof(why))
+			: shader_run_compute(first.data(), first.size(), g.compiled.data(), g.compiled.size(), why, sizeof(why));
+		if (v == SHADER_RUN_SAME)
+			(g.domain == ::glsl::glsl_fragment_program ? s_ran : g.domain == ::glsl::glsl_vertex_program ? s_ran_vertex : s_ran_compute)++;
+		else if (v == SHADER_RUN_NOT_RUN)
 		{
 			s_not_run++;
 			s_not_run_why[std::string(ext) + ": " + why]++;
@@ -235,11 +297,9 @@ static void through_rslc(usz index, const gathered& g, const char* dir)
 		else
 		{
 			s_run_differs++;
-			std::fprintf(stderr, "source %u (%s): %s\n", static_cast<u32>(index), ext, why.c_str());
+			std::fprintf(stderr, "source %u (%s): %s\n", static_cast<u32>(index), ext, why);
 		}
 	}
-
-	rslc_result_free(&result, &opts);
 }
 
 static void compile_now(::glsl::program_domain domain, const std::string& source)
@@ -948,9 +1008,8 @@ int main()
 	vk::render_device device;
 	device.create(gpu, graphics, umax, umax);
 	vk::set_current_renderer(device);
-	spirv::initialize_compiler_context();
 
-	const bool can_run = runner::start(gpu, graphics);
+	const bool can_run = shader_run_start(gpu, graphics) != 0;
 	shader_corpus_test::interpreter(device);
 
 	// The compute tasks
@@ -1012,33 +1071,44 @@ int main()
 	fragment_programs();
 	vertex_programs();
 
-	usz reference_failed = 0;
-	for (const gathered& g : s_corpus)
-		reference_failed += !g.reference_ok;
-
-	CHECK(reference_failed == 0);
 	CHECK(s_corpus.size() >= 79);
 
-	s_can_run = can_run;
 	const char* dir = std::getenv("SHADER_CORPUS_DIR");
+	const char* tool = std::getenv("SHADER_CORPUS_GLSLANG");
+	if (tool && !*tool)
+		tool = nullptr;
+	s_can_run = can_run;
+	if (tool)
+		reference_compile_all(tool);
 	for (usz i = 0; i < s_corpus.size(); i++)
-		through_rslc(i, s_corpus[i], dir);
+		check_source(i, s_corpus[i], dir, tool);
 
-	CHECK(s_rslc_refused == 0);
-	CHECK(s_interface_differs == 0);
+	CHECK(s_refused == 0);
 	CHECK(s_driver_refused == 0);
-
-	// and its modules are no larger than glslang's by more than a fiftieth
-	CHECK(s_rslc_words * 50 <= s_reference_words * 51);
-	std::printf("test_shader_corpus: rslc refused %u, differs in interface or layout on %u, the driver refused %u of its modules; %u words where glslang makes %u\n",
-		static_cast<u32>(s_rslc_refused), static_cast<u32>(s_interface_differs), static_cast<u32>(s_driver_refused), static_cast<u32>(s_rslc_words), static_cast<u32>(s_reference_words));
 	CHECK(s_run_differs == 0);
 	CHECK(!s_can_run || (s_ran >= 200 && s_ran_vertex >= 95 && s_ran_compute >= 40));
-	std::printf("test_shader_corpus: run from both compilers, %u fragment stages drew the same, %u vertex stages put out the same and %u compute stages left the same; %u differed, %u were not run\n",
-		static_cast<u32>(s_ran), static_cast<u32>(s_ran_vertex), static_cast<u32>(s_ran_compute), static_cast<u32>(s_run_differs), static_cast<u32>(s_not_run));
+	std::printf("test_shader_corpus: %u sources gathered; the core's compile refused %u, the driver refused %u of its modules\n",
+		::size32(s_corpus), static_cast<u32>(s_refused), static_cast<u32>(s_driver_refused));
+
+	if (tool)
+	{
+		// and its modules are no larger than glslang's by more than a fiftieth
+		CHECK(s_reference_failed == 0);
+		CHECK(s_interface_differs == 0);
+		CHECK(s_rslc_words * 50 <= s_reference_words * 51);
+		std::printf("test_shader_corpus: against glslang, which refused %u: %u differ in interface or layout; %u words where glslang makes %u\n",
+			static_cast<u32>(s_reference_failed), static_cast<u32>(s_interface_differs), static_cast<u32>(s_rslc_words), static_cast<u32>(s_reference_words));
+		std::printf("test_shader_corpus: run from both compilers, %u fragment stages drew the same, %u vertex stages put out the same and %u compute stages left the same; %u differed, %u were not run\n",
+			static_cast<u32>(s_ran), static_cast<u32>(s_ran_vertex), static_cast<u32>(s_ran_compute), static_cast<u32>(s_run_differs), static_cast<u32>(s_not_run));
+	}
+	else
+	{
+		std::printf("test_shader_corpus: no glslang to hold them to (SHADER_CORPUS_GLSLANG): %u fragment, %u vertex and %u compute stages ran; %u did not run the same twice, %u were not run\n",
+			static_cast<u32>(s_ran), static_cast<u32>(s_ran_vertex), static_cast<u32>(s_ran_compute), static_cast<u32>(s_run_differs), static_cast<u32>(s_not_run));
+	}
+
 	for (const auto& [why, count] : s_not_run_why)
 		std::printf("test_shader_corpus:   %u not run: %s\n", count, why.c_str());
-	std::printf("test_shader_corpus: %u sources gathered, %u refused by the reference compiler\n", ::size32(s_corpus), static_cast<u32>(reference_failed));
 	std::printf("test_shader_corpus: %s\n", failures ? "FAIL" : "ok");
 	std::fflush(stdout);
 	std::_Exit(failures ? 1 : 0);

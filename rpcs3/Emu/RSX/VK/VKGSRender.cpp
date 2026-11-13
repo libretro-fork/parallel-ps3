@@ -612,7 +612,6 @@ VKGSRender::VKGSRender(utils::serial* ar) noexcept : GSRender(ar)
 		? utils::get_thread_count()                   // We spawn the initial pipe compiler with all threads during the boot sequence by default.
 		: g_cfg.video.shader_compiler_threads_count;  // Respect user override if set
 
-	spirv::initialize_compiler_context();
 	vk::initialize_pipe_compiler(preferred_compiler_threads);
 
 	m_prog_buffer = std::make_unique<vk::program_cache>
@@ -851,7 +850,6 @@ VKGSRender::~VKGSRender()
 
 	// Shaders
 	vk::destroy_pipe_compiler();        // Ensure no pending shaders being compiled
-	spirv::finalize_compiler_context(); // Shut down the glslang compiler
 	m_prog_buffer->clear();             // Delete shader objects
 	m_shader_interpreter.destroy();
 

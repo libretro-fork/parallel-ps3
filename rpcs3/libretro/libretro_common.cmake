@@ -68,6 +68,8 @@ add_library(libretro_common STATIC
     ${LIBRETRO_COMMON_DIR}/gfx/scaler/scaler.c
     ${LIBRETRO_COMMON_DIR}/gfx/scaler/scaler_filter.c
     ${LIBRETRO_COMMON_DIR}/gfx/scaler/scaler_int.c
+    ${LIBRETRO_COMMON_DIR}/gfx/shaders/rslc_front.c
+    ${LIBRETRO_COMMON_DIR}/gfx/shaders/rslc_ir.c
     ${LIBRETRO_COMMON_DIR}/hash/lrc_hash.c
     ${LIBRETRO_COMMON_DIR}/lists/string_list.c
     ${LIBRETRO_COMMON_DIR}/memmap/memalign.c
@@ -105,6 +107,10 @@ target_compile_definitions(libretro_common PRIVATE HAVE_SSL HAVE_RETROSSL HAVE_C
 target_compile_definitions(libretro_common PRIVATE
     HAVE_RWAV HAVE_RFLAC HAVE_RVORBIS HAVE_ROPUS HAVE_RMP3 HAVE_RAAC HAVE_RMP4
     HAVE_RAC3 HAVE_RWMA HAVE_RWEBM HAVE_RATRAC3 HAVE_RATRAC3P)
+
+# rslc (the shader compiler) as an emulator needs it: its extended dialect,
+# SPIR-V only
+target_compile_definitions(libretro_common PRIVATE RSLC_EXTENDED RSLC_NO_DXBC RSLC_NO_TEXT)
 
 # net_socket and net_http
 if(WIN32)

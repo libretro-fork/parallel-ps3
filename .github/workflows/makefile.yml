@@ -80,6 +80,19 @@ jobs:
           if readelf -d parallel_ps3_libretro.so | grep -qE 'NEEDED.*(libvulkan|libGLEW|libGL|libOpenGL|libEGL|libX11|libxcb|libwayland)'; then exit 1; fi
           if nm -D --undefined-only parallel_ps3_libretro.so | grep -E ' (gl[A-Z]|egl[A-Z]|glX|wgl|X[A-Z][a-z]|xcb_|wl_)'; then exit 1; fi
 
+      # glslang is not in the tree any more: test_shader_corpus holds rslc's
+      # modules to glslang's when it is given one, so one is built here, at
+      # the commit the core last had
+      - name: Reference glslang
+        if: matrix.llvm == '1'
+        run: |
+          git init -q "$RUNNER_TEMP/glslang"
+          git -C "$RUNNER_TEMP/glslang" fetch -q --depth 1 https://github.com/KhronosGroup/glslang.git f0bd0257c308b9a26562c1a30c4748a0219cc951
+          git -C "$RUNNER_TEMP/glslang" checkout -q FETCH_HEAD
+          cmake -S "$RUNNER_TEMP/glslang" -B "$RUNNER_TEMP/glslang/build" -DCMAKE_BUILD_TYPE=Release -DENABLE_OPT=OFF -DGLSLANG_TESTS=OFF -DENABLE_HLSL=OFF -DBUILD_EXTERNAL=OFF >/dev/null
+          cmake --build "$RUNNER_TEMP/glslang/build" --target glslang-standalone -j"$(nproc)" >/dev/null
+          echo "SHADER_CORPUS_GLSLANG=$RUNNER_TEMP/glslang/build/StandAlone/glslang" >> "$GITHUB_ENV"
+
       - name: Load
         run: make check HAVE_LLVM=${{ matrix.llvm }}
 

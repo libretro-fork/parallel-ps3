@@ -80,13 +80,11 @@ ifeq ($(platform), unix)
    TARGET  := $(TARGET_NAME)_libretro.so
    fpic    := -fPIC
    SHARED  := -shared -Wl,--no-undefined -Wl,--version-script=$(CORE_DIR)/rpcs3/libretro/make/link.T
-   OS_GLSLANG  := $(SOURCES_GLSLANG_UNIX)
    OS_LIBUSB   := $(SOURCES_LIBUSB_LINUX)
    OS_RPCS3    := $(SOURCES_RPCS3_GL)
    OS_LIBRETRO := $(SOURCES_LIBRETRO_GL)
    # As rpcs3/CMakeLists.txt has it, on Linux only (on Windows it is a type)
    DEFINES += -DDATADIR=\"/usr/local/share/rpcs3\"
-   FLAGS_GLSLANG += -DGLSLANG_OSINCLUDE_UNIX
    FLAGS_LIBUSB  += -DPLATFORM_POSIX=1 -DHAVE_CLOCK_GETTIME
    # No GL or window system library: OpenGL comes from the frontend
    LIBS += -ldl -lrt -lpthread -lm
@@ -96,12 +94,10 @@ else ifeq ($(platform), osx)
    TARGET  := $(TARGET_NAME)_libretro.dylib
    fpic    := -fPIC
    SHARED  := -dynamiclib
-   OS_GLSLANG  := $(SOURCES_GLSLANG_UNIX)
    OS_LIBUSB   := $(SOURCES_LIBUSB_DARWIN)
    OS_RPCS3    := $(SOURCES_RPCS3_DARWIN)
    OS_LIBRETRO := $(SOURCES_LIBRETRO_NOGL)
    DEFINES += -DLIBRETRO_NO_GL -DHAVE_CLOCK_GETTIME
-   FLAGS_GLSLANG += -DGLSLANG_OSINCLUDE_UNIX
    FLAGS_LIBUSB  += -DPLATFORM_POSIX=1 -DHAVE_CLOCK_GETTIME
    # RtMidi's own default on macOS: CoreMIDI
    FLAGS_RTMIDI  += -D__MACOSX_CORE__
@@ -119,12 +115,10 @@ else ifneq (,$(findstring win,$(platform)))
    # else (volk opens vulkan-1.dll at run time); RETRO_API's dllexport is
    # what it exports
    SHARED  := -shared -static -static-libgcc -static-libstdc++ -Wl,--no-undefined
-   OS_GLSLANG  := $(SOURCES_GLSLANG_WINDOWS)
    OS_LIBUSB   := $(SOURCES_LIBUSB_WINDOWS)
    OS_RPCS3    := $(SOURCES_RPCS3_GL)
    OS_LIBRETRO := $(SOURCES_LIBRETRO_GL)
    DEFINES += -DUNICODE -D_UNICODE -D_WIN32_WINNT=0x0A00
-   FLAGS_GLSLANG += -DGLSLANG_OSINCLUDE_WIN32
    FLAGS_LIBUSB  += -DPLATFORM_WINDOWS=1
    # RtMidi's own default on Windows: Windows multimedia MIDI (winmm)
    FLAGS_RTMIDI  += -D__WINDOWS_MM__
@@ -341,7 +335,6 @@ objs = $(patsubst %.mm,%.o,$(patsubst %.cpp,%.o,$(patsubst %.c,%.o,$(1))))
 
 OBJ_LRC      := $(call objs,$(SOURCES_LRC))
 OBJ_LIBUSB   := $(call objs,$(SOURCES_LIBUSB) $(OS_LIBUSB))
-OBJ_GLSLANG  := $(call objs,$(SOURCES_GLSLANG) $(OS_GLSLANG))
 OBJ_ASMJIT   := $(call objs,$(SOURCES_ASMJIT))
 OBJ_RTMIDI   := $(call objs,$(SOURCES_RTMIDI))
 OBJ_FUSION   := $(call objs,$(SOURCES_FUSION))
@@ -349,12 +342,11 @@ OBJ_VOLK     := $(call objs,$(SOURCES_VOLK))
 OBJ_LIBRETRO := $(call objs,$(SOURCES_LIBRETRO) $(SOURCES_GENERATED) $(OS_LIBRETRO))
 OBJ_RPCS3    := $(call objs,$(SOURCES_RPCS3) $(OS_RPCS3))
 
-OBJECTS := $(OBJ_LRC) $(OBJ_LIBUSB) $(OBJ_GLSLANG) $(OBJ_ASMJIT) $(OBJ_RTMIDI) $(OBJ_FUSION) \
+OBJECTS := $(OBJ_LRC) $(OBJ_LIBUSB) $(OBJ_ASMJIT) $(OBJ_RTMIDI) $(OBJ_FUSION) \
 	$(OBJ_VOLK) $(OBJ_RPCS3) $(OBJ_LIBRETRO)
 
 $(OBJ_LRC):      FLAGS := $(FLAGS_LRC)
 $(OBJ_LIBUSB):   FLAGS := $(FLAGS_LIBUSB)
-$(OBJ_GLSLANG):  FLAGS := $(FLAGS_GLSLANG)
 $(OBJ_ASMJIT):   FLAGS := $(FLAGS_ASMJIT)
 $(OBJ_RTMIDI):   FLAGS := $(FLAGS_RTMIDI)
 $(OBJ_FUSION):   FLAGS := $(FLAGS_FUSION)
@@ -381,9 +373,9 @@ $(CORE_DIR)/rpcs3/rpcs3_version.o: $(CORE_DIR)/rpcs3/git-version.h
 # the *.o and *.d files that are data in other projects' trees, such as
 # the fake toolchains in LLVM's clang tests, and delete them.
 OBJ_DIRS := $(sort $(dir \
-	$(SOURCES_LRC) $(SOURCES_ASMJIT) $(SOURCES_GLSLANG) $(SOURCES_LIBUSB) $(SOURCES_RTMIDI) \
+	$(SOURCES_LRC) $(SOURCES_ASMJIT) $(SOURCES_LIBUSB) $(SOURCES_RTMIDI) \
 	$(SOURCES_FUSION) $(SOURCES_VOLK) $(SOURCES_RPCS3) $(SOURCES_RPCS3_GL) $(SOURCES_LIBRETRO) \
-	$(SOURCES_GLSLANG_UNIX) $(SOURCES_GLSLANG_WINDOWS) $(SOURCES_LIBUSB_LINUX) \
+	$(SOURCES_LIBUSB_LINUX) \
 	$(SOURCES_LIBUSB_DARWIN) $(SOURCES_LIBUSB_WINDOWS) $(SOURCES_RPCS3_AARCH64) \
 	$(SOURCES_RPCS3_DARWIN) $(SOURCES_LIBRETRO_GL) $(SOURCES_LIBRETRO_NOGL) \
 	$(SOURCES_GENERATED) $(CORE_DIR)/rpcs3/libretro/tests/x.cpp))
@@ -417,7 +409,6 @@ all: $(TARGET)
 ARCHIVES := \
 	$(CORE_DIR)/librpcs3_emu.a \
 	$(CORE_DIR)/liblibretro_common.a \
-	$(CORE_DIR)/libglslang.a \
 	$(CORE_DIR)/libasmjit.a \
 	$(CORE_DIR)/libusb.a \
 	$(CORE_DIR)/librtmidi.a \
@@ -427,7 +418,6 @@ ARCHIVES := \
 
 $(CORE_DIR)/librpcs3_emu.a: $(OBJ_RPCS3)
 $(CORE_DIR)/liblibretro_common.a: $(OBJ_LRC)
-$(CORE_DIR)/libglslang.a: $(OBJ_GLSLANG)
 $(CORE_DIR)/libasmjit.a: $(OBJ_ASMJIT)
 $(CORE_DIR)/libusb.a: $(OBJ_LIBUSB)
 $(CORE_DIR)/librtmidi.a: $(OBJ_RTMIDI)
@@ -788,15 +778,20 @@ $(RSXAUDIO_RING_TEST): $(OBJ_RSXAUDIO_RING_TEST) $(OBJ_LIBRETRO) $(ARCHIVES)
 	$(Q)$(CXX) -o $@ $(OBJ_RSXAUDIO_RING_TEST) $(OBJ_LIBRETRO) $(GROUP_START) $(ARCHIVES) $(GROUP_END) $(LDFLAGS) $(LIBS)
 
 # The Vulkan renderer's shader sources gathered on a Vulkan driver (a
-# software one will do); SPIRVCommon.cpp is compiled into the test
+# software one will do); SPIRVCommon.cpp is compiled into the test, and
+# shader_runner.c (C89) runs the modules
 SHADER_CORPUS_TEST := $(GEN_DIR)/test_shader_corpus
 OBJ_SHADER_CORPUS_TEST := $(CORE_DIR)/rpcs3/libretro/tests/test_shader_corpus.o
+OBJ_SHADER_RUNNER := $(CORE_DIR)/rpcs3/libretro/tests/shader_runner.o
 $(OBJ_SHADER_CORPUS_TEST): FLAGS := $(FLAGS_LIBRETRO)
-$(OBJ_SHADER_CORPUS_TEST): $(CORE_DIR)/rpcs3/Emu/RSX/Program/SPIRVCommon.cpp $(CORE_DIR)/rpcs3/libretro/tests/shader_runner.inc
+$(OBJ_SHADER_CORPUS_TEST): $(CORE_DIR)/rpcs3/Emu/RSX/Program/SPIRVCommon.cpp $(CORE_DIR)/rpcs3/libretro/tests/shader_runner.h
+$(OBJ_SHADER_RUNNER): FLAGS := -std=gnu99 -Wall -Wextra -Wdeclaration-after-statement -Werror -DVK_NO_PROTOTYPES \
+	-isystem $(CORE_DIR)/3rdparty/Vulkan-Headers/include -isystem $(CORE_DIR)/3rdparty/volk
+$(OBJ_SHADER_RUNNER): $(CORE_DIR)/rpcs3/libretro/tests/shader_runner.h
 
-$(SHADER_CORPUS_TEST): $(OBJ_SHADER_CORPUS_TEST) $(OBJ_LIBRETRO) $(ARCHIVES)
+$(SHADER_CORPUS_TEST): $(OBJ_SHADER_CORPUS_TEST) $(OBJ_SHADER_RUNNER) $(OBJ_LIBRETRO) $(ARCHIVES)
 	$(SAY) LINK $@
-	$(Q)$(CXX) -o $@ $(OBJ_SHADER_CORPUS_TEST) $(OBJ_LIBRETRO) $(GROUP_START) $(ARCHIVES) $(GROUP_END) $(LDFLAGS) $(LIBS)
+	$(Q)$(CXX) -o $@ $(OBJ_SHADER_CORPUS_TEST) $(OBJ_SHADER_RUNNER) $(OBJ_LIBRETRO) $(GROUP_START) $(ARCHIVES) $(GROUP_END) $(LDFLAGS) $(LIBS)
 
 # retro_run without a game (libretro_core.cpp), linked the same way
 FAILED_BOOT_TEST := $(GEN_DIR)/test_failed_boot
