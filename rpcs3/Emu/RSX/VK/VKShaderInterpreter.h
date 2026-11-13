@@ -4,6 +4,7 @@
 #include "Emu/RSX/VK/VKPipelineCompiler.h"
 #include "vkutils/descriptors.h"
 #include <unordered_map>
+#include <retro_atomic.h>
 
 struct shader_corpus_test;
 class VKVertexProgram;
@@ -59,24 +60,113 @@ namespace vk
 			u32 fragment_textures_location = 0;
 		};
 
+		struct key_equal
+		{
+			bool operator()(const pipeline_key& a, const pipeline_key& b) const
+			{
+				return a == b;
+			}
+		};
+
+		struct opt_hasher
+		{
+			usz operator()(const u64& opt) const
+			{
+				return static_cast<usz>(opt * 0x9e3779b97f4a7c15ull >> 32);
+			}
+		};
+
+		struct opt_equal
+		{
+			bool operator()(const u64& a, const u64& b) const
+			{
+				return a == b;
+			}
+		};
+
+		// What a pipeline key has: made whole, then published, and from then
+		// on only its flags change. It is kept until destroy() even after
+		// another has taken its place, so a pointer to it or to its program
+		// stays good.
 		struct pipeline_cache_entry_t
 		{
-			u32 flags = 0;
+			pipeline_cache_entry_t* retired_next = nullptr;
+			retro_atomic_int_t flags;
 			std::shared_ptr<glsl::program> program;
 		};
 
-		std::unordered_map<pipeline_key, pipeline_cache_entry_t, key_hasher> m_program_cache;
-		std::unordered_map<u64, std::shared_ptr<VKVertexProgram>> m_vs_shader_cache;
-		std::unordered_map<u64, std::shared_ptr<VKFragmentProgram>> m_fs_shader_cache;
+		struct pipeline_slot_t
+		{
+			retro_atomic_ptr_t entry{};
+
+			~pipeline_slot_t()
+			{
+				delete static_cast<pipeline_cache_entry_t*>(retro_atomic_load_relaxed_ptr(&entry));
+			}
+		};
+
+		// A built shader, published once
+		template <typename T>
+		struct shader_slot_t
+		{
+			retro_atomic_ptr_t ready{};
+
+			~shader_slot_t()
+			{
+				delete static_cast<std::shared_ptr<T>*>(retro_atomic_load_relaxed_ptr(&ready));
+			}
+		};
+
+		// The three caches are looked up and added to with no lock: the
+		// pipeline compiler's thread publishes the programs it finishes while
+		// the renderer looks programs up.
+		program_cache_map<pipeline_key, pipeline_slot_t, key_hasher, key_equal> m_program_cache;
+		mutable program_cache_map<u64, shader_slot_t<VKVertexProgram>, opt_hasher, opt_equal> m_vs_shader_cache;
+		mutable program_cache_map<u64, shader_slot_t<VKFragmentProgram>, opt_hasher, opt_equal> m_fs_shader_cache;
 		std::unordered_map<u64, pipeline_info_ex_t> m_pipeline_info_cache;
 
-		mutable shared_mutex m_program_cache_lock;
-		mutable shared_mutex m_vs_shader_cache_lock;
-		mutable shared_mutex m_fs_shader_cache_lock;
+		// Entries another took the place of, freed by destroy()
+		retro_atomic_ptr_t m_retired_entries{};
+
+		// The key's entry, or null
+		pipeline_cache_entry_t* cached(const pipeline_key& key);
+
+		// Gives the key this program. With replace, in place of what it has;
+		// without, only if it has none. Returns the entry the key has after.
+		pipeline_cache_entry_t* publish(const pipeline_key& key, std::shared_ptr<glsl::program> program, u32 flags, bool replace);
+
+		// The shader built for these options, or null
+		template <typename T, typename Map>
+		static std::shared_ptr<T> cached_shader(Map& map, u64 opt)
+		{
+			if (auto ready = static_cast<std::shared_ptr<T>*>(retro_atomic_load_acquire_ptr(&map.try_emplace(opt).first->value.ready)))
+			{
+				return *ready;
+			}
+
+			return {};
+		}
+
+		// Returns the shader these options have after: this one, or the one
+		// another thread built first
+		template <typename T, typename Map>
+		static std::shared_ptr<T> publish_shader(Map& map, u64 opt, std::shared_ptr<T> shader)
+		{
+			retro_atomic_ptr_t* slot = &map.try_emplace(opt).first->value.ready;
+			auto made = new std::shared_ptr<T>(std::move(shader));
+
+			if (retro_atomic_cas_ptr(slot, nullptr, made))
+			{
+				return *made;
+			}
+
+			delete made;
+			return *static_cast<std::shared_ptr<T>*>(retro_atomic_load_acquire_ptr(slot));
+		}
 
 		pipeline_key m_current_key{};
 		pipeline_info_ex_t m_current_pipeline_info_ex{};
-		std::shared_ptr<glsl::program> m_current_interpreter;
+		glsl::program* m_current_interpreter = nullptr;
 
 		std::shared_ptr<VKVertexProgram> build_vs(u64 compiler_opt);
 		std::shared_ptr<VKFragmentProgram> build_fs(u64 compiler_opt);

@@ -165,13 +165,10 @@ namespace vk
 	std::shared_ptr<VKVertexProgram> shader_interpreter::build_vs(u64 compiler_options)
 	{
 		compiler_options &= COMPILER_OPT_ALL_VS_MASK;
+
+		if (auto found = cached_shader<VKVertexProgram>(m_vs_shader_cache, compiler_options))
 		{
-			reader_lock lock(m_vs_shader_cache_lock);
-			if (auto found = m_vs_shader_cache.find(compiler_options);
-				found != m_vs_shader_cache.end())
-			{
-				return found->second;
-			}
+			return found;
 		}
 
 		::glsl::shader_properties properties{};
@@ -266,21 +263,16 @@ namespace vk
 
 		vk_prog->SetInputs(vs_inputs);
 
-		std::lock_guard lock(m_vs_shader_cache_lock);
-		m_vs_shader_cache[compiler_options] = vk_prog;
-		return vk_prog;
+		return publish_shader(m_vs_shader_cache, compiler_options, std::move(vk_prog));
 	}
 
 	std::shared_ptr<VKFragmentProgram> shader_interpreter::build_fs(u64 compiler_options)
 	{
 		compiler_options &= COMPILER_OPT_ALL_FS_MASK;
+
+		if (auto found = cached_shader<VKFragmentProgram>(m_fs_shader_cache, compiler_options))
 		{
-			reader_lock lock(m_fs_shader_cache_lock);
-			if (auto found = m_fs_shader_cache.find(compiler_options);
-				found != m_fs_shader_cache.end())
-			{
-				return found->second;
-			}
+			return found;
 		}
 
 		::glsl::shader_properties properties
@@ -451,9 +443,7 @@ namespace vk
 
 		vk_prog->SetInputs(inputs);
 
-		std::lock_guard lock(m_fs_shader_cache_lock);
-		m_fs_shader_cache[compiler_options] = vk_prog;
-		return vk_prog;
+		return publish_shader(m_fs_shader_cache, compiler_options, std::move(vk_prog));
 	}
 
 	void shader_interpreter::init(const vk::render_device& dev)
@@ -463,8 +453,18 @@ namespace vk
 
 	void shader_interpreter::destroy()
 	{
-		m_current_interpreter.reset();
+		m_current_interpreter = nullptr;
+		m_current_key = {};
 		m_program_cache.clear();
+
+		auto retired = static_cast<pipeline_cache_entry_t*>(retro_atomic_exchange_ptr(&m_retired_entries, nullptr));
+		while (retired)
+		{
+			auto next = retired->retired_next;
+			delete retired;
+			retired = next;
+		}
+
 		m_vs_shader_cache.clear();
 		m_fs_shader_cache.clear();
 	}
@@ -492,14 +492,7 @@ namespace vk
 			key.properties = properties;
 
 			std::shared_ptr<glsl::program> result = std::move(prog);
-			std::lock_guard lock(this->m_program_cache_lock);
-
-			pipeline_cache_entry_t cached_program
-			{
-				.flags = 0,
-				.program = result
-			};
-			this->m_program_cache[key] = cached_program;
+			this->publish(key, result, 0, true);
 
 			if (async_callback)
 			{
@@ -590,7 +583,7 @@ namespace vk
 
 		if (m_current_key == key) [[likely]]
 		{
-			return m_current_interpreter.get();
+			return m_current_interpreter;
 		}
 		else
 		{
@@ -598,50 +591,70 @@ namespace vk
 			m_current_key = key;
 		}
 
+		if (pipeline_cache_entry_t* found = cached(key)) [[likely]]
 		{
-			reader_lock lock(m_program_cache_lock);
+			m_current_interpreter = found->program.get();
 
-			auto found = m_program_cache.find(key);
-			if (found != m_program_cache.end()) [[likely]]
+			// Only this thread starts a recompile, so the test and the claim
+			// are one compare-and-swap with nobody to lose it to
+			if (retro_atomic_load_acquire_int(&found->flags) == CACHED_PIPE_UNOPTIMIZED &&
+				retro_atomic_cas_int(&found->flags, CACHED_PIPE_UNOPTIMIZED, CACHED_PIPE_UNOPTIMIZED | CACHED_PIPE_RECOMPILING))
 			{
-				m_current_interpreter = found->second.program;
+				link(properties, key.compiler_opt, true, {});
+			}
 
-				if ((found->second.flags & (CACHED_PIPE_UNOPTIMIZED | CACHED_PIPE_RECOMPILING)) == CACHED_PIPE_UNOPTIMIZED)
+			return m_current_interpreter;
+		}
+
+		m_current_interpreter = publish(key, link(properties, key.compiler_opt), 0, true)->program.get();
+		return m_current_interpreter;
+	}
+
+	shader_interpreter::pipeline_cache_entry_t* shader_interpreter::cached(const pipeline_key& key)
+	{
+		return static_cast<pipeline_cache_entry_t*>(retro_atomic_load_acquire_ptr(&m_program_cache.try_emplace(key).first->value.entry));
+	}
+
+	shader_interpreter::pipeline_cache_entry_t* shader_interpreter::publish(const pipeline_key& key, std::shared_ptr<glsl::program> program, u32 flags, bool replace)
+	{
+		retro_atomic_ptr_t* slot = &m_program_cache.try_emplace(key).first->value.entry;
+
+		auto made = new pipeline_cache_entry_t();
+		retro_atomic_int_init(&made->flags, static_cast<int>(flags));
+		made->program = std::move(program);
+
+		if (!replace)
+		{
+			if (retro_atomic_cas_ptr(slot, nullptr, made))
+			{
+				return made;
+			}
+
+			delete made;
+			return static_cast<pipeline_cache_entry_t*>(retro_atomic_load_acquire_ptr(slot));
+		}
+
+		// What was there may be in use: it goes on the list destroy() frees
+		if (auto old = static_cast<pipeline_cache_entry_t*>(retro_atomic_exchange_ptr(slot, made)))
+		{
+			while (true)
+			{
+				void* head = retro_atomic_load_acquire_ptr(&m_retired_entries);
+				old->retired_next = static_cast<pipeline_cache_entry_t*>(head);
+
+				if (retro_atomic_cas_ptr(&m_retired_entries, head, old))
 				{
-					found->second.flags |= CACHED_PIPE_RECOMPILING;
-					link(properties, key.compiler_opt, true, {});
+					break;
 				}
-
-				return m_current_interpreter.get();
 			}
 		}
 
-		const auto start = std::chrono::steady_clock::now();
-
-		m_current_interpreter = link(properties, key.compiler_opt);
-
-		const auto end = std::chrono::steady_clock::now();
-
-		auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
-		if (duration > std::chrono::milliseconds(1000))
-		{
-			rsx_log.error("Cache miss");
-		}
-
-		pipeline_cache_entry_t cache_entry
-		{
-			.flags = 0,
-			.program = m_current_interpreter
-		};
-
-		std::lock_guard lock(m_program_cache_lock);
-		m_program_cache[key] = cache_entry;
-		return m_current_interpreter.get();
+		return made;
 	}
 
 	bool shader_interpreter::is_interpreter(const glsl::program* prog) const
 	{
-		return prog == m_current_interpreter.get();
+		return prog == m_current_interpreter;
 	}
 
 	u32 shader_interpreter::get_vertex_instruction_location() const
@@ -659,28 +672,11 @@ namespace vk
 		const auto vs_opt = m_current_key.compiler_opt & COMPILER_OPT_ALL_VS_MASK;
 		const auto fs_opt = m_current_key.compiler_opt & COMPILER_OPT_ALL_FS_MASK;
 
-		std::shared_ptr<VKVertexProgram> vs;
-		std::shared_ptr<VKFragmentProgram> fs;
-
+		return
 		{
-			reader_lock lock(m_vs_shader_cache_lock);
-			if (auto found = m_vs_shader_cache.find(vs_opt);
-				found != m_vs_shader_cache.end())
-			{
-				vs = found->second;
-			}
-		}
-
-		{
-			reader_lock lock(m_fs_shader_cache_lock);
-			if (auto found = m_fs_shader_cache.find(fs_opt);
-				found != m_fs_shader_cache.end())
-			{
-				fs = found->second;
-			}
-		}
-
-		return { vs, fs };
+			cached_shader<VKVertexProgram>(m_vs_shader_cache, vs_opt),
+			cached_shader<VKFragmentProgram>(m_fs_shader_cache, fs_opt)
+		};
 	}
 
 	const shader_interpreter::pipeline_info_ex_t* shader_interpreter::get_pipeline_info_ex(u64 compiler_opt)
@@ -809,7 +805,6 @@ namespace vk
 		while (ctr.load() < limit1);
 
 		ctr = 0;
-		std::lock_guard lock(m_program_cache_lock);
 
 		for (const auto& props : pipe_properties)
 		{
@@ -820,8 +815,7 @@ namespace vk
 			{
 				// Check if we have an exact match
 				base_key.compiler_opt = variant.vs_opts.shader_opt | variant.fs_opts.shader_opt;
-				if (auto found = m_program_cache.find(base_key);
-					found != m_program_cache.end())
+				if (cached(base_key))
 				{
 					// We have a perfect match, no propagation required
 					continue;
@@ -830,16 +824,11 @@ namespace vk
 				// Find a compatible pipeline
 				auto compat_key = base_key;
 				compat_key.compiler_opt = variant.vs_opts.compatible_shader_opts | variant.fs_opts.compatible_shader_opts;
-				auto found = m_program_cache.find(compat_key);
+				const pipeline_cache_entry_t* found = cached(compat_key);
 
-				ensure(found != m_program_cache.end(), "Invalid interpreter configuration.");
+				ensure(found, "Invalid interpreter configuration.");
 
-				pipeline_cache_entry_t cache_entry
-				{
-					.flags = CACHED_PIPE_UNOPTIMIZED,
-					.program = found->second.program
-				};
-				m_program_cache[base_key] = cache_entry;
+				publish(base_key, found->program, CACHED_PIPE_UNOPTIMIZED, false);
 			}
 		}
 

@@ -1048,6 +1048,170 @@ struct shader_corpus_test
 		CHECK(!!interpreter.build_fs(0xff));
 		interpreter.destroy();
 	}
+
+	// The interpreter's caches are looked up and added to with no lock (the
+	// pipeline compiler's thread publishes programs while the renderer
+	// looks them up). Six threads give the same 2000 keys a program each,
+	// over and over: every key ends with one of the programs it was given,
+	// and every other one is kept on the retired list - none lost, none
+	// twice - so a pointer the renderer still holds stays good; the same
+	// when they all give the same four keys programs at once. Giving a
+	// key a program only if it has none leaves it with the first. A shader
+	// built twice at once ends as one shader.
+	static void interpreter_caches()
+	{
+		using si = vk::shader_interpreter;
+		constexpr u32 keys = 2000, workers = 6;
+
+		auto fake = [](u32 t, u32 k)
+		{
+			// Never dereferenced or freed: only told apart
+			return std::shared_ptr<vk::glsl::program>(std::shared_ptr<void>(), reinterpret_cast<vk::glsl::program*>(uptr{(u64{t} + 1) << 32 | (k + 1)}));
+		};
+
+		auto key_of = [](u32 k)
+		{
+			si::pipeline_key key{};
+			key.compiler_opt = k;
+			return key;
+		};
+
+		si interpreter;
+		CHECK(interpreter.cached(key_of(1)) == nullptr);
+
+		static retro_atomic_int_t missing;
+		std::thread threads[workers];
+		for (u32 t = 0; t < workers; t++)
+		{
+			threads[t] = std::thread([&, t]
+			{
+				for (u32 n = 0; n < keys; n++)
+				{
+					// Each thread in an order of its own, every key once
+					static constexpr u32 steps[workers] = {1, 3, 7, 9, 11, 13};
+					const u32 k = (n * steps[t] + t * 7919) % keys;
+					interpreter.publish(key_of(k), fake(t, k), 0, true);
+					if (!interpreter.cached(key_of(k)))
+						retro_atomic_fetch_add_int(&missing, 1);
+				}
+			});
+		}
+		for (auto& t : threads)
+			t.join();
+		CHECK(retro_atomic_load_acquire_int(&missing) == 0);
+
+		// Every program given is in the cache or on the retired list, once
+		static u8 seen[workers][keys];
+		u32 live = 0, retired = 0, wrong = 0;
+		for (u32 k = 0; k < keys; k++)
+		{
+			const auto entry = interpreter.cached(key_of(k));
+			const u64 tag = reinterpret_cast<uptr>(entry->program.get());
+			const u32 t = static_cast<u32>(tag >> 32) - 1;
+			if (t >= workers || static_cast<u32>(tag) != k + 1 || seen[t][k]++)
+				wrong++;
+			else
+				live++;
+		}
+		for (auto e = static_cast<si::pipeline_cache_entry_t*>(retro_atomic_load_acquire_ptr(&interpreter.m_retired_entries)); e; e = e->retired_next)
+		{
+			const u64 tag = reinterpret_cast<uptr>(e->program.get());
+			const u32 t = static_cast<u32>(tag >> 32) - 1, k = static_cast<u32>(tag) - 1;
+			if (t >= workers || k >= keys || seen[t][k]++)
+				wrong++;
+			else
+				retired++;
+		}
+		CHECK(wrong == 0);
+		CHECK(live == keys);
+		CHECK(retired == keys * (workers - 1));
+
+		// The same four keys from every thread at once, 20000 times each:
+		// still every program that lost its place is retired, once
+		constexpr u32 rounds = 20000;
+		for (u32 t = 0; t < workers; t++)
+		{
+			threads[t] = std::thread([&, t]
+			{
+				for (u32 n = 0; n < rounds; n++)
+					interpreter.publish(key_of(n & 3), fake(workers + t, n), 0, true);
+			});
+		}
+		for (auto& t : threads)
+			t.join();
+
+		retired += workers * rounds;
+		u32 listed = 0;
+		for (auto e = static_cast<si::pipeline_cache_entry_t*>(retro_atomic_load_acquire_ptr(&interpreter.m_retired_entries)); e && listed <= retired; e = e->retired_next)
+			listed++;
+		CHECK(listed == retired);
+
+		// Only if it has none: what is there stays, flags and all
+		const auto before = interpreter.cached(key_of(7));
+		CHECK(interpreter.publish(key_of(7), fake(0, 7), 1, false) == before);
+		CHECK(interpreter.cached(key_of(7)) == before);
+
+		static si::pipeline_cache_entry_t* got[workers][keys];
+		for (u32 t = 0; t < workers; t++)
+		{
+			threads[t] = std::thread([&, t]
+			{
+				for (u32 k = 0; k < keys; k++)
+					got[t][k] = interpreter.publish(key_of(keys + k), fake(t, k), 1, false);
+			});
+		}
+		for (auto& t : threads)
+			t.join();
+
+		u32 differ = 0;
+		for (u32 k = 0; k < keys; k++)
+		{
+			const auto entry = interpreter.cached(key_of(keys + k));
+			for (u32 t = 0; t < workers; t++)
+				differ += got[t][k] != entry;
+			differ += !entry || retro_atomic_load_acquire_int(&entry->flags) != 1;
+		}
+		CHECK(differ == 0);
+
+		u32 now_retired = 0;
+		for (auto e = static_cast<si::pipeline_cache_entry_t*>(retro_atomic_load_acquire_ptr(&interpreter.m_retired_entries)); e && now_retired <= retired; e = e->retired_next)
+			now_retired++;
+		CHECK(now_retired == retired);
+
+		// Shaders: one per set of options, 0 among them
+		static std::shared_ptr<VKVertexProgram> built[workers][16];
+		for (u32 t = 0; t < workers; t++)
+		{
+			threads[t] = std::thread([&, t]
+			{
+				for (u32 opt = 0; opt < 16; opt++)
+					built[t][opt] = si::publish_shader(interpreter.m_vs_shader_cache, opt, std::make_shared<VKVertexProgram>());
+			});
+		}
+		for (auto& t : threads)
+			t.join();
+
+		u32 shaders_differ = 0;
+		for (u32 opt = 0; opt < 16; opt++)
+		{
+			const auto shader = si::cached_shader<VKVertexProgram>(interpreter.m_vs_shader_cache, opt);
+			shaders_differ += !shader;
+			for (u32 t = 0; t < workers; t++)
+				shaders_differ += built[t][opt] != shader;
+			for (u32 other = 0; other < opt; other++)
+				shaders_differ += built[0][other] == shader;
+			for (u32 t = 0; t < workers; t++)
+				built[t][opt].reset();
+		}
+		CHECK(shaders_differ == 0);
+		CHECK(!si::cached_shader<VKVertexProgram>(interpreter.m_vs_shader_cache, 16));
+		CHECK(!si::cached_shader<VKFragmentProgram>(interpreter.m_fs_shader_cache, 0));
+
+		interpreter.destroy();
+		CHECK(interpreter.cached(key_of(1)) == nullptr);
+		CHECK(retro_atomic_load_acquire_ptr(&interpreter.m_retired_entries) == nullptr);
+		CHECK(!si::cached_shader<VKVertexProgram>(interpreter.m_vs_shader_cache, 0));
+	}
 };
 
 // The on-disk shader cache is one file, a pack: a pipeline stored comes
@@ -1308,6 +1472,7 @@ int main()
 {
 	shaders_cache_test::run();
 	program_cache_map_test::run();
+	shader_corpus_test::interpreter_caches();
 
 	void* lib = dlopen("libvulkan.so.1", RTLD_NOW | RTLD_LOCAL);
 	const auto gipa = lib ? reinterpret_cast<PFN_vkGetInstanceProcAddr>(dlsym(lib, "vkGetInstanceProcAddr")) : nullptr;

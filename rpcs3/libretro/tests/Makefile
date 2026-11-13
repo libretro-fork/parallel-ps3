@@ -590,6 +590,8 @@ check: all
 	@if grep -n "futex\|s_hashtable\|NtWaitFor\|cond_handle" ../../util/atomic.cpp; then echo "atomics: RPCS3's own wait engine is back in util/atomic.cpp - waits and notifies go through libretro-common's retro_waitaddr (AGENTS.md)"; exit 1; else echo "atomics: wait and notify through retro_waitaddr"; fi
 	@# A file read or write that goes through a buffer of the core's does not allocate one
 	@if grep -n "std::vector<uchar> local_buf" ../../Emu/Cell/lv2/sys_fs.cpp; then echo "sys_fs: a vector allocated and zeroed for every read or write is back in op_read/op_write (CHANGELOG)"; exit 1; else echo "sys_fs: no buffer allocated for a read or a write"; fi
+	@# The Vulkan shader interpreter's caches are looked up and added to with no lock, and time nothing
+	@if grep -n "reader_lock\|shared_mutex\|lock_guard\|std::mutex\|steady_clock" ../../Emu/RSX/VK/VKShaderInterpreter.cpp ../../Emu/RSX/VK/VKShaderInterpreter.h; then echo "interpreter: a lock or a clock is back in the Vulkan shader interpreter - its caches are lock-free (AGENTS.md)"; exit 1; else echo "interpreter: no lock, no clock"; fi
 	@# Nor do the mice: no lock in the handler, none taken by those that read them
 	@if grep -n "shared_mutex\|std::mutex\|lock_guard\|scoped_lock" ../../Emu/Io/MouseHandler.h ../../Emu/Io/MouseHandler.cpp ../libretro_mouse_handler.h ../libretro_mouse_handler.cpp || grep -rn "handler\.mutex\|take_pending()" ../../Emu/Cell/Modules/cellMouse.cpp ../../Emu/Cell/Modules/cellGem.cpp ../../Emu/Io/usio.cpp ../../Emu/Io/GunCon3.cpp ../../Emu/Io/TopShotElite.cpp ../../Emu/Io/TopShotFearmaster.cpp ../../Emu/Io/GameTablet.cpp; then echo "mice: the mouse handler's lock is back - a mouse is a record read whole (AGENTS.md)"; exit 1; else echo "mice: no mouse lock"; fi
 
