@@ -452,94 +452,41 @@ struct MemoryManager2 : llvm::RTDyldMemoryManager
 // Nothing here takes a lock.
 namespace
 {
-	// A pack as it was read. Lent objects count on it.
-	struct pack_image
-	{
-		retro_atomic_int_t refs;
-		u64 len;
-
-		// 16-aligned, as objects are in the file
-		static constexpr usz header = 64;
-
-		u8* data() { return reinterpret_cast<u8*>(this) + header; }
-
-		static pack_image* make(u64 len)
-		{
-			pack_image* image = static_cast<pack_image*>(std::malloc(header + len));
-			if (image)
-			{
-				retro_atomic_int_init(&image->refs, 1);
-				image->len = len;
-			}
-			return image;
-		}
-
-		void take() { retro_atomic_fetch_add_int(&refs, 1); }
-
-		void drop()
-		{
-			if (retro_atomic_fetch_sub_int(&refs, 1) == 1)
-				std::free(this);
-		}
-	};
-
-	// An object lent from a pack's image
+	// An object lent from a pack's image, which it holds
 	class lent_object final : public llvm::MemoryBuffer
 	{
-		pack_image* const m_image;
+		u8* const m_image;
 
 	public:
-		lent_object(pack_image* image, const u8* start, u64 size)
+		lent_object(u8* image, const u8* start, u64 size)
 			: m_image(image)
 		{
-			image->take();
+			object_pack_image_take(image);
 			init(reinterpret_cast<const char*>(start), reinterpret_cast<const char*>(start) + size, false);
 		}
 
-		~lent_object() override { m_image->drop(); }
+		~lent_object() override { object_pack_image_drop(m_image); }
 
 		BufferKind getBufferKind() const override { return MemoryBuffer_Malloc; }
 	};
 
-	struct object_pack
+	// A directory's pack and the file it is in
+	struct dir_pack
 	{
-		object_pack* next = nullptr;
+		dir_pack* next = nullptr;
 		std::string dir;
 		fs::file file;
-		retro_atomic_64_t end;            // where the next record goes
-		pack_image* image = nullptr;      // null when the pack had no objects
-		u64 lent_len = 0;                 // the part of the image that counts
-		object_pack_entry* scanned = nullptr;
-		usz scanned_count = 0;
-		object_pack_index index;
+		object_pack pack{};
 
-		~object_pack()
-		{
-			// The entries added since the scan are their own allocations
-			for (usz i = 0; i < OBJECT_PACK_BUCKETS; i++)
-			{
-				auto e = static_cast<object_pack_entry*>(retro_atomic_load_acquire_ptr(&index.buckets[i]));
-				while (e)
-				{
-					const auto next_entry = e->next;
-					if (e < scanned || e >= scanned + scanned_count)
-						std::free(e);
-					e = next_entry;
-				}
-			}
-
-			std::free(scanned);
-			if (image)
-				image->drop();
-		}
+		~dir_pack() { object_pack_close(&pack); }
 	};
 
 	constexpr usz s_pack_buckets = 64;
 	retro_atomic_ptr_t s_packs[s_pack_buckets];
 
-	object_pack* find_pack(void* head, const void* until, const std::string& dir)
+	dir_pack* find_pack(void* head, const void* until, const std::string& dir)
 	{
-		for (auto p = static_cast<object_pack*>(head); p && p != until; p = p->next)
+		for (auto p = static_cast<dir_pack*>(head); p && p != until; p = p->next)
 		{
 			if (p->dir == dir)
 				return p;
@@ -548,90 +495,42 @@ namespace
 		return nullptr;
 	}
 
-	object_pack* open_pack(const std::string& dir)
-	{
-		auto pack = std::make_unique<object_pack>();
-		pack->dir = dir;
-		object_pack_index_init(&pack->index);
-		retro_atomic_store_relaxed_64(&pack->end, OBJECT_PACK_FILE_HEADER);
-
-		if (!pack->file.open(dir + "objects.pack", fs::read + fs::write + fs::create))
-		{
-			jit_log.error("LLVM: Failed to open object pack in %s (%s)", dir, fs::g_tls_error);
-			return pack.release();
-		}
-
-		u64 valid = 0;
-
-		if (const u64 size = pack->file.size())
-		{
-			// The whole pack in one read
-			pack_image* image = pack_image::make(size);
-
-			if (image && pack->file.read_at(0, image->data(), size) == size)
-			{
-				usz count = 0;
-				valid = object_pack_scan(image->data(), size, nullptr, 0, &count);
-
-				if (count)
-				{
-					pack->scanned = static_cast<object_pack_entry*>(std::malloc(count * sizeof(object_pack_entry)));
-				}
-
-				if (pack->scanned)
-				{
-					object_pack_scan(image->data(), size, pack->scanned, count, &count);
-					pack->scanned_count = count;
-					pack->image = image;
-					pack->lent_len = valid;
-					image = nullptr;
-
-					for (usz i = 0; i < count; i++)
-						object_pack_index_add(&pack->index, &pack->scanned[i]);
-				}
-			}
-
-			if (image)
-				image->drop();
-		}
-
-		if (!valid)
-		{
-			// New, or not a pack: started over
-			u8 header[OBJECT_PACK_FILE_HEADER];
-			object_pack_file_header(header);
-			pack->file.write_at(0, header, sizeof(header));
-			valid = OBJECT_PACK_FILE_HEADER;
-		}
-
-		retro_atomic_store_release_64(&pack->end, static_cast<s64>(valid));
-		return pack.release();
-	}
-
 	// The directory's pack, opened and read the first time it is asked for
 	object_pack& pack_for(const std::string& dir)
 	{
 		retro_atomic_ptr_t* bucket = &s_packs[std::hash<std::string>{}(dir) % s_pack_buckets];
 		void* head = retro_atomic_load_acquire_ptr(bucket);
 
-		if (object_pack* found = find_pack(head, nullptr, dir))
-			return *found;
+		if (dir_pack* found = find_pack(head, nullptr, dir))
+			return found->pack;
 
-		object_pack* made = open_pack(dir);
+		dir_pack* made = new dir_pack;
+		made->dir = dir;
+
+		if (made->file.open(dir + "objects.pack", fs::read + fs::write + fs::create))
+		{
+			const object_pack_io io = object_pack_io_of(made->file);
+			object_pack_open(&made->pack, &io);
+		}
+		else
+		{
+			jit_log.error("LLVM: Failed to open object pack in %s (%s)", dir, fs::g_tls_error);
+			object_pack_open(&made->pack, nullptr);
+		}
 
 		while (true)
 		{
-			made->next = static_cast<object_pack*>(head);
+			made->next = static_cast<dir_pack*>(head);
 			if (retro_atomic_cas_ptr(bucket, head, made))
-				return *made;
+				return made->pack;
 
 			// Another thread added one: the same directory's, maybe. Nothing
 			// was written by this one but the file's header, the same bytes.
 			void* now = retro_atomic_load_acquire_ptr(bucket);
-			if (object_pack* found = find_pack(now, head, dir))
+			if (dir_pack* found = find_pack(now, head, dir))
 			{
 				delete made;
-				return *found;
+				return found->pack;
 			}
 
 			head = now;
@@ -650,68 +549,27 @@ namespace
 		return true;
 	}
 
-	// Writes an object at the pack's end: the record's start, the object
-	// from where it is, and the end mark that makes the record count
 	bool pack_append(object_pack& pack, std::string_view name, const char* data, u64 size)
 	{
-		if (!pack.file)
-			return false;
-
-		const u32 name_len = static_cast<u32>(name.size());
-		const u64 total = object_pack_record_size(name_len, size);
-
-		const auto entry = static_cast<object_pack_entry*>(std::malloc(sizeof(object_pack_entry) + name_len));
-		if (!entry)
-			return false;
-
-		u8 head[16 + 256];
-		u8 tail[16 + 16];
-		if (name_len > 240)
-		{
-			std::free(entry);
-			return false;
-		}
-
-		const u64 at = static_cast<u64>(retro_atomic_fetch_add_64(&pack.end, static_cast<s64>(total)));
-		const u64 head_len = object_pack_record_begin(head, name.data(), name_len, size);
-		object_pack_record_end(tail, name_len, size);
-		const u64 tail_len = total - head_len - size;
-
-		if (pack.file.write_at(at, head, head_len) != head_len
-			|| pack.file.write_at(at + head_len, data, size) != size
-			|| pack.file.write_at(at + head_len + size, tail, tail_len) != tail_len)
-		{
-			// The pack counts up to here the next time it is read
-			std::free(entry);
-			return false;
-		}
-
-		char* entry_name = reinterpret_cast<char*>(entry + 1);
-		std::memcpy(entry_name, name.data(), name_len);
-		entry->name = entry_name;
-		entry->name_len = name_len;
-		entry->offset = at + head_len;
-		entry->size = size;
-		object_pack_index_add(&pack.index, entry);
-		return true;
+		return !!object_pack_add(&pack, name.data(), static_cast<u32>(name.size()), data, size);
 	}
 
 	std::unique_ptr<llvm::MemoryBuffer> pack_load(object_pack& pack, std::string_view name)
 	{
-		const object_pack_entry* entry = object_pack_index_find(&pack.index, name.data(), static_cast<u32>(name.size()));
+		const object_pack_entry* entry = object_pack_find(&pack, name.data(), static_cast<u32>(name.size()));
 
 		if (!entry || !entry->size)
 			return nullptr;
 
-		if (pack.image && entry->offset + entry->size <= pack.lent_len)
+		if (const u8* lent = object_pack_lent(&pack, entry))
 		{
-			// Lent as it lies in the pack
-			return std::make_unique<lent_object>(pack.image, pack.image->data() + entry->offset, entry->size);
+			// As it lies in the pack
+			return std::make_unique<lent_object>(pack.image, lent, entry->size);
 		}
 
 		// Written since the pack was read
 		auto buf = llvm::WritableMemoryBuffer::getNewUninitMemBuffer(entry->size);
-		if (!buf || pack.file.read_at(entry->offset, buf->getBufferStart(), entry->size) != entry->size)
+		if (!buf || !object_pack_read(&pack, entry, buf->getBufferStart()))
 			return nullptr;
 
 		return buf;
@@ -722,7 +580,7 @@ void jit_compiler::close_object_packs()
 {
 	for (auto& bucket : s_packs)
 	{
-		auto pack = static_cast<object_pack*>(retro_atomic_exchange_ptr(&bucket, nullptr));
+		auto pack = static_cast<dir_pack*>(retro_atomic_exchange_ptr(&bucket, nullptr));
 
 		while (pack)
 		{

@@ -1,6 +1,7 @@
 #pragma once
 #include "../system_config.h"
 #include "Utilities/File.h"
+#include "Utilities/object_pack.h"
 #include "Utilities/lockless.h"
 #include "Utilities/Thread.h"
 #include "Common/bitfield.hpp"
@@ -22,6 +23,7 @@ namespace rsx
 	template <typename pipeline_storage_type, typename backend_storage>
 	class shaders_cache
 	{
+	protected: // a test reaches in
 		using unpacked_type = lf_fifo<std::tuple<pipeline_storage_type, RSXVertexProgram, RSXFragmentProgram>,
 #ifdef ANDROID
 		200
@@ -74,12 +76,142 @@ namespace rsx
 
 		backend_storage& m_storage;
 
+		// The cache is one file, a pack (Utilities/object_pack.h), read once
+		// when the cache is made: a record a pipeline ("p/..."), a fragment
+		// program ("f/<hash>") and a vertex program ("v/<hash>"). They were a
+		// file each - thousands for a game - opened one by one at boot, and
+		// three written, after two looked for, when a new pipeline was made
+		// mid-game. Found in, read from and added to with no lock.
+		fs::file m_pack_file;
+		object_pack m_pack{};
+
+		std::string pipelines_path() const
+		{
+			return root_path + "/pipelines/" + pipeline_class_name + "/" + version_prefix;
+		}
+
+		void open_pack()
+		{
+			fs::create_path(pipelines_path());
+
+			if (m_pack_file.open(pipelines_path() + "/shaders.pack", fs::read + fs::write + fs::create))
+			{
+				const object_pack_io io = object_pack_io_of(m_pack_file);
+				object_pack_open(&m_pack, &io);
+			}
+			else
+			{
+				rsx_log.error("shaders_cache: failed to open %s/shaders.pack (%s)", pipelines_path(), fs::g_tls_error);
+				object_pack_open(&m_pack, nullptr);
+			}
+		}
+
+		// Adds a record unless one of the name is there
+		void put(const char* name, int name_len, const void* data, u64 size)
+		{
+			if (name_len > 0 && size && !object_pack_find(&m_pack, name, static_cast<u32>(name_len)))
+			{
+				object_pack_add(&m_pack, name, static_cast<u32>(name_len), data, size);
+			}
+		}
+
+		// A cache from before the pack: its pipelines, a file each, and the
+		// programs they name are moved into the pack, and the pipelines'
+		// files removed. The programs' files stay: other caches share them.
+		void import_files()
+		{
+			const std::string directory_path = pipelines_path();
+			std::vector<std::string> names;
+
+			fs::dir root(directory_path);
+
+			if (!root)
+			{
+				return;
+			}
+
+			for (auto&& tmp : root)
+			{
+				if (!tmp.is_directory && tmp.name.ends_with(".bin"))
+					names.push_back(tmp.name);
+			}
+
+			root.close();
+
+			for (const std::string& file_name : names)
+			{
+				const std::string path = directory_path + "/" + file_name;
+				pipeline_data pdata{};
+				bool whole = false;
+
+				if (fs::file f{path})
+				{
+					whole = f.size() == sizeof(pipeline_data) && f.read(&pdata, sizeof(pdata)) == sizeof(pdata);
+				}
+
+				if (whole)
+				{
+					char name[24];
+					int len = std::snprintf(name, sizeof(name), "v/%llX", static_cast<unsigned long long>(pdata.vertex_program_hash));
+					if (!object_pack_find(&m_pack, name, len))
+					{
+						std::vector<u8> raw;
+						if (fs::file f{fmt::format("%s/raw/%llX.vp", root_path, pdata.vertex_program_hash)})
+							raw = f.to_vector<u8>();
+						put(name, len, raw.data(), raw.size());
+					}
+
+					len = std::snprintf(name, sizeof(name), "f/%llX", static_cast<unsigned long long>(pdata.fragment_program_hash));
+					if (!object_pack_find(&m_pack, name, len))
+					{
+						std::vector<u8> raw;
+						if (fs::file f{fmt::format("%s/raw/%llX.fp", root_path, pdata.fragment_program_hash)})
+							raw = f.to_vector<u8>();
+						put(name, len, raw.data(), raw.size());
+					}
+
+					const std::string record = "p/" + file_name.substr(0, file_name.size() - 4);
+					put(record.data(), static_cast<int>(record.size()), &pdata, sizeof(pdata));
+				}
+
+				fs::remove_file(path);
+			}
+		}
+
+		// The pipelines' records; one that is not binary compatible with this
+		// build is passed over
+		std::vector<const object_pack_entry*> pipelines() const
+		{
+			std::vector<const object_pack_entry*> entries;
+
+			object_pack_each(&m_pack, [](void* ud, const object_pack_entry* entry)
+			{
+				if (entry->name_len > 2 && entry->name[0] == 'p' && entry->name[1] == '/' && entry->size == sizeof(pipeline_data))
+					static_cast<std::vector<const object_pack_entry*>*>(ud)->push_back(entry);
+			}, &entries);
+
+			return entries;
+		}
+
+		// A pipeline's record, out of the pack as it was read; from the file
+		// only for one added since (a cache just moved into the pack)
+		bool read_pipeline(const object_pack_entry* record, pipeline_data& pdata) const
+		{
+			if (const u8* lent = object_pack_lent(&m_pack, record))
+			{
+				std::memcpy(&pdata, lent, sizeof(pdata));
+				return true;
+			}
+
+			return !!object_pack_read(&m_pack, record, &pdata);
+		}
+
 		static std::string get_message(u32 index, u32 processed, u32 entry_count)
 		{
 			return fmt::format("%s pipeline object %u of %u", index == 0 ? "Loading" : "Compiling", processed, entry_count);
 		}
 
-		void load_shaders(uint nb_workers, unpacked_type& unpacked, std::string& directory_path, std::vector<fs::dir_entry>& entries, u32 entry_count,
+		void load_shaders(uint nb_workers, unpacked_type& unpacked, std::vector<const object_pack_entry*>& entries, u32 entry_count,
 		    shader_loading_dialog* dlg)
 		{
 			atomic_t<u32> processed(0);
@@ -90,26 +222,14 @@ namespace rsx
 				// Processed is incremented before work starts in order to avoid two workers working on the same shader
 				while (((pos = processed++) < stop_at) && !Emu.IsStopped())
 				{
-					fs::dir_entry tmp = entries[pos];
-
-					const auto filename = directory_path + "/" + tmp.name;
-					fs::file f(filename);
-
-					if (!f)
-					{
-						// Unexpected error, but avoid crash
-						continue;
-					}
-
-					if (f.size() != sizeof(pipeline_data))
-					{
-						rsx_log.error("Removing cached pipeline object %s since it's not binary compatible with the current shader cache", tmp.name.c_str());
-						fs::remove_file(filename);
-						continue;
-					}
+					const object_pack_entry* record = entries[pos];
 
 					pipeline_data pdata{};
-					f.read(&pdata, f.size());
+
+					if (!read_pipeline(record, pdata))
+					{
+						continue;
+					}
 
 					auto entry = unpack(pdata);
 
@@ -220,6 +340,20 @@ namespace rsx
 					root_path = std::move(cache_path) + "shaders_cache/";
 				}
 			}
+
+			if (root_path.empty())
+			{
+				object_pack_open(&m_pack, nullptr);
+			}
+			else
+			{
+				open_pack();
+			}
+		}
+
+		~shaders_cache()
+		{
+			object_pack_close(&m_pack);
 		}
 
 		template <typename... Args>
@@ -230,33 +364,14 @@ namespace rsx
 				return;
 			}
 
-			std::string directory_path = root_path + "/pipelines/" + pipeline_class_name + "/" + version_prefix;
+			import_files();
 
-			fs::dir root = fs::dir(directory_path);
-
-			if (!root)
-			{
-				fs::create_path(directory_path);
-				fs::create_path(root_path + "/raw");
-				return;
-			}
-
-			std::vector<fs::dir_entry> entries;
-
-			for (auto&& tmp : root)
-			{
-				if (tmp.is_directory)
-					continue;
-
-				entries.push_back(tmp);
-			}
+			std::vector<const object_pack_entry*> entries = pipelines();
 
 			u32 entry_count = ::size32(entries);
 
 			if (!entry_count)
 				return;
-
-			root.rewind();
 
 			// Progress dialog
 			std::unique_ptr<shader_loading_dialog> fallback_dlg;
@@ -276,7 +391,7 @@ namespace rsx
 			unpacked_type unpacked;
 			uint nb_workers = g_cfg.video.renderer == video_renderer::vulkan ? utils::get_thread_count() : 1;
 
-			load_shaders(nb_workers, unpacked, directory_path, entries, entry_count, dlg);
+			load_shaders(nb_workers, unpacked, entries, entry_count, dlg);
 
 			// Account for any invalid entries
 			entry_count = unpacked.size();
@@ -302,20 +417,13 @@ namespace rsx
 
 			pipeline_data data = pack(pipeline, vp, fp);
 
-			std::string fp_name = root_path + "/raw/" + fmt::format("%llX.fp", data.fragment_program_hash);
-			std::string vp_name = root_path + "/raw/" + fmt::format("%llX.vp", data.vertex_program_hash);
+			// Each written once: looked up in the pack's index, not on disk
+			char name[96];
+			int len = std::snprintf(name, sizeof(name), "f/%llX", static_cast<unsigned long long>(data.fragment_program_hash));
+			put(name, len, fp.get_data(), fp.ucode_length);
 
-			// Writeback to cache either if file does not exist or it is invalid (unexpected size)
-			// Note: fs::write_file is not atomic, if the process is terminated in the middle an empty file is created
-			if (fs::stat_t s{}; !fs::get_stat(fp_name, s) || s.size != fp.ucode_length)
-			{
-				fs::write_file(fp_name, fs::rewrite, fp.get_data(), fp.ucode_length);
-			}
-
-			if (fs::stat_t s{}; !fs::get_stat(vp_name, s) || s.size != vp.data.size() * sizeof(u32))
-			{
-				fs::write_file(vp_name, fs::rewrite, vp.data);
-			}
+			len = std::snprintf(name, sizeof(name), "v/%llX", static_cast<unsigned long long>(data.vertex_program_hash));
+			put(name, len, vp.data.data(), vp.data.size() * sizeof(u32));
 
 			const u32 state_params[] =
 			{
@@ -336,37 +444,69 @@ namespace rsx
 			};
 			const usz state_hash = rpcs3::hash_array(state_params);
 
-			const std::string pipeline_file_name = fmt::format("%llX+%llX+%llX+%llX.bin", data.vertex_program_hash, data.fragment_program_hash, data.pipeline_storage_hash, state_hash);
-			const std::string pipeline_path = root_path + "/pipelines/" + pipeline_class_name + "/" + version_prefix + "/" + pipeline_file_name;
-			fs::write_file(pipeline_path, fs::rewrite, &data, sizeof(data));
+			len = std::snprintf(name, sizeof(name), "p/%llX+%llX+%llX+%llX", static_cast<unsigned long long>(data.vertex_program_hash),
+				static_cast<unsigned long long>(data.fragment_program_hash), static_cast<unsigned long long>(data.pipeline_storage_hash),
+				static_cast<unsigned long long>(state_hash));
+			put(name, len, &data, sizeof(data));
 		}
 
 		RSXVertexProgram load_vp_raw(u64 program_hash) const
 		{
 			RSXVertexProgram vp = {};
 
-			fs::file f(fmt::format("%s/raw/%llX.vp", root_path, program_hash));
-			if (f) f.read(vp.data, f.size() / sizeof(u32));
+			char name[24];
+			const int len = std::snprintf(name, sizeof(name), "v/%llX", static_cast<unsigned long long>(program_hash));
+
+			if (const object_pack_entry* record = object_pack_find(&m_pack, name, len))
+			{
+				vp.data.resize(record->size / sizeof(u32));
+
+				if (const u8* lent = object_pack_lent(&m_pack, record))
+				{
+					std::memcpy(vp.data.data(), lent, vp.data.size() * sizeof(u32));
+				}
+				else if (record->size % sizeof(u32) || !object_pack_read(&m_pack, record, vp.data.data()))
+				{
+					vp.data.clear();
+				}
+			}
 
 			return vp;
 		}
 
 		RSXFragmentProgram load_fp_raw(u64 program_hash)
 		{
-			fs::file f(fmt::format("%s/raw/%llX.fp", root_path, program_hash));
-
 			RSXFragmentProgram fp = {};
 
-			const u32 size = fp.ucode_length = f ? ::size32(f) : 0;
+			char name[24];
+			const int len = std::snprintf(name, sizeof(name), "f/%llX", static_cast<unsigned long long>(program_hash));
 
-			if (!size)
+			const object_pack_entry* record = object_pack_find(&m_pack, name, len);
+
+			if (!record || !record->size)
 			{
 				return fp;
 			}
 
-			auto buf = std::make_unique<u8[]>(size);
+			if (const u8* lent = object_pack_lent(&m_pack, record))
+			{
+				// Where it lies in the pack, which is held for as long as
+				// this cache is: no buffer, no copy
+				fp.ucode_length = static_cast<u32>(record->size);
+				fp.data = const_cast<u8*>(lent);
+				return fp;
+			}
+
+			// Added since the pack was read
+			auto buf = std::make_unique<u8[]>(record->size);
+
+			if (!object_pack_read(&m_pack, record, buf.get()))
+			{
+				return fp;
+			}
+
+			fp.ucode_length = static_cast<u32>(record->size);
 			fp.data = buf.get();
-			f.read(buf.get(), size);
 			fragment_program_data[fragment_program_data.push_begin()] = std::move(buf);
 			return fp;
 		}

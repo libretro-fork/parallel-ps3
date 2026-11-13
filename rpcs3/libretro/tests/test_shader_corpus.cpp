@@ -75,6 +75,7 @@
 #include "Emu/system_config.h"
 #include "Utilities/File.h"
 #include "Emu/IdManager.h"
+#include "Emu/RSX/rsx_cache.h"
 
 #include <cstdio>
 #include <cstdlib>
@@ -1022,8 +1023,193 @@ struct shader_corpus_test
 	}
 };
 
+// The on-disk shader cache is one file, a pack: a pipeline stored comes
+// back with its programs, in the session that stored it and - its fragment
+// program then lent from the pack as it was read, not copied - in a later
+// one; storing what is there writes nothing; a cache of files, as it was
+// kept, is moved into the pack and its pipeline files go.
+namespace shaders_cache_test
+{
+	struct storage
+	{
+		static u64 fnv(const void* data, usz size, u64 seed)
+		{
+			u64 h = 0xcbf29ce484222325ull ^ seed;
+			for (usz i = 0; i < size; i++)
+				h = (h ^ static_cast<const u8*>(data)[i]) * 0x100000001b3ull;
+			return h;
+		}
+
+		u64 get_hash(const RSXVertexProgram& vp) const { return fnv(vp.data.data(), vp.data.size() * 4, 1); }
+		u64 get_hash(const RSXFragmentProgram& fp) const { return fnv(fp.get_data(), fp.ucode_length, 2); }
+		u64 get_hash(const u64& pipeline) const { return pipeline * 0x9e3779b97f4a7c15ull; }
+	};
+
+	struct cache : rsx::shaders_cache<u64, storage>
+	{
+		using base = rsx::shaders_cache<u64, storage>;
+		using base::pipeline_data;
+		using base::root_path;
+		using base::m_pack;
+		using base::m_pack_file;
+		using base::open_pack;
+		using base::pipelines;
+		using base::read_pipeline;
+		using base::unpack;
+		using base::pack;
+		using base::import_files;
+		using base::pipelines_path;
+
+		storage m_fake;
+
+		cache(const std::string& root)
+			: base(m_fake, "test", "v1")
+		{
+			// Wherever the emulator would have put it, here
+			object_pack_close(&m_pack);
+			m_pack_file.close();
+			root_path = root;
+			open_pack();
+		}
+	};
+
+	constexpr u32 count = 40;
+
+	static RSXVertexProgram vertex(u32 i)
+	{
+		RSXVertexProgram vp{};
+		for (u32 k = 0; k < i + 3; k++)
+			vp.data.push_back(0x1000 * i + k);
+		vp.ctrl = i;
+		return vp;
+	}
+
+	static std::vector<u8> fragment_bytes(u32 i)
+	{
+		std::vector<u8> bytes(8 * (i + 1));
+		for (usz k = 0; k < bytes.size(); k++)
+			bytes[k] = static_cast<u8>(i * 7 + k);
+		return bytes;
+	}
+
+	// Every pipeline of the cache, each once, with the programs it was stored with
+	static void verify(cache& c, u32 expected, bool lent)
+	{
+		const auto records = c.pipelines();
+		CHECK(records.size() == expected);
+
+		std::set<u64> seen;
+		u32 wrong = 0, borrowed = 0;
+
+		for (const object_pack_entry* record : records)
+		{
+			cache::pipeline_data pdata{};
+			if (!c.read_pipeline(record, pdata))
+			{
+				wrong++;
+				continue;
+			}
+
+			auto [pipeline, vp, fp] = c.unpack(pdata);
+			const u32 i = static_cast<u32>(pipeline);
+			seen.insert(pipeline);
+
+			const auto bytes = fragment_bytes(i);
+			wrong += i >= count || vp.data != vertex(i).data || vp.ctrl != i;
+			wrong += fp.ucode_length != bytes.size() || !fp.get_data() || std::memcmp(fp.get_data(), bytes.data(), bytes.size()) != 0;
+
+			const u8* at = static_cast<const u8*>(fp.get_data());
+			borrowed += c.m_pack.image && at >= c.m_pack.image && at < c.m_pack.image + c.m_pack.lent_len;
+		}
+
+		CHECK(wrong == 0);
+		CHECK(seen.size() == expected);
+		CHECK(borrowed == (lent ? expected : 0));
+	}
+
+	static void run()
+	{
+		const std::string root = fmt::format("%s/test_shaders_cache_%u", std::filesystem::temp_directory_path().string(), static_cast<u32>(getpid()));
+		std::filesystem::remove_all(root);
+		std::filesystem::create_directories(root);
+
+		std::vector<cache::pipeline_data> stored;
+		{
+			cache c(root);
+			const std::string file = c.pipelines_path() + "/shaders.pack";
+
+			const auto store_all = [&]()
+			{
+				for (u32 i = 0; i < count; i++)
+				{
+					const RSXVertexProgram vp = vertex(i);
+					auto bytes = fragment_bytes(i);
+					RSXFragmentProgram fp{};
+					fp.data = bytes.data();
+					fp.ucode_length = ::size32(bytes);
+					c.store(u64{i}, vp, fp);
+					if (stored.size() < count)
+						stored.push_back(c.pack(u64{i}, vp, fp));
+				}
+			};
+
+			store_all();
+			const u64 size = fs::file(file).size();
+			CHECK(size > count * sizeof(cache::pipeline_data));
+
+			// A file for all of it, and what is there is not written again
+			CHECK(!fs::is_dir(root + "/raw"));
+			usz files = 0;
+			for (auto& e : std::filesystem::recursive_directory_iterator(root))
+				files += e.is_regular_file();
+			CHECK(files == 1);
+			store_all();
+			CHECK(fs::file(file).size() == size);
+
+			verify(c, count, false);
+		}
+		{
+			cache c(root);
+			verify(c, count, true);
+		}
+
+		// As the cache was kept: a file a pipeline, a file a program
+		const std::string old_root = root + "_files";
+		std::filesystem::remove_all(old_root);
+		std::filesystem::create_directories(old_root + "/pipelines/test/v1");
+		std::filesystem::create_directories(old_root + "/raw");
+		for (u32 i = 0; i < 10; i++)
+		{
+			const cache::pipeline_data& data = stored[i];
+			fs::write_file(fmt::format("%s/raw/%llX.vp", old_root, data.vertex_program_hash), fs::rewrite, vertex(i).data);
+			fs::write_file(fmt::format("%s/raw/%llX.fp", old_root, data.fragment_program_hash), fs::rewrite, fragment_bytes(i));
+			fs::write_file(fmt::format("%s/pipelines/test/v1/%llX+%u.bin", old_root, data.vertex_program_hash, i), fs::rewrite, &data, sizeof(data));
+		}
+		fs::write_file(old_root + "/pipelines/test/v1/short.bin", fs::rewrite, "no pipeline", 11);
+		{
+			cache c(old_root);
+			c.import_files();
+			verify(c, 10, false);
+			usz left = 0;
+			for (auto& e : std::filesystem::directory_iterator(old_root + "/pipelines/test/v1"))
+				left += e.path().extension() == ".bin";
+			CHECK(left == 0);
+		}
+		{
+			cache c(old_root);
+			c.import_files();
+			verify(c, 10, true);
+		}
+
+		std::filesystem::remove_all(root);
+		std::filesystem::remove_all(old_root);
+	}
+}
+
 int main()
 {
+	shaders_cache_test::run();
+
 	void* lib = dlopen("libvulkan.so.1", RTLD_NOW | RTLD_LOCAL);
 	const auto gipa = lib ? reinterpret_cast<PFN_vkGetInstanceProcAddr>(dlsym(lib, "vkGetInstanceProcAddr")) : nullptr;
 	if (!gipa)
