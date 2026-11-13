@@ -96,6 +96,11 @@ class spu_llvm_recompiler : public spu_recompiler_base, public cpu_translator
 	// Module name
 	std::string m_hash;
 
+	// The module as bitcode, for the name of the object it compiles to, and
+	// what the name says of the CPU and LLVM
+	llvm::SmallVector<char, 0> m_bitcode;
+	std::string m_object_target;
+
 	// Patchpoint unique id
 	u32 m_pp_id = 0;
 
@@ -3858,13 +3863,24 @@ public:
 
 		if (use_object_cache)
 		{
-			llvm::SmallVector<char, 0> bitcode;
+			// Written straight into this recompiler's own buffer, which keeps
+			// its room from one function to the next, and hashed where it
+			// lies: WriteBitcodeToFile makes a 256 KB buffer of its own for
+			// every module and copies it into the caller's stream
+			llvm::SmallVector<char, 0>& bitcode = m_bitcode;
+			bitcode.clear();
 			{
-				llvm::raw_svector_ostream os(bitcode);
-				llvm::WriteBitcodeToFile(*_module, os);
+				llvm::BitcodeWriter writer(bitcode);
+				writer.writeModule(*_module);
+				writer.writeStrtab();
 			}
 
-			const std::string target = jit_compiler::cpu(g_cfg.core.llvm_cpu.to_string()) + " " LLVM_VERSION_STRING " v1";
+			if (m_object_target.empty())
+			{
+				m_object_target = jit_compiler::cpu(g_cfg.core.llvm_cpu.to_string()) + " " LLVM_VERSION_STRING " v2";
+			}
+
+			const std::string& target = m_object_target;
 
 			sha1_context ctx;
 			u8 output[20];
