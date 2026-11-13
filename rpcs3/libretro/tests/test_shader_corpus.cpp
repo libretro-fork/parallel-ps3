@@ -65,6 +65,7 @@
 #undef private
 #undef protected
 #include "Emu/RSX/VK/VKHelpers.h"
+#include "Emu/RSX/VK/VKResourceManager.h"
 #include "Emu/RSX/VK/VKVertexProgram.h"
 #include "Emu/RSX/VK/VKFragmentProgram.h"
 #include "Emu/RSX/VK/vkutils/instance.h"
@@ -1468,11 +1469,130 @@ namespace program_cache_map_test
 	}
 }
 
+// What the renderer is done with is disposed of and deleted with no lock
+// (vk::resource_manager): an object goes when the event it was last used in
+// has completed and not before, in the order it was disposed of; an event
+// that is held keeps its objects until the next one is done; four threads
+// dispose of objects while a fifth advances and completes events - each
+// object is deleted once, never before its event completed, and none is
+// left when the manager is flushed.
+namespace disposal_test
+{
+	static retro_atomic_64_t s_completed;   // The last event the test completed
+	static retro_atomic_int_t s_deleted;
+	static retro_atomic_int_t s_early;
+	static std::vector<int> s_order;
+
+	struct thing
+	{
+		u64 eid;   // No later than the event it is filed under
+		int id;
+
+		~thing()
+		{
+			retro_atomic_fetch_add_int(&s_deleted, 1);
+			if (static_cast<u64>(retro_atomic_load_acquire_64(&s_completed)) < eid)
+				retro_atomic_fetch_add_int(&s_early, 1);
+			if (id >= 0)
+				s_order.push_back(id);
+		}
+	};
+
+	static void dispose(vk::resource_manager& gc, int id)
+	{
+		std::unique_ptr<thing> object(new thing{vk::current_event_id(), id}); // (no temporary: its end would count)
+		gc.dispose(object);
+	}
+
+	static void complete(vk::resource_manager& gc, u64 eid)
+	{
+		retro_atomic_store_release_64(&s_completed, eid);
+		gc.eid_completed(eid);
+	}
+
+	static void run()
+	{
+		vk::resource_manager gc;
+		const auto deleted = [] { return retro_atomic_load_acquire_int(&s_deleted); };
+
+		// In order, and only once their event is done
+		const u64 first = vk::current_event_id();
+		for (int i = 0; i < 5; i++)
+			dispose(gc, i);
+		vk::get_event_id(); // The next event
+		for (int i = 5; i < 8; i++)
+			dispose(gc, i);
+
+		if (first > 0)
+		{
+			complete(gc, first - 1);
+			CHECK(deleted() == 0);
+		}
+		complete(gc, first);
+		CHECK(deleted() == 5);
+		complete(gc, first);
+		CHECK(deleted() == 5);
+		complete(gc, first + 1);
+		CHECK(deleted() == 8);
+		CHECK(s_order == (std::vector<int>{0, 1, 2, 3, 4, 5, 6, 7}));
+		CHECK(retro_atomic_load_acquire_int(&s_early) == 0);
+
+		// A held event's objects wait for the next event
+		vk::get_event_id();
+		const u64 held = vk::current_event_id();
+		dispose(gc, 8);
+		gc.push_down_current_scope();
+		vk::get_event_id();
+		dispose(gc, 9);
+		complete(gc, held);
+		CHECK(deleted() == 8);
+		complete(gc, held + 1);
+		CHECK(deleted() == 10);
+
+		// Many at once
+		constexpr int workers = 4, each = 20000;
+		retro_atomic_store_release_int(&s_deleted, 0);
+		static retro_atomic_int_t stop;
+		std::thread ticker([&]
+		{
+			while (!retro_atomic_load_acquire_int(&stop))
+			{
+				const u64 done = vk::get_event_id(); // The event that was current is over
+				complete(gc, done);
+			}
+		});
+		std::thread threads[workers];
+		for (auto& t : threads)
+		{
+			t = std::thread([&]
+			{
+				for (int i = 0; i < each; i++)
+					dispose(gc, -1);
+			});
+		}
+		for (auto& t : threads)
+			t.join();
+		retro_atomic_store_release_int(&stop, 1);
+		ticker.join();
+
+		CHECK(retro_atomic_load_acquire_int(&s_early) == 0);
+		CHECK(deleted() <= workers * each);
+
+		// Flushed: the rest go, whatever their event
+		retro_atomic_store_release_64(&s_completed, ~0ull >> 1);
+		gc.flush();
+		CHECK(deleted() == workers * each);
+		gc.flush();
+		CHECK(deleted() == workers * each);
+	}
+}
+
 int main()
 {
 	shaders_cache_test::run();
 	program_cache_map_test::run();
 	shader_corpus_test::interpreter_caches();
+	disposal_test::run();
 
 	void* lib = dlopen("libvulkan.so.1", RTLD_NOW | RTLD_LOCAL);
 	const auto gipa = lib ? reinterpret_cast<PFN_vkGetInstanceProcAddr>(dlsym(lib, "vkGetInstanceProcAddr")) : nullptr;

@@ -1,15 +1,20 @@
 #include <util/types.hpp>
 
 #include <functional>
+#include <utility>
 
 namespace vk
 {
+	// Something to be deleted once the GPU is done with it: a pointer and the
+	// function that deletes it (a plain function - nothing to allocate or copy)
 	class disposable_t
 	{
-		void* ptr;
-		std::function<void(void*)> deleter;
+		using deleter_t = void (*)(void*);
 
-		disposable_t(void* ptr_, std::function<void(void*)> deleter_) :
+		void* ptr;
+		deleter_t deleter;
+
+		disposable_t(void* ptr_, deleter_t deleter_) :
 			ptr(ptr_), deleter(deleter_) {}
 	public:
 
@@ -28,6 +33,14 @@ namespace vk
 				deleter(ptr);
 				ptr = nullptr;
 			}
+		}
+
+		// Hands the object over: this no longer deletes it, the taker does
+		// by calling the function on the pointer
+		void* take(deleter_t& deleter_out)
+		{
+			deleter_out = deleter;
+			return std::exchange(ptr, nullptr);
 		}
 
 		template <typename T>

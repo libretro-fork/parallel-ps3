@@ -628,6 +628,8 @@ check: all
 	@if grep -n "m_cached_pool_lock\|cached_images_erase\|m_cache_is_exiting" ../../Emu/RSX/VK/VKTextureCache.cpp ../../Emu/RSX/VK/VKTextureCache.h; then echo "image pool: the lock on the Vulkan texture cache's pool of spare images is back - it is a lock-free pool (Utilities/lf_item_pool.h)"; exit 1; else echo "image pool: no lock"; fi
 	@# The Vulkan framebuffer cache is looked up with no lock
 	@if grep -n "reader_lock\|shared_mutex\|lock_guard\|std::mutex\|unordered_map" ../../Emu/RSX/VK/VKFramebuffer.cpp; then echo "framebuffers: a lock is back on the Vulkan framebuffer cache - it is a lock-free table (Utilities/lf_sig_table.h)"; exit 1; else echo "framebuffers: no lock"; fi
+	@# What the Vulkan renderer is done with is disposed of and deleted with no lock
+	@if grep -n "m_eid_map\|reader_lock\|lock_guard\|shared_mutex\|std::function<void(void\*)>" ../../Emu/RSX/VK/VKResourceManager.h ../../Emu/RSX/VK/vkutils/garbage_collector.h; then echo "disposal: the lock on the Vulkan resource manager's disposal queue is back (CHANGELOG)"; exit 1; else echo "disposal: no lock"; fi
 	@# Nor do the mice: no lock in the handler, none taken by those that read them
 	@if grep -n "shared_mutex\|std::mutex\|lock_guard\|scoped_lock" ../../Emu/Io/MouseHandler.h ../../Emu/Io/MouseHandler.cpp ../libretro_mouse_handler.h ../libretro_mouse_handler.cpp || grep -rn "handler\.mutex\|take_pending()" ../../Emu/Cell/Modules/cellMouse.cpp ../../Emu/Cell/Modules/cellGem.cpp ../../Emu/Io/usio.cpp ../../Emu/Io/GunCon3.cpp ../../Emu/Io/TopShotElite.cpp ../../Emu/Io/TopShotFearmaster.cpp ../../Emu/Io/GameTablet.cpp; then echo "mice: the mouse handler's lock is back - a mouse is a record read whole (AGENTS.md)"; exit 1; else echo "mice: no mouse lock"; fi
 
