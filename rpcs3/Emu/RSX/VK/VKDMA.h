@@ -1,5 +1,6 @@
 #pragma once
 #include "vkutils/buffer_object.h"
+#include "Emu/RSX/Common/dma_views.h"
 
 namespace vk
 {
@@ -26,6 +27,11 @@ namespace vk
 		u8* memory_mapping = nullptr;
 		std::unique_ptr<buffer> allocated_memory;
 
+		// What readers are shown of the allocation (Common/dma_views.h): made
+		// with it and retired with it, never changed in between
+		std::unique_ptr<rsx_dma_view> view_info;
+		void make_view();
+
 		virtual void allocate(const render_device& dev, usz size);
 		virtual void free();
 		virtual void* map_range(const utils::address_range32& range);
@@ -48,6 +54,9 @@ namespace vk
 
 		dma_block* head();
 		const dma_block* head() const;
+
+		// The view of the allocation this block is part of
+		const rsx_dma_view* view() const { return head()->view_info.get(); }
 		virtual void set_parent(dma_block* parent);
 		virtual void extend(const render_device& dev, usz new_size);
 	};

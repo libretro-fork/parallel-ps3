@@ -18,7 +18,7 @@ LRC_DEFS := -DHAVE_SSL -DHAVE_RETROSSL -DHAVE_CRYPTO \
 	-DHAVE_RWAV -DHAVE_RFLAC -DHAVE_RVORBIS -DHAVE_ROPUS -DHAVE_RMP3 -DHAVE_RAAC \
 	-DHAVE_RMP4 -DHAVE_RAC3 -DHAVE_RWMA -DHAVE_RWEBM -DHAVE_RATRAC3 -DHAVE_RATRAC3P
 
-TESTS := test_zstd test_deflate test_rxml test_png_rows test_images test_jpg_rows test_http test_bcn test_tls_duplex test_yaml test_font test_np2 test_rsx_scale test_vpost test_atracx test_vdec test_media test_record test_config_database test_vblank_list test_video_sink test_video_sink_tsan test_vk_images test_vk_images_tsan test_sw_frames test_sw_frames_tsan test_gl_frames test_gl_fallback test_pad_values test_input_poll test_audio_handover test_audio_ring test_audio_ring_tsan test_audio_mix test_object_pack test_object_pack_tsan test_eeprom_table test_eeprom_table_tsan test_lf_u64_map test_lf_u64_map_tsan test_lf_item_pool test_lf_item_pool_tsan test_lf_sig_table test_lf_sig_table_tsan
+TESTS := test_zstd test_deflate test_rxml test_png_rows test_images test_jpg_rows test_http test_bcn test_tls_duplex test_yaml test_font test_np2 test_rsx_scale test_vpost test_atracx test_vdec test_media test_record test_config_database test_vblank_list test_video_sink test_video_sink_tsan test_vk_images test_vk_images_tsan test_sw_frames test_sw_frames_tsan test_gl_frames test_gl_fallback test_pad_values test_input_poll test_audio_handover test_audio_ring test_audio_ring_tsan test_audio_mix test_object_pack test_object_pack_tsan test_eeprom_table test_eeprom_table_tsan test_lf_u64_map test_lf_u64_map_tsan test_lf_item_pool test_lf_item_pool_tsan test_lf_sig_table test_lf_sig_table_tsan test_dma_views test_dma_views_tsan
 
 test_zstd_LRC := \
 	$(LRC)/encodings/encoding_rzstd.c \
@@ -492,6 +492,20 @@ test_lf_sig_table_tsan: $(LF_SIG_TABLE_DEPS)
 	$(CC) $(CFLAGS) $(TEST_STD) -fsanitize=thread -c -o obj/lf_sig_table_tsan.o ../../../Utilities/lf_sig_table.c
 	$(CC) $(CFLAGS) -std=gnu99 -fsanitize=thread -o $@ obj/test_lf_sig_table_tsan.o obj/lf_sig_table_tsan.o $(LDFLAGS) $(LDLIBS) -lpthread
 
+DMA_VIEWS_DEPS := test_dma_views.c test_common.h ../../Emu/RSX/Common/dma_views.c ../../Emu/RSX/Common/dma_views.h
+
+test_dma_views: $(DMA_VIEWS_DEPS)
+	@mkdir -p obj
+	$(CC) $(CFLAGS) $(TEST_STD) $(SANITIZE) -c -o obj/test_dma_views.o test_dma_views.c
+	$(CC) $(CFLAGS) $(TEST_STD) $(SANITIZE) -c -o obj/dma_views.o ../../Emu/RSX/Common/dma_views.c
+	$(CC) $(CFLAGS) -std=gnu99 $(SANITIZE) -o $@ obj/test_dma_views.o obj/dma_views.o $(LDFLAGS) $(LDLIBS) -lpthread
+
+test_dma_views_tsan: $(DMA_VIEWS_DEPS)
+	@mkdir -p obj
+	$(CC) $(CFLAGS) $(TEST_STD) -fsanitize=thread -c -o obj/test_dma_views_tsan.o test_dma_views.c
+	$(CC) $(CFLAGS) $(TEST_STD) -fsanitize=thread -c -o obj/dma_views_tsan.o ../../Emu/RSX/Common/dma_views.c
+	$(CC) $(CFLAGS) -std=gnu99 -fsanitize=thread -o $@ obj/test_dma_views_tsan.o obj/dma_views_tsan.o $(LDFLAGS) $(LDLIBS) -lpthread
+
 # sys_ss's EEPROM table: the module and the test as C89
 EEPROM_TABLE_DEPS := test_eeprom_table.c test_common.h ../../Emu/Cell/lv2/eeprom_table.c ../../Emu/Cell/lv2/eeprom_table.h
 
@@ -587,6 +601,8 @@ check: all
 	./test_lf_item_pool_tsan
 	./test_lf_sig_table
 	./test_lf_sig_table_tsan
+	./test_dma_views
+	./test_dma_views_tsan
 	./test_eeprom_table
 	./test_eeprom_table_tsan
 	./test_object_pack
@@ -632,6 +648,8 @@ check: all
 	@if grep -n "m_eid_map\|reader_lock\|lock_guard\|shared_mutex\|std::function<void(void\*)>" ../../Emu/RSX/VK/VKResourceManager.h ../../Emu/RSX/VK/vkutils/garbage_collector.h; then echo "disposal: the lock on the Vulkan resource manager's disposal queue is back (CHANGELOG)"; exit 1; else echo "disposal: no lock"; fi
 	@# A memory map with no unmap waiting, and a fault with no report page locked, take no lock
 	@if grep -n "reader_lock" ../../Emu/RSX/RSXThread.cpp ../../Emu/RSX/RSXZCULL.cpp || grep -n "atomic_storage<u32>::load(m_invalidated_memory_range" ../../Emu/RSX/RSXThread.cpp || ! grep -q "if (!retro_atomic_load_acquire_int(&m_locked_page_count\[location\])) \[\[likely\]\]" ../../Emu/RSX/RSXZCULL.cpp || ! grep -q "if (!retro_atomic_load_acquire_int(&m_memory_invalidated)) \[\[likely\]\]" ../../Emu/RSX/RSXThread.cpp; then echo "rsx notifications: a reader lock is back in RSXThread.cpp or RSXZCULL.cpp (CHANGELOG)"; exit 1; else echo "rsx notifications: no reader lock"; fi
+	@# Looking a DMA mapping up and copying through one take no lock
+	@if grep -n "reader_lock" ../../Emu/RSX/VK/VKDMA.cpp || ! awk '/dma_mapping_handle map_dma/{f=1} f&&/rsx_dma_views_find_range/{v=NR} f&&/std::lock_guard lock\(g_dma_mutex\)/{l=NR; exit} END{exit !(v&&l&&v<l)}' ../../Emu/RSX/VK/VKDMA.cpp; then echo "dma: finding or copying through a DMA mapping takes a lock again (CHANGELOG)"; exit 1; else echo "dma: readers take no lock"; fi
 	@# Nor do the mice: no lock in the handler, none taken by those that read them
 	@if grep -n "shared_mutex\|std::mutex\|lock_guard\|scoped_lock" ../../Emu/Io/MouseHandler.h ../../Emu/Io/MouseHandler.cpp ../libretro_mouse_handler.h ../libretro_mouse_handler.cpp || grep -rn "handler\.mutex\|take_pending()" ../../Emu/Cell/Modules/cellMouse.cpp ../../Emu/Cell/Modules/cellGem.cpp ../../Emu/Io/usio.cpp ../../Emu/Io/GunCon3.cpp ../../Emu/Io/TopShotElite.cpp ../../Emu/Io/TopShotFearmaster.cpp ../../Emu/Io/GameTablet.cpp; then echo "mice: the mouse handler's lock is back - a mouse is a record read whole (AGENTS.md)"; exit 1; else echo "mice: no mouse lock"; fi
 

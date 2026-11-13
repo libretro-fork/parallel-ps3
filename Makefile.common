@@ -498,6 +498,7 @@ SOURCES_RPCS3 := \
 	$(CORE_DIR)/rpcs3/Emu/RSX/Common/BufferUtils.cpp \
 	$(CORE_DIR)/rpcs3/Emu/RSX/Common/TextureUtils.cpp \
 	$(CORE_DIR)/rpcs3/Emu/RSX/Common/surface_store.cpp \
+	$(CORE_DIR)/rpcs3/Emu/RSX/Common/dma_views.c \
 	$(CORE_DIR)/rpcs3/Emu/RSX/Common/texture_cache.cpp \
 	$(CORE_DIR)/rpcs3/Emu/RSX/Common/texture_cache_types.cpp \
 	$(CORE_DIR)/rpcs3/Emu/RSX/Core/RSXContext.cpp \

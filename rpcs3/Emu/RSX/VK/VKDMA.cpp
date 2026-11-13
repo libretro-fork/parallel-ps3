@@ -20,8 +20,23 @@ namespace vk
 	static constexpr usz s_dma_block_length = 0x00010000;
 	static constexpr u32 s_dma_block_mask   = 0xFFFF0000;
 
+	// The blocks, for those that map and unmap: one at a time, under the mutex.
+	// Looking a mapping up and copying through one do not come here; they read
+	// the table of views (Common/dma_views.h), which is brought up to date
+	// under the mutex after every change.
 	std::unordered_map<u32, std::unique_ptr<dma_block>> g_dma_pool;
 	shared_mutex g_dma_mutex;
+
+	// Shows readers what the pool holds for the blocks first_block..last_block
+	static void publish_views(u32 first_block, u32 last_block)
+	{
+		for (u64 block = first_block; block <= last_block; block += s_dma_block_length)
+		{
+			const auto found = g_dma_pool.find(static_cast<u32>(block));
+			rsx_dma_views_set(static_cast<u32>(block), static_cast<u32>(block + s_dma_block_length - 1),
+				found != g_dma_pool.end() && found->second ? found->second->view() : nullptr);
+		}
+	}
 
 	// Validation
 	atomic_t<u64> s_allocated_dma_pool_size{ 0 };
@@ -101,9 +116,21 @@ namespace vk
 			}
 		}
 
-		allocated_memory->unmap();
+		// Left mapped: every transfer through the block copies to or from it
+		// (it used to be unmapped here and mapped again on first use)
+		memory_mapping = dst;
+		make_view();
 
 		s_allocated_dma_pool_size += allocated_memory->size();
+	}
+
+	void dma_block::make_view()
+	{
+		view_info = std::make_unique<rsx_dma_view>();
+		view_info->base = base_address;
+		view_info->end = static_cast<u32>(base_address + allocated_memory->size() - 1);
+		view_info->buffer = allocated_memory.get();
+		view_info->mapping = memory_mapping; // Null for the guest's own memory: nothing to copy
 	}
 
 	void dma_block::free()
@@ -116,16 +143,32 @@ namespace vk
 			// If you have both a memory allocation AND a parent block at the same time, you're in trouble
 			ensure(head() == this);
 
-			if (memory_mapping)
+			// The allocation goes to the gc with its view, still mapped: a
+			// reader that found the view before it left the table may be
+			// copying through it. It is unmapped when the gc deletes it (the
+			// vma allocator does not allow us to destroy mapped memory on windows).
+			struct retired_allocation
 			{
-				// vma allocator does not allow us to destroy mapped memory on windows
-				unmap();
-				ensure(!memory_mapping);
-			}
+				std::unique_ptr<buffer> memory;
+				std::unique_ptr<rsx_dma_view> view;
+				bool mapped;
 
-			// Move allocation to gc
-			auto gc = vk::get_resource_manager();
-			gc->dispose(allocated_memory);
+				~retired_allocation()
+				{
+					if (mapped)
+					{
+						memory->unmap();
+					}
+				}
+			};
+
+			auto retired = std::make_unique<retired_allocation>();
+			retired->memory = std::move(allocated_memory);
+			retired->view = std::move(view_info);
+			retired->mapped = (memory_mapping != nullptr);
+			memory_mapping = nullptr;
+
+			vk::get_resource_manager()->dispose(retired);
 		}
 	}
 
@@ -266,6 +309,7 @@ namespace vk
 			vm::get_super_ptr<void>(base_address),
 			size);
 
+		make_view();
 		s_allocated_dma_pool_size += allocated_memory->size();
 	}
 
@@ -338,7 +382,13 @@ namespace vk
 
 	dma_mapping_handle map_dma(u32 local_address, u32 length)
 	{
-		// Not much contention expected here, avoid searching twice
+		// Mapped already, as it is for all but the first use of a stretch of
+		// memory: one load and two compares, no lock
+		if (const rsx_dma_view* view = rsx_dma_views_find_range(local_address, length)) [[likely]]
+		{
+			return { local_address - view->base, static_cast<vk::buffer*>(view->buffer) };
+		}
+
 		std::lock_guard lock(g_dma_mutex);
 
 		const auto map_range = utils::address_range32::start_length(local_address, length);
@@ -359,6 +409,7 @@ namespace vk
 			ensure(!block_info);
 
 			create_dma_block(block_info, first_block, s_dma_block_length);
+			publish_views(first_block, last_block);
 			return block_info->get(map_range);
 		}
 
@@ -410,6 +461,7 @@ namespace vk
 		ensure(s_allocated_dma_pool_size == g_dma_pool.size() * s_dma_block_length);
 
 		ensure(block_head);
+		publish_views(first_block, last_block);
 		return block_head->get(map_range);
 	}
 
@@ -431,6 +483,9 @@ namespace vk
 					const u32 start_block = head->start();
 					const u32 last_block = head->start() + head->size();
 
+					// Out of the readers' sight first, then gone
+					rsx_dma_views_set(start_block, last_block - 1, nullptr);
+
 					for (u32 block_ = start_block; block_ < last_block; block_ += s_dma_block_length)
 					{
 						g_dma_pool.erase(block_);
@@ -447,63 +502,20 @@ namespace vk
 		ensure(s_allocated_dma_pool_size == g_dma_pool.size() * s_dma_block_length);
 	}
 
-	template<bool load>
-	void sync_dma_impl(u32 local_address, u32 length)
-	{
-		reader_lock lock(g_dma_mutex);
-
-		const auto limit = local_address + length - 1;
-		while (length)
-		{
-			u32 block = (local_address & s_dma_block_mask);
-			if (auto found = g_dma_pool.find(block); found != g_dma_pool.end())
-			{
-				const auto sync_end = std::min(limit, found->second->end());
-				const auto range = utils::address_range32::start_end(local_address, sync_end);
-
-				if constexpr (load)
-				{
-					found->second->load(range);
-				}
-				else
-				{
-					found->second->flush(range);
-				}
-
-				if (sync_end < limit) [[unlikely]]
-				{
-					// Technically legal but assuming a map->flush usage, this shouldnot happen
-					// Optimizations could in theory batch together multiple transfers though
-					rsx_log.error("Sink request spans multiple allocated blocks!");
-					const auto write_end = (sync_end + 1u);
-					const auto written = (write_end - local_address);
-					length -= written;
-					local_address = write_end;
-					continue;
-				}
-
-				break;
-			}
-			else
-			{
-				rsx_log.error("Sync command on range not mapped!");
-				return;
-			}
-		}
-	}
-
+	// Copying through a mapping only reads the table of views: no lock
 	void load_dma(u32 local_address, u32 length)
 	{
-		sync_dma_impl<true>(local_address, length);
+		rsx_dma_views_sync(local_address, length, 1, vm::g_sudo_addr);
 	}
 
 	void flush_dma(u32 local_address, u32 length)
 	{
-		sync_dma_impl<false>(local_address, length);
+		rsx_dma_views_sync(local_address, length, 0, vm::g_sudo_addr);
 	}
 
 	void clear_dma_resources()
 	{
+		rsx_dma_views_clear();
 		g_dma_pool.clear();
 	}
 }
