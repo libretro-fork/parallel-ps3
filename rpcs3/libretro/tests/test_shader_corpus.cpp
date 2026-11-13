@@ -4,7 +4,9 @@
 // both glslang - still what the core uses - and libretro-common's rslc,
 // which is to replace it.
 //
-// - rslc compiles every one of them;
+// - rslc compiles every one of them, but for the fourteen that use
+//   multisample images and samplers (the resolve tasks and passes), which
+//   it does not have yet: those are counted, and nothing else is excused;
 // - its module has the interface glslang's has: the same bindings, sets,
 //   locations and built-ins by name, and every block member at the same
 //   offset, with the same array and matrix strides - what the renderer's
@@ -13,9 +15,14 @@
 //
 // What it does not show: that the two modules compute the same.
 //
-// Gathered so far: the shader interpreter's vertex and fragment stages for
-// its option sets, and the byte-shuffling compute tasks. Needs a Vulkan
-// driver (a software one will do); without one it says so and passes.
+// Gathered: the shader interpreter's vertex and fragment stages for its
+// option sets; every compute task (byte shuffles, depth-stencil gather and
+// scatter, float conversion, deswizzle, tile copies, the aggregator, the
+// upscaler's two); the multisample resolve tasks and passes; the overlay,
+// clear and video-out passes. Not gathered yet: what the fragment and
+// vertex program decompilers make for a game's own programs. Needs a
+// Vulkan driver (a software one will do); without one it says so and
+// passes.
 // SHADER_CORPUS_DIR=<dir> writes each source and both modules there.
 //
 // Built by `make check` from the core's own objects and archives, the same
@@ -34,6 +41,8 @@
 #include "Emu/RSX/VK/VKShaderInterpreter.h"
 #include "Emu/RSX/VK/VKCompute.h"
 #include "Emu/RSX/VK/VKResolveHelper.h"
+#include "Emu/RSX/VK/VKOverlays.h"
+#include "Emu/RSX/VK/upscalers/fsr_pass.h"
 #undef private
 #undef protected
 #include "Emu/RSX/VK/VKHelpers.h"
@@ -123,7 +132,7 @@ static interface_t interface_of(const u32* w, usz n)
 	return out;
 }
 
-static usz s_rslc_refused = 0, s_interface_differs = 0, s_driver_refused = 0;
+static usz s_rslc_refused = 0, s_rslc_not_yet = 0, s_interface_differs = 0, s_driver_refused = 0;
 static usz s_reference_words = 0, s_rslc_words = 0;
 
 // One gathered source through rslc: compiled, compared, handed to the driver
@@ -147,6 +156,17 @@ static void through_rslc(usz index, const gathered& g, const char* dir)
 
 	if (!rslc_compile(g.source.data(), g.source.size(), stage, &opts, &result))
 	{
+		// What rslc does not have yet, each a type the multisample resolve
+		// tasks and passes use: counted apart, and nothing else is let through
+		for (const char* known : {"got image2DMS", "got sampler2DMS", "got usampler2DMS", "unknown layout qualifier rg16f"})
+		{
+			if (std::strstr(err, known))
+			{
+				s_rslc_not_yet++;
+				return;
+			}
+		}
+
 		std::fprintf(stderr, "source %u (%s): rslc refuses it: %s\n", static_cast<u32>(index), ext, err);
 		s_rslc_refused++;
 		return;
@@ -194,12 +214,20 @@ static void compile_now(::glsl::program_domain domain, const std::string& source
 	shader.destroy();
 }
 
-template <typename T>
-static void compute_source()
+template <typename T, typename... Args>
+static void compute_source(Args&&... args)
 {
-	T task;
+	T task(std::forward<Args>(args)...);
 	task.create();
 	compile_now(::glsl::program_domain::glsl_compute_program, task.m_src);
+}
+
+template <typename T>
+static void overlay_source()
+{
+	T pass;
+	compile_now(::glsl::program_domain::glsl_vertex_program, pass.vs_src);
+	compile_now(::glsl::program_domain::glsl_fragment_program, pass.fs_src);
 }
 
 struct shader_corpus_test
@@ -269,22 +297,63 @@ int main()
 	compute_source<vk::cs_gather_d24x8<false>>();
 	compute_source<vk::cs_gather_d32x8<true, true>>();
 	compute_source<vk::cs_gather_d32x8<false, false>>();
+	compute_source<vk::cs_gather_d32x8<true, false>>();
+	compute_source<vk::cs_gather_d32x8<false, true>>();
+	compute_source<vk::cs_scatter_d24x8>();
+	compute_source<vk::cs_scatter_d32x8<false>>();
+	compute_source<vk::cs_scatter_d32x8<true>>();
+	compute_source<vk::cs_fconvert_task<f16, f32>>();
+	compute_source<vk::cs_fconvert_task<f32, f16>>();
+	compute_source<vk::cs_fconvert_task<f32, f16, false, true>>();
+	compute_source<vk::cs_aggregator>();
+	compute_source<vk::cs_tile_memcpy<vk::RSX_detiler_op::decode>>();
+	compute_source<vk::cs_tile_memcpy<vk::RSX_detiler_op::encode>>();
+	compute_source<vk::cs_deswizzle_3d<u8, u8, false>>();
+	compute_source<vk::cs_deswizzle_3d<u16, u16, true>>();
+	compute_source<vk::cs_deswizzle_3d<u16, u32, false>>();
+	compute_source<vk::cs_deswizzle_3d<u32, u16, true>>();
+	compute_source<vk::cs_deswizzle_3d<u32, u32, true>>();
+	compute_source<vk::cs_deswizzle_3d<u32, u32, false>>();
+
+	// Multisample resolve and its reverse, colour by compute and depth by a pass
+	for (const char* prefix : {"rgba8", "rgba16f", "rg16f", "r32f", "rgba32f"})
+	{
+		compute_source<vk::cs_resolve_task>(std::string(prefix));
+		compute_source<vk::cs_unresolve_task>(std::string(prefix));
+	}
+	compute_source<vk::cs_resolve_task>(std::string("rgba8"), true);
+	overlay_source<vk::depthonly_resolve>();
+	overlay_source<vk::depthonly_unresolve>();
+	overlay_source<vk::stencilonly_resolve>();
+	overlay_source<vk::stencilonly_unresolve>();
+	overlay_source<vk::depthstencil_resolve_EXT>();
+	overlay_source<vk::depthstencil_unresolve_EXT>();
+
+	// The passes drawn over the picture, and the upscaler's
+	overlay_source<vk::ui_overlay_renderer>();
+	overlay_source<vk::attachment_clear_pass>();
+	overlay_source<vk::stencil_clear_pass>();
+	overlay_source<vk::video_out_calibration_pass>();
+	compute_source<vk::FidelityFX::easu_pass>();
+	compute_source<vk::FidelityFX::rcas_pass>();
 
 	usz reference_failed = 0;
 	for (const gathered& g : s_corpus)
 		reference_failed += !g.reference_ok;
 
 	CHECK(reference_failed == 0);
-	CHECK(s_corpus.size() >= 29);
+	CHECK(s_corpus.size() >= 79);
 
 	const char* dir = std::getenv("SHADER_CORPUS_DIR");
 	for (usz i = 0; i < s_corpus.size(); i++)
 		through_rslc(i, s_corpus[i], dir);
 
 	CHECK(s_rslc_refused == 0);
+	CHECK(s_rslc_not_yet == 14); // down to none before the renderer switches; a rise is a source newly lost
 	CHECK(s_interface_differs == 0);
 	CHECK(s_driver_refused == 0);
 
+	std::printf("test_shader_corpus: %u wait for multisample images and samplers in rslc\n", static_cast<u32>(s_rslc_not_yet));
 	std::printf("test_shader_corpus: rslc refused %u, differs in interface or layout on %u, the driver refused %u of its modules; %u words where glslang makes %u\n",
 		static_cast<u32>(s_rslc_refused), static_cast<u32>(s_interface_differs), static_cast<u32>(s_driver_refused), static_cast<u32>(s_rslc_words), static_cast<u32>(s_reference_words));
 	std::printf("test_shader_corpus: %u sources gathered, %u refused by the reference compiler\n", ::size32(s_corpus), static_cast<u32>(reference_failed));
