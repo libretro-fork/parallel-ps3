@@ -19,6 +19,8 @@
 #include "Emu/Cell/ErrorCodes.h"
 #include "Emu/Cell/PPUModule.h"
 #include "Emu/Cell/lv2/sys_fs.h"
+#include "Emu/Cell/lv2/sys_mutex.h"
+#include "Emu/Cell/lv2/sys_cond.h"
 #include "Emu/IdManager.h"
 #include "Emu/VFS.h"
 #include "Utilities/lf_u64_map.h"
@@ -766,6 +768,176 @@ int main()
 		}
 		g_fxo->clear();
 		fs::remove_file(path);
+	}
+
+	// An ID's object found with no lock (idm::pin), and what the lock over
+	// all IDs used to guarantee kept without it (idm::still_named).
+	//
+	// - pin finds the object of an ID and of no other, and not as another
+	//   type;
+	// - threads lock mutexes by ID the way sys_mutex_trylock now does - pin,
+	//   take, ask whether the ID still names the mutex, give it up if not -
+	//   while another thread destroys and recreates them the way
+	//   sys_mutex_destroy does, refusing while there is an owner. A destroy
+	//   never succeeds on a mutex a thread holds and believes it holds, and
+	//   no thread ever looks at a mutex after its destroy returned (the
+	//   destroyer scribbles on it then).
+	{
+		g_fxo->reset();
+		g_fxo->init<id_manager::id_map<lv2_obj>>();
+
+		struct fake_cpu { u32 id; };
+		constexpr u32 scribble = 0xDEAD0000;
+
+		const auto make_mutex = []
+		{
+			return idm::make<lv2_obj, lv2_mutex>(u32{SYS_SYNC_PRIORITY}, u32{SYS_SYNC_NOT_RECURSIVE}, u32{SYS_SYNC_NOT_ADAPTIVE}, u64{0}, u64{0});
+		};
+
+		const u32 first = make_mutex();
+		CHECK(first != id_manager::id_traits<lv2_mutex>::invalid);
+		{
+			const auto pinned = idm::pin<lv2_obj, lv2_mutex>(first);
+			CHECK(!!pinned);
+			CHECK((pinned.ptr == idm::check_unlocked<lv2_obj, lv2_mutex>(first)));
+			CHECK(pinned.cell >= 0);
+			CHECK(lf_hazard_any(static_cast<lv2_obj*>(pinned.ptr)));
+			CHECK((idm::still_named<lv2_obj, lv2_mutex>(first, pinned.ptr)));
+			CHECK((!idm::pin<lv2_obj, lv2_mutex>(first + 0x100)));
+			CHECK((!idm::pin<lv2_obj, lv2_cond>(first)));
+			CHECK((!idm::pin<lv2_obj, lv2_mutex>(0)));
+		}
+		CHECK((!lf_hazard_any(static_cast<lv2_obj*>(idm::check_unlocked<lv2_obj, lv2_mutex>(first)))));
+
+		// Withdrawn: not found, and no longer named
+		{
+			const auto kept = idm::get_unlocked<lv2_obj, lv2_mutex>(first);
+			CHECK((!!idm::withdraw<lv2_obj, lv2_mutex>(first)));
+			CHECK((!idm::pin<lv2_obj, lv2_mutex>(first)));
+			CHECK((!idm::still_named<lv2_obj, lv2_mutex>(first, kept.get())));
+		}
+
+		static retro_atomic_int_t s_current, s_stop, s_bad, s_undone, s_locked, s_destroyed;
+		constexpr u32 slots = 8;
+		static retro_atomic_int_t s_ids[slots];
+		static retro_atomic_int_t s_held[slots]; // A thread holds the slot's mutex and has been told its lock stands
+
+		for (u32 i = 0; i < slots; i++)
+			retro_atomic_store_release_int(&s_ids[i], static_cast<int>(make_mutex()));
+
+		std::thread lockers[4];
+		for (u32 t = 0; t < 4; t++)
+		{
+			lockers[t] = std::thread([t]
+			{
+				fake_cpu cpu{t + 1};
+				u32 x = t * 2654435761u + 1;
+
+				while (!retro_atomic_load_acquire_int(&s_stop))
+				{
+					x = x * 1664525u + 1013904223u;
+					const u32 slot = (x >> 16) % slots;
+					const u32 id = static_cast<u32>(retro_atomic_load_acquire_int(&s_ids[slot]));
+
+					const auto mutex = idm::pin<lv2_obj, lv2_mutex>(id);
+					if (!mutex)
+						continue;
+
+					if (atomic_storage<u32>::load(mutex->control.raw().owner) >= scribble)
+						retro_atomic_fetch_add_int(&s_bad, 1);
+
+					if (mutex->try_lock(cpu))
+						continue;
+
+					if (idm::still_named<lv2_obj, lv2_mutex>(id, mutex.ptr))
+					{
+						// The lock stands: a destroy must fail until it is given up
+						retro_atomic_fetch_add_int(&s_held[slot], 1);
+						retro_atomic_fetch_add_int(&s_locked, 1);
+						for (int spin = 0; spin < 20; spin++)
+							(void)retro_atomic_load_relaxed_int(&s_stop);
+						retro_atomic_fetch_sub_int(&s_held[slot], 1);
+					}
+					else
+					{
+						retro_atomic_fetch_add_int(&s_undone, 1);
+					}
+
+					if (mutex->try_unlock(cpu))
+						retro_atomic_fetch_add_int(&s_bad, 1);
+				}
+			});
+		}
+
+		for (u32 n = 0; n < 60000; n++)
+		{
+			const u32 slot = n % slots;
+			const u32 id = static_cast<u32>(retro_atomic_load_acquire_int(&s_ids[slot]));
+
+			// As sys_mutex_destroy: not while it has an owner
+			const auto gone = idm::withdraw<lv2_obj, lv2_mutex>(id, [&](lv2_mutex& mutex) -> CellError
+			{
+				std::lock_guard lock(mutex.mutex);
+
+				if (atomic_storage<u32>::load(mutex.control.raw().owner))
+					return CELL_EBUSY;
+
+				// Nobody may hold it and have been told so
+				if (retro_atomic_load_acquire_int(&s_held[slot]))
+					retro_atomic_fetch_add_int(&s_bad, 1);
+
+				return {};
+			});
+
+			if (gone && !gone.ret)
+			{
+				retro_atomic_fetch_add_int(&s_destroyed, 1);
+
+				// Nobody is looking at it any more: anyone who is sees this
+				atomic_storage<u32>::store(gone->control.raw().owner, scribble + slot);
+				retro_atomic_store_release_int(&s_ids[slot], static_cast<int>(make_mutex()));
+			}
+		}
+
+		retro_atomic_store_release_int(&s_stop, 1);
+		for (auto& t : lockers)
+			t.join();
+
+		CHECK(retro_atomic_load_acquire_int(&s_bad) == 0);
+		CHECK(retro_atomic_load_acquire_int(&s_destroyed) > 100);
+		CHECK(retro_atomic_load_acquire_int(&s_locked) > 100);
+		std::printf("  ids: %d locks stood, %d undone, %d destroys\n", retro_atomic_load_acquire_int(&s_locked),
+			retro_atomic_load_acquire_int(&s_undone), retro_atomic_load_acquire_int(&s_destroyed));
+
+		// What a lookup costs one thread: the reader lock, and the pin
+		{
+			const u32 id = make_mutex();
+			constexpr int rounds = 5000000;
+			timespec t0, t1, t2;
+			u64 sink = 0;
+
+			clock_gettime(CLOCK_MONOTONIC, &t0);
+			for (int i = 0; i < rounds; i++)
+			{
+				const auto found = idm::check<lv2_obj, lv2_mutex>(id, [&](lv2_mutex& mutex) { return mutex.recursive; });
+				sink += found.ret;
+			}
+			clock_gettime(CLOCK_MONOTONIC, &t1);
+			for (int i = 0; i < rounds; i++)
+			{
+				const auto found = idm::pin<lv2_obj, lv2_mutex>(id);
+				sink += found->recursive;
+			}
+			clock_gettime(CLOCK_MONOTONIC, &t2);
+
+			const auto ns = [&](const timespec& a, const timespec& b)
+			{
+				return ((b.tv_sec - a.tv_sec) * 1e9 + (b.tv_nsec - a.tv_nsec)) / rounds;
+			};
+			std::printf("  id lookup, one thread: %.1f ns under the reader lock, %.1f ns pinned (%llu)\n", ns(t0, t1), ns(t1, t2), static_cast<unsigned long long>(sink));
+		}
+
+		g_fxo->clear();
 	}
 
 	libretro_vfs::set_vfs_interface(nullptr, 0);

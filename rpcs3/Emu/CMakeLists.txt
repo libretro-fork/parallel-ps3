@@ -95,6 +95,7 @@ target_sources(rpcs3_emu PRIVATE
     ../../Utilities/LUrlParser.cpp
     ../../Utilities/lf_item_pool.c
     ../../Utilities/lf_sig_table.c
+    ../../Utilities/lf_hazard.c
     ../../Utilities/lf_u64_map.c
     ../../Utilities/object_pack.c
     ../../Utilities/mutex.cpp

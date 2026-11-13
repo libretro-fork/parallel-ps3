@@ -145,20 +145,103 @@ error_code sys_mutex_destroy(ppu_thread& ppu, u32 mutex_id)
 	return CELL_OK;
 }
 
+// Unlocks a mutex the thread owns: the whole of sys_mutex_unlock but for
+// finding the mutex, and what a lock that turned out to have been taken
+// through an ID withdrawn meanwhile is undone with
+static CellError mutex_unlock(ppu_thread& ppu, lv2_mutex& mutex)
+{
+	auto result = mutex.try_unlock(ppu);
+
+	if (result == CELL_EBUSY)
+	{
+		std::lock_guard lock(mutex.mutex);
+
+		if (auto cpu = mutex.reown<ppu_thread>())
+		{
+			if (cpu->state & cpu_flag::again)
+			{
+				ppu.state += cpu_flag::again;
+				return {};
+			}
+
+			mutex.awake(cpu);
+		}
+
+		result = {};
+	}
+
+	return result;
+}
+
+// The mutex ID is looked up with no lock (idm::pin, or a counted reference
+// where the thread goes on to sleep). What the lock over all IDs used to
+// guarantee - that a mutex cannot be destroyed between being found and
+// being locked - is kept this way: sys_mutex_destroy marks the ID while it
+// checks that the mutex has no owner; a thread that has just become the
+// owner asks whether the ID still names the mutex (idm::still_named, which
+// waits for a destroy that is deciding), and if it does not, gives the
+// mutex up again and reports that there is no such mutex. Either the
+// destroy saw the owner and failed, or the lock is undone.
+static bool mutex_lock_stands(ppu_thread& ppu, u32 mutex_id, lv2_mutex& mutex)
+{
+	if (idm::still_named<lv2_obj, lv2_mutex>(mutex_id, &mutex)) [[likely]]
+	{
+		return true;
+	}
+
+	mutex_unlock(ppu, mutex);
+	return false;
+}
+
 error_code sys_mutex_lock(ppu_thread& ppu, u32 mutex_id, u64 timeout)
 {
 	ppu.state += cpu_flag::wait;
 
 	sys_mutex.trace("sys_mutex_lock(mutex_id=0x%x, timeout=0x%llx)", mutex_id, timeout);
 
-	const auto mutex = idm::get<lv2_obj, lv2_mutex>(mutex_id, [&, notify = lv2_obj::notify_all_t()](lv2_mutex& mutex)
+	// Free, as it mostly is: found and taken with no lock and no reference counted
+	if (const auto pinned = idm::pin<lv2_obj, lv2_mutex>(mutex_id))
+	{
+		if (const CellError result = pinned->try_lock(ppu); !result)
+		{
+			if (!mutex_lock_stands(ppu, mutex_id, *pinned))
+			{
+				return CELL_ESRCH;
+			}
+
+			return CELL_OK;
+		}
+		else if (result != CELL_EBUSY)
+		{
+			return result;
+		}
+	}
+	else
+	{
+		return CELL_ESRCH;
+	}
+
+	// Taken: the thread may sleep on it, so it keeps a reference
+	struct
+	{
+		stx::shared_ptr<lv2_mutex> ptr;
+		CellError ret{};
+
+		explicit operator bool() const { return !!ptr; }
+		lv2_mutex* operator->() const { return ptr.get(); }
+	}
+	mutex{idm::get_unlocked<lv2_obj, lv2_mutex>(mutex_id)};
+
+	if (mutex)
+	{
+		mutex.ret = [&, notify = lv2_obj::notify_all_t()](lv2_mutex& mutex)
 	{
 		CellError result = mutex.try_lock(ppu);
 
 		if (result == CELL_EBUSY && !atomic_storage<ppu_thread*>::load(mutex.control.raw().sq))
 		{
 			// Try busy waiting a bit if advantageous
-			for (u32 i = 0, end = lv2_obj::has_ppus_in_running_state() ? 3 : 10; id_manager::g_mutex.is_lockable() && i < end; i++)
+			for (u32 i = 0, end = lv2_obj::has_ppus_in_running_state() ? 3 : 10; i < end; i++)
 			{
 				busy_wait(300);
 				result = mutex.try_lock(ppu);
@@ -190,7 +273,8 @@ error_code sys_mutex_lock(ppu_thread& ppu, u32 mutex_id, u64 timeout)
 		}
 
 		return result;
-	});
+	}(*mutex.ptr);
+	}
 
 	if (!mutex)
 	{
@@ -206,6 +290,17 @@ error_code sys_mutex_lock(ppu_thread& ppu, u32 mutex_id, u64 timeout)
 	}
 	else
 	{
+		// The owner now (unless the thread is being stopped to be resumed later)
+		if (ppu.state & cpu_flag::again)
+		{
+			return CELL_OK;
+		}
+
+		if (!mutex_lock_stands(ppu, mutex_id, *mutex.ptr))
+		{
+			return CELL_ESRCH;
+		}
+
 		return CELL_OK;
 	}
 
@@ -306,6 +401,12 @@ error_code sys_mutex_lock(ppu_thread& ppu, u32 mutex_id, u64 timeout)
 		}
 	}
 
+	// Woken as the owner: the same question as for a lock taken at once
+	if (ppu.gpr[3] == CELL_OK && !(ppu.state & cpu_flag::again) && !mutex_lock_stands(ppu, mutex_id, *mutex.ptr))
+	{
+		return CELL_ESRCH;
+	}
+
 	return not_an_error(ppu.gpr[3]);
 }
 
@@ -315,24 +416,26 @@ error_code sys_mutex_trylock(ppu_thread& ppu, u32 mutex_id)
 
 	sys_mutex.trace("sys_mutex_trylock(mutex_id=0x%x)", mutex_id);
 
-	const auto mutex = idm::check<lv2_obj, lv2_mutex>(mutex_id, [&](lv2_mutex& mutex)
-	{
-		return mutex.try_lock(ppu);
-	});
+	const auto mutex = idm::pin<lv2_obj, lv2_mutex>(mutex_id);
 
 	if (!mutex)
 	{
 		return CELL_ESRCH;
 	}
 
-	if (mutex.ret)
+	if (const CellError ret = mutex->try_lock(ppu))
 	{
-		if (mutex.ret == CELL_EBUSY)
+		if (ret == CELL_EBUSY)
 		{
 			return not_an_error(CELL_EBUSY);
 		}
 
-		return mutex.ret;
+		return ret;
+	}
+
+	if (!mutex_lock_stands(ppu, mutex_id, *mutex))
+	{
+		return CELL_ESRCH;
 	}
 
 	return CELL_OK;
@@ -344,43 +447,31 @@ error_code sys_mutex_unlock(ppu_thread& ppu, u32 mutex_id)
 
 	sys_mutex.trace("sys_mutex_unlock(mutex_id=0x%x)", mutex_id);
 
-	const auto mutex = idm::check<lv2_obj, lv2_mutex>(mutex_id, [&, notify = lv2_obj::notify_all_t()](lv2_mutex& mutex) -> CellError
-	{
-		// At unlock, we have some time to do other jobs when the thread is unlikely to be in other critical sections
-		notify.enqueue_on_top(vm::reservation_notifier_notify(ppu.res_notify, ppu.res_notify_time, true));
-
-		auto result = mutex.try_unlock(ppu);
-
-		if (result == CELL_EBUSY)
-		{
-			std::lock_guard lock(mutex.mutex);
-
-			if (auto cpu = mutex.reown<ppu_thread>())
-			{
-				if (cpu->state & cpu_flag::again)
-				{
-					ppu.state += cpu_flag::again;
-					return {};
-				}
-
-				mutex.awake(cpu);
-			}
-
-			result = {};
-		}
-
-		notify.cleanup();
-		return result;
-	});
+	// No lock, no reference counted. And no question to ask afterwards: a
+	// mutex with an owner cannot be destroyed, so an unlock by its owner is
+	// over before a destroy can succeed.
+	const auto mutex = idm::pin<lv2_obj, lv2_mutex>(mutex_id);
 
 	if (!mutex)
 	{
 		return CELL_ESRCH;
 	}
 
-	if (mutex.ret)
+	CellError ret{};
 	{
-		return mutex.ret;
+		lv2_obj::notify_all_t notify;
+
+		// At unlock, we have some time to do other jobs when the thread is unlikely to be in other critical sections
+		notify.enqueue_on_top(vm::reservation_notifier_notify(ppu.res_notify, ppu.res_notify_time, true));
+
+		ret = mutex_unlock(ppu, *mutex);
+
+		notify.cleanup();
+	}
+
+	if (ret)
+	{
+		return ret;
 	}
 
 	return CELL_OK;

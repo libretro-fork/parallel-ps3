@@ -11,6 +11,10 @@
 #include "util/shared_ptr.hpp"
 #include "util/fixed_typemap.hpp"
 
+#include "Utilities/lf_hazard.h"
+#include <retro_atomic.h>
+#include <thread>
+
 extern stx::manual_typemap<void, 0x20'00000, 128> g_fixed_typemap;
 
 constexpr auto* g_fxo = &g_fixed_typemap;
@@ -39,6 +43,30 @@ namespace id_manager
 
 	// Common global mutex
 	extern shared_mutex g_mutex;
+
+	// The calling thread's record of hazard cells (Utilities/lf_hazard.h):
+	// -2 until the thread first asks, -1 when there was none left for it
+	extern thread_local int g_hazard_record;
+	int claim_hazard_record();
+
+	inline int hazard_record()
+	{
+		const int record = g_hazard_record;
+		return record != -2 ? record : claim_hazard_record();
+	}
+
+	// For the thread that has just taken an object out of its ID slot, before
+	// it lets go of the lock under which IDs are made: waits until no thread
+	// that found the object with idm::pin() is still looking at it. Such a
+	// look is a handful of instructions, so this is short - but the looker
+	// may have been put off the processor, hence the yield.
+	inline void wait_unpinned(const void* object)
+	{
+		while (object && lf_hazard_any(object)) [[unlikely]]
+		{
+			std::this_thread::yield();
+		}
+	}
 
 	template <typename T>
 	constexpr std::pair<u32, u32> get_invl_range()
@@ -287,6 +315,10 @@ namespace id_manager
 		std::array<stx::shared_ptr<T>, T::id_count> private_copy{};
 		std::array<id_key, T::id_count> vec_keys{};
 		u32 highest_index = 0;
+
+		// Nonzero while a withdrawal is asking its question about the ID's
+		// object and has not yet decided: see idm::still_named()
+		std::array<retro_atomic_int_t, T::id_count> closing{};
 
 		shared_mutex mutex{}; // TODO: Use this instead of global mutex
 
@@ -576,7 +608,10 @@ public:
 
 		for (auto& ptr : g_fxo->get<id_manager::id_map<T>>().vec_data)
 		{
-			ptr.reset();
+			if (auto removed = ptr.exchange(null_ptr))
+			{
+				id_manager::wait_unpinned(removed.get());
+			}
 		}
 
 		for (auto& key : g_fxo->get<id_manager::id_map<T>>().vec_keys)
@@ -815,6 +850,7 @@ public:
 			{
 				ptr = found.first->exchange(null_ptr);
 				found.second->clear();
+				id_manager::wait_unpinned(ptr.get());
 			}
 			else
 			{
@@ -854,6 +890,7 @@ public:
 			{
 				ptr = found.first->exchange(null_ptr);
 				found.second->clear();
+				id_manager::wait_unpinned(ptr.get());
 			}
 			else
 			{
@@ -891,8 +928,10 @@ public:
 
 			if (const auto found = find_index<T, Get>(index, id); found.first)
 			{
+				const T* removed = found.first->observe();
 				ptr = static_cast<stx::shared_ptr<Get>>(found.first->exchange(null_ptr));
 				found.second->clear();
+				id_manager::wait_unpinned(removed);
 			}
 		}
 
@@ -915,13 +954,24 @@ public:
 
 		if (const auto found = find_index<T, Get>(index, id); found.first)
 		{
+			const T* removed = found.first->observe();
 			const auto _ptr = static_cast<Get*>(found.first->observe());
+
+			// From here until the ID is gone or kept, a thread that acted on
+			// the object without the lock waits to hear which (still_named).
+			// An exchange, for the barrier: what such a thread did before it
+			// looks at this is seen by func.
+			retro_atomic_int_t& closing = g_fxo->get<id_manager::id_map<T>>().closing[index];
+			(void)retro_atomic_exchange_int(&closing, 1);
 
 			if constexpr (std::is_void_v<FRT>)
 			{
 				func(*_ptr);
 				found.second->clear();
-				return static_cast<stx::shared_ptr<Get>>(found.first->exchange(null_ptr));
+				auto result = static_cast<stx::shared_ptr<Get>>(found.first->exchange(null_ptr));
+				retro_atomic_store_release_int(&closing, 0);
+				id_manager::wait_unpinned(removed);
+				return result;
 			}
 			else
 			{
@@ -930,14 +980,160 @@ public:
 				if (ret)
 				{
 					// If return value evaluates to true, don't delete the object (error code)
+					retro_atomic_store_release_int(&closing, 0);
 					return {static_cast<stx::shared_ptr<Get>>(found.first->load()), std::move(ret)};
 				}
 
 				found.second->clear();
-				return {static_cast<stx::shared_ptr<Get>>(found.first->exchange(null_ptr)), std::move(ret)};
+				auto result = static_cast<stx::shared_ptr<Get>>(found.first->exchange(null_ptr));
+				retro_atomic_store_release_int(&closing, 0);
+				id_manager::wait_unpinned(removed);
+				return {std::move(result), std::move(ret)};
 			}
 		}
 
 		return {};
+	}
+
+	// An object found by its ID with no lock and no reference counted
+	// (pin()). It is not freed while this is alive - which is to be a few
+	// instructions: no waiting, no taking of id_manager::g_mutex, since
+	// whoever removes the ID waits for this to go.
+	template <typename Get>
+	struct pinned
+	{
+		Get* ptr = nullptr;
+		stx::shared_ptr<Get> counted; // When the thread had no hazard cell to spare
+		int record = -1;
+		int cell = -1;
+
+		pinned() = default;
+		pinned(const pinned&) = delete;
+		pinned& operator=(const pinned&) = delete;
+
+		pinned(pinned&& other) noexcept
+			: ptr(std::exchange(other.ptr, nullptr))
+			, counted(std::move(other.counted))
+			, record(other.record)
+			, cell(std::exchange(other.cell, -1))
+		{
+		}
+
+		~pinned()
+		{
+			if (cell >= 0)
+			{
+				lf_hazard_drop(record, cell);
+			}
+		}
+
+		explicit operator bool() const noexcept
+		{
+			return ptr != nullptr;
+		}
+
+		Get& operator*() const noexcept
+		{
+			return *ptr;
+		}
+
+		Get* operator->() const noexcept
+		{
+			return ptr;
+		}
+	};
+
+	// Finds the object of an ID without the lock and without counting a
+	// reference: the thread announces the object in a hazard cell of its own
+	// and checks that the ID still holds it.
+	//
+	// The lock is what made "the ID exists" and what a caller then did to
+	// the object one step; without it they are two. A caller whose action
+	// must not succeed on an ID that was withdrawn meanwhile calls
+	// still_named() after acting and undoes the action if it says no.
+	template <typename T, typename Get = T>
+		requires IdmTypesCompatible<T, Get>
+	static inline pinned<Get> pin(u32 id)
+	{
+		pinned<Get> result;
+
+		const u32 index = get_index<Get>(id);
+
+		if (index >= id_manager::id_traits<Get>::count)
+		{
+			return result;
+		}
+
+		auto& map = g_fxo->get<id_manager::id_map<T>>();
+		auto& data = map.vec_data[index];
+
+		const int record = id_manager::hazard_record();
+
+		while (true)
+		{
+			T* const object = data.observe();
+
+			if (!object)
+			{
+				return result;
+			}
+
+			const int cell = record >= 0 ? lf_hazard_hold(record, object) : -1;
+
+			if (cell < 0) [[unlikely]]
+			{
+				// No cell: keep it alive the old way
+				result.counted = get_unlocked<T, Get>(id);
+				result.ptr = result.counted.get();
+				return result;
+			}
+
+			if (data.observe() != object) [[unlikely]]
+			{
+				// Removed or replaced in between: look again
+				lf_hazard_drop(record, cell);
+				continue;
+			}
+
+			// Held: the slot cannot be given to another object now, so the
+			// key read here is this object's, or already cleared
+			const auto& key = map.vec_keys[index];
+
+			if ((std::is_same_v<T, Get> || key.type() == get_type<Get>()) &&
+				(!id_manager::id_traits<Get>::invl_range.second || key.value() == id))
+			{
+				result.ptr = static_cast<Get*>(object);
+				result.record = record;
+				result.cell = cell;
+				return result;
+			}
+
+			lf_hazard_drop(record, cell);
+			return result;
+		}
+	}
+
+	// For a thread that found @object under @id without the lock and has
+	// acted on it: true if the ID still names the object. If a withdrawal
+	// is asking its question about the object right now, this waits for
+	// its answer - the withdrawal either saw what this thread did, and
+	// keeps the ID, or did not, and the ID is gone.
+	template <typename T, typename Get = T>
+		requires IdmTypesCompatible<T, Get>
+	static inline bool still_named(u32 id, const Get* object)
+	{
+		const u32 index = get_index<Get>(id);
+		auto& map = g_fxo->get<id_manager::id_map<T>>();
+
+		// What the caller did comes before this look, as the withdrawal's
+		// mark comes before its question
+		retro_atomic_thread_fence_seq_cst();
+
+		while (retro_atomic_load_acquire_int(&map.closing[index])) [[unlikely]]
+		{
+			std::this_thread::yield();
+		}
+
+		return map.vec_data[index].observe() == static_cast<const T*>(object);
 	}
 };

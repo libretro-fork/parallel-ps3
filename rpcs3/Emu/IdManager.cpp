@@ -6,6 +6,31 @@ shared_mutex id_manager::g_mutex;
 namespace id_manager
 {
 	thread_local u32 g_id = 0;
+
+	thread_local int g_hazard_record = -2;
+
+	// Gives the thread's record back when the thread ends
+	struct hazard_record_owner
+	{
+		int record = -1;
+
+		~hazard_record_owner()
+		{
+			if (record >= 0)
+			{
+				lf_hazard_release(record);
+			}
+		}
+	};
+
+	int claim_hazard_record()
+	{
+		thread_local hazard_record_owner owner;
+
+		owner.record = lf_hazard_claim();
+		g_hazard_record = owner.record;
+		return owner.record;
+	}
 }
 
 template <>
