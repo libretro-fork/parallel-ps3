@@ -18,6 +18,9 @@
 #include "util/logs.hpp"
 #include "Emu/Cell/ErrorCodes.h"
 #include "Emu/Cell/PPUModule.h"
+#include "Emu/Cell/lv2/sys_fs.h"
+#include "Emu/IdManager.h"
+#include "Emu/VFS.h"
 #include "Utilities/lf_u64_map.h"
 
 #include <malloc.h>
@@ -625,6 +628,81 @@ int main()
 		CHECK(clashes == 0);
 		CHECK(count * 4 < ppu_export_slots);
 		lf_u64_map_free(&keys);
+	}
+
+	// A game's reads at an offset take no lock: they are counted on the file,
+	// and its handle is only taken away - closed, or closed and opened again
+	// as a rename does - when none is in flight. Three threads read while the
+	// handle is swapped under them 300 times: every read is of a handle
+	// that is there and gives the file's bytes, and once the file is closed
+	// for good the readers are told so. (A read of a handle that is gone
+	// ends the test.)
+	{
+		const std::string path = std::string(dir) + "/reads.bin";
+		{
+			std::vector<u8> bytes(65536);
+			for (usz i = 0; i < bytes.size(); i++)
+				bytes[i] = static_cast<u8>(i * 7 + (i >> 8));
+			CHECK(fs::write_file(path, fs::rewrite, bytes));
+		}
+
+		g_fxo->reset();
+		CHECK(vfs::mount("/dev_hdd0", std::string(dir) + "/"));
+		g_fxo->init<lv2_fs_mount_info_map>();
+		{
+			lv2_file file("/dev_hdd0/reads.bin", fs::file(path), 0, 0, path);
+			CHECK(!!file.file);
+
+			static retro_atomic_size_t s_reads;
+			static retro_atomic_size_t s_wrong;
+			std::thread readers[3];
+
+			for (u32 t = 0; t < 3; t++)
+			{
+				readers[t] = std::thread([&file, t]
+				{
+					u32 x = t * 7919 + 1;
+					while (file.io_begin())
+					{
+						x = x * 1664525 + 1013904223;
+						const u32 at = (x >> 8) % 65000;
+						u8 buf[16];
+						const bool ok = file.file.read_at(at, buf, sizeof(buf)) == sizeof(buf);
+						file.io_end();
+						for (u32 i = 0; ok && i < 16; i++)
+							if (buf[i] != static_cast<u8>((at + i) * 7 + ((at + i) >> 8)))
+								retro_atomic_inc_size(&s_wrong);
+						if (!ok)
+							retro_atomic_inc_size(&s_wrong);
+						retro_atomic_inc_size(&s_reads);
+					}
+				});
+			}
+
+			for (u32 i = 0; i < 300; i++)
+			{
+				while (retro_atomic_load_acquire_size(&s_reads) < usz{i} * 50)
+					std::this_thread::yield();
+
+				file.io_block(false);
+				CHECK(retro_atomic_load_acquire_int(&file.io_reads) == 0);
+				file.file.close();
+				file.file = fs::file(path);
+				file.io_unblock();
+			}
+
+			file.io_block(true);
+			file.file.close();
+
+			for (auto& t : readers)
+				t.join();
+
+			CHECK(!file.io_begin());
+			CHECK(retro_atomic_load_acquire_size(&s_wrong) == 0);
+			CHECK(retro_atomic_load_acquire_size(&s_reads) >= 299 * 50);
+		}
+		g_fxo->clear();
+		fs::remove_file(path);
 	}
 
 	libretro_vfs::set_vfs_interface(nullptr, 0);

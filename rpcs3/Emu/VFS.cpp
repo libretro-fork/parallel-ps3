@@ -1085,6 +1085,9 @@ bool vfs::host::rename(const std::string& from, const std::string& to, const lv2
 				return;
 			}
 
+			// No read at an offset on the handle while it is away
+			file.io_block(false);
+
 			file.restore_data.seek_pos = file.file.pos();
 
 			file.file.close(); // Actually close it!
@@ -1140,6 +1143,7 @@ bool vfs::host::rename(const std::string& from, const std::string& to, const lv2
 			file.file = std::move(res0.file);
 			ensure(file.file.operator bool());
 			file.file.seek(file.restore_data.seek_pos);
+			file.io_unblock();
 		}
 	}
 

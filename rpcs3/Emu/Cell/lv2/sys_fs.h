@@ -6,6 +6,9 @@
 #include "Utilities/StrUtil.h"
 #include "Utilities/mutex.h"
 
+#include <retro_atomic.h>
+#include <rthreads/retro_waitaddr.h>
+
 #include <string>
 
 // Open Flags
@@ -289,6 +292,72 @@ struct lv2_file final : lv2_fs_object
 
 	// Stream lock
 	atomic_t<u32> lock{0};
+
+	// Reads at an offset use the host's handle with no lock: one count of
+	// the reads in flight, on the file's own line, where every such read
+	// used to take its mount point's lock shared - all the files of a disc or
+	// of the hard disk on one word, and waiting whenever anything on that
+	// mount was written. The handle is taken away (closed, or closed and
+	// opened again by a rename) only once no read is in flight, and no read
+	// begins while it is away: io_begin and io_end around a read, io_block
+	// before the handle goes and io_unblock when another is there. io_block
+	// and io_unblock are called under the mount point's lock, as the handle
+	// was always changed.
+	retro_atomic_int_t io_reads{};
+	retro_atomic_int_t io_away{}; // 0 here, 1 away for now, 2 closed
+
+	// False when the file is closed
+	bool io_begin()
+	{
+		while (true)
+		{
+			retro_atomic_fetch_add_seq_cst_int(&io_reads, 1);
+
+			const int away = retro_atomic_load_seq_cst_int(&io_away);
+
+			if (!away) [[likely]]
+			{
+				return true;
+			}
+
+			io_end();
+
+			if (away == 2)
+			{
+				return false;
+			}
+
+			// Until the handle is back
+			const retro_waitaddr_t w{&io_away, 1};
+			retro_waitaddr_wait(&w, 1, -1);
+		}
+	}
+
+	void io_end()
+	{
+		// The last read out wakes whoever waits to take the handle
+		if (retro_atomic_fetch_add_seq_cst_int(&io_reads, -1) == 1 && retro_atomic_load_seq_cst_int(&io_away))
+		{
+			retro_waitaddr_notify_all(&io_reads);
+		}
+	}
+
+	void io_block(bool closed)
+	{
+		retro_atomic_fetch_add_seq_cst_int(&io_away, closed ? 2 : 1);
+
+		while (const int reads = retro_atomic_load_seq_cst_int(&io_reads))
+		{
+			const retro_waitaddr_t w{&io_reads, static_cast<u32>(reads)};
+			retro_waitaddr_wait(&w, 1, -1);
+		}
+	}
+
+	void io_unblock()
+	{
+		retro_atomic_fetch_add_seq_cst_int(&io_away, -1);
+		retro_waitaddr_notify_all(&io_away);
+	}
 
 	// Some variables for convenience of data restoration
 	struct save_restore_t

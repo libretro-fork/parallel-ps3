@@ -1720,6 +1720,8 @@ error_code sys_fs_close(ppu_thread& ppu, u32 fd)
 		}
 
 		// Ensure Host file handle won't be kept open after this syscall
+		// (once no read at an offset is using it)
+		file->io_block(true);
 		file->file.close();
 	}
 
@@ -2531,17 +2533,37 @@ error_code sys_fs_fcntl(ppu_thread& ppu, u32 fd, u32 op, vm::ptr<void> _arg, u32
 		}
 
 		std::unique_lock wlock(file->mp->mutex, std::defer_lock);
-		std::shared_lock rlock(file->mp->mutex, std::defer_lock);
+
+		// A read at an offset takes no lock: it is counted on the file, and
+		// the handle is not taken away under it (lv2_file::io_begin)
+		struct read_in_flight
+		{
+			lv2_file* file = nullptr;
+
+			void end()
+			{
+				if (file)
+				{
+					file->io_end();
+					file = nullptr;
+				}
+			}
+
+			~read_in_flight() { end(); }
+		} reading;
 
 		if (op == 0x8000000b)
 		{
 			// Writer lock
 			wlock.lock();
 		}
+		else if (file->io_begin())
+		{
+			reading.file = file.get();
+		}
 		else
 		{
-			// Reader lock (not needing exclusivity in this special case because the state should not change)
-			rlock.lock();
+			return CELL_EBADF;
 		}
 
 		if (!file->file)
@@ -2583,7 +2605,7 @@ error_code sys_fs_fcntl(ppu_thread& ppu, u32 fd, u32 op, vm::ptr<void> _arg, u32
 		else
 		{
 			const u64 read_end = file->schedule_read(done_size, op_start, op_pos);
-			rlock.unlock();
+			reading.end();
 			lv2_file::wait_read(ppu, read_end);
 		}
 
