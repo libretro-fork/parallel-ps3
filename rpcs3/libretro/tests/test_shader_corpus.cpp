@@ -48,9 +48,11 @@
 // The compiler the renderer calls, under another name: the test's own stands
 // where it was
 #define compile_glsl_to_spv compile_glsl_to_spv_core
+#define compile_glsl_lent compile_glsl_lent_core
 #define build_end build_end_core
 #include "../../Emu/RSX/Program/SPIRVCommon.cpp"
 #undef compile_glsl_to_spv
+#undef compile_glsl_lent
 #undef build_end
 
 #define private public
@@ -107,12 +109,34 @@ namespace vk
 	extern driver_vendor g_driver_vendor;
 }
 
+static usz s_lent = 0, s_compiles = 0;
+
 namespace spirv
 {
 	bool compile_glsl_to_spv(std::vector<u32>& spv, std::string& shader, ::glsl::program_domain domain, ::glsl::glsl_rules rules)
 	{
 		const bool ok = compile_glsl_to_spv_core(spv, shader, domain, rules);
 		s_corpus.push_back({shader, spv, domain, ok});
+		if (!ok && std::getenv("SHADER_CORPUS_DIR"))
+			fs::write_file(std::string(std::getenv("SHADER_CORPUS_DIR")) + "/refused.glsl", fs::rewrite, shader);
+		return ok;
+	}
+
+	// What a shader is compiled through: the module lent from the compiling
+	// thread's block
+	bool compile_glsl_lent(const u32*& words, usz& count, std::string& shader, ::glsl::program_domain domain, ::glsl::glsl_rules rules)
+	{
+		const bool ok = compile_glsl_lent_core(words, count, shader, domain, rules);
+		// Lent from the thread's block, where the compiler wrote it: not a
+		// copy, not an allocation
+		if (ok)
+		{
+			const u8* at = reinterpret_cast<const u8*>(words);
+			const u8* block = this_thread().memory.results();
+			s_lent += at >= block && at + count * 4 <= block + compile_memory::result_size;
+			s_compiles++;
+		}
+		s_corpus.push_back({shader, std::vector<u32>(words, words + count), domain, ok});
 		if (!ok && std::getenv("SHADER_CORPUS_DIR"))
 			fs::write_file(std::string(std::getenv("SHADER_CORPUS_DIR")) + "/refused.glsl", fs::rewrite, shader);
 		return ok;
@@ -327,6 +351,8 @@ static void compile_now(::glsl::program_domain domain, const std::string& source
 	vk::glsl::shader shader;
 	shader.create(domain, source);
 	CHECK(shader.compile() != VK_NULL_HANDLE);
+	// The text is let go of once it is compiled
+	CHECK(shader.get_source().capacity() < 32);
 	shader.destroy();
 }
 
@@ -1379,6 +1405,8 @@ int main()
 	CHECK(!s_can_run || !tool || (s_ran >= 1000 && s_ran_vertex >= 450));
 	CHECK(s_built >= 1);
 	CHECK(s_variants >= 1000);
+	// Every module the renderer compiled came lent from the thread's block
+	CHECK(s_compiles >= 1000 && s_lent == s_compiles);
 	std::printf("test_shader_corpus: %u sources gathered, %u of them stages built by calls and the same as their GLSL compiles to; the core's compile refused %u, the driver refused %u of its modules\n",
 		::size32(s_corpus), static_cast<u32>(s_built), static_cast<u32>(s_refused), static_cast<u32>(s_driver_refused));
 

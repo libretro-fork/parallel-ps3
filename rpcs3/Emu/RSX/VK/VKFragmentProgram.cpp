@@ -629,7 +629,7 @@ void VKFragmentProgram::Decompile(const RSXFragmentProgram& prog)
 	decompiler.Task();
 
 	constant_offsets = std::move(decompiler.properties.constant_offsets);
-	shader.create(::glsl::program_domain::glsl_fragment_program, source);
+	shader.create(::glsl::program_domain::glsl_fragment_program, std::move(source));
 }
 
 void VKFragmentProgram::Compile()

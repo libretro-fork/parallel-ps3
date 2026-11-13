@@ -97,16 +97,19 @@ namespace vk
 			}
 		}
 
-		void shader::create(::glsl::program_domain domain, const std::string& source)
+		void shader::create(::glsl::program_domain domain, std::string source)
 		{
 			type     = domain;
-			m_source = source;
+			m_source = std::move(source);
+			m_module = nullptr;
+			m_module_len = 0;
 		}
 
 		void shader::create(::glsl::program_domain domain, const std::vector<u32>& spirv)
 		{
-			type       = domain;
-			m_compiled = spirv;
+			type         = domain;
+			m_module     = spirv.data();
+			m_module_len = spirv.size();
 			m_source.clear();
 		}
 
@@ -114,29 +117,41 @@ namespace vk
 		{
 			ensure(m_handle == VK_NULL_HANDLE);
 
+			// The words go to the driver from where they are - the compiling
+			// thread's block, or the caller's module - with no copy kept: the
+			// driver has its own once the module is made
+			const u32* words = m_module;
+			usz count = m_module_len;
+
 			// Nothing to compile for a stage that came as a module
-			if (!m_source.empty() && !spirv::compile_glsl_to_spv(m_compiled, m_source, type, ::glsl::glsl_rules_vulkan))
+			if (!m_source.empty() && !spirv::compile_glsl_lent(words, count, m_source, type, ::glsl::glsl_rules_vulkan))
 			{
 				rsx_log.notice("%s", m_source);
 				fmt::throw_exception("Failed to compile %s shader", to_string(type));
 			}
 
 			VkShaderModuleCreateInfo vs_info;
-			vs_info.codeSize = m_compiled.size() * sizeof(u32);
+			vs_info.codeSize = count * sizeof(u32);
 			vs_info.pNext    = nullptr;
 			vs_info.sType    = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
-			vs_info.pCode    = m_compiled.data();
+			vs_info.pCode    = words;
 			vs_info.flags    = 0;
 
 			vkCreateShaderModule(*g_render_device, &vs_info, nullptr, &m_handle);
+
+			// Nor the text: nothing reads it after this
+			std::string().swap(m_source);
+			m_module = nullptr;
+			m_module_len = 0;
 
 			return m_handle;
 		}
 
 		void shader::destroy()
 		{
-			m_source.clear();
-			m_compiled.clear();
+			std::string().swap(m_source);
+			m_module = nullptr;
+			m_module_len = 0;
 
 			if (m_handle)
 			{
@@ -148,11 +163,6 @@ namespace vk
 		const std::string& shader::get_source() const
 		{
 			return m_source;
-		}
-
-		const std::vector<u32> shader::get_compiled() const
-		{
-			return m_compiled;
 		}
 
 		VkShaderModule shader::get_handle() const

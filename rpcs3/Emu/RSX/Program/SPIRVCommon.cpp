@@ -56,6 +56,9 @@ namespace
 		compile_memory memory;
 		rslc_opts opts{};
 		char err[256]{};
+
+		// The module last made, lent to the caller until the next is begun
+		rslc_result last{};
 	};
 
 	compile_state& this_thread()
@@ -73,6 +76,14 @@ namespace spirv
 	static rslc_opts& prepare()
 	{
 		compile_state& s = this_thread();
+
+		// What was lent goes back: the block is used from its start again
+		if (s.last.spirv)
+		{
+			rslc_result_free(&s.last, &s.opts);
+			s.last = {};
+		}
+
 		s.memory.used = 0;
 		s.err[0] = 0;
 		s.opts = {};
@@ -106,9 +117,12 @@ namespace spirv
 		}
 	}
 
-	bool compile_glsl_to_spv(std::vector<u32>& spv, std::string& shader, ::glsl::program_domain domain, ::glsl::glsl_rules rules)
+	bool compile_glsl_lent(const u32*& words, usz& count, std::string& shader, ::glsl::program_domain domain, ::glsl::glsl_rules rules)
 	{
 		ensure(rules == ::glsl::glsl_rules_vulkan);
+
+		words = nullptr;
+		count = 0;
 
 		rslc_stage stage;
 		if (!stage_of(domain, stage))
@@ -134,8 +148,21 @@ namespace spirv
 			return false;
 		}
 
-		spv.assign(result.spirv, result.spirv + result.spirv_len);
-		rslc_result_free(&result, &opts);
+		// Where rslc left it, in this thread's block
+		this_thread().last = result;
+		words = result.spirv;
+		count = result.spirv_len;
+		return true;
+	}
+
+	bool compile_glsl_to_spv(std::vector<u32>& spv, std::string& shader, ::glsl::program_domain domain, ::glsl::glsl_rules rules)
+	{
+		const u32* words;
+		usz count;
+		if (!compile_glsl_lent(words, count, shader, domain, rules))
+			return false;
+
+		spv.assign(words, words + count);
 		return true;
 	}
 

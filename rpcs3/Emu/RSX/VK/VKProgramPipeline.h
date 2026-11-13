@@ -116,14 +116,20 @@ namespace vk
 			::glsl::program_domain type = ::glsl::program_domain::glsl_vertex_program;
 			VkShaderModule m_handle = VK_NULL_HANDLE;
 			std::string m_source;
-			std::vector<u32> m_compiled;
+
+			// A stage that came as a module: the caller's words, until compile()
+			const u32* m_module = nullptr;
+			usz m_module_len = 0;
 
 		public:
 			shader() = default;
 			~shader() = default;
 
-			void create(::glsl::program_domain domain, const std::string& source);
-			// A stage that was built, not written: its module as it is
+			// The source is taken, not copied, when it is handed over
+			// (std::move), and let go of once it is compiled
+			void create(::glsl::program_domain domain, std::string source);
+			// A stage that was built, not written: its module as it is. The
+			// words are the caller's and stay where they are until compile().
 			void create(::glsl::program_domain domain, const std::vector<u32>& spirv);
 
 			VkShaderModule compile();
@@ -131,7 +137,6 @@ namespace vk
 			void destroy();
 
 			const std::string& get_source() const;
-			const std::vector<u32> get_compiled() const;
 
 			VkShaderModule get_handle() const;
 		};
