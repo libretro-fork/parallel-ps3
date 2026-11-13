@@ -3,14 +3,25 @@
 #include "VKGSRender.h"
 #include "VKCommandStream.h"
 
+#include <retro_atomic.h>
+
 namespace vk
 {
 	struct vmm_memory_stats
 	{
+		// What was allocated, by handle: under the mutex, by those that
+		// allocate and free
 		std::unordered_map<uptr, vmm_allocation_t> allocations;
-		std::unordered_map<uptr, atomic_t<u64>> memory_usage;
-		std::unordered_map<vmm_allocation_pool, atomic_t<u64>> pool_usage;
 		shared_mutex mutex;
+
+		// The totals, by memory type and by pool: counters added to and read
+		// with no lock. They were maps behind the mutex, which every look at
+		// a total took shared - the sampler count on every trim, the memory
+		// in use on every check of the load.
+		static constexpr u32 memory_types = 32; // VK_MAX_MEMORY_TYPES
+		static constexpr u32 pools = 8;
+		retro_atomic_64_t memory_usage[memory_types]{};
+		retro_atomic_64_t pool_usage[pools]{};
 
 		void clear()
 		{
@@ -25,8 +36,11 @@ namespace vk
 			}
 
 			allocations.clear();
-			memory_usage.clear();
-			pool_usage.clear();
+
+			for (auto& v : memory_usage)
+				retro_atomic_store_release_64(&v, 0);
+			for (auto& v : pool_usage)
+				retro_atomic_store_release_64(&v, 0);
 		}
 	}
 	g_vmm_stats;
@@ -123,10 +137,9 @@ namespace vk
 			rsx_log.error("Duplicate vmm entry with memory handle 0x%llx", key);
 		}
 
-		g_vmm_stats.pool_usage[pool] += memory_size;
+		retro_atomic_fetch_add_64(&::at32(g_vmm_stats.pool_usage, pool), static_cast<s64>(memory_size));
 
-		auto& vmm_size = g_vmm_stats.memory_usage[memory_type];
-		vmm_size += memory_size;
+		const u64 vmm_size = static_cast<u64>(retro_atomic_fetch_add_64(&::at32(g_vmm_stats.memory_usage, memory_type), static_cast<s64>(memory_size))) + memory_size;
 
 		if (vmm_size > s_vmm_warn_threshold_size && (vmm_size - memory_size) <= s_vmm_warn_threshold_size)
 		{
@@ -144,8 +157,8 @@ namespace vk
 			found != g_vmm_stats.allocations.end())
 		{
 			const auto& info = found->second;
-			g_vmm_stats.memory_usage[info.type_index] -= info.size;
-			g_vmm_stats.pool_usage[info.pool] -= info.size;
+			retro_atomic_fetch_add_64(&::at32(g_vmm_stats.memory_usage, info.type_index), -static_cast<s64>(info.size));
+			retro_atomic_fetch_add_64(&::at32(g_vmm_stats.pool_usage, info.pool), -static_cast<s64>(info.size));
 			g_vmm_stats.allocations.erase(found);
 		}
 	}
@@ -164,13 +177,12 @@ namespace vk
 		u64 result = 0;
 		for (const auto& memory_type_index : memory_type)
 		{
-			auto it = g_vmm_stats.memory_usage.find(memory_type_index);
-			if (it == g_vmm_stats.memory_usage.end())
+			if (memory_type_index >= vmm_memory_stats::memory_types)
 			{
 				continue;
 			}
 
-			result += it->second.observe();
+			result += static_cast<u64>(retro_atomic_load_acquire_64(&g_vmm_stats.memory_usage[memory_type_index]));
 		}
 
 		return result;
@@ -178,30 +190,21 @@ namespace vk
 
 	u64 vmm_get_application_memory_usage(const memory_type_info& memory_type)
 	{
-		reader_lock lock(g_vmm_stats.mutex);
 		return vmm_get_application_memory_usage_impl(memory_type);
 	}
 
 	u64 vmm_get_application_pool_usage_impl(vmm_allocation_pool pool)
 	{
-		if (auto found = g_vmm_stats.pool_usage.find(pool);
-			found != g_vmm_stats.pool_usage.end())
-		{
-			return found->second;
-		}
-		return 0ull;
+		return static_cast<u64>(retro_atomic_load_acquire_64(&::at32(g_vmm_stats.pool_usage, pool)));
 	}
 
 	u64 vmm_get_application_pool_usage(vmm_allocation_pool pool)
 	{
-		reader_lock lock(g_vmm_stats.mutex);
 		return vmm_get_application_pool_usage_impl(pool);
 	}
 
 	rsx::problem_severity vmm_determine_memory_load_severity()
 	{
-		reader_lock lock(g_vmm_stats.mutex);
-
 		const auto vmm_load = get_current_mem_allocator()->get_memory_usage();
 		rsx::problem_severity load_severity = rsx::problem_severity::low;
 
@@ -284,17 +287,13 @@ namespace vk
 
 	void vmm_notify_object_allocated(vmm_allocation_pool pool)
 	{
-		std::lock_guard lock(g_vmm_stats.mutex);
-
 		ensure(pool >= VMM_ALLOCATION_POOL_SAMPLER);
-		g_vmm_stats.pool_usage[pool]++;
+		retro_atomic_fetch_add_64(&::at32(g_vmm_stats.pool_usage, pool), 1);
 	}
 
 	void vmm_notify_object_freed(vmm_allocation_pool pool)
 	{
-		std::lock_guard lock(g_vmm_stats.mutex);
-
 		ensure(pool >= VMM_ALLOCATION_POOL_SAMPLER);
-		g_vmm_stats.pool_usage[pool]--;
+		retro_atomic_fetch_add_64(&::at32(g_vmm_stats.pool_usage, pool), -1);
 	}
 }
