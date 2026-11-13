@@ -102,7 +102,9 @@ error_code sys_event_flag_destroy(ppu_thread& ppu, u32 id)
 
 	const auto flag = idm::withdraw<lv2_obj, lv2_event_flag>(id, [&](lv2_event_flag& flag) -> CellError
 	{
-		if (flag.sq)
+		// Read while threads that found the flag with no lock over the IDs
+		// may be queueing themselves (see sys_event_flag_wait)
+		if (atomic_storage<ppu_thread*>::load(flag.sq))
 		{
 			return CELL_EBUSY;
 		}
@@ -144,38 +146,87 @@ error_code sys_event_flag_wait(ppu_thread& ppu, u32 id, u64 bitptn, u32 mode, vm
 		return CELL_EINVAL;
 	}
 
-	const auto flag = idm::get<lv2_obj, lv2_event_flag>(id, [&, notify = lv2_obj::notify_all_t()](lv2_event_flag& flag) -> CellError
+	// The bits are there, as they mostly are: found and taken with no lock
+	// and no reference counted. That makes no waiter, which is all
+	// sys_event_flag_destroy asks about, so it needs no second look: it is
+	// as if it came before a destroy that ran meanwhile.
+	if (const auto pinned = idm::pin<lv2_obj, lv2_event_flag>(id))
 	{
-		if (flag.pattern.fetch_op([&](u64& pat)
+		if (pinned->pattern.fetch_op([&](u64& pat)
 		{
 			return lv2_event_flag::check_pattern(pat, bitptn, mode, &ppu.gpr[6]);
 		}).second)
 		{
 			// TODO: is it possible to return EPERM in this case?
-			return {};
+			store.val = ppu.gpr[6];
+			return CELL_OK;
 		}
+	}
+	else
+	{
+		return CELL_ESRCH;
+	}
 
-		lv2_obj::prepare_for_sleep(ppu);
+	// The thread may sleep on it, so it keeps a reference
+	struct
+	{
+		stx::shared_ptr<lv2_event_flag> ptr;
+		CellError ret{};
 
-		std::lock_guard lock(flag.mutex);
+		explicit operator bool() const { return !!ptr; }
+		lv2_event_flag* operator->() const { return ptr.get(); }
+	}
+	flag{idm::hold<lv2_obj, lv2_event_flag>(id)};
 
-		if (flag.pattern.fetch_op([&](u64& pat)
+	if (flag)
+	{
+		flag.ret = [&, notify = lv2_obj::notify_all_t()](lv2_event_flag& flag) -> CellError
 		{
-			return lv2_event_flag::check_pattern(pat, bitptn, mode, &ppu.gpr[6]);
-		}).second)
-		{
-			return {};
-		}
+			if (flag.pattern.fetch_op([&](u64& pat)
+			{
+				return lv2_event_flag::check_pattern(pat, bitptn, mode, &ppu.gpr[6]);
+			}).second)
+			{
+				return {};
+			}
 
-		if (flag.type == SYS_SYNC_WAITER_SINGLE && flag.sq)
-		{
-			return CELL_EPERM;
-		}
+			lv2_obj::prepare_for_sleep(ppu);
 
-		flag.sleep(ppu, timeout);
-		lv2_obj::emplace(flag.sq, &ppu);
-		return CELL_EBUSY;
-	});
+			std::lock_guard lock(flag.mutex);
+
+			if (flag.pattern.fetch_op([&](u64& pat)
+			{
+				return lv2_event_flag::check_pattern(pat, bitptn, mode, &ppu.gpr[6]);
+			}).second)
+			{
+				return {};
+			}
+
+			if (flag.type == SYS_SYNC_WAITER_SINGLE && flag.sq)
+			{
+				return CELL_EPERM;
+			}
+
+			// The lock over all IDs kept a destroy from coming between the
+			// flag being found and the thread waiting on it. This keeps
+			// it: sys_event_flag_destroy marks the ID before it looks for
+			// waiters, and the thread asks whether the ID still names the
+			// flag (waiting for a destroy that is deciding) after it has
+			// queued itself. Either the destroy saw the waiter and failed,
+			// or the thread leaves the queue again. Nobody else touches
+			// the queue meanwhile: that takes the flag's lock, held here.
+			lv2_obj::emplace(flag.sq, &ppu);
+
+			if (!idm::still_named<lv2_obj, lv2_event_flag>(id, &flag)) [[unlikely]]
+			{
+				flag.unqueue(flag.sq, &ppu);
+				return CELL_ESRCH;
+			}
+
+			flag.sleep(ppu, timeout);
+			return CELL_EBUSY;
+		}(*flag.ptr);
+	}
 
 	if (!flag)
 	{
@@ -285,20 +336,18 @@ error_code sys_event_flag_trywait(ppu_thread& ppu, u32 id, u64 bitptn, u32 mode,
 
 	u64 pattern{};
 
-	const auto flag = idm::check<lv2_obj, lv2_event_flag>(id, [&](lv2_event_flag& flag)
-	{
-		return flag.pattern.fetch_op([&](u64& pat)
-		{
-			return lv2_event_flag::check_pattern(pat, bitptn, mode, &pattern);
-		}).second;
-	});
+	// Found with no lock; see sys_event_flag_wait for why that is enough
+	const auto flag = idm::pin<lv2_obj, lv2_event_flag>(id);
 
 	if (!flag)
 	{
 		return CELL_ESRCH;
 	}
 
-	if (!flag.ret)
+	if (!flag->pattern.fetch_op([&](u64& pat)
+	{
+		return lv2_event_flag::check_pattern(pat, bitptn, mode, &pattern);
+	}).second)
 	{
 		return not_an_error(CELL_EBUSY);
 	}
@@ -314,7 +363,23 @@ error_code sys_event_flag_set(cpu_thread& cpu, u32 id, u64 bitptn)
 	// Warning: may be called from SPU thread.
 	sys_event_flag.trace("sys_event_flag_set(id=0x%x, bitptn=0x%llx)", id, bitptn);
 
-	const auto flag = idm::get_unlocked<lv2_obj, lv2_event_flag>(id);
+	// The bits are set already, as they often are: found with no lock and
+	// no reference counted
+	if (const auto pinned = idm::pin<lv2_obj, lv2_event_flag>(id))
+	{
+		if ((pinned->pattern & bitptn) == bitptn)
+		{
+			return CELL_OK;
+		}
+	}
+	else
+	{
+		return CELL_ESRCH;
+	}
+
+	// Threads may be woken: with a reference, and one that is the ID's own
+	// object (idm::hold)
+	const auto flag = idm::hold<lv2_obj, lv2_event_flag>(id);
 
 	if (!flag)
 	{
@@ -465,12 +530,11 @@ error_code sys_event_flag_clear(ppu_thread& ppu, u32 id, u64 bitptn)
 
 	sys_event_flag.trace("sys_event_flag_clear(id=0x%x, bitptn=0x%llx)", id, bitptn);
 
-	const auto flag = idm::check<lv2_obj, lv2_event_flag>(id, [&](lv2_event_flag& flag)
+	if (const auto flag = idm::pin<lv2_obj, lv2_event_flag>(id))
 	{
-		flag.pattern &= bitptn;
-	});
-
-	if (!flag)
+		flag->pattern &= bitptn;
+	}
+	else
 	{
 		return CELL_ESRCH;
 	}
@@ -486,7 +550,7 @@ error_code sys_event_flag_cancel(ppu_thread& ppu, u32 id, vm::ptr<u32> num)
 
 	if (num) *num = 0;
 
-	const auto flag = idm::get_unlocked<lv2_obj, lv2_event_flag>(id);
+	const auto flag = idm::hold<lv2_obj, lv2_event_flag>(id);
 
 	if (!flag)
 	{
@@ -539,12 +603,13 @@ error_code sys_event_flag_get(ppu_thread& ppu, u32 id, vm::ptr<u64> flags)
 
 	sys_event_flag.trace("sys_event_flag_get(id=0x%x, flags=*0x%x)", id, flags);
 
-	const auto flag = idm::check<lv2_obj, lv2_event_flag>(id, [](lv2_event_flag& flag)
-	{
-		return +flag.pattern;
-	});
+	u64 pattern = 0;
 
-	if (!flag)
+	if (const auto flag = idm::pin<lv2_obj, lv2_event_flag>(id))
+	{
+		pattern = flag->pattern;
+	}
+	else
 	{
 		if (flags) *flags = 0;
 		return CELL_ESRCH;
@@ -557,6 +622,6 @@ error_code sys_event_flag_get(ppu_thread& ppu, u32 id, vm::ptr<u64> flags)
 
 	ppu.check_state();
 
-	*flags = flag.ret;
+	*flags = pattern;
 	return CELL_OK;
 }

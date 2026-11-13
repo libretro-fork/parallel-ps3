@@ -21,6 +21,7 @@
 #include "Emu/Cell/lv2/sys_fs.h"
 #include "Emu/Cell/lv2/sys_mutex.h"
 #include "Emu/Cell/lv2/sys_semaphore.h"
+#include "Emu/Cell/lv2/sys_event_flag.h"
 #include "Emu/Cell/lv2/sys_cond.h"
 #include "Emu/IdManager.h"
 #include "Emu/VFS.h"
@@ -721,6 +722,7 @@ int main()
 
 			static retro_atomic_size_t s_reads;
 			static retro_atomic_size_t s_wrong;
+			static retro_atomic_size_t s_inside; // Readers between io_begin and io_end
 			std::thread readers[3];
 
 			for (u32 t = 0; t < 3; t++)
@@ -733,7 +735,9 @@ int main()
 						x = x * 1664525 + 1013904223;
 						const u32 at = (x >> 8) % 65000;
 						u8 buf[16];
+						retro_atomic_inc_size(&s_inside);
 						const bool ok = file.file.read_at(at, buf, sizeof(buf)) == sizeof(buf);
+						retro_atomic_dec_size(&s_inside);
 						file.io_end();
 						for (u32 i = 0; ok && i < 16; i++)
 							if (buf[i] != static_cast<u8>((at + i) * 7 + ((at + i) >> 8)))
@@ -751,7 +755,10 @@ int main()
 					std::this_thread::yield();
 
 				file.io_block(false);
-				CHECK(retro_atomic_load_acquire_int(&file.io_reads) == 0);
+				// No read is in flight. (io_reads itself can still blink: a
+				// reader counts itself in before it sees the handle is
+				// away, and out again without reading.)
+				CHECK(retro_atomic_load_acquire_size(&s_inside) == 0);
 				file.file.close();
 				file.file = fs::file(path);
 				file.io_unblock();
@@ -1017,6 +1024,103 @@ int main()
 			CHECK(retro_atomic_load_acquire_int(&s_waited) > 100);
 			std::printf("  ids: %d semaphore waits stood, %d refused, %d destroys\n", retro_atomic_load_acquire_int(&s_waited),
 				retro_atomic_load_acquire_int(&s_refused), retro_atomic_load_acquire_int(&s_destroyed2));
+		}
+
+		// Event flags: threads queue themselves by ID the way
+		// sys_event_flag_wait now does - a counted reference, the flag's
+		// lock, into the queue, then the second look, out again if it says
+		// no - while another thread destroys and recreates the flags the way
+		// sys_event_flag_destroy does, refusing while the queue has a thread.
+		{
+			const auto make_flag = []
+			{
+				return idm::make<lv2_obj, lv2_event_flag>(u32{SYS_SYNC_PRIORITY}, u64{0}, s32{SYS_SYNC_WAITER_MULTIPLE}, u64{0}, u64{0});
+			};
+
+			static retro_atomic_int_t s_stop3, s_bad3, s_queued, s_left, s_destroyed3;
+			static retro_atomic_int_t s_fids[slots];
+			static retro_atomic_int_t s_in_queue[8192]; // By the ID's place, as s_held
+
+			for (u32 i = 0; i < slots; i++)
+				retro_atomic_store_release_int(&s_fids[i], static_cast<int>(make_flag()));
+
+			std::thread waiters[4];
+			for (u32 t = 0; t < 4; t++)
+			{
+				waiters[t] = std::thread([t]
+				{
+					// Stands for the thread in the queue; never looked into
+					ppu_thread* const self = reinterpret_cast<ppu_thread*>(static_cast<uptr>(0x1000 + t * 0x1000));
+					u32 x = t * 2654435761u + 11;
+
+					while (!retro_atomic_load_acquire_int(&s_stop3))
+					{
+						x = x * 1664525u + 1013904223u;
+						const u32 slot = (x >> 16) % slots;
+						const u32 id = static_cast<u32>(retro_atomic_load_acquire_int(&s_fids[slot]));
+
+						const auto flag = idm::hold<lv2_obj, lv2_event_flag>(id);
+						if (!flag)
+							continue;
+
+						if (x & 0x100)
+							std::this_thread::yield();
+
+						std::lock_guard lock(flag->mutex);
+						atomic_storage<ppu_thread*>::store(flag->sq, self);
+
+						if (!idm::still_named<lv2_obj, lv2_event_flag>(id, flag.get()))
+						{
+							atomic_storage<ppu_thread*>::store(flag->sq, nullptr);
+							retro_atomic_fetch_add_int(&s_left, 1);
+							continue;
+						}
+
+						// In the queue: a destroy must fail until the thread leaves
+						retro_atomic_fetch_add_int(&s_in_queue[(id >> 8) & 8191], 1);
+						retro_atomic_fetch_add_int(&s_queued, 1);
+						for (int spin = 0; spin < 20; spin++)
+							(void)retro_atomic_load_relaxed_int(&s_stop3);
+						if (idm::check_unlocked<lv2_obj, lv2_event_flag>(id) != flag.get())
+							retro_atomic_fetch_add_int(&s_bad3, 1);
+						retro_atomic_fetch_sub_int(&s_in_queue[(id >> 8) & 8191], 1);
+						atomic_storage<ppu_thread*>::store(flag->sq, nullptr);
+					}
+				});
+			}
+
+			for (u32 n = 0; n < 60000 || (n < 60000000 && retro_atomic_load_acquire_int(&s_queued) <= 1000); n++)
+			{
+				const u32 slot = n % slots;
+				const u32 id = static_cast<u32>(retro_atomic_load_acquire_int(&s_fids[slot]));
+
+				const auto gone = idm::withdraw<lv2_obj, lv2_event_flag>(id, [&](lv2_event_flag& flag) -> CellError
+				{
+					if (atomic_storage<ppu_thread*>::load(flag.sq))
+						return CELL_EBUSY;
+
+					if (retro_atomic_load_acquire_int(&s_in_queue[place(id)]))
+						retro_atomic_fetch_add_int(&s_bad3, 1);
+
+					return {};
+				});
+
+				if (gone && !gone.ret)
+				{
+					retro_atomic_fetch_add_int(&s_destroyed3, 1);
+					retro_atomic_store_release_int(&s_fids[slot], static_cast<int>(make_flag()));
+				}
+			}
+
+			retro_atomic_store_release_int(&s_stop3, 1);
+			for (auto& t : waiters)
+				t.join();
+
+			CHECK(retro_atomic_load_acquire_int(&s_bad3) == 0);
+			CHECK(retro_atomic_load_acquire_int(&s_destroyed3) > 100);
+			CHECK(retro_atomic_load_acquire_int(&s_queued) > 100);
+			std::printf("  ids: %d event flag waits stood, %d left again, %d destroys\n", retro_atomic_load_acquire_int(&s_queued),
+				retro_atomic_load_acquire_int(&s_left), retro_atomic_load_acquire_int(&s_destroyed3));
 		}
 
 		// What a lookup costs one thread: the reader lock, and the pin
