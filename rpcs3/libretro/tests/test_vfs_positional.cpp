@@ -237,6 +237,69 @@ static void pass(const char* name, const std::string& dir)
 		CHECK(f.size() == file_size);
 	}
 
+	// One handle read on from its position by four threads at once, as a
+	// game's threads may read one file with no lock held round them
+	// (sys_fs_read): every block is read by exactly one of them, the position
+	// ends at the end of the file, and a read there gives nothing and leaves
+	// it there
+	{
+		constexpr u32 blocks = 8192;
+		const std::string seq = dir + "/seq.bin";
+		{
+			fs::file f(seq, fs::rewrite);
+			CHECK(!!f);
+			for (u32 i = 0; i < blocks; i++)
+			{
+				u32 block[64];
+				for (u32& v : block)
+					v = i;
+				CHECK(f.write(block, sizeof(block)) == sizeof(block));
+			}
+		}
+
+		fs::file f(seq);
+		CHECK(!!f);
+
+		static retro_atomic_int_t seen[blocks];
+		static retro_atomic_size_t torn;
+		for (auto& v : seen)
+			retro_atomic_store_release_int(&v, 0);
+		retro_atomic_store_release_size(&torn, 0);
+
+		std::thread t[threads];
+		for (u32 i = 0; i < threads; i++)
+		{
+			t[i] = std::thread([&f]
+			{
+				u32 block[64];
+				while (f.read(block, sizeof(block)) == sizeof(block))
+				{
+					bool whole = block[0] < blocks;
+					for (const u32 v : block)
+						whole = whole && v == block[0];
+					if (whole)
+						retro_atomic_fetch_add_int(&seen[block[0]], 1);
+					else
+						retro_atomic_inc_size(&torn);
+				}
+			});
+		}
+		for (u32 i = 0; i < threads; i++)
+			t[i].join();
+
+		u32 not_once = 0;
+		for (auto& v : seen)
+			not_once += retro_atomic_load_acquire_int(&v) != 1;
+		CHECK(not_once == 0);
+		CHECK(retro_atomic_load_acquire_size(&torn) == 0);
+		CHECK(f.pos() == u64{blocks} * 256);
+		u8 more[16];
+		CHECK(f.read(more, sizeof(more)) == 0);
+		CHECK(f.pos() == u64{blocks} * 256);
+		f.close();
+		fs::remove_file(seq);
+	}
+
 	// Read at offsets by four threads on one handle while this thread reads
 	// it in sequence
 	{

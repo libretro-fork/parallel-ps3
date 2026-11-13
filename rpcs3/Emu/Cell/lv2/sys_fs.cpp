@@ -1544,15 +1544,25 @@ error_code sys_fs_read(ppu_thread& ppu, u32 fd, vm::ptr<void> buf, u64 nbytes, v
 		lv2_obj::sleep(ppu);
 	}
 
-	std::unique_lock lock(file->mp->mutex);
+	// No lock: the read is counted on the file, whose handle is not taken
+	// away under it (lv2_file::io_begin), and takes its place at the file's
+	// position with one add (libretro_vfs.cpp). It held the mount point's
+	// lock exclusively, so the reads of a whole disc, or of the hard disk,
+	// went one at a time, each waiting for the host read before it.
+	if (!file->io_begin())
+	{
+		return CELL_EBADF;
+	}
 
 	if (!file->file)
 	{
+		file->io_end();
 		return CELL_EBADF;
 	}
 
 	if (file->lock == 2)
 	{
+		file->io_end();
 		nread.try_write(0);
 		return CELL_EIO;
 	}
@@ -1566,7 +1576,7 @@ error_code sys_fs_read(ppu_thread& ppu, u32 fd, vm::ptr<void> buf, u64 nbytes, v
 	file->reads_total += read_bytes;
 
 	const u64 read_end = file->schedule_read(read_bytes, read_start, read_offset);
-	lock.unlock();
+	file->io_end();
 	lv2_file::wait_read(ppu, read_end);
 	ppu.check_state();
 

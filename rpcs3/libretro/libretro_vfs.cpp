@@ -164,10 +164,22 @@ namespace libretro_vfs
 
 			if (m_at)
 			{
-				result = s_vfs_interface->read_at(m_handle, buffer, count,
-					retro_atomic_load_acquire_64(&m_pos));
-				if (result > 0)
-					retro_atomic_fetch_add_64(&m_pos, result);
+				// Read where the position is, then move the position on with a
+				// compare-and-swap: if another thread moved it meanwhile - one
+				// reading the same file on, or seeking it - the read is done
+				// again from where it now is. So threads reading one file on
+				// from its position each get a part of their own, with no
+				// lock held round them (sys_fs_read holds none), and the
+				// position never passes the end of the file.
+				while (true)
+				{
+					const s64 pos = retro_atomic_load_acquire_64(&m_pos);
+
+					result = s_vfs_interface->read_at(m_handle, buffer, count, pos);
+
+					if (retro_atomic_cas_64(&m_pos, pos, pos + (result > 0 ? result : 0)))
+						break;
+				}
 			}
 			else
 			{

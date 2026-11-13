@@ -417,7 +417,7 @@ struct lv2_file final : lv2_fs_object
 		return op_read(file, buf, size, opt_pos);
 	}
 
-	// caller must hold the mount lock
+	// Under locks of its own (the read state of the disc or the hard disk)
 	u64 schedule_read(u64 size, u64 start, u64 offset) const;
 	static void wait_read(ppu_thread& ppu, u64 end);
 
