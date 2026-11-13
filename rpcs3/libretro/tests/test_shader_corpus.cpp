@@ -12,16 +12,17 @@
 // - the Vulkan driver takes its module (vkCreateShaderModule).
 // - over all of them its modules are within 2% of the size of glslang's.
 //
-// - a fragment stage draws the same from both: the two modules are run on
-//   the driver over the same buffers, textures and varyings, filled three
-//   ways, and every target, the depth and the stencil compared byte for
-//   byte (shader_runner.inc).
+// - run on the driver, the two modules make the same (shader_runner.inc):
+//   over the same buffers, textures and inputs, filled three ways, a
+//   fragment stage draws the same into every target, depth and stencil; a
+//   vertex stage puts out the same position and outputs, captured by
+//   transform feedback; a compute stage leaves the same in every buffer and
+//   image. Byte for byte.
 //
-// What it does not show: that the vertex and compute stages compute the
-// same, nor the fragment stages it cannot run here - the ones built for
-// barycentric inputs where the driver has none, the shader interpreter's
-// (they run the program in their buffers), and the ones that read an
-// attachment.
+// What it does not show: the stages it cannot run here - the fragment
+// stages built for barycentric inputs where the driver has none, the shader
+// interpreter's (they run the program in their buffers), and the ones that
+// read an attachment.
 //
 // Gathered: the shader interpreter's vertex and fragment stages for its
 // option sets; every compute task (byte shuffles, depth-stencil gather and
@@ -155,7 +156,8 @@ static usz s_reference_words = 0, s_rslc_words = 0;
 
 #include "shader_runner.inc"
 
-static usz s_ran = 0, s_run_differs = 0, s_not_run = 0;
+static usz s_ran = 0, s_ran_vertex = 0, s_ran_compute = 0, s_run_differs = 0, s_not_run = 0;
+static bool s_can_run = false;
 static std::map<std::string, u32> s_not_run_why;
 
 // One gathered source through rslc: compiled, compared, handed to the driver
@@ -215,17 +217,20 @@ static void through_rslc(usz index, const gathered& g, const char* dir)
 	else
 		vkDestroyShaderModule(*vk::g_render_device, module, nullptr);
 
-	// and, for a fragment stage, draws what glslang's module draws
-	if (stage == RSLC_STAGE_FRAGMENT && module)
+	// and makes what glslang's module makes, run on the driver
+	if (s_can_run && module)
 	{
 		std::string why;
-		const runner::verdict v = runner::fragment(g.reference, result.spirv, result.spirv_len, why);
+		const bool fragment = stage == RSLC_STAGE_FRAGMENT;
+		const runner::verdict v = fragment ? runner::fragment(g.reference, result.spirv, result.spirv_len, why)
+			: stage == RSLC_STAGE_VERTEX ? runner::vertex(g.reference, result.spirv, result.spirv_len, why)
+			: runner::compute(g.reference, result.spirv, result.spirv_len, why);
 		if (v == runner::verdict::same)
-			s_ran++;
+			(fragment ? s_ran : stage == RSLC_STAGE_VERTEX ? s_ran_vertex : s_ran_compute)++;
 		else if (v == runner::verdict::not_run)
 		{
 			s_not_run++;
-			s_not_run_why[why]++;
+			s_not_run_why[std::string(ext) + ": " + why]++;
 		}
 		else
 		{
@@ -945,7 +950,7 @@ int main()
 	vk::set_current_renderer(device);
 	spirv::initialize_compiler_context();
 
-	runner::start(gpu, device, device.get_graphics_queue(), graphics);
+	const bool can_run = runner::start(gpu, graphics);
 	shader_corpus_test::interpreter(device);
 
 	// The compute tasks
@@ -1014,6 +1019,7 @@ int main()
 	CHECK(reference_failed == 0);
 	CHECK(s_corpus.size() >= 79);
 
+	s_can_run = can_run;
 	const char* dir = std::getenv("SHADER_CORPUS_DIR");
 	for (usz i = 0; i < s_corpus.size(); i++)
 		through_rslc(i, s_corpus[i], dir);
@@ -1027,9 +1033,9 @@ int main()
 	std::printf("test_shader_corpus: rslc refused %u, differs in interface or layout on %u, the driver refused %u of its modules; %u words where glslang makes %u\n",
 		static_cast<u32>(s_rslc_refused), static_cast<u32>(s_interface_differs), static_cast<u32>(s_driver_refused), static_cast<u32>(s_rslc_words), static_cast<u32>(s_reference_words));
 	CHECK(s_run_differs == 0);
-	CHECK(s_ran >= 200);
-	std::printf("test_shader_corpus: %u fragment stages drew the same from both compilers, %u differed, %u were not run\n",
-		static_cast<u32>(s_ran), static_cast<u32>(s_run_differs), static_cast<u32>(s_not_run));
+	CHECK(!s_can_run || (s_ran >= 200 && s_ran_vertex >= 95 && s_ran_compute >= 40));
+	std::printf("test_shader_corpus: run from both compilers, %u fragment stages drew the same, %u vertex stages put out the same and %u compute stages left the same; %u differed, %u were not run\n",
+		static_cast<u32>(s_ran), static_cast<u32>(s_ran_vertex), static_cast<u32>(s_ran_compute), static_cast<u32>(s_run_differs), static_cast<u32>(s_not_run));
 	for (const auto& [why, count] : s_not_run_why)
 		std::printf("test_shader_corpus:   %u not run: %s\n", count, why.c_str());
 	std::printf("test_shader_corpus: %u sources gathered, %u refused by the reference compiler\n", ::size32(s_corpus), static_cast<u32>(reference_failed));
