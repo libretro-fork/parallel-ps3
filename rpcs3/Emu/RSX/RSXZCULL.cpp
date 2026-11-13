@@ -840,6 +840,7 @@ namespace rsx
 			{
 				const auto page_address = utils::page_start(static_cast<u32>(address));
 				auto& page = m_locked_pages[location][page_address];
+				retro_atomic_store_release_int(&m_locked_page_count[location], static_cast<int>(m_locked_pages[location].size()));
 				page.add_ref();
 
 				if (page.prot == utils::protection::rw)
@@ -904,6 +905,7 @@ namespace rsx
 			}
 
 			m_locked_pages[location].clear();
+			retro_atomic_store_release_int(&m_locked_page_count[location], 0);
 		}
 
 		bool ZCULL_control::on_access_violation(u32 address)
@@ -917,16 +919,22 @@ namespace rsx
 				return false;
 			}
 
+			if (!retro_atomic_load_acquire_int(&m_locked_page_count[location])) [[likely]]
+			{
+				// No page of this location is locked for a report: not ours.
+				// (A page is counted before it is protected, so a fault that
+				// a report's page caused finds the count.)
+				return false;
+			}
+
 			bool need_disable_optimizations = false;
 			{
-				reader_lock lock(m_pages_mutex);
+				std::scoped_lock lock(m_pages_mutex);
 
 				if (auto found = m_locked_pages[location].find(page_address);
 					found != m_locked_pages[location].end())
 				{
-					lock.upgrade();
-
-					auto& fault_page = m_locked_pages[location][page_address];
+					auto& fault_page = found->second;
 					if (fault_page.prot != utils::protection::rw)
 					{
 						if (fault_page.has_refs())
@@ -940,6 +948,7 @@ namespace rsx
 							// R/W to stale block, unload it and move on
 							utils::memory_protect(vm::base(page_address), utils::get_page_size(), utils::protection::rw);
 							m_locked_pages[location].erase(page_address);
+							retro_atomic_store_release_int(&m_locked_page_count[location], static_cast<int>(m_locked_pages[location].size()));
 
 							return true;
 						}

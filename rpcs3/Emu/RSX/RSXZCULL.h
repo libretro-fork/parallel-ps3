@@ -1,5 +1,6 @@
 #pragma once
 
+#include <retro_atomic.h>
 #include <util/types.hpp>
 #include <util/vm.hpp>
 #include <Emu/Memory/vm.h>
@@ -102,6 +103,13 @@ namespace rsx
 			atomic_t<bool> m_pages_accessed[2] = { false, false };
 			atomic_t<s32> m_critical_reports_in_flight = { 0 };
 			shared_mutex m_pages_mutex;
+
+			// How many pages each map above holds, for the fault handler to
+			// read with no lock: it is told of every fault the texture cache
+			// did not take, and nearly all of those are on pages that are not
+			// here. Stored under the mutex, after every change to a map and
+			// before a page of it is protected.
+			retro_atomic_int_t m_locked_page_count[2]{};
 
 			void on_report_enqueued(vm::addr_t address);
 			void on_report_completed(vm::addr_t address);

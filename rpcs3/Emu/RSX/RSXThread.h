@@ -1,5 +1,6 @@
 #pragma once
 
+#include <retro_atomic.h>
 #include <deque>
 #include <queues/retro_deque.h>
 
@@ -159,6 +160,11 @@ namespace rsx
 
 		// Invalidated memory range
 		address_range32 m_invalidated_memory_range;
+
+		// Nonzero while the range above is one: set and cleared under
+		// m_mtx_task with the range, read with no lock by those that only
+		// need to know whether there is anything to do
+		retro_atomic_int_t m_memory_invalidated{};
 
 		// Profiler
 		rsx::profiling_timer m_profiler;

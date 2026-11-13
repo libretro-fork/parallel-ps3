@@ -1345,7 +1345,7 @@ namespace rsx
 
 		if (state != FIFO::state::lock_wait)
 		{
-			if (!in_begin_end && atomic_storage<u32>::load(m_invalidated_memory_range.end) != 0)
+			if (!in_begin_end && retro_atomic_load_acquire_int(&m_memory_invalidated))
 			{
 				std::lock_guard lock(m_mtx_task);
 
@@ -1382,6 +1382,7 @@ namespace rsx
 			std::lock_guard lock(m_mtx_task);
 
 			m_invalidated_memory_range = utils::address_range32::start_end(0x2 << 28, constants::local_mem_base + local_mem_size - 1);
+			retro_atomic_store_release_int(&m_memory_invalidated, 1);
 			handle_invalidated_memory_range();
 		}
 	}
@@ -3139,7 +3140,13 @@ namespace rsx
 		if (!rsx_thread_running)
 			return;
 
-		reader_lock lock(m_mtx_task);
+		// Nearly always there is no unmap waiting to be handled: one load,
+		// no lock. (An unmap sets the flag before it returns, so a map that
+		// follows it sees it.)
+		if (!retro_atomic_load_acquire_int(&m_memory_invalidated)) [[likely]]
+			return;
+
+		std::lock_guard lock(m_mtx_task);
 
 		const auto map_range = address_range32::start_length(address, size);
 
@@ -3148,7 +3155,6 @@ namespace rsx
 
 		if (m_invalidated_memory_range.overlaps(map_range))
 		{
-			lock.upgrade();
 			handle_invalidated_memory_range();
 		}
 	}
@@ -3246,6 +3252,7 @@ namespace rsx
 				m_invalidated_memory_range = unmap_range;
 			}
 
+			retro_atomic_store_release_int(&m_memory_invalidated, 1);
 			m_eng_interrupt_mask |= rsx::memory_config_interrupt;
 		}
 	}
@@ -3280,6 +3287,7 @@ namespace rsx
 
 		on_invalidate_memory_range(m_invalidated_memory_range, rsx::invalidation_cause::unmap);
 		m_invalidated_memory_range.invalidate();
+		retro_atomic_store_release_int(&m_memory_invalidated, 0);
 	}
 
 	void thread::renderctl(u32 request_code, void* /*args*/)
