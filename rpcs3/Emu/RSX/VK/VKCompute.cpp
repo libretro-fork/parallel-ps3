@@ -3,6 +3,9 @@
 #include "VKRenderPass.h"
 #include "vkutils/buffer_object.h"
 #include "VKPipelineCompiler.h"
+#include "../Program/SPIRVCommon.h"
+
+#include <gfx/shaders/rslc_build.h>
 
 #define VK_MAX_COMPUTE_TASKS 8192   // Max number of jobs per frame
 
@@ -113,7 +116,10 @@ namespace vk
 	{
 		if (!m_program)
 		{
-			m_shader.create(::glsl::program_domain::glsl_compute_program, m_src);
+			if (!m_spirv.empty())
+				m_shader.create(::glsl::program_domain::glsl_compute_program, m_spirv);
+			else
+				m_shader.create(::glsl::program_domain::glsl_compute_program, m_src);
 			auto handle = m_shader.compile();
 
 			VkComputePipelineCreateInfo create_info
@@ -329,27 +335,54 @@ namespace vk
 
 		create();
 
-		m_src =
-			"#version 450\n"
-			"layout(local_size_x = %ws, local_size_y = 1, local_size_z = 1) in;\n\n"
+		// Built, not written. What it is:
+		//
+		//   layout(local_size_x = optimal_group_size, local_size_y = 1, local_size_z = 1) in;
+		//   layout(set=0, binding=0, std430) readonly buffer ssbo0{ uint src[]; };
+		//   layout(set=0, binding=1, std430) writeonly buffer ssbo1{ uint result; };
+		//   void main()
+		//   {
+		//       if (gl_GlobalInvocationID.x < src.length())
+		//           atomicAdd(result, src[gl_GlobalInvocationID.x]);
+		//   }
+		rslc_builder* b = spirv::build_begin(::glsl::program_domain::glsl_compute_program);
+		const rslc_type* u1 = rslc_b_vec(b, RSLC_BASE_UINT, 1);
+		const rslc_type* member_type[1];
+		const char* const src_name[1] = { "src" };
+		const char* const result_name[1] = { "result" };
+		rslc_var* src_member[1];
+		rslc_var* result_member[1];
 
-			"layout(set=0, binding=0, std430) readonly buffer ssbo0{ uint src[]; };\n"
-			"layout(set=0, binding=1, std430) writeonly buffer ssbo1{ uint result; };\n\n"
+		rslc_b_quals q;
+		rslc_b_quals_init(&q);
+		q.storage = RSLC_B_ST_IN;
+		q.local_size[0] = optimal_group_size;
+		q.local_size[1] = 1;
+		q.local_size[2] = 1;
+		rslc_b_layout(b, &q);
 
-			"void main()\n"
-			"{\n"
-			"	if (gl_GlobalInvocationID.x < src.length())\n"
-			"	{\n"
-			"		atomicAdd(result, src[gl_GlobalInvocationID.x]);\n"
-			"	}\n"
-			"}\n";
+		rslc_b_quals_init(&q);
+		q.storage = RSLC_B_ST_BUFFER;
+		q.access = RSLC_B_READONLY;
+		q.set = 0;
+		q.binding = 0;
+		member_type[0] = rslc_b_array(b, u1, 0);
+		rslc_b_block_q(b, &q, "ssbo0", nullptr, member_type, src_name, 1, src_member);
+		q.access = RSLC_B_WRITEONLY;
+		q.binding = 1;
+		member_type[0] = u1;
+		rslc_b_block_q(b, &q, "ssbo1", nullptr, member_type, result_name, 1, result_member);
 
-		const std::pair<std::string_view, std::string> syntax_replace[] =
-		{
-			{ "%ws", std::to_string(optimal_group_size) },
-		};
+		rslc_b_func_begin(b, rslc_b_func(b, "main", rslc_b_void(b), 0, nullptr, nullptr, nullptr));
+		const rslc_var* id = rslc_b_builtin_var(b, "gl_GlobalInvocationID");
+		const u32 in_range = rslc_b_binary(b, RSLC_B_LT, rslc_b_swizzle(b, rslc_b_ref(b, id), "x"), rslc_b_length(b, rslc_b_ref(b, src_member[0])));
+		rslc_b_begin_block(b);
+		const u32 add_args[2] = { rslc_b_ref(b, result_member[0]), rslc_b_index(b, rslc_b_ref(b, src_member[0]), rslc_b_swizzle(b, rslc_b_ref(b, id), "x")) };
+		rslc_b_stmt(b, rslc_b_expr(b, rslc_b_builtin(b, "atomicAdd", add_args, 2)));
+		rslc_b_stmt(b, rslc_b_if(b, in_range, rslc_b_end_block(b), 0));
+		rslc_b_func_end(b);
 
-		m_src = fmt::replace_all(m_src, syntax_replace);
+		ensure(spirv::build_end(b, m_spirv));
 	}
 
 	void cs_aggregator::bind_resources(const vk::command_buffer& /*cmd*/)

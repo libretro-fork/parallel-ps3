@@ -16,7 +16,10 @@ namespace vk
 {
 	struct compute_task
 	{
+		// The stage: as GLSL, or as the module a task that builds its stage
+		// by calls (spirv::build_begin) has made
 		std::string m_src;
+		std::vector<u32> m_spirv;
 		vk::glsl::shader m_shader;
 		std::unique_ptr<vk::glsl::program> m_program;
 		std::unique_ptr<vk::buffer> m_param_buffer;

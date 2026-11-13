@@ -123,6 +123,8 @@ namespace vk
 			~shader() = default;
 
 			void create(::glsl::program_domain domain, const std::string& source);
+			// A stage that was built, not written: its module as it is
+			void create(::glsl::program_domain domain, const std::vector<u32>& spirv);
 
 			VkShaderModule compile();
 

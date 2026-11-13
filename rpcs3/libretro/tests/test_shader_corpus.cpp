@@ -48,8 +48,10 @@
 // The compiler the renderer calls, under another name: the test's own stands
 // where it was
 #define compile_glsl_to_spv compile_glsl_to_spv_core
+#define build_end build_end_core
 #include "../../Emu/RSX/Program/SPIRVCommon.cpp"
 #undef compile_glsl_to_spv
+#undef build_end
 
 #define private public
 #define protected public
@@ -107,6 +109,15 @@ namespace spirv
 		s_corpus.push_back({shader, spv, domain, ok});
 		if (!ok && std::getenv("SHADER_CORPUS_DIR"))
 			fs::write_file(std::string(std::getenv("SHADER_CORPUS_DIR")) + "/refused.glsl", fs::rewrite, shader);
+		return ok;
+	}
+
+	// A stage built by calls has no source of its own: built_source gives it
+	// the GLSL it stands for, and its stage, to hold it to
+	bool build_end(rslc_builder* builder, std::vector<u32>& spv)
+	{
+		const bool ok = build_end_core(builder, spv);
+		s_corpus.push_back({std::string(), spv, ::glsl::glsl_invalid_program, ok});
 		return ok;
 	}
 }
@@ -316,6 +327,37 @@ static void compute_source(Args&&... args)
 	T task(std::forward<Args>(args)...);
 	task.create();
 	compile_now(::glsl::program_domain::glsl_compute_program, task.m_src);
+}
+
+// A compute task that builds its stage by calls, held to the GLSL it was
+// written as: the built module is, word for word, what that GLSL compiles
+// to, and goes through everything a gathered source does under that text
+static usz s_built = 0;
+
+template <typename T, typename Text>
+static void built_compute_source(Text&& text)
+{
+	const usz before = s_corpus.size();
+	T task;
+	CHECK(s_corpus.size() == before + 1 && s_corpus.back().source.empty() && !task.m_spirv.empty());
+	if (s_corpus.size() != before + 1)
+		return;
+
+	gathered& g = s_corpus.back();
+	g.source = text(task);
+	g.domain = ::glsl::glsl_compute_program;
+
+	std::vector<u32> parsed;
+	std::string source = g.source;
+	CHECK(spirv::compile_glsl_to_spv_core(parsed, source, g.domain, ::glsl::glsl_rules_vulkan));
+	CHECK(parsed == g.compiled);
+	s_built++;
+
+	// and the renderer takes it as it takes a written one
+	vk::glsl::shader shader;
+	shader.create(g.domain, task.m_spirv);
+	CHECK(shader.compile() != VK_NULL_HANDLE);
+	shader.destroy();
 }
 
 template <typename T>
@@ -1031,7 +1073,21 @@ int main()
 	compute_source<vk::cs_fconvert_task<f16, f32>>();
 	compute_source<vk::cs_fconvert_task<f32, f16>>();
 	compute_source<vk::cs_fconvert_task<f32, f16, false, true>>();
-	compute_source<vk::cs_aggregator>();
+	built_compute_source<vk::cs_aggregator>([](const vk::cs_aggregator& task)
+	{
+		return fmt::format(
+			"#version 450\n"
+			"layout(local_size_x = %u, local_size_y = 1, local_size_z = 1) in;\n\n"
+			"layout(set=0, binding=0, std430) readonly buffer ssbo0{ uint src[]; };\n"
+			"layout(set=0, binding=1, std430) writeonly buffer ssbo1{ uint result; };\n\n"
+			"void main()\n"
+			"{\n"
+			"	if (gl_GlobalInvocationID.x < src.length())\n"
+			"	{\n"
+			"		atomicAdd(result, src[gl_GlobalInvocationID.x]);\n"
+			"	}\n"
+			"}\n", task.optimal_group_size);
+	});
 	compute_source<vk::cs_tile_memcpy<vk::RSX_detiler_op::decode>>();
 	compute_source<vk::cs_tile_memcpy<vk::RSX_detiler_op::encode>>();
 	compute_source<vk::cs_deswizzle_3d<u8, u8, false>>();
@@ -1087,8 +1143,9 @@ int main()
 	CHECK(s_driver_refused == 0);
 	CHECK(s_run_differs == 0);
 	CHECK(!s_can_run || (s_ran >= 200 && s_ran_vertex >= 95 && s_ran_compute >= 40));
-	std::printf("test_shader_corpus: %u sources gathered; the core's compile refused %u, the driver refused %u of its modules\n",
-		::size32(s_corpus), static_cast<u32>(s_refused), static_cast<u32>(s_driver_refused));
+	CHECK(s_built >= 1);
+	std::printf("test_shader_corpus: %u sources gathered, %u of them stages built by calls and the same as their GLSL compiles to; the core's compile refused %u, the driver refused %u of its modules\n",
+		::size32(s_corpus), static_cast<u32>(s_built), static_cast<u32>(s_refused), static_cast<u32>(s_driver_refused));
 
 	if (tool)
 	{

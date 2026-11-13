@@ -109,8 +109,8 @@ target_compile_definitions(libretro_common PRIVATE
     HAVE_RAC3 HAVE_RWMA HAVE_RWEBM HAVE_RATRAC3 HAVE_RATRAC3P)
 
 # rslc (the shader compiler) as an emulator needs it: its extended dialect,
-# SPIR-V only
-target_compile_definitions(libretro_common PRIVATE RSLC_EXTENDED RSLC_NO_DXBC RSLC_NO_TEXT)
+# SPIR-V only, with the builder (stages made by calls)
+target_compile_definitions(libretro_common PRIVATE RSLC_EXTENDED RSLC_NO_DXBC RSLC_NO_TEXT RSLC_BUILD)
 
 # net_socket and net_http
 if(WIN32)

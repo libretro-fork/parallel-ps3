@@ -103,11 +103,19 @@ namespace vk
 			m_source = source;
 		}
 
+		void shader::create(::glsl::program_domain domain, const std::vector<u32>& spirv)
+		{
+			type       = domain;
+			m_compiled = spirv;
+			m_source.clear();
+		}
+
 		VkShaderModule shader::compile()
 		{
 			ensure(m_handle == VK_NULL_HANDLE);
 
-			if (!spirv::compile_glsl_to_spv(m_compiled, m_source, type, ::glsl::glsl_rules_vulkan))
+			// Nothing to compile for a stage that came as a module
+			if (!m_source.empty() && !spirv::compile_glsl_to_spv(m_compiled, m_source, type, ::glsl::glsl_rules_vulkan))
 			{
 				rsx_log.notice("%s", m_source);
 				fmt::throw_exception("Failed to compile %s shader", to_string(type));
