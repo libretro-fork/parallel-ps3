@@ -8,6 +8,10 @@
 
 #include "Emu/RSX/Common/simple_array.hpp"
 
+#include <array>
+
+#include <retro_atomic.h>
+
 namespace vk
 {
 	struct gc_callback_t
@@ -45,8 +49,8 @@ namespace vk
 		VkDescriptorSet allocate(VkDescriptorSetLayout layout, VkBool32 use_cache = VK_TRUE);
 
 		operator VkDescriptorPool() { return m_current_pool_handle; }
-		FORCE_INLINE bool valid() const { return !m_device_subpools.empty(); }
-		FORCE_INLINE u32 max_sets() const { return m_current_subpool_index >= m_device_subpools.size() ? 0u : m_device_subpools[m_current_subpool_index].size; }
+		FORCE_INLINE bool valid() const { return subpool_count() != 0; }
+		FORCE_INLINE u32 max_sets() const { return m_current_subpool_index >= subpool_count() ? 0u : m_device_subpools[m_current_subpool_index].size; }
 
 	private:
 		FORCE_INLINE bool can_allocate(u32 required_count, u32 already_used_count = 0) const { return (required_count + already_used_count) <= max_sets(); };
@@ -55,12 +59,22 @@ namespace vk
 
 		std::pair<VkResult, VkDescriptorPool> new_subpool();
 
+		// A subpool is taken by whoever swaps its busy flag from 0 to 1 and
+		// given back, once it was reset, by storing 0: no lock. A slot not
+		// made yet reads as busy, so it is never taken.
 		struct logical_subpool_t
 		{
 			VkDescriptorPool handle = VK_NULL_HANDLE;
 			u32 size = 0;
-			VkBool32 busy = VK_FALSE;
+			retro_atomic_int_t busy{1};
 		};
+
+		static constexpr u32 max_subpools = 256;
+
+		FORCE_INLINE u32 subpool_count() const
+		{
+			return static_cast<u32>(retro_atomic_load_acquire_int(const_cast<retro_atomic_int_t*>(&m_subpool_count)));
+		}
 
 		struct autoscaling_config_t
 		{
@@ -80,12 +94,11 @@ namespace vk
 		autoscaling_config_t m_autoscaling_config = {};
 		rsx::simple_array<VkDescriptorPoolSize> m_create_info_pool_sizes;
 
-		rsx::simple_array<logical_subpool_t> m_device_subpools;
+		std::array<logical_subpool_t, max_subpools> m_device_subpools;
+		retro_atomic_int_t m_subpool_count{};
 		VkDescriptorPool m_current_pool_handle = VK_NULL_HANDLE;
 		u32 m_current_subpool_index = umax;
 		u32 m_current_subpool_offset = 0;
-
-		shared_mutex m_subpool_lock;
 
 		static constexpr size_t max_cache_size = 64;
 		VkDescriptorSetLayout m_cached_layout = VK_NULL_HANDLE;

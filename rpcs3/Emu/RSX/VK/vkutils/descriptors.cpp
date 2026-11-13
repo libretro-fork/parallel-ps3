@@ -159,23 +159,28 @@ namespace vk
 
 	void descriptor_pool::destroy()
 	{
-		if (m_device_subpools.empty()) return;
+		const u32 count = subpool_count();
 
-		for (auto& pool : m_device_subpools)
+		if (!count) return;
+
+		for (u32 i = 0; i < count; i++)
 		{
+			auto& pool = m_device_subpools[i];
 			vkDestroyDescriptorPool((*m_owner), pool.handle, nullptr);
 			pool.handle = VK_NULL_HANDLE;
+			retro_atomic_store_release_int(&pool.busy, 1);
 		}
+
+		retro_atomic_store_release_int(&m_subpool_count, 0);
 
 		m_owner = nullptr;
 	}
 
 	void descriptor_pool::reset(u32 subpool_id, VkDescriptorPoolResetFlags flags)
 	{
-		std::lock_guard lock(m_subpool_lock);
-
+		// Whoever had the subpool is done with it; free once it is reset
 		CHECK_RESULT(vkResetDescriptorPool(*m_owner, m_device_subpools[subpool_id].handle, flags));
-		m_device_subpools[subpool_id].busy = VK_FALSE;
+		retro_atomic_store_release_int(&m_device_subpools[subpool_id].busy, 0);
 	}
 
 	VkDescriptorSet descriptor_pool::allocate(VkDescriptorSetLayout layout, VkBool32 use_cache)
@@ -261,14 +266,12 @@ namespace vk
 		{
 			// Happy path - maybe we have a free subpool
 			{
-				reader_lock lock(m_subpool_lock);
-
-				for (u32 index = 0; index < m_device_subpools.size(); ++index)
+				for (u32 index = 0, count = subpool_count(); index < count; ++index)
 				{
-					if (!m_device_subpools[index].busy)
+					// Taken with one swap: two threads cannot both get it
+					if (retro_atomic_cas_int(&m_device_subpools[index].busy, 0, 1))
 					{
 						m_current_subpool_index = index;
-						m_device_subpools[m_current_subpool_index].busy = VK_TRUE;
 						m_current_pool_handle = m_device_subpools[m_current_subpool_index].handle;
 						break;
 					}
@@ -295,17 +298,15 @@ namespace vk
 			}
 
 			// New subpool created successfully
-			std::lock_guard lock(m_subpool_lock);
+			// In a slot of its own, busy from the start: this thread's
+			const u32 index = static_cast<u32>(retro_atomic_fetch_add_int(&m_subpool_count, 1));
+			ensure(index < max_subpools);
 
-			m_device_subpools.push_back(
-			{
-				.handle = subpool,
-				.size = m_autoscaling_config.current_size,
-				.busy = VK_TRUE
-			});
+			m_device_subpools[index].handle = subpool;
+			m_device_subpools[index].size = m_autoscaling_config.current_size;
 
-			m_current_subpool_index = m_device_subpools.size() - 1;
-			m_current_pool_handle = m_device_subpools[m_current_subpool_index].handle;
+			m_current_subpool_index = index;
+			m_current_pool_handle = subpool;
 
 		} while (m_current_subpool_index == umax);
 	}
