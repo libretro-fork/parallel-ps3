@@ -101,6 +101,11 @@ struct gathered
 
 static std::vector<gathered> s_corpus;
 
+namespace vk
+{
+	extern driver_vendor g_driver_vendor;
+}
+
 namespace spirv
 {
 	bool compile_glsl_to_spv(std::vector<u32>& spv, std::string& shader, ::glsl::program_domain domain, ::glsl::glsl_rules rules)
@@ -167,6 +172,7 @@ static interface_t interface_of(const u32* w, usz n)
 }
 
 static usz s_refused = 0, s_interface_differs = 0, s_driver_refused = 0, s_reference_failed = 0;
+static usz s_variants = 0, s_first_variant = umax;
 static usz s_reference_words = 0, s_rslc_words = 0;
 static usz s_ran = 0, s_ran_vertex = 0, s_ran_compute = 0, s_run_differs = 0, s_not_run = 0;
 static bool s_can_run = false;
@@ -289,8 +295,10 @@ static void check_source(usz index, const gathered& g, const char* dir, const ch
 		}
 	}
 
-	// Run: against glslang's module, or on its own
-	if (s_can_run)
+	// Run: against glslang's module, or on its own. On its own a run shows
+	// only that the module runs, and the programs as this driver gets them
+	// are enough for that
+	if (s_can_run && (tool || index < s_first_variant))
 	{
 		char why[200]{};
 		const std::vector<u32>& first = tool ? reference : g.compiled;
@@ -1125,7 +1133,46 @@ int main()
 	fragment_programs();
 	s_interpolate = true;
 	fragment_programs();
+	s_interpolate = false;
 	vertex_programs();
+
+	// The decompilers write differently by what the driver is and has: the
+	// programs again as other GPUs get them, so that what this driver does
+	// not make them write is compiled, compared and run too
+	{
+		vk::gpu_shader_types_support& types = const_cast<vk::gpu_shader_types_support&>(device.get_shader_types_support());
+		vk::gpu_formats_support& formats = const_cast<vk::gpu_formats_support&>(device.get_formats_support());
+		const vk::gpu_shader_types_support had_types = types;
+		const vk::gpu_formats_support had_formats = formats;
+		const vk::driver_vendor had_vendor = vk::g_driver_vendor;
+
+		s_first_variant = s_corpus.size();
+		struct kind { vk::driver_vendor vendor; bool float64, float16, d24; gpu_preset_level precision; };
+		for (const kind& k : {
+			kind{vk::driver_vendor::NVIDIA, true, true, true, gpu_preset_level::high},  // invariance asked for, depth in doubles, low-precision compares
+			kind{vk::driver_vendor::AMD, false, false, false, gpu_preset_level::high},  // no doubles, depth compare emulated
+			kind{vk::driver_vendor::NVIDIA, true, true, true, gpu_preset_level::low},   // half floats as they are
+			kind{vk::driver_vendor::INTEL, true, false, false, gpu_preset_level::ultra}})
+		{
+			vk::g_driver_vendor = k.vendor;
+			types.allow_float64 = k.float64;
+			types.allow_float16 = k.float16;
+			formats.d24_unorm_s8 = k.d24;
+			g_cfg.video.shader_precision.set(k.precision);
+			const usz before = s_corpus.size();
+			fragment_programs();
+			g_cfg.video.shader_precision.set(k.precision);
+			vertex_programs();
+			g_cfg.video.shader_precision.set(k.precision);
+			shader_corpus_test::interpreter(device);
+			s_variants += s_corpus.size() - before;
+		}
+
+		vk::g_driver_vendor = had_vendor;
+		types = had_types;
+		formats = had_formats;
+		g_cfg.video.shader_precision.set(gpu_preset_level::high);
+	}
 
 	CHECK(s_corpus.size() >= 79);
 
@@ -1143,7 +1190,9 @@ int main()
 	CHECK(s_driver_refused == 0);
 	CHECK(s_run_differs == 0);
 	CHECK(!s_can_run || (s_ran >= 200 && s_ran_vertex >= 95 && s_ran_compute >= 40));
+	CHECK(!s_can_run || !tool || (s_ran >= 1000 && s_ran_vertex >= 450));
 	CHECK(s_built >= 1);
+	CHECK(s_variants >= 1000);
 	std::printf("test_shader_corpus: %u sources gathered, %u of them stages built by calls and the same as their GLSL compiles to; the core's compile refused %u, the driver refused %u of its modules\n",
 		::size32(s_corpus), static_cast<u32>(s_built), static_cast<u32>(s_refused), static_cast<u32>(s_driver_refused));
 

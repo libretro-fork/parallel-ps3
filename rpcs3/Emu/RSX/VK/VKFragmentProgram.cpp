@@ -617,10 +617,12 @@ void VKFragmentProgram::Decompile(const RSXFragmentProgram& prog)
 	VKFragmentDecompilerThread decompiler(source, parr, prog, size, *this);
 
 	const auto pdev = vk::get_current_renderer();
-	if (g_cfg.video.shader_precision == gpu_preset_level::low)
-	{
-		decompiler.device_props.has_native_half_support = pdev->get_shader_types_support().allow_float16;
-	}
+
+	// Half registers are kept in floats and clamped, as on a GPU without
+	// 16-bit floats, whatever the GPU has: libretro-common's shader compiler
+	// has no 16-bit float type yet. Only the low precision setting ever used
+	// the native ones.
+	decompiler.device_props.has_native_half_support = false;
 
 	decompiler.device_props.emulate_depth_compare = !pdev->get_formats_support().d24_unorm_s8;
 	decompiler.device_props.has_low_precision_rounding = vk::is_NVIDIA(vk::get_driver_vendor());
