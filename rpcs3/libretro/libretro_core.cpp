@@ -731,7 +731,6 @@ static void libretro_apply_core_options()
 
     g_cfg.misc.show_shader_compilation_hint.set(enabled("rpcs3_show_shader_compilation_hint", "disabled"));
     g_cfg.misc.show_ppu_compilation_hint.set(enabled("rpcs3_show_ppu_compilation_hint", "disabled"));
-    g_cfg.misc.silence_all_logs.set(enabled("rpcs3_silence_all_logs", "disabled"));
     g_cfg.core.spu_getllar_spin_optimization_disabled.set(get_option_value("rpcs3_disable_getllar_spin_opt", "disabled") == "enabled");
 
     // Write Color Buffers
@@ -1036,7 +1035,33 @@ namespace
 // left running into a frontend's FreeLibrary wakes up in code that is no
 // longer mapped - on Windows, about a second after closing content.
 static bool s_logs_hooked = false;
+
 static std::unique_ptr<logs::listener> s_file_logger;
+static std::string s_log_path;
+
+// The "Detailed Log" option. Off - as it is unless asked for - only fatal
+// errors get past a channel's level check, so no other message is formatted
+// or allocated for on the thread that makes it, there is no log file, no
+// writer thread and no 32 MB buffer for it. Called while nothing is emulated.
+static void libretro_apply_logging()
+{
+    const bool wanted = !s_log_path.empty() && get_option_value("rpcs3_detailed_log", "disabled") == "enabled";
+
+    if (wanted && !s_file_logger)
+    {
+        s_file_logger = logs::make_file_listener(s_log_path, 100 * 1024 * 1024); // 100MB max
+        logs::set_ceiling(logs::level::trace);
+    }
+    else if (!wanted)
+    {
+        logs::set_ceiling(logs::level::fatal);
+        if (s_file_logger)
+        {
+            logs::listener::remove(s_file_logger.get());
+            s_file_logger.reset();
+        }
+    }
+}
 
 // Save data lists. A PS3 game asks the system to show its save list and waits
 // for the player's pick; RPCS3 answers with a Qt dialog the core does not have,
@@ -1722,22 +1747,24 @@ void retro_init(void)
         save_dir = sav_dir;
     }
 
-    // Forward RPCS3 internal logs (including firmware installer logs) to libretro logger
+    // The listener that puts a fatal error on screen, and the log file when
+    // the option asks for one
     if (!s_logs_hooked)
     {
         logs::listener::add(&g_libretro_logs);
         s_logs_hooked = true;
 
-        // Also create a native RPCS3 file logger for detailed debugging
-        // This captures all internal RPCS3 logs that may not be forwarded to RetroArch
-        // Beside everything else the core keeps, in system/rpcs3 (NNshi); the
+        // In system/rpcs3, beside everything else the core keeps (NNshi); the
         // save directory only when there is no system directory
         const std::string log_dir = !system_dir.empty() ? system_dir + "/rpcs3/" : (save_dir.empty() ? std::string() : save_dir + "/");
         if (!log_dir.empty())
-        {
-            const std::string log_path = log_dir + "rpcs3_detailed.log";
-            s_file_logger = logs::make_file_listener(log_path, 100 * 1024 * 1024); // 100MB max
-        }
+            s_log_path = log_dir + "rpcs3_detailed.log";
+
+        libretro_apply_logging();
+
+        // Standalone's main() says this: until it is said, every message is
+        // kept in a list that only grows, under one lock for all threads
+        logs::set_init({});
     }
 
     // Initialize locale
@@ -2849,6 +2876,7 @@ bool retro_load_game(const struct retro_game_info* game)
     // without re-applying them here the user's choices are silently discarded -
     // e.g. "LLVM Precompilation: disabled" still precompiled every module.
     libretro_apply_core_options();
+    libretro_apply_logging();
     libretro_limit_disk_cache();
 
     // Save config so BootGame() loads the correct settings when it reloads config.yml

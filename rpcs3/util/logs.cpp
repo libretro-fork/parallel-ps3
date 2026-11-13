@@ -22,10 +22,7 @@ using namespace std::literals::chrono_literals;
 #include <Windows.h>
 #else
 #include <sys/mman.h>
-#include <sys/stat.h>
 #endif
-
-#include <encodings/deflate.h>
 
 static std::string default_string()
 {
@@ -82,17 +79,13 @@ namespace logs
 	{
 		std::thread m_writer{};
 		fs::file m_fout{};
-		fs::file m_fout2{};
 		u64 m_max_size{};
 
 		std::unique_ptr<uchar[]> m_fptr{};
-		void* m_zs{}; // rdeflate stream writing the .gz
 		shared_mutex m_m{};
 
 		atomic_t<u64, 128> m_buf{0}; // MSB (39 bits): push begin, LSB (25 bis): push size
 		atomic_t<u64, 128> m_out{0}; // Amount of bytes written to file
-
-		uchar m_zout[65536]{};
 
 		// Write buffered logs immediately
 		bool flush(u64 bufv);
@@ -196,13 +189,29 @@ namespace logs
 	// Must be set to true in main()
 	static atomic_t<bool> g_init{false};
 
+	// Nothing above this level is let through, whatever a channel is set to
+	// (set_ceiling). Written and read under g_mutex.
+	static level g_ceiling = level::trace;
+
 	void reset()
 	{
 		std::lock_guard lock(g_mutex);
 
 		for (auto&& pair : get_logger()->channels)
 		{
-			pair.second->enabled.release(level::_default);
+			pair.second->enabled.release(std::min(level::_default, g_ceiling));
+		}
+	}
+
+	void set_ceiling(level value)
+	{
+		std::lock_guard lock(g_mutex);
+
+		g_ceiling = value;
+
+		for (auto&& pair : get_logger()->channels)
+		{
+			pair.second->enabled.release(std::min(level::_default, value));
 		}
 	}
 
@@ -231,7 +240,7 @@ namespace logs
 
 				if (std::regex_match(channel_pair.first, sm, ex))
 				{
-					channel_pair.second->enabled.release(value);
+					channel_pair.second->enabled.release(std::min(value, g_ceiling));
 				}
 			}
 
@@ -242,7 +251,7 @@ namespace logs
 
 		while (found.first != found.second)
 		{
-			found.first->second->enabled.release(value);
+			found.first->second->enabled.release(std::min(value, g_ceiling));
 			found.first++;
 		}
 	}
@@ -496,34 +505,6 @@ logs::file_writer::file_writer(const std::string& name, u64 max_size)
 		fprintf(stderr, "Log file open failed: %s (error %d)\n", name.c_str(), errno);
 	}
 
-	// Compressed log, make it inaccessible (foolproof)
-	if (m_fout2.open(name + ".gz", fs::rewrite + fs::unread))
-	{
-#ifndef _MSC_VER
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wold-style-cast"
-#endif
-		if (!(m_zs = rdeflate_new(9, 16 + 15)))
-#ifndef _MSC_VER
-#pragma GCC diagnostic pop
-#endif
-		{
-			m_fout2.close();
-		}
-	}
-
-	if (!m_fout2)
-	{
-		fprintf(stderr, "Log file open failed: %s.gz (error %d)\n", name.c_str(), errno);
-	}
-
-#ifdef _WIN32
-	// Autodelete compressed log file
-	FILE_DISPOSITION_INFO disp{};
-	disp.DeleteFileW = true;
-	SetFileInformationByHandle(m_fout2.get_handle(), FileDispositionInfo, &disp, sizeof(disp));
-#endif
-
 	m_writer = std::thread([this]()
 	{
 		thread_base::set_name("Log Writer");
@@ -566,37 +547,6 @@ logs::file_writer::~file_writer()
 
 	m_out = -1;
 	m_writer.join();
-
-	if (m_fout2 && m_zs)
-	{
-		rdeflate_set_in(m_zs, nullptr, 0);
-		rdeflate_finish(m_zs);
-
-		while (true)
-		{
-			usz wrote = 0;
-			rdeflate_set_out(m_zs, m_zout, sizeof(m_zout));
-			const int res = rdeflate_process(m_zs, nullptr, &wrote);
-
-			if (res == RDEFLATE_PROCESS_ERROR || m_fout2.write(m_zout, wrote) != wrote || res == RDEFLATE_PROCESS_END)
-			{
-				break;
-			}
-		}
-
-		rdeflate_free(m_zs);
-		m_zs = nullptr;
-	}
-
-#ifdef _WIN32
-	// Cancel compressed log file auto-deletion
-	FILE_DISPOSITION_INFO disp;
-	disp.DeleteFileW = false;
-	SetFileInformationByHandle(m_fout2.get_handle(), FileDispositionInfo, &disp, sizeof(disp));
-#else
-	// Restore compressed log file permissions
-	::fchmod(m_fout2.get_handle(), S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH);
-#endif
 }
 
 bool logs::file_writer::flush(u64 bufv)
@@ -610,44 +560,12 @@ bool logs::file_writer::flush(u64 bufv)
 
 	if (end > read_pos)
 	{
-		// Avoid writing too big fragments
-		const u64 size = std::min<u64>(end - read_pos, sizeof(m_zout) / 2);
+		// Everything that is waiting, in one write
+		const u64 size = end - read_pos;
 
-		// Write uncompressed
 		if (m_fout && m_fout.write(m_fptr.get() + out_index, size) != size)
 		{
 			m_fout.close();
-		}
-
-		// Write compressed
-		if (m_fout2)
-		{
-			rdeflate_set_in(m_zs, m_fptr.get() + out_index, size);
-
-			// Every write complete in the file: testers send the .gz, and
-			// after a crash or a kill the last block, with whatever went
-			// wrong in it, was otherwise never written out
-			rdeflate_flush(m_zs);
-
-			// Until the input is taken and the output has room left
-			while (true)
-			{
-				usz wrote = 0;
-				rdeflate_set_out(m_zs, m_zout, sizeof(m_zout));
-
-				if (rdeflate_process(m_zs, nullptr, &wrote) == RDEFLATE_PROCESS_ERROR || m_fout2.write(m_zout, wrote) != wrote)
-				{
-					rdeflate_free(m_zs);
-					m_zs = nullptr;
-					m_fout2.close();
-					break;
-				}
-
-				if (wrote < sizeof(m_zout))
-				{
-					break;
-				}
-			}
 		}
 
 		m_out += size;
@@ -684,7 +602,7 @@ void logs::file_writer::log(const char* text, usz size)
 
 		if (!pos) [[unlikely]]
 		{
-			if (m_out >= m_max_size || (!m_fout && !m_fout2))
+			if (m_out >= m_max_size || !m_fout)
 			{
 				// Logging is inactive
 				return;
@@ -753,11 +671,6 @@ void logs::file_writer::sync()
 	{
 		m_fout.sync();
 	}
-
-	if (m_fout2)
-	{
-		m_fout2.sync();
-	}
 }
 
 void logs::file_writer::close_prematurely()
@@ -771,39 +684,6 @@ void logs::file_writer::close_prematurely()
 	sync();
 
 	std::lock_guard lock(m_m);
-
-	if (m_fout2 && m_zs)
-	{
-		rdeflate_set_in(m_zs, nullptr, 0);
-		rdeflate_finish(m_zs);
-
-		while (true)
-		{
-			usz wrote = 0;
-			rdeflate_set_out(m_zs, m_zout, sizeof(m_zout));
-			const int res = rdeflate_process(m_zs, nullptr, &wrote);
-
-			if (res == RDEFLATE_PROCESS_ERROR || m_fout2.write(m_zout, wrote) != wrote || res == RDEFLATE_PROCESS_END)
-			{
-				break;
-			}
-		}
-
-		rdeflate_free(m_zs);
-		m_zs = nullptr;
-
-#ifdef _WIN32
-		// Cancel compressed log file auto-deletion
-		FILE_DISPOSITION_INFO disp;
-		disp.DeleteFileW = false;
-		SetFileInformationByHandle(m_fout2.get_handle(), FileDispositionInfo, &disp, sizeof(disp));
-#else
-		// Restore compressed log file permissions
-		::fchmod(m_fout2.get_handle(), S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH);
-#endif
-
-		m_fout2.close();
-	}
 
 	if (m_fout)
 	{

@@ -15,6 +15,7 @@
 #include "libretro.h"
 #include "libretro_vfs.h"
 #include "Utilities/File.h"
+#include "util/logs.hpp"
 
 #include <retro_atomic.h>
 
@@ -38,6 +39,8 @@ int main()
 #include <sys/stat.h>
 
 static int failures = 0;
+
+LOG_CHANNEL(test_log, "TEST");
 
 #define CHECK(cond) do { if (!(cond)) { std::fprintf(stderr, "%s:%d: check failed: %s\n", __FILE__, __LINE__, #cond); failures++; } } while (0)
 
@@ -446,6 +449,56 @@ int main()
 			fs::remove_file(paths[i]);
 		}
 		std::printf("test_vfs_positional: a read at an offset, four threads on four files: %.1f ns of the machine's time each\n", best);
+	}
+
+	// The log. With the ceiling at fatal - what the core sets unless its
+	// "Detailed Log" option is on - nothing but a fatal error passes a
+	// channel's check, so nothing else is formatted; and what the emulator
+	// does to the levels when it boots (configure_logs) does not undo that.
+	{
+		logs::set_ceiling(logs::level::fatal);
+		CHECK(!test_log.notice);
+		CHECK(!test_log.error);
+		CHECK(!!test_log.fatal);
+		logs::reset();
+		CHECK(!test_log.notice);
+		CHECK(!!test_log.fatal);
+		logs::set_level("TEST", logs::level::trace);
+		CHECK(!test_log.notice);
+		CHECK(!test_log.error);
+		CHECK(!!test_log.fatal);
+
+		// With the option on: one plain file, complete, and no compressed
+		// second copy beside it
+		const std::string path = std::string(dir) + "/detailed.log";
+		{
+			std::unique_ptr<logs::listener> file = logs::make_file_listener(path, 1024 * 1024);
+			logs::set_ceiling(logs::level::trace);
+			CHECK(!!test_log.notice);
+			for (u32 i = 0; i < 2000; i++)
+				test_log.notice("line %u of the log", i);
+			logs::listener::remove(file.get());
+		}
+		logs::set_ceiling(logs::level::fatal);
+
+		CHECK(!fs::is_file(path + ".gz"));
+		std::string text;
+		CHECK(fs::file(path).read(text, fs::file(path).size()));
+		usz at = 0;
+		u32 found = 0;
+		for (u32 i = 0; i < 2000; i++)
+		{
+			char line[64];
+			std::snprintf(line, sizeof(line), "line %u of the log\n", i);
+			const usz pos = text.find(line, at);
+			if (pos == umax)
+				break;
+			at = pos;
+			found++;
+		}
+		CHECK(found == 2000);
+		fs::remove_file(path);
+		fs::remove_file(path + ".gz");
 	}
 
 	libretro_vfs::set_vfs_interface(nullptr, 0);

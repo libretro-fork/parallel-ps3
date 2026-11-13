@@ -665,8 +665,8 @@ struct retro_core_option_v2_definition option_defs_us[] = {
         "disabled"
     },
     {
-        "rpcs3_silence_all_logs", "Silence All Logs", NULL,
-        "Silence all log output for performance.",
+        "rpcs3_detailed_log", "Detailed Log", NULL,
+        "Writes what the emulator logs to system/rpcs3/rpcs3_detailed.log, for a bug report. Off, nothing is logged at all, which is faster: every message costs the thread that makes it time. Takes effect when the next content is loaded.",
         NULL, "core",
         { {"disabled", NULL}, {"enabled", NULL}, {NULL, NULL} },
         "disabled"
