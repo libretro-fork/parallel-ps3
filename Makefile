@@ -346,6 +346,9 @@ OBJECTS := $(OBJ_LRC) $(OBJ_LIBUSB) $(OBJ_ASMJIT) $(OBJ_RTMIDI) $(OBJ_FUSION) \
 	$(OBJ_VOLK) $(OBJ_RPCS3) $(OBJ_LIBRETRO)
 
 $(OBJ_LRC):      FLAGS := $(FLAGS_LRC)
+# What atomic_t's wait and notify park through: built as threaded code, which
+# the rest of libretro-common here is not asked to be
+$(CORE_DIR)/rpcs3/libretro/libretro-common/rthreads/retro_waitaddr.o: FLAGS := $(FLAGS_LRC) -DHAVE_THREADS
 $(OBJ_LIBUSB):   FLAGS := $(FLAGS_LIBUSB)
 $(OBJ_ASMJIT):   FLAGS := $(FLAGS_ASMJIT)
 $(OBJ_RTMIDI):   FLAGS := $(FLAGS_RTMIDI)

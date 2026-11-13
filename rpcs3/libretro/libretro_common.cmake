@@ -79,6 +79,9 @@ add_library(libretro_common STATIC
     ${LIBRETRO_COMMON_DIR}/net/net_socket_ssl_retro.c
     ${LIBRETRO_COMMON_DIR}/net/net_upnp.c
     ${LIBRETRO_COMMON_DIR}/queues/retro_spsc.c
+    ${LIBRETRO_COMMON_DIR}/rthreads/retro_eventcount.c
+    ${LIBRETRO_COMMON_DIR}/rthreads/retro_waitaddr.c
+    ${LIBRETRO_COMMON_DIR}/rthreads/rthreads.c
     ${LIBRETRO_COMMON_DIR}/streams/file_stream.c
     ${LIBRETRO_COMMON_DIR}/streams/trans_stream.c
     ${LIBRETRO_COMMON_DIR}/streams/trans_stream_deflate.c
@@ -107,6 +110,11 @@ target_compile_definitions(libretro_common PRIVATE HAVE_SSL HAVE_RETROSSL HAVE_C
 target_compile_definitions(libretro_common PRIVATE
     HAVE_RWAV HAVE_RFLAC HAVE_RVORBIS HAVE_ROPUS HAVE_RMP3 HAVE_RAAC HAVE_RMP4
     HAVE_RAC3 HAVE_RWMA HAVE_RWEBM HAVE_RATRAC3 HAVE_RATRAC3P)
+
+# What atomic_t's wait and notify park through: built as threaded code, which
+# the rest of libretro-common here is not asked to be
+set_source_files_properties(${LIBRETRO_COMMON_DIR}/rthreads/retro_waitaddr.c
+    PROPERTIES COMPILE_DEFINITIONS HAVE_THREADS)
 
 # rslc (the shader compiler) as an emulator needs it: its extended dialect,
 # SPIR-V only, with the builder (stages made by calls)

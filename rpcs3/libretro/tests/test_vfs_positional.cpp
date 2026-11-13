@@ -522,6 +522,78 @@ int main()
 		fs::remove_file(path + ".gz");
 	}
 
+	// atomic_t's wait and notify, which go through libretro-common's
+	// retro_waitaddr: a thread asleep on a word is woken by a notify of it, by
+	// notify_one and by notify_all; a wait with a bound comes back when the
+	// bound is up, not before; and a notify with nobody waiting is no syscall
+	// (it was one, every time, on Linux: 130 ns here).
+	{
+		static atomic_t<u32> word{0};
+		static atomic_t<u32> asleep{0};
+		static atomic_t<u32> home{0};
+
+		const auto stopwatch = []()
+		{
+			timespec t;
+			clock_gettime(CLOCK_MONOTONIC, &t); // not pacing: the benchmark's stopwatch
+			return t.tv_sec * 1e9 + t.tv_nsec;
+		};
+
+		for (u32 round = 0; round < 2; round++)
+		{
+			word = 0;
+			asleep = 0;
+			home = 0;
+
+			std::thread sleepers[3];
+			for (auto& t : sleepers)
+			{
+				t = std::thread([]
+				{
+					asleep++;
+					while (word == 0)
+						word.wait(0);
+					home++;
+				});
+			}
+
+			while (asleep != 3)
+				std::this_thread::yield();
+
+			// Nothing changed: nobody home, however long they are given
+			for (u32 i = 0; i < 20000; i++)
+				std::this_thread::yield();
+			CHECK(home == 0);
+
+			word = 1;
+			if (round == 0)
+				word.notify_all();
+			else
+				for (u32 i = 0; i < 3; i++)
+					word.notify_one();
+
+			for (auto& t : sleepers)
+				t.join();
+			CHECK(home == 3);
+		}
+
+		word = 0;
+		const double before = stopwatch();
+		word.wait(0, atomic_wait_timeout{20'000'000});
+		const double waited = stopwatch() - before;
+		CHECK(waited >= 19e6 && waited < 2e9);
+
+		const double a = stopwatch();
+		for (u32 i = 0; i < 1000000; i++)
+		{
+			word++;
+			word.notify_one();
+		}
+		const double each = (stopwatch() - a) / 1e6;
+		std::printf("test_vfs_positional: a store and a notify with nobody waiting: %.1f ns\n", each);
+		CHECK(each < 80);
+	}
+
 	libretro_vfs::set_vfs_interface(nullptr, 0);
 	rmdir(dir);
 

@@ -114,11 +114,6 @@ extern f64 get_cpu_program_usage_percent(u64 hash);
 
 void initialize_timebased_time(u64 timebased_init, bool reset = false);
 
-namespace atomic_wait
-{
-	extern void parse_hashtable(bool(*cb)(u64 id, u32 refs, u64 ptr, u32 max_coll));
-}
-
 namespace rsx
 {
 	void set_native_ui_flip();
@@ -4228,29 +4223,6 @@ void Emulator::Kill(bool allow_autoexit, bool savestate, savestate_stage* save_s
 			jit_runtime::finalize();
 
 			perf_stat_base::report();
-
-			static u64 aw_refs = 0;
-			static u64 aw_colm = 0;
-			static u64 aw_colc = 0;
-			static u64 aw_used = 0;
-
-			aw_refs = 0;
-			aw_colm = 0;
-			aw_colc = 0;
-			aw_used = 0;
-
-			atomic_wait::parse_hashtable([](u64 /*id*/, u32 refs, u64 ptr, u32 maxc) -> bool
-			{
-				aw_refs += refs != 0;
-				aw_used += ptr != 0;
-
-				aw_colm = std::max<u64>(aw_colm, maxc);
-				aw_colc += maxc != 0;
-
-				return false;
-			});
-
-			sys_log.notice("Atomic wait hashtable stats: [in_use=%u, used=%u, max_collision_weight=%u, total_collisions=%u]", aw_refs, aw_used, aw_colm, aw_colc);
 
 			m_stop_ctr++;
 			m_stop_ctr.notify_all();

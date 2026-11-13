@@ -81,6 +81,9 @@ SOURCES_LRC := \
 	$(CORE_DIR)/rpcs3/libretro/libretro-common/net/net_socket_ssl_retro.c \
 	$(CORE_DIR)/rpcs3/libretro/libretro-common/net/net_upnp.c \
 	$(CORE_DIR)/rpcs3/libretro/libretro-common/queues/retro_spsc.c \
+	$(CORE_DIR)/rpcs3/libretro/libretro-common/rthreads/retro_eventcount.c \
+	$(CORE_DIR)/rpcs3/libretro/libretro-common/rthreads/retro_waitaddr.c \
+	$(CORE_DIR)/rpcs3/libretro/libretro-common/rthreads/rthreads.c \
 	$(CORE_DIR)/rpcs3/libretro/libretro-common/streams/file_stream.c \
 	$(CORE_DIR)/rpcs3/libretro/libretro-common/streams/trans_stream.c \
 	$(CORE_DIR)/rpcs3/libretro/libretro-common/streams/trans_stream_deflate.c \
