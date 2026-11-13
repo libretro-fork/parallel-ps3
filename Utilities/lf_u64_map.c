@@ -81,3 +81,22 @@ uint64_t lf_u64_map_add(struct lf_u64_map *map, uint64_t key, uint64_t value)
 
    return 0;
 }
+
+void lf_u64_map_each(const struct lf_u64_map *map, lf_u64_map_each_t fn,
+      void *ud)
+{
+   size_t n;
+
+   if (!map->slots)
+      return;
+
+   for (n = 0; n <= map->mask; n++)
+   {
+      uint64_t key   = (uint64_t)retro_atomic_load_acquire_64(&map->slots[2 * n]);
+      uint64_t value = key
+         ? (uint64_t)retro_atomic_load_acquire_64(&map->slots[2 * n + 1]) : 0;
+
+      if (value)
+         fn(ud, key, value);
+   }
+}

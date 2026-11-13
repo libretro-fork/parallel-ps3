@@ -6,6 +6,8 @@
 
 #include "Emu/RSX/Common/unordered_map.hpp"
 
+#include "Utilities/lf_u64_map.h"
+
 namespace vk
 {
 	struct active_renderpass_info_t
@@ -18,8 +20,30 @@ namespace vk
 	VkRenderPass  g_cached_renderpass = VK_NULL_HANDLE;
 	rsx::unordered_map<VkCommandBuffer, active_renderpass_info_t>  g_current_renderpass;
 
-	shared_mutex g_renderpass_cache_mutex;
-	rsx::unordered_map<u64, VkRenderPass> g_renderpass_cache;
+	// Render passes by key, found with no lock (Utilities/lf_u64_map.h): a
+	// draw that needs one - once the shader cache has loaded, one that is
+	// there - took a reader lock for it. Two threads that miss the same key at
+	// once each make the pass; one is kept and the other destroyed.
+	struct renderpass_cache_t
+	{
+		lf_u64_map map{};
+
+		renderpass_cache_t()
+		{
+			ensure(lf_u64_map_init(&map, 4096));
+		}
+
+		~renderpass_cache_t()
+		{
+			lf_u64_map_free(&map);
+		}
+
+		// The map's keys are not zero
+		static u64 key_of(u64 renderpass_key)
+		{
+			return renderpass_key ? renderpass_key : umax;
+		}
+	} g_renderpass_cache;
 
 	// Key structure
 	// 0-7 color_format
@@ -262,23 +286,9 @@ namespace vk
 	VkRenderPass get_renderpass(VkDevice dev, u64 renderpass_key)
 	{
 		// 99.999% of checks will go through this block once on-disk shader cache has loaded
+		if (const u64 found = lf_u64_map_get(&g_renderpass_cache.map, renderpass_cache_t::key_of(renderpass_key)))
 		{
-			reader_lock lock(g_renderpass_cache_mutex);
-
-			auto found = g_renderpass_cache.find(renderpass_key);
-			if (found != g_renderpass_cache.end())
-			{
-				return found->second;
-			}
-		}
-
-		std::lock_guard lock(g_renderpass_cache_mutex);
-
-		// Check again
-		auto found = g_renderpass_cache.find(renderpass_key);
-		if (found != g_renderpass_cache.end())
-		{
-			return found->second;
+			return reinterpret_cast<VkRenderPass>(found);
 		}
 
 		// Decode
@@ -369,7 +379,16 @@ namespace vk
 		VkRenderPass result;
 		CHECK_RESULT(vkCreateRenderPass(dev, &rp_info, NULL, &result));
 
-		g_renderpass_cache[renderpass_key] = result;
+		// Kept, unless another thread made the same pass meanwhile
+		const u64 kept = lf_u64_map_add(&g_renderpass_cache.map, renderpass_cache_t::key_of(renderpass_key), reinterpret_cast<u64>(result));
+		ensure(kept); // 0: the cache is full
+
+		if (kept != reinterpret_cast<u64>(result))
+		{
+			vkDestroyRenderPass(dev, result, nullptr);
+			return reinterpret_cast<VkRenderPass>(kept);
+		}
+
 		return result;
 	}
 
@@ -387,12 +406,14 @@ namespace vk
 		g_current_renderpass.clear();
 
 		// Destroy cache
-		for (const auto &renderpass : g_renderpass_cache)
+		lf_u64_map_each(&g_renderpass_cache.map, [](void* dev, u64, u64 renderpass)
 		{
-			vkDestroyRenderPass(dev, renderpass.second, nullptr);
-		}
+			vkDestroyRenderPass(static_cast<VkDevice>(dev), reinterpret_cast<VkRenderPass>(renderpass), nullptr);
+		}, dev);
 
-		g_renderpass_cache.clear();
+		// Empty again; nothing else uses the cache here
+		lf_u64_map_free(&g_renderpass_cache.map);
+		ensure(lf_u64_map_init(&g_renderpass_cache.map, 4096));
 	}
 
 	void begin_renderpass(const vk::command_buffer& cmd, VkRenderPass pass, VkFramebuffer target, const coordu& framebuffer_region)

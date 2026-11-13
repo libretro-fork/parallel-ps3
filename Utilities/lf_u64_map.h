@@ -44,6 +44,12 @@ uint64_t lf_u64_map_get(const struct lf_u64_map *map, uint64_t key);
  * full. */
 uint64_t lf_u64_map_add(struct lf_u64_map *map, uint64_t key, uint64_t value);
 
+/* Calls fn for every key that has a value. Entries added while it runs may
+ * or may not be seen. */
+typedef void (*lf_u64_map_each_t)(void *ud, uint64_t key, uint64_t value);
+void lf_u64_map_each(const struct lf_u64_map *map, lf_u64_map_each_t fn,
+      void *ud);
+
 #ifdef __cplusplus
 }
 #endif

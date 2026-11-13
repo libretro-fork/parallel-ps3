@@ -17,6 +17,14 @@
 
 #include <pthread.h>
 
+static void add_up(void *ud, uint64_t key, uint64_t value)
+{
+   uint64_t *sums = (uint64_t*)ud;
+   (void)key;
+   sums[0] += 1;
+   sums[1] += value;
+}
+
 static void alone(void)
 {
    struct lf_u64_map map;
@@ -45,6 +53,15 @@ static void alone(void)
       wrong += lf_u64_map_get(&map, 0x1000 + i * 0x10001) != i + 1;
    TEST_CHECK(wrong == 0);
    TEST_CHECK(lf_u64_map_get(&map, 5) == 600);
+
+   /* Every entry, once */
+   {
+      uint64_t sums[2];
+      sums[0] = sums[1] = 0;
+      lf_u64_map_each(&map, add_up, sums);
+      TEST_CHECK(sums[0] == 256);
+      TEST_CHECK(sums[1] == 600 + 1 + (uint64_t)254 * 255 / 2);
+   }
    lf_u64_map_free(&map);
 }
 
