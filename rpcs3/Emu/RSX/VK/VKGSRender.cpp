@@ -930,6 +930,17 @@ bool VKGSRender::on_access_violation(u32 address, bool is_writing)
 {
 	rsx::mm_flush(address);
 
+	// A guest thread writing over a plain texture: the page is handed back
+	// and the renderer told, without the texture cache's lock and without
+	// waiting for the renderer
+	if (is_writing && !is_current_thread() && m_texture_cache.note_guest_write(address))
+	{
+		// Not m_sampler_mutex, which the renderer holds for as long as it
+		// loads a draw's textures: a flag it takes when it next does
+		retro_atomic_store_release_int(&m_guest_wrote_textures, 1);
+		return true;
+	}
+
 	vk::texture_cache::thrashed_set result;
 	{
 		const rsx::invalidation_cause cause = is_writing ? rsx::invalidation_cause::deferred_write : rsx::invalidation_cause::deferred_read;

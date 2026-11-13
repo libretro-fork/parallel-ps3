@@ -1740,6 +1740,7 @@ namespace rsx
 					{
 						// Keep Cell from touching the range we need
 						const auto prot_range = dst_range.to_page_range();
+						rsx_page_locks_settle(prot_range.start, prot_range.end);
 						utils::memory_protect(vm::base(prot_range.start), prot_range.length(), utils::protection::no);
 
 						force_dma_load = true;
@@ -1812,6 +1813,7 @@ namespace rsx
 						// HACK: workaround for data race with Cell
 						// Pre-lock the memory range we'll be touching, then load with super_ptr
 						const auto prot_range = dst_range.to_page_range();
+						rsx_page_locks_settle(prot_range.start, prot_range.end);
 						utils::memory_protect(vm::base(prot_range.start), prot_range.length(), utils::protection::no);
 
 						dst_surface->state_flags |= rsx::surface_state_flags::force_data_load | rsx::surface_state_flags::erase_bkgnd;
@@ -1851,6 +1853,9 @@ namespace rsx
 			// Nuke the permanent storage pool
 			m_storage.clear();
 			m_predictor.clear();
+
+			// No page is locked any more, and the notes about them are moot
+			rsx_page_locks_reset();
 		}
 
 		virtual void on_frame_end()
@@ -2029,6 +2034,9 @@ namespace rsx
 		{
 			AUDIT(g_cfg.video.write_color_buffers || g_cfg.video.write_depth_buffer); // this method is only called when either WCB or WDB are enabled
 
+			// (The extras here describe the region; a flush takes none)
+			sync_guest_writes(cmd);
+
 			std::lock_guard lock(m_cache_mutex);
 
 			lock_memory_region_impl(cmd, image, rsx_range, is_active_surface, width, height, pitch, std::forward<Args>(extras)...);
@@ -2038,6 +2046,8 @@ namespace rsx
 		void commit_framebuffer_memory_region(commandbuffer_type& cmd, const address_range32 &rsx_range, Args&&... extras)
 		{
 			AUDIT(!g_cfg.video.write_color_buffers || !g_cfg.video.write_depth_buffer);
+
+			sync_guest_writes(cmd, extras...);
 
 			if (!region_intersects_cache(rsx_range, true))
 				return;
@@ -2127,6 +2137,72 @@ namespace rsx
 
 	public:
 
+		// For a guest thread that faulted writing to @address. True when the page
+		// was locked for textures only - nothing on it has to be written back
+		// first - and has been dealt with: the page is writable again and a note
+		// is waiting for the renderer, which marks the textures stale the next
+		// time it enters the cache (sync_guest_writes). The guest thread takes no
+		// lock of the cache and never waits for the renderer. False: the fault
+		// is to be handled through invalidate_address.
+		bool note_guest_write(u32 address)
+		{
+			// The table is kept by 4 KiB page. Where the host's pages are
+			// larger, making one writable unlocks more than the page the
+			// table was asked about: the long way there.
+			if (utils::get_page_size() != 4096)
+			{
+				return false;
+			}
+
+			switch (rsx_page_locks_begin_write(address))
+			{
+			case 0:
+				return false;
+			case 1:
+				break;
+			default:
+				// Another guest thread has just done it
+				return true;
+			}
+
+			// The page is this thread's until end_write: nothing else changes
+			// its protection meanwhile (rsx_page_locks_settle), so this is not
+			// undone by a lock that is being applied, nor undoes one. Straight
+			// to the host: the renderer's queue of protections to apply is not
+			// touched - what waits there for this page is applied later, and
+			// is taken back when the renderer acts on the note.
+			const auto range = page_for(address);
+			utils::memory_protect(vm::base(range.start), range.length(), utils::protection::rw);
+
+			// The note is waiting before the write can land. With no room for
+			// one, the long way does the bookkeeping, and finds the page writable.
+			return !!rsx_page_locks_end_write(address);
+		}
+
+		// The renderer's side of note_guest_write: called on entering the cache
+		// with a command buffer. One load when no note is waiting.
+		template <typename ...Args>
+		void sync_guest_writes(commandbuffer_type& cmd, Args&&... extras)
+		{
+			if (!rsx_page_locks_pending()) [[likely]]
+			{
+				return;
+			}
+
+			if (!rsx::get_current_renderer()->is_current_thread())
+			{
+				return;
+			}
+
+			std::lock_guard lock(m_cache_mutex);
+
+			u32 page_address;
+			while (rsx_page_locks_take(&page_address))
+			{
+				invalidate_range_impl_base(cmd, page_for(page_address), invalidation_cause::write, {}, extras...);
+			}
+		}
+
 		template <typename ...Args>
 		thrashed_set invalidate_address(
 			commandbuffer_type& cmd,
@@ -2135,6 +2211,8 @@ namespace rsx
 			std::function<void()> on_data_transfer_completed = {},
 			Args&&... extras)
 		{
+			sync_guest_writes(cmd, extras...);
+
 			// Test before trying to acquire the lock
 			const auto range = page_for(address);
 			if (!region_intersects_cache(range, !cause.is_read()))
@@ -2152,6 +2230,8 @@ namespace rsx
 			std::function<void()> on_data_transfer_completed = {},
 			Args&&... extras)
 		{
+			sync_guest_writes(cmd, extras...);
+
 			// Test before trying to acquire the lock
 			if (!region_intersects_cache(range, !cause.is_read()))
 				return {};
@@ -2188,6 +2268,8 @@ namespace rsx
 		template <typename ...Args>
 		bool flush_if_cache_miss_likely(commandbuffer_type& cmd, const address_range32 &range, Args&&... extras)
 		{
+			sync_guest_writes(cmd, extras...);
+
 			u32 cur_flushes_this_frame = (m_flushes_this_frame + m_speculations_this_frame);
 
 			if (cur_flushes_this_frame > m_predict_max_flushes_per_frame)
@@ -3071,6 +3153,8 @@ namespace rsx
 		{
 			m_texture_upload_calls_this_frame++;
 
+			sync_guest_writes(cmd, extras...);
+
 			image_section_attributes_t attributes{};
 			texture_cache_search_options options{};
 			attributes.address = rsx::get_address(tex.offset(), tex.location());
@@ -3348,6 +3432,8 @@ namespace rsx
 		template <typename surface_store_type, typename blitter_type, typename ...Args>
 		blit_op_result upload_scaled_image(const rsx::blit_src_info& src_info, const rsx::blit_dst_info& dst_info, bool interpolate, commandbuffer_type& cmd, surface_store_type& m_rtts, blitter_type& blitter, Args&&... extras)
 		{
+			sync_guest_writes(cmd, extras...);
+
 			// Local working copy. We may modify the descriptors for optimization purposes
 			auto src = src_info;
 			auto dst = dst_info;

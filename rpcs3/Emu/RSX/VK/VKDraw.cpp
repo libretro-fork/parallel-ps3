@@ -290,6 +290,14 @@ void VKGSRender::load_texture_env()
 
 	std::lock_guard lock(m_sampler_mutex);
 
+	// A guest thread wrote over a texture since the textures were last
+	// loaded (on_access_violation): every sampler is looked at again. Taken
+	// before the look, so a write that comes during it counts for the next.
+	if (retro_atomic_load_relaxed_int(&m_guest_wrote_textures) && retro_atomic_exchange_int(&m_guest_wrote_textures, 0))
+	{
+		m_samplers_dirty.store(true);
+	}
+
 	for (u32 textures_ref = current_fp_metadata.referenced_textures_mask, i = 0; textures_ref; textures_ref >>= 1, ++i)
 	{
 		if (!(textures_ref & 1))

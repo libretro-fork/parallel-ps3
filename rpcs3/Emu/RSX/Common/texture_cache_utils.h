@@ -6,6 +6,7 @@
 
 #include "Emu/Memory/vm.h"
 #include "Emu/RSX/Host/MM.h"
+#include "guest_page_locks.h"
 #include "util/vm.hpp"
 
 #include <list>
@@ -890,6 +891,13 @@ namespace rsx
 		u64 mem_hash = 0;
 
 		bool locked = false;
+
+		// What this section has added to the table of locked pages
+		// (guest_page_locks.h), to be taken off again: the range, and how
+		address_range32 counted_range;
+		utils::protection counted_prot = utils::protection::rw;
+		void count_locked_pages(utils::protection prot);
+
 		void init_lockable_range(const address_range32& range);
 		u64  fast_hash_internal() const;
 

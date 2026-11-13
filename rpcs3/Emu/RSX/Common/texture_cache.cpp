@@ -76,6 +76,17 @@ namespace rsx
 			protection_strat = section_protection_strategy::lock;
 		}
 
+		// Only pages that are really protected count: a fault is what the table is asked about
+		const utils::protection counted = protection_strat == section_protection_strategy::lock ? new_prot : utils::protection::rw;
+
+		// A lock is counted before it is applied, so that a guest thread that
+		// faults on the page from here on sees it (guest_page_locks.h); an
+		// unlock is counted after
+		if (counted != utils::protection::rw)
+		{
+			count_locked_pages(counted);
+		}
+
 		if (protection_strat == section_protection_strategy::lock)
 		{
 			rsx::memory_protect(locked_range, new_prot);
@@ -87,6 +98,11 @@ namespace rsx
 
 		protection = new_prot;
 		locked = (protection != utils::protection::rw);
+
+		if (counted == utils::protection::rw)
+		{
+			count_locked_pages(counted);
+		}
 
 		if (!locked)
 		{
@@ -145,6 +161,28 @@ namespace rsx
 		protection = utils::protection::rw;
 		confirmed_range.invalidate();
 		locked = false;
+		count_locked_pages(utils::protection::rw);
+	}
+
+	void buffered_section::count_locked_pages(utils::protection prot)
+	{
+		if (counted_prot != utils::protection::rw)
+		{
+			if (counted_prot == prot && counted_range == locked_range)
+			{
+				return;
+			}
+
+			rsx_page_locks_remove(counted_range.start, counted_range.end, counted_prot == utils::protection::no);
+			counted_prot = utils::protection::rw;
+		}
+
+		if (prot != utils::protection::rw && locked_range.valid())
+		{
+			rsx_page_locks_add(locked_range.start, locked_range.end, prot == utils::protection::no);
+			counted_range = locked_range;
+			counted_prot = prot;
+		}
 	}
 
 	const address_range32& buffered_section::get_bounds(section_bounds bounds) const

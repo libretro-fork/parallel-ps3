@@ -2,6 +2,7 @@
 #include "Core/RSXEngLock.hpp"
 #include "Core/RSXReservationLock.hpp"
 #include "Host/MM.h"
+#include "Common/guest_page_locks.h"
 #include "RSXThread.h"
 
 namespace rsx
@@ -32,6 +33,7 @@ namespace rsx
 					if (p.second.prot != utils::protection::rw)
 					{
 						utils::memory_protect(vm::base(p.first), utils::get_page_size(), utils::protection::rw);
+						rsx_page_locks_release(p.first, p.first + utils::get_page_size() - 1);
 					}
 				}
 
@@ -845,6 +847,11 @@ namespace rsx
 
 				if (page.prot == utils::protection::rw)
 				{
+					// Held against a guest write unlocking it on its own
+					// (guest_page_locks.h): a texture can share the page,
+					// and the report has to be dealt with first
+					rsx_page_locks_hold(page_address, page_address + utils::get_page_size() - 1);
+					rsx_page_locks_settle(page_address, page_address + utils::get_page_size() - 1);
 					utils::memory_protect(vm::base(page_address), utils::get_page_size(), utils::protection::no);
 					page.prot = utils::protection::no;
 				}
@@ -894,6 +901,7 @@ namespace rsx
 				if (page.prot != utils::protection::rw)
 				{
 					utils::memory_protect(vm::base(this_address), utils::get_page_size(), utils::protection::rw);
+					rsx_page_locks_release(this_address, this_address + utils::get_page_size() - 1);
 					page.prot = utils::protection::rw;
 				}
 
@@ -947,6 +955,7 @@ namespace rsx
 						{
 							// R/W to stale block, unload it and move on
 							utils::memory_protect(vm::base(page_address), utils::get_page_size(), utils::protection::rw);
+							rsx_page_locks_release(page_address, page_address + utils::get_page_size() - 1);
 							m_locked_pages[location].erase(page_address);
 							retro_atomic_store_release_int(&m_locked_page_count[location], static_cast<int>(m_locked_pages[location].size()));
 

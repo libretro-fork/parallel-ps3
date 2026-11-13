@@ -80,6 +80,10 @@ private:
 
 	shared_mutex m_sampler_mutex;
 	atomic_t<bool> m_samplers_dirty = { true };
+
+	// Set by a guest thread that wrote over a texture and handed the page
+	// back itself (on_access_violation); taken by load_texture_env
+	retro_atomic_int_t m_guest_wrote_textures{};
 	std::unique_ptr<vk::sampler> m_stencil_mirror_sampler;
 	std::array<vk::sampler*, rsx::limits::fragment_textures_count> fs_sampler_handles{};
 	std::array<vk::sampler*, rsx::limits::vertex_textures_count> vs_sampler_handles{};
