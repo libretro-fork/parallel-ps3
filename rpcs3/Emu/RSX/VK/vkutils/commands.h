@@ -6,6 +6,8 @@
 
 #include <span>
 
+#include <retro_atomic.h>
+
 namespace vk
 {
 	class command_pool
@@ -65,7 +67,9 @@ namespace vk
 	{
 	protected:
 		bool is_open = false;
-		bool is_pending = false;
+		// Submitted and not yet seen to be done. Read by whoever polls the
+		// buffer, with no lock (command_buffer_chunk).
+		retro_atomic_int_t is_pending{};
 		fence* m_submit_fence = nullptr;
 
 		command_pool* pool = nullptr;
@@ -100,6 +104,27 @@ namespace vk
 	public:
 		command_buffer() = default;
 		~command_buffer() = default;
+
+		// Copied as it was (a vector of them grows): the pending flag by
+		// its value
+		command_buffer(const command_buffer& other)
+		{
+			*this = other;
+		}
+
+		command_buffer& operator=(const command_buffer& other)
+		{
+			is_open = other.is_open;
+			retro_atomic_store_release_int(&is_pending, retro_atomic_load_acquire_int(const_cast<retro_atomic_int_t*>(&other.is_pending)));
+			m_submit_fence = other.m_submit_fence;
+			pool = other.pool;
+			commands = other.commands;
+			m_bound_descriptor_sets = other.m_bound_descriptor_sets;
+			m_bound_pipelines = other.m_bound_pipelines;
+			access_hint = other.access_hint;
+			flags = other.flags;
+			return *this;
+		}
 
 		void create(command_pool& cmd_pool);
 		void destroy();

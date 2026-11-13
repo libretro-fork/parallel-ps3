@@ -86,10 +86,10 @@ namespace vk
 
 	void command_buffer::begin()
 	{
-		if (m_submit_fence && is_pending)
+		if (m_submit_fence && retro_atomic_load_acquire_int(&is_pending))
 		{
 			wait_for_fence(m_submit_fence);
-			is_pending = false;
+			retro_atomic_store_release_int(&is_pending, 0);
 
 			//CHECK_RESULT(vkResetFences(pool->get_owner(), 1, &m_submit_fence));
 			m_submit_fence->reset();
@@ -138,7 +138,7 @@ namespace vk
 		if (!submit_info.pfence)
 		{
 			submit_info.pfence = m_submit_fence;
-			is_pending = bool(submit_info.pfence);
+			retro_atomic_store_release_int(&is_pending, submit_info.pfence ? 1 : 0);
 		}
 
 		submit_info.commands = this->commands;

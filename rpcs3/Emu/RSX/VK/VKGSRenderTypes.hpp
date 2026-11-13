@@ -56,7 +56,13 @@ namespace vk
 	{
 		u64 eid_tag = 0;
 		u64 reset_id = 0;
-		shared_mutex guard_mutex;
+
+		// Seeing a submission done - the fence reset, the event completed,
+		// the buffer no longer pending - is done once, by whichever thread
+		// claims it; another that comes meanwhile does not wait for it. The
+		// three calls below each took a reader lock, on every poll of every
+		// command buffer in a chain.
+		retro_atomic_int_t completing{};
 
 		command_buffer_chunk() = default;
 
@@ -67,7 +73,7 @@ namespace vk
 
 		void reset()
 		{
-			if (is_pending && !poke())
+			if (retro_atomic_load_acquire_int(&is_pending) && !poke())
 			{
 				wait(FRAME_PRESENT_TIMEOUT);
 			}
@@ -76,11 +82,32 @@ namespace vk
 			vk::command_buffer::reset();
 		}
 
+	private:
+		// The fence is signalled: the submission is done
+		void complete()
+		{
+			if (!retro_atomic_cas_int(&completing, 0, 1))
+			{
+				// Another thread is at it
+				return;
+			}
+
+			if (retro_atomic_load_acquire_int(&is_pending))
+			{
+				m_submit_fence->reset();
+				vk::on_event_completed(eid_tag);
+
+				eid_tag = 0;
+				retro_atomic_store_release_int(&is_pending, 0);
+			}
+
+			retro_atomic_store_release_int(&completing, 0);
+		}
+
+	public:
 		bool poke()
 		{
-			reader_lock lock(guard_mutex);
-
-			if (!is_pending)
+			if (!retro_atomic_load_acquire_int(&is_pending))
 			{
 				return true;
 			}
@@ -92,51 +119,29 @@ namespace vk
 
 			if (vkGetFenceStatus(pool->get_owner(), m_submit_fence->handle) == VK_SUCCESS)
 			{
-				lock.upgrade();
-
-				if (is_pending)
-				{
-					m_submit_fence->reset();
-					vk::on_event_completed(eid_tag);
-
-					is_pending = false;
-					eid_tag = 0;
-				}
+				complete();
 			}
 
-			return !is_pending;
+			return !retro_atomic_load_acquire_int(&is_pending);
 		}
 
 		VkResult wait(u64 timeout = 0ull)
 		{
-			reader_lock lock(guard_mutex);
-
-			if (!is_pending)
+			if (!retro_atomic_load_acquire_int(&is_pending))
 			{
 				return VK_SUCCESS;
 			}
 
 			const auto ret = vk::wait_for_fence(m_submit_fence, timeout);
 
-			lock.upgrade();
-
-			if (is_pending)
-			{
-				m_submit_fence->reset();
-				vk::on_event_completed(eid_tag);
-
-				is_pending = false;
-				eid_tag = 0;
-			}
+			complete();
 
 			return ret;
 		}
 
 		void flush()
 		{
-			reader_lock lock(guard_mutex);
-
-			if (!is_pending)
+			if (!retro_atomic_load_acquire_int(&is_pending))
 			{
 				return;
 			}
