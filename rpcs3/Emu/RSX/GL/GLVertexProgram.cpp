@@ -100,8 +100,8 @@ void GLVertexDecompilerThread::insertConstants(std::stringstream& OS, const std:
 			{
 				if (m_prog.texture_state.multisampled_textures) [[ unlikely ]]
 				{
-					ensure(PI.name.length() > 3);
-					int index = atoi(&PI.name[3]);
+					ensure(PI.name.length() > 4);
+					int index = atoi(&PI.name[4]); // "vtex" and the unit's number
 
 					if (m_prog.texture_state.multisampled_textures & (1 << index))
 					{

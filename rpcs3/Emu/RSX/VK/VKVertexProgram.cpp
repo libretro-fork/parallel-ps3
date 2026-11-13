@@ -253,8 +253,8 @@ void VKVertexDecompilerThread::insertConstants(std::stringstream& OS, const std:
 
 				if (m_prog.texture_state.multisampled_textures) [[ unlikely ]]
 				{
-					ensure(PI.name.length() > 3);
-					int index = atoi(&PI.name[3]);
+					// "vtex" and the unit's number
+					const int index = vk::get_texture_index(PI.name);
 
 					if (m_prog.texture_state.multisampled_textures & (1 << index))
 					{
