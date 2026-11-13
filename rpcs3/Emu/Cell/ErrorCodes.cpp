@@ -17,6 +17,16 @@ s32 error_code::error_report(s32 result, const logs::message* channel, const cha
 		channel = &sys_log.error;
 	}
 
+	// Nothing is logged at this level - as with the log off, which is how the
+	// core runs unless asked - so there is nothing to make: games return
+	// errors all the time (a lock that is taken, a wait that timed out, a
+	// file that is not there), and each used to be formatted into a string
+	// and counted in a map of every such string the thread had made
+	if (!*channel && !g_log_all_errors) [[likely]]
+	{
+		return fmt ? result : 0;
+	}
+
 	if (!sup && !args)
 	{
 		if (!fmt)

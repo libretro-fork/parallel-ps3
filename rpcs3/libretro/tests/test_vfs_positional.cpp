@@ -16,6 +16,9 @@
 #include "libretro_vfs.h"
 #include "Utilities/File.h"
 #include "util/logs.hpp"
+#include "Emu/Cell/ErrorCodes.h"
+
+#include <malloc.h>
 
 #include <retro_atomic.h>
 
@@ -467,6 +470,24 @@ int main()
 		CHECK(!test_log.notice);
 		CHECK(!test_log.error);
 		CHECK(!!test_log.fatal);
+
+		// An error a game's call returns is not written up either: no
+		// string made of it, nothing kept for it, however many there are
+		{
+			const auto used = []() { return static_cast<s64>(mallinfo2().uordblks); };
+			s64 sum = 0;
+			const s64 before = used();
+			timespec a, b;
+			clock_gettime(CLOCK_MONOTONIC, &a); // not pacing: the benchmark's stopwatch
+			for (u32 i = 0; i < 20000; i++)
+				sum += error_code{CELL_EINVAL, "argument %u of the call", i};
+			clock_gettime(CLOCK_MONOTONIC, &b); // not pacing: the benchmark's stopwatch
+			const s64 after = used();
+			std::printf("test_vfs_positional: an error returned by a call, the log off: %.1f ns, %lld bytes kept for 20000\n",
+				((b.tv_sec - a.tv_sec) * 1e9 + (b.tv_nsec - a.tv_nsec)) / 20000, static_cast<long long>(after - before));
+			CHECK(sum == s64{20000} * static_cast<s32>(CELL_EINVAL));
+			CHECK(after - before < 4096);
+		}
 
 		// With the option on: one plain file, complete, and no compressed
 		// second copy beside it
