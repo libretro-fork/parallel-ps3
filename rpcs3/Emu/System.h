@@ -137,7 +137,6 @@ class Emulator final
 
 	bool m_state_inspection_savestate = false;
 
-	usz m_tty_file_init_pos = umax;
 
 	std::vector<std::shared_ptr<atomic_t<u32>>> m_pause_msgs_refs;
 

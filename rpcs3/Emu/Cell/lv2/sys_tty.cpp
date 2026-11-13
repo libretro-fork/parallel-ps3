@@ -11,8 +11,6 @@
 
 LOG_CHANNEL(sys_tty);
 
-extern fs::file g_tty;
-extern atomic_t<s64> g_tty_size;
 
 error_code sys_tty_read(s32 ch, vm::ptr<char> buf, u32 len, vm::ptr<u32> preadlen)
 {
@@ -62,15 +60,23 @@ error_code sys_tty_write([[maybe_unused]] ppu_thread& ppu, s32 ch, vm::cptr<char
 
 	sys_tty.notice("sys_tty_write(ch=%d, buf=*0x%x, len=%d, pwritelen=*0x%x)", ch, buf, len, pwritelen);
 
-	std::string msg;
+	// What the game writes goes to the log and nowhere else (there is no
+	// TTY.log): with the log off - as it is unless the Detailed Log option is
+	// on - the text is not copied out of the guest, not searched and not
+	// formatted, only checked to be readable
+	const bool logged = !!sys_tty.warning;
 
-	if (static_cast<s32>(len) > 0 && vm::check_addr(buf.addr(), vm::page_readable, len))
+	std::string msg;
+	bool readable = static_cast<s32>(len) > 0 && vm::check_addr(buf.addr(), vm::page_readable, len);
+
+	if (readable && logged)
 	{
 		msg.resize(len);
 
 		if (!vm::try_access(buf.addr(), msg.data(), len, false))
 		{
 			msg.clear();
+			readable = false;
 		}
 	}
 
@@ -94,7 +100,7 @@ error_code sys_tty_write([[maybe_unused]] ppu_thread& ppu, s32 ch, vm::cptr<char
 
 	sample = {}; // Remove reference to string
 
-	if (msg.size() >= 2u && [&]()
+	if (logged && msg.size() >= 2u && [&]()
 	{
 		static thread_local u64 last_write = 0;
 
@@ -116,6 +122,7 @@ error_code sys_tty_write([[maybe_unused]] ppu_thread& ppu, s32 ch, vm::cptr<char
 		else
 		{
 			msg.clear();
+			readable = false;
 		}
 	}
 
@@ -127,7 +134,7 @@ error_code sys_tty_write([[maybe_unused]] ppu_thread& ppu, s32 ch, vm::cptr<char
 
 	if (static_cast<s32>(len) > 0)
 	{
-		if (!msg.empty())
+		if (readable && !msg.empty())
 		{
 			if (msg.ends_with("\n"))
 			{
@@ -147,16 +154,8 @@ error_code sys_tty_write([[maybe_unused]] ppu_thread& ppu, s32 ch, vm::cptr<char
 			{
 				(warning ? sys_tty.warning : sys_tty.notice)(u8"sys_tty_write(): “%s”", msg);
 			}
-
-			if (g_tty)
-			{
-				// Lock size by making it negative
-				g_tty_size -= (1ll << 48);
-				g_tty.write(msg);
-				g_tty_size += (1ll << 48) + len;
-			}
 		}
-		else if (g_cfg.core.debug_console_mode)
+		else if (!readable && g_cfg.core.debug_console_mode)
 		{
 			return {CELL_EFAULT, buf.addr()};
 		}

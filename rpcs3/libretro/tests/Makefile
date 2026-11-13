@@ -545,6 +545,8 @@ check: all
 	@# The log is one plain file, and the core tells the logger it has started
 	@if grep -n "deflate\|\.gz" ../../util/logs.cpp; then echo "log: a compressed copy of the log is back - it was deflated at the highest level while the game ran (CHANGELOG)"; exit 1; else echo "log: no compressed copy"; fi
 	@if ! grep -q "logs::set_init" ../libretro_core.cpp || ! grep -q "set_ceiling(logs::level::fatal)" ../libretro_core.cpp; then echo "log: the core no longer says logs::set_init (every message is then kept in a list under one lock) or no longer turns logging off without the Detailed Log option"; exit 1; else echo "log: started, and off unless asked for"; fi
+	@# What a game writes to its TTY goes to the log, when there is one: no TTY.log
+	@if grep -rn "g_tty\b\|g_tty_size" ../.. --include=*.h --include=*.hpp --include=*.cpp | grep -v "^\.\./\.\./libretro/tests/"; then echo "TTY: the TTY.log file is back - a write to it for every line a game prints (CHANGELOG)"; exit 1; else echo "TTY: no TTY.log"; fi
 	@# Nor do the mice: no lock in the handler, none taken by those that read them
 	@if grep -n "shared_mutex\|std::mutex\|lock_guard\|scoped_lock" ../../Emu/Io/MouseHandler.h ../../Emu/Io/MouseHandler.cpp ../libretro_mouse_handler.h ../libretro_mouse_handler.cpp || grep -rn "handler\.mutex\|take_pending()" ../../Emu/Cell/Modules/cellMouse.cpp ../../Emu/Cell/Modules/cellGem.cpp ../../Emu/Io/usio.cpp ../../Emu/Io/GunCon3.cpp ../../Emu/Io/TopShotElite.cpp ../../Emu/Io/TopShotFearmaster.cpp ../../Emu/Io/GameTablet.cpp; then echo "mice: the mouse handler's lock is back - a mouse is a record read whole (AGENTS.md)"; exit 1; else echo "mice: no mouse lock"; fi
 

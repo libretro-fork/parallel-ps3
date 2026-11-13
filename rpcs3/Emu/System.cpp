@@ -103,8 +103,6 @@ extern std::string get_syscache_state_corruption_indicator_file_path(std::string
 
 extern atomic_t<bool> g_big_picture_mode_active;
 
-fs::file g_tty;
-atomic_t<s64> g_tty_size{0};
 thread_local std::string_view g_tls_serialize_name;
 
 extern thread_local std::string(*g_tls_log_prefix)();
@@ -506,18 +504,8 @@ void Emulator::Init()
 		return true;
 	};
 
-	if (!g_tty)
-	{
-		make_path_verbose(fs::get_log_dir(), true);
-
-		const auto tty_path = fs::get_log_dir() + "TTY.log";
-		g_tty.open(tty_path, fs::rewrite + fs::append);
-
-		if (!g_tty)
-		{
-			sys_log.fatal("Failed to create TTY log: %s (%s)", tty_path, fs::g_tls_error);
-		}
-	}
+	// No TTY.log: what a game writes to its TTY is in the log, when there is one
+	make_path_verbose(fs::get_log_dir(), true);
 
 	g_fxo->reset();
 
@@ -2922,7 +2910,6 @@ void Emulator::Run(bool start_playtime)
 	m_pause_start_time = 0;
 	m_pause_amend_time = 0;
 
-	m_tty_file_init_pos = g_tty ? g_tty.pos() : usz{umax};
 
 	rpcs3::utils::configure_logs();
 
@@ -4125,36 +4112,6 @@ void Emulator::Kill(bool allow_autoexit, bool savestate, savestate_stage* save_s
 		}
 
 		// Log additional debug information - do not do it on the main thread due to the concern of halting UI events
-
-		if (g_tty && sys_log.notice)
-		{
-			// Write merged TTY output after emulation has been safely stopped
-
-			if (usz attempted_read_size = utils::sub_saturate<usz>(g_tty.pos(), m_tty_file_init_pos))
-			{
-				if (fs::file tty_read_fd{fs::get_log_dir() + "TTY.log"})
-				{
-					// Enforce an arbitrary limit for now to avoid OOM in case the guest code has bombarded TTY
-					// 3MB, this should be enough
-					constexpr usz c_max_tty_spill_size = 0x30'0000;
-
-					std::string tty_buffer(std::min<usz>(attempted_read_size, c_max_tty_spill_size), '\0');
-					tty_buffer.resize(tty_read_fd.read_at(m_tty_file_init_pos, tty_buffer.data(), tty_buffer.size()));
-					tty_read_fd.close();
-
-					if (!tty_buffer.empty() && utils::isspace(tty_buffer.back()))
-					{
-						tty_buffer.resize(tty_buffer.find_last_not_of(" \f\n\r\t\v"sv) + 1);
-					}
-
-					if (!tty_buffer.empty())
-					{
-						// Mark start and end very clearly with RPCS3 put in it
-						sys_log.notice("\nAccumulated RPCS3 TTY:\n\n\n%s\n\n\nEnd RPCS3 TTY Section.\n", tty_buffer);
-					}
-				}
-			}
-		}
 
 		if (g_cfg.core.spu_debug && sys_log.notice)
 		{
