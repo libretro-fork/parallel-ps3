@@ -20,6 +20,7 @@
 #include "Emu/Cell/PPUModule.h"
 #include "Emu/Cell/lv2/sys_fs.h"
 #include "Emu/Cell/lv2/sys_mutex.h"
+#include "Emu/Cell/lv2/sys_semaphore.h"
 #include "Emu/Cell/lv2/sys_cond.h"
 #include "Emu/IdManager.h"
 #include "Emu/VFS.h"
@@ -820,7 +821,11 @@ int main()
 		static retro_atomic_int_t s_current, s_stop, s_bad, s_undone, s_locked, s_destroyed;
 		constexpr u32 slots = 8;
 		static retro_atomic_int_t s_ids[slots];
-		static retro_atomic_int_t s_held[slots]; // A thread holds the slot's mutex and has been told its lock stands
+		// A thread holds the mutex and has been told its lock stands. By the
+		// ID's place in the table, not the slot: an ID a thread read from one
+		// slot may by now be another slot's new mutex.
+		static retro_atomic_int_t s_held[8192];
+		const auto place = [](u32 id) { return (id >> 8) & 8191; };
 
 		for (u32 i = 0; i < slots; i++)
 			retro_atomic_store_release_int(&s_ids[i], static_cast<int>(make_mutex()));
@@ -852,11 +857,11 @@ int main()
 					if (idm::still_named<lv2_obj, lv2_mutex>(id, mutex.ptr))
 					{
 						// The lock stands: a destroy must fail until it is given up
-						retro_atomic_fetch_add_int(&s_held[slot], 1);
+						retro_atomic_fetch_add_int(&s_held[(id >> 8) & 8191], 1);
 						retro_atomic_fetch_add_int(&s_locked, 1);
 						for (int spin = 0; spin < 20; spin++)
 							(void)retro_atomic_load_relaxed_int(&s_stop);
-						retro_atomic_fetch_sub_int(&s_held[slot], 1);
+						retro_atomic_fetch_sub_int(&s_held[(id >> 8) & 8191], 1);
 					}
 					else
 					{
@@ -883,7 +888,7 @@ int main()
 					return CELL_EBUSY;
 
 				// Nobody may hold it and have been told so
-				if (retro_atomic_load_acquire_int(&s_held[slot]))
+				if (retro_atomic_load_acquire_int(&s_held[place(id)]))
 					retro_atomic_fetch_add_int(&s_bad, 1);
 
 				return {};
@@ -908,6 +913,111 @@ int main()
 		CHECK(retro_atomic_load_acquire_int(&s_locked) > 100);
 		std::printf("  ids: %d locks stood, %d undone, %d destroys\n", retro_atomic_load_acquire_int(&s_locked),
 			retro_atomic_load_acquire_int(&s_undone), retro_atomic_load_acquire_int(&s_destroyed));
+
+		// Semaphores: threads become waiters by ID the way sys_semaphore_wait
+		// now does - a counted reference (idm::hold), the semaphore's lock,
+		// lv2_sema::enter - while another thread destroys and recreates
+		// them the way sys_semaphore_destroy does, refusing while there is a
+		// waiter. A destroy never succeeds on a semaphore a thread waits on
+		// and has been told it waits on.
+		{
+			const auto make_sema = []
+			{
+				return idm::make<lv2_obj, lv2_sema>(u32{SYS_SYNC_PRIORITY}, u64{0}, u64{0}, s32{1}, s32{0});
+			};
+
+			static retro_atomic_int_t s_stop2, s_bad2, s_waited, s_refused, s_destroyed2;
+			static retro_atomic_int_t s_sids[slots];
+			static retro_atomic_int_t s_waiting[8192]; // By the ID's place, as s_held
+
+			for (u32 i = 0; i < slots; i++)
+				retro_atomic_store_release_int(&s_sids[i], static_cast<int>(make_sema()));
+
+			std::thread waiters[4];
+			for (u32 t = 0; t < 4; t++)
+			{
+				waiters[t] = std::thread([t]
+				{
+					u32 x = t * 2654435761u + 7;
+
+					while (!retro_atomic_load_acquire_int(&s_stop2))
+					{
+						x = x * 1664525u + 1013904223u;
+						const u32 slot = (x >> 16) % slots;
+						const u32 id = static_cast<u32>(retro_atomic_load_acquire_int(&s_sids[slot]));
+
+						const auto sema = idm::hold<lv2_obj, lv2_sema>(id);
+						if (!sema)
+							continue;
+
+						if (x & 0x100)
+							std::this_thread::yield();
+
+						std::lock_guard lock(sema->mutex);
+						const s32 entered = sema->enter(id);
+
+						if (entered < 0)
+						{
+							retro_atomic_fetch_add_int(&s_refused, 1);
+							continue;
+						}
+
+						if (entered > 0)
+						{
+							// There is never a count to take here
+							retro_atomic_fetch_add_int(&s_bad2, 1);
+							continue;
+						}
+
+						// A waiter: a destroy must fail until the thread leaves
+						retro_atomic_fetch_add_int(&s_waiting[(id >> 8) & 8191], 1);
+						retro_atomic_fetch_add_int(&s_waited, 1);
+						for (int spin = 0; spin < 20; spin++)
+							(void)retro_atomic_load_relaxed_int(&s_stop2);
+						if (idm::check_unlocked<lv2_obj, lv2_sema>(id) != sema.get())
+							retro_atomic_fetch_add_int(&s_bad2, 1);
+						retro_atomic_fetch_sub_int(&s_waiting[(id >> 8) & 8191], 1);
+						sema->val++;
+					}
+				});
+			}
+
+			// On until the waiters have had their turn too, however the
+			// threads are scheduled
+			for (u32 n = 0; n < 60000 || (n < 60000000 && retro_atomic_load_acquire_int(&s_waited) <= 1000); n++)
+			{
+				const u32 slot = n % slots;
+				const u32 id = static_cast<u32>(retro_atomic_load_acquire_int(&s_sids[slot]));
+
+				// As sys_semaphore_destroy: not while it has a waiter
+				const auto gone = idm::withdraw<lv2_obj, lv2_sema>(id, [&](lv2_sema& sema) -> CellError
+				{
+					if (sema.val < 0)
+						return CELL_EBUSY;
+
+					if (retro_atomic_load_acquire_int(&s_waiting[place(id)]))
+						retro_atomic_fetch_add_int(&s_bad2, 1);
+
+					return {};
+				});
+
+				if (gone && !gone.ret)
+				{
+					retro_atomic_fetch_add_int(&s_destroyed2, 1);
+					retro_atomic_store_release_int(&s_sids[slot], static_cast<int>(make_sema()));
+				}
+			}
+
+			retro_atomic_store_release_int(&s_stop2, 1);
+			for (auto& t : waiters)
+				t.join();
+
+			CHECK(retro_atomic_load_acquire_int(&s_bad2) == 0);
+			CHECK(retro_atomic_load_acquire_int(&s_destroyed2) > 100);
+			CHECK(retro_atomic_load_acquire_int(&s_waited) > 100);
+			std::printf("  ids: %d semaphore waits stood, %d refused, %d destroys\n", retro_atomic_load_acquire_int(&s_waited),
+				retro_atomic_load_acquire_int(&s_refused), retro_atomic_load_acquire_int(&s_destroyed2));
+		}
 
 		// What a lookup costs one thread: the reader lock, and the pin
 		{

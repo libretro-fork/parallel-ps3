@@ -41,6 +41,34 @@ struct lv2_sema final : lv2_obj
 	{
 	}
 
+	// For a thread that found the semaphore under @id with no lock over the
+	// IDs and holds the semaphore's own lock: takes a count (1), or makes
+	// the thread a waiter (0) - or neither, when the ID no longer names
+	// the semaphore (-1).
+	//
+	// The lock over all IDs kept a destroy from coming between the
+	// semaphore being found and the thread waiting on it. This keeps it:
+	// sys_semaphore_destroy marks the ID before it looks for waiters, and
+	// the thread asks whether the ID still names the semaphore (waiting
+	// for a destroy that is deciding) after it has made itself one. Either
+	// the destroy saw the waiter and failed, or the thread is no waiter
+	// after all.
+	s32 enter(u32 id)
+	{
+		if (val-- <= 0)
+		{
+			if (!idm::still_named<lv2_obj, lv2_sema>(id, this)) [[unlikely]]
+			{
+				val++;
+				return -1;
+			}
+
+			return 0;
+		}
+
+		return 1;
+	}
+
 	lv2_sema(utils::serial& ar);
 	static std::function<void(void*)> load(utils::serial& ar);
 	void save(utils::serial& ar);

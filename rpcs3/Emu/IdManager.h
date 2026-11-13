@@ -1082,9 +1082,26 @@ public:
 
 			if (cell < 0) [[unlikely]]
 			{
-				// No cell: keep it alive the old way
+				// No cell: keep it alive the old way. get_unlocked reads the
+				// ID's key and then the object, and the place can be given
+				// to a new object with another ID between the two. The
+				// reference keeps this object from being put anywhere
+				// again, so if it is in its place now it has been there
+				// since it was found, and the key read in between is its own.
 				result.counted = get_unlocked<T, Get>(id);
-				result.ptr = result.counted.get();
+
+				const auto& key = map.vec_keys[index];
+
+				if (result.counted && (!id_manager::id_traits<Get>::invl_range.second || key.value() == id) &&
+					data.observe() == static_cast<T*>(result.counted.get()))
+				{
+					result.ptr = result.counted.get();
+				}
+				else
+				{
+					result.counted = null_ptr;
+				}
+
 				return result;
 			}
 
@@ -1111,6 +1128,47 @@ public:
 			lf_hazard_drop(record, cell);
 			return result;
 		}
+	}
+
+	// A counted reference to the object of an ID, found without the lock:
+	// for a thread that may go on to sleep on the object, which a pin
+	// cannot be kept for.
+	//
+	// get_unlocked() reads the ID's key and then the object, and between
+	// the two the ID can be withdrawn and its place given to a new object
+	// with another ID, which it then returns for an ID that no longer
+	// exists. Here the object is pinned first, which settles that the ID
+	// names it, and the reference is taken while the pin keeps the place
+	// from being given away.
+	template <typename T, typename Get = T>
+		requires IdmTypesCompatible<T, Get>
+	static inline stx::shared_ptr<Get> hold(u32 id)
+	{
+		auto found = pin<T, Get>(id);
+
+		if (!found)
+		{
+			return null_ptr;
+		}
+
+		const u32 index = get_index<Get>(id);
+		auto& map = g_fxo->get<id_manager::id_map<T>>();
+
+		if (found.cell < 0) [[unlikely]]
+		{
+			// No hazard cell: the pin is a reference already
+			return std::move(found.counted);
+		}
+
+		auto result = static_cast<stx::shared_ptr<Get>>(map.vec_data[index].load());
+
+		if (result.get() != found.ptr)
+		{
+			// Withdrawn since it was pinned: as if looked up after that
+			return null_ptr;
+		}
+
+		return result;
 	}
 
 	// For a thread that found @object under @id without the lock and has

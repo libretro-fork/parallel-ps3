@@ -119,33 +119,66 @@ error_code sys_semaphore_wait(ppu_thread& ppu, u32 sem_id, u64 timeout)
 
 	sys_semaphore.trace("sys_semaphore_wait(sem_id=0x%x, timeout=0x%llx)", sem_id, timeout);
 
-	const auto sem = idm::get<lv2_obj, lv2_sema>(sem_id, [&, notify = lv2_obj::notify_all_t()](lv2_sema& sema)
+	// Free, as it mostly is: found and taken with no lock and no reference
+	// counted. Taking a count that is there makes no waiter, which is all
+	// sys_semaphore_destroy asks about, so this needs no second look: it
+	// is as if it came before a destroy that ran meanwhile.
+	if (const auto pinned = idm::pin<lv2_obj, lv2_sema>(sem_id))
 	{
-		const s32 val = sema.val;
+		const s32 val = pinned->val;
 
-		if (val > 0)
+		if (val > 0 && pinned->val.compare_and_swap_test(val, val - 1))
 		{
-			if (sema.val.compare_and_swap_test(val, val - 1))
+			return CELL_OK;
+		}
+	}
+	else
+	{
+		return CELL_ESRCH;
+	}
+
+	// The thread may sleep on it, so it keeps a reference
+	struct
+	{
+		stx::shared_ptr<lv2_sema> ptr;
+		s32 ret = 0; // 1: has a count, 0: sleeps, -1: no such semaphore
+
+		explicit operator bool() const { return !!ptr; }
+		lv2_sema* operator->() const { return ptr.get(); }
+	}
+	sem{idm::hold<lv2_obj, lv2_sema>(sem_id)};
+
+	if (sem)
+	{
+		sem.ret = [&, notify = lv2_obj::notify_all_t()](lv2_sema& sema) -> s32
+		{
+			const s32 val = sema.val;
+
+			if (val > 0)
 			{
-				return true;
+				if (sema.val.compare_and_swap_test(val, val - 1))
+				{
+					return 1;
+				}
 			}
-		}
 
-		lv2_obj::prepare_for_sleep(ppu);
+			lv2_obj::prepare_for_sleep(ppu);
 
-		std::lock_guard lock(sema.mutex);
+			std::lock_guard lock(sema.mutex);
 
-		if (sema.val-- <= 0)
-		{
-			sema.sleep(ppu, timeout);
-			lv2_obj::emplace(sema.sq, &ppu);
-			return false;
-		}
+			const s32 entered = sema.enter(sem_id);
 
-		return true;
-	});
+			if (!entered)
+			{
+				sema.sleep(ppu, timeout);
+				lv2_obj::emplace(sema.sq, &ppu);
+			}
 
-	if (!sem)
+			return entered;
+		}(*sem.ptr);
+	}
+
+	if (!sem || sem.ret < 0)
 	{
 		return CELL_ESRCH;
 	}
@@ -236,17 +269,15 @@ error_code sys_semaphore_trywait(ppu_thread& ppu, u32 sem_id)
 
 	sys_semaphore.trace("sys_semaphore_trywait(sem_id=0x%x)", sem_id);
 
-	const auto sem = idm::check<lv2_obj, lv2_sema>(sem_id, [&](lv2_sema& sema)
-	{
-		return sema.val.try_dec(0);
-	});
+	// Found with no lock; see sys_semaphore_wait for why that is enough
+	const auto sem = idm::pin<lv2_obj, lv2_sema>(sem_id);
 
 	if (!sem)
 	{
 		return CELL_ESRCH;
 	}
 
-	if (!sem.ret)
+	if (!sem->val.try_dec(0))
 	{
 		return not_an_error(CELL_EBUSY);
 	}
@@ -260,22 +291,21 @@ error_code sys_semaphore_post(ppu_thread& ppu, u32 sem_id, s32 count)
 
 	sys_semaphore.trace("sys_semaphore_post(sem_id=0x%x, count=%d)", sem_id, count);
 
-	const auto sem = idm::get<lv2_obj, lv2_sema>(sem_id, [&](lv2_sema& sema)
+	// No waiters, as mostly: found and counted up with no lock and no
+	// reference counted (see sys_semaphore_wait)
+	if (const auto pinned = idm::pin<lv2_obj, lv2_sema>(sem_id))
 	{
-		const s32 val = sema.val;
+		const s32 val = pinned->val;
 
-		if (val >= 0 && count > 0 && count <= sema.max - val)
+		if (val >= 0 && count > 0 && count <= pinned->max - val)
 		{
-			if (sema.val.compare_and_swap_test(val, val + count))
+			if (pinned->val.compare_and_swap_test(val, val + count))
 			{
-				return true;
+				return CELL_OK;
 			}
 		}
-
-		return false;
-	});
-
-	if (!sem)
+	}
+	else
 	{
 		return CELL_ESRCH;
 	}
@@ -285,13 +315,17 @@ error_code sys_semaphore_post(ppu_thread& ppu, u32 sem_id, s32 count)
 		return CELL_EINVAL;
 	}
 
+	// Threads to wake: their queue is walked under the semaphore's own
+	// lock, with a reference kept
+	const auto sem = idm::hold<lv2_obj, lv2_sema>(sem_id);
+
+	if (!sem)
+	{
+		return CELL_ESRCH;
+	}
+
 	lv2_obj::notify_all_t notify;
 
-	if (sem.ret)
-	{
-		return CELL_OK;
-	}
-	else
 	{
 		std::lock_guard lock(sem->mutex);
 
@@ -343,12 +377,13 @@ error_code sys_semaphore_get_value(ppu_thread& ppu, u32 sem_id, vm::ptr<s32> cou
 
 	sys_semaphore.trace("sys_semaphore_get_value(sem_id=0x%x, count=*0x%x)", sem_id, count);
 
-	const auto sema = idm::check<lv2_obj, lv2_sema>(sem_id, [](lv2_sema& sema)
-	{
-		return std::max<s32>(0, sema.val);
-	});
+	s32 value = 0;
 
-	if (!sema)
+	if (const auto sema = idm::pin<lv2_obj, lv2_sema>(sem_id))
+	{
+		value = std::max<s32>(0, sema->val);
+	}
+	else
 	{
 		return CELL_ESRCH;
 	}
@@ -360,6 +395,6 @@ error_code sys_semaphore_get_value(ppu_thread& ppu, u32 sem_id, vm::ptr<s32> cou
 
 	ppu.check_state();
 
-	*count = sema.ret;
+	*count = value;
 	return CELL_OK;
 }

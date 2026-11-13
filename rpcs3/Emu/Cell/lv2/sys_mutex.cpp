@@ -230,7 +230,7 @@ error_code sys_mutex_lock(ppu_thread& ppu, u32 mutex_id, u64 timeout)
 		explicit operator bool() const { return !!ptr; }
 		lv2_mutex* operator->() const { return ptr.get(); }
 	}
-	mutex{idm::get_unlocked<lv2_obj, lv2_mutex>(mutex_id)};
+	mutex{idm::hold<lv2_obj, lv2_mutex>(mutex_id)};
 
 	if (mutex)
 	{
