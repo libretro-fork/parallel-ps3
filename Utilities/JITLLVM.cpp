@@ -457,9 +457,10 @@ public:
 	{
 		std::string name = m_path;
 
+		// As it is: a compressed object is inflated on every boot it is
+		// loaded on, and that costs many times what reading the larger file
+		// does (ObjectCache::load)
 		name.append(_module->getName());
-		//fs::file(name, fs::rewrite).write(obj.getBufferStart(), obj.getBufferSize());
-		name.append(".gz");
 
 		if (!obj.getBufferSize())
 		{
@@ -477,30 +478,42 @@ public:
 			return;
 		}
 
-		// Bold assumption about upper limit of space consumption
-		const usz max_size = obj.getBufferSize() * 4;
+		const usz size = obj.getBufferSize();
 
-		if (!m_compiler->add_sub_disk_space(0 - max_size))
+		if (!m_compiler->add_sub_disk_space(0 - size))
 		{
 			jit_log.error("LLVM: Failed to create module file: %s (not enough disk space left)", name);
 			return;
 		}
 
-		if (!zip(obj.getBufferStart(), obj.getBufferSize(), module_file.file))
+		if (module_file.file.write(obj.getBufferStart(), size) != size)
 		{
-			jit_log.error("LLVM: Failed to compress module: %s", std::string(_module->getName()));
+			jit_log.error("LLVM: Failed to write module: %s", std::string(_module->getName()));
+			ensure(m_compiler->add_sub_disk_space(size));
 			return;
 		}
 
 		jit_log.trace("LLVM: Created module: %s", std::string(_module->getName()));
-
-		// Restore space that was overestimated
-		ensure(m_compiler->add_sub_disk_space(max_size - module_file.file.size()));
 		module_file.commit();
 	}
 
 	static std::unique_ptr<llvm::MemoryBuffer> load(const std::string& path)
 	{
+		// The object as it was written, read once, straight into the buffer
+		// LLVM keeps
+		if (fs::file cached{path, fs::read})
+		{
+			if (cached.size() == 0) [[unlikely]]
+			{
+				return nullptr;
+			}
+
+			auto buf = llvm::WritableMemoryBuffer::getNewUninitMemBuffer(cached.size());
+			cached.read(buf->getBufferStart(), buf->getBufferSize());
+			return buf;
+		}
+
+		// A cache from before objects were stored as they are: compressed
 		if (fs::file cached{path + ".gz", fs::read})
 		{
 			const std::vector<u8> cached_data = cached.to_vector<u8>();
@@ -518,20 +531,16 @@ public:
 				return nullptr;
 			}
 
-			auto buf = llvm::WritableMemoryBuffer::getNewUninitMemBuffer(out.size());
-			std::memcpy(buf->getBufferStart(), out.data(), out.size());
-			return buf;
-		}
-
-		if (fs::file cached{path, fs::read})
-		{
-			if (cached.size() == 0) [[unlikely]]
+			// Stored as it is from here on, so this is the last time it is
+			// inflated
+			cached.close();
+			if (fs::pending_file plain; plain.open(path) && plain.file.write(out.data(), out.size()) == out.size() && plain.commit())
 			{
-				return nullptr;
+				fs::remove_file(path + ".gz");
 			}
 
-			auto buf = llvm::WritableMemoryBuffer::getNewUninitMemBuffer(cached.size());
-			cached.read(buf->getBufferStart(), buf->getBufferSize());
+			auto buf = llvm::WritableMemoryBuffer::getNewUninitMemBuffer(out.size());
+			std::memcpy(buf->getBufferStart(), out.data(), out.size());
 			return buf;
 		}
 

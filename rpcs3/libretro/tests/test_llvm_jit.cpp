@@ -11,7 +11,12 @@
 #include "stdafx.h"
 #include "Utilities/JIT.h"
 
+#include "Crypto/unzip.h"
+#include "Utilities/File.h"
+
 #include <cstdio>
+#include <filesystem>
+#include <unistd.h>
 
 #ifdef _MSC_VER
 #pragma warning(push, 0)
@@ -37,10 +42,9 @@ static int failures = 0;
 
 #define CHECK(cond) do { if (!(cond)) { std::fprintf(stderr, "%s:%d: check failed: %s\n", __FILE__, __LINE__, #cond); failures++; } } while (0)
 
-int main()
+// The test's module, made in a compiler's context
+static std::unique_ptr<llvm::Module> make_module(llvm::LLVMContext& ctx)
 {
-	jit_compiler jit({}, jit_compiler::cpu(""));
-	llvm::LLVMContext& ctx = jit.get_context();
 	auto mod = std::make_unique<llvm::Module>("test_llvm_jit", ctx);
 	llvm::IRBuilder<> b(ctx);
 	llvm::Type* const i64 = b.getInt64Ty();
@@ -87,6 +91,13 @@ int main()
 	b.CreateRetVoid();
 
 	CHECK(!llvm::verifyModule(*mod, &llvm::errs()));
+	return mod;
+}
+
+int main()
+{
+	jit_compiler jit({}, jit_compiler::cpu(""));
+	auto mod = make_module(jit.get_context());
 
 	jit.add(std::move(mod));
 	jit.fin();
@@ -112,6 +123,50 @@ int main()
 		alignas(16) f32 z[4] = {};
 		f_add4(z, x, y);
 		CHECK(z[0] == 2.0f && z[1] == 0.0f && z[2] == 2.0f && z[3] == 8.0f);
+	}
+
+	// The object cache: a compiled module is stored as the object it is,
+	// not compressed - inflating it again on every boot costs many times what
+	// reading the larger file does - and comes back from there in another
+	// compiler; a cache written compressed, as they were, still loads
+	{
+		const std::string dir = fmt::format("%s/test_llvm_jit_%u/", std::filesystem::temp_directory_path().string(), static_cast<u32>(getpid()));
+		std::filesystem::create_directories(dir);
+		{
+			jit_compiler writer({}, jit_compiler::cpu(""));
+			writer.add(make_module(writer.get_context()), dir);
+			writer.fin();
+		}
+
+		const std::string object = dir + "test_llvm_jit";
+		CHECK(fs::is_file(object));
+		CHECK(!fs::is_file(object + ".gz"));
+		CHECK(jit_compiler::check(object));
+
+		std::vector<u8> bytes;
+		if (fs::file f{object, fs::read})
+			bytes = f.to_vector<u8>();
+		// An object file as the linker knows it, not a compressed stream
+		CHECK(bytes.size() > 4 && !(bytes[0] == 0x1f && bytes[1] == 0x8b));
+
+		{
+			jit_compiler reader({}, jit_compiler::cpu(""));
+			CHECK(reader.add(object));
+			reader.fin();
+			const auto cached_sum = reinterpret_cast<s64 (*)(s64)>(reader.get("sum_mul_add"));
+			CHECK(cached_sum && cached_sum(10) == 355);
+		}
+
+		{
+			fs::file old(dir + "old.gz", fs::rewrite);
+			CHECK(zip(bytes.data(), bytes.size(), old));
+		}
+		CHECK(jit_compiler::check(dir + "old"));
+		// and is the object itself after that first load
+		CHECK(fs::is_file(dir + "old") && !fs::is_file(dir + "old.gz"));
+		CHECK(jit_compiler::check(dir + "old"));
+
+		std::filesystem::remove_all(dir);
 	}
 
 	if (failures)
