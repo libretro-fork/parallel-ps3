@@ -93,6 +93,7 @@ target_sources(rpcs3_emu PRIVATE
     ../../Utilities/JITASM.cpp
     ../../Utilities/JITLLVM.cpp
     ../../Utilities/LUrlParser.cpp
+    ../../Utilities/lf_u64_map.c
     ../../Utilities/object_pack.c
     ../../Utilities/mutex.cpp
     ../../Utilities/rXml.cpp

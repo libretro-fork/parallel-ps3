@@ -181,6 +181,7 @@ SOURCES_RPCS3 := \
 	$(CORE_DIR)/Utilities/JITASM.cpp \
 	$(CORE_DIR)/Utilities/JITLLVM.cpp \
 	$(CORE_DIR)/Utilities/LUrlParser.cpp \
+	$(CORE_DIR)/Utilities/lf_u64_map.c \
 	$(CORE_DIR)/Utilities/object_pack.c \
 	$(CORE_DIR)/Utilities/StrFmt.cpp \
 	$(CORE_DIR)/Utilities/Thread.cpp \

@@ -4,6 +4,7 @@
 #include "Utilities/bin_patch.h"
 #include "Utilities/StrUtil.h"
 #include "Utilities/address_range.h"
+#include "Utilities/lf_u64_map.h"
 #include "util/serialization.hpp"
 #include "Crypto/sha1.h"
 #include "Crypto/unself.h"
@@ -157,9 +158,33 @@ void ppu_module_manager::initialize_modules()
 }
 
 // Global linkage information
+// The key a function's link entry is published under (ppu_linkage_info), and
+// how many the map of them has room for. Not static: a test holds every
+// function the emulator's own modules register to both.
+extern const usz ppu_export_slots = usz{1} << 17;
+
+extern u64 ppu_export_key(std::string_view module_name, u32 fnid)
+{
+	// FNV-1a over the name, then the FNID
+	u64 h = 0xcbf29ce484222325ull;
+	for (const char c : module_name)
+		h = (h ^ static_cast<u8>(c)) * 0x100000001b3ull;
+	for (u32 i = 0; i < 4; i++)
+		h = (h ^ ((fnid >> (i * 8)) & 0xff)) * 0x100000001b3ull;
+	return h ? h : 1;
+}
+
 struct ppu_linkage_info
 {
-	ppu_linkage_info() = default;
+	ppu_linkage_info()
+	{
+		ensure(lf_u64_map_init(&exports, ppu_export_slots));
+	}
+
+	~ppu_linkage_info()
+	{
+		lf_u64_map_free(&exports);
+	}
 
 	ppu_linkage_info(const ppu_linkage_info&) = delete;
 
@@ -186,6 +211,26 @@ struct ppu_linkage_info
 	std::map<std::string, atomic_t<bool>, std::less<>> lib_lock;
 	shared_mutex lib_lock_mutex;
 	shared_mutex mutex;
+
+	// A function's link entry by its module and FNID, for those who only
+	// look an export up and should not wait on the lock the tables are built
+	// under (ppu_get_exported_func_addr): a map that only gains entries, read
+	// with no lock. The entries are nodes of the maps above, which stay where
+	// they are and are never erased.
+	lf_u64_map exports{};
+
+	// The module's link entry for a function, made if it is not there, and
+	// published. Under the mutex, as every change to the tables is.
+	module_data::info& function_link(module_data& data, std::string_view module_name, u32 fnid)
+	{
+		module_data::info& flink = data.functions[fnid];
+
+		// Two functions with one key would be handed each other's address:
+		// the key is 64 bits of hash, so it is checked, not assumed
+		const u64 published = lf_u64_map_add(&exports, ppu_export_key(module_name, fnid), reinterpret_cast<u64>(&flink));
+		ensure(published == reinterpret_cast<u64>(&flink));
+		return flink;
+	}
 };
 
 // Initialize static modules.
@@ -479,7 +524,7 @@ static void ppu_initialize_modules(ppu_linkage_info* link, utils::serial* ar = n
 				g_ppu_function_names[function.second.index] = fmt::format("%s:%s", function.second.name, _module->name);
 			}
 
-			auto& flink = linkage.functions[function.first];
+			auto& flink = link->function_link(linkage, _module->name, function.first);
 
 			flink.static_func = &function.second;
 			flink.export_addr = g_fxo->get<ppu_function_manager>().func_addr(function.second.index);
@@ -585,7 +630,7 @@ extern const std::unordered_map<u32, std::string_view>& get_exported_function_na
 
 		for (auto& function : _module->functions)
 		{
-			auto& flink = linkage.functions[function.first];
+			auto& flink = link->function_link(linkage, _module->name, function.first);
 			u32 addr = flink.export_addr;
 
 			if (vm::check_addr<4>(addr, vm::page_readable) && addr != hle_funcs->func_addr(function.second.index))
@@ -700,17 +745,12 @@ bool ppu_form_branch_to_code(u32 entry, u32 target);
 extern u32 ppu_get_exported_func_addr(u32 fnid, const std::string& module_name)
 {
 	auto& link = g_fxo->get<ppu_linkage_info>();
-	std::shared_lock lock(link.mutex);
 
-	const auto module = link.modules.find(module_name);
+	// No lock: the entry is found in the map of published entries and its
+	// address read as the one word it is
+	const auto flink = reinterpret_cast<const ppu_linkage_info::module_data::info*>(lf_u64_map_get(&link.exports, ppu_export_key(module_name, fnid)));
 
-	if (module == link.modules.end())
-	{
-		return 0;
-	}
-
-	const auto function = module->second.functions.find(fnid);
-	return function == module->second.functions.end() ? 0 : function->second.export_addr;
+	return flink ? atomic_storage<u32>::load(flink->export_addr) : 0;
 }
 
 extern bool ppu_register_library_lock(std::string_view libname, bool lock_lib)
@@ -884,7 +924,7 @@ static auto ppu_load_exports(const ppu_module<lv2_obj>& _module, ppu_linkage_inf
 			}
 
 			// Function linkage info
-			auto& flink = mlink.functions[fnid];
+			auto& flink = link->function_link(mlink, module_name, fnid);
 
 			if (flink.static_func && flink.export_addr == g_fxo->get<ppu_function_manager>().func_addr(flink.static_func->index))
 			{
@@ -1017,7 +1057,7 @@ static import_result_t ppu_load_imports(const ppu_module<lv2_obj>& _module, std:
 			ppu_loader.notice("**** %s import: [%s] (0x%08x) -> 0x%x", module_name, ppu_get_function_name(module_name, fnid), fnid, fstub);
 
 			// Function linkage info
-			auto& flink = mlink.functions[fnid];
+			auto& flink = link->function_link(mlink, module_name, fnid);
 
 			// Add new import
 			import_table.emplace(faddr, &flink);

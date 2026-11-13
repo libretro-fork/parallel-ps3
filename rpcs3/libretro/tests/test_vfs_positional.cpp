@@ -17,6 +17,8 @@
 #include "Utilities/File.h"
 #include "util/logs.hpp"
 #include "Emu/Cell/ErrorCodes.h"
+#include "Emu/Cell/PPUModule.h"
+#include "Utilities/lf_u64_map.h"
 
 #include <malloc.h>
 
@@ -44,6 +46,9 @@ int main()
 static int failures = 0;
 
 LOG_CHANNEL(test_log, "TEST");
+
+extern const usz ppu_export_slots;
+extern u64 ppu_export_key(std::string_view module_name, u32 fnid);
 
 #define CHECK(cond) do { if (!(cond)) { std::fprintf(stderr, "%s:%d: check failed: %s\n", __FILE__, __LINE__, #cond); failures++; } } while (0)
 
@@ -592,6 +597,34 @@ int main()
 		const double each = (stopwatch() - a) / 1e6;
 		std::printf("test_vfs_positional: a store and a notify with nobody waiting: %.1f ns\n", each);
 		CHECK(each < 80);
+	}
+
+	// Exported functions are looked up with no lock, by a 64-bit key made of
+	// the module's name and the function's id: every function the emulator's
+	// own modules register has a key of its own, and they fill well under
+	// half of the map (a game's and the firmware's modules add theirs)
+	{
+		ppu_module_manager::initialize_modules();
+
+		lf_u64_map keys{};
+		CHECK(lf_u64_map_init(&keys, ppu_export_slots));
+		u64 count = 0, clashes = 0;
+
+		for (const auto& [name, mod] : ppu_module_manager::get())
+		{
+			for (const auto& [fnid, func] : mod->functions)
+			{
+				count++;
+				clashes += lf_u64_map_add(&keys, ppu_export_key(name, fnid), count) != count;
+			}
+		}
+
+		std::printf("test_vfs_positional: %llu functions registered by %zu modules, %llu keys clash\n",
+			static_cast<unsigned long long>(count), ppu_module_manager::get().size(), static_cast<unsigned long long>(clashes));
+		CHECK(count > 1000);
+		CHECK(clashes == 0);
+		CHECK(count * 4 < ppu_export_slots);
+		lf_u64_map_free(&keys);
 	}
 
 	libretro_vfs::set_vfs_interface(nullptr, 0);
