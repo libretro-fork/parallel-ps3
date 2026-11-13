@@ -4,9 +4,7 @@
 // both glslang - still what the core uses - and libretro-common's rslc,
 // which is to replace it.
 //
-// - rslc compiles every one of them, but for the fourteen that use
-//   multisample images and samplers (the resolve tasks and passes), which
-//   it does not have yet: those are counted, and nothing else is excused;
+// - rslc compiles every one of them;
 // - its module has the interface glslang's has: the same bindings, sets,
 //   locations and built-ins by name, and every block member at the same
 //   offset, with the same array and matrix strides - what the renderer's
@@ -132,7 +130,7 @@ static interface_t interface_of(const u32* w, usz n)
 	return out;
 }
 
-static usz s_rslc_refused = 0, s_rslc_not_yet = 0, s_interface_differs = 0, s_driver_refused = 0;
+static usz s_rslc_refused = 0, s_interface_differs = 0, s_driver_refused = 0;
 static usz s_reference_words = 0, s_rslc_words = 0;
 
 // One gathered source through rslc: compiled, compared, handed to the driver
@@ -156,17 +154,6 @@ static void through_rslc(usz index, const gathered& g, const char* dir)
 
 	if (!rslc_compile(g.source.data(), g.source.size(), stage, &opts, &result))
 	{
-		// What rslc does not have yet, each a type the multisample resolve
-		// tasks and passes use: counted apart, and nothing else is let through
-		for (const char* known : {"got image2DMS", "got sampler2DMS", "got usampler2DMS", "unknown layout qualifier rg16f"})
-		{
-			if (std::strstr(err, known))
-			{
-				s_rslc_not_yet++;
-				return;
-			}
-		}
-
 		std::fprintf(stderr, "source %u (%s): rslc refuses it: %s\n", static_cast<u32>(index), ext, err);
 		s_rslc_refused++;
 		return;
@@ -349,11 +336,9 @@ int main()
 		through_rslc(i, s_corpus[i], dir);
 
 	CHECK(s_rslc_refused == 0);
-	CHECK(s_rslc_not_yet == 14); // down to none before the renderer switches; a rise is a source newly lost
 	CHECK(s_interface_differs == 0);
 	CHECK(s_driver_refused == 0);
 
-	std::printf("test_shader_corpus: %u wait for multisample images and samplers in rslc\n", static_cast<u32>(s_rslc_not_yet));
 	std::printf("test_shader_corpus: rslc refused %u, differs in interface or layout on %u, the driver refused %u of its modules; %u words where glslang makes %u\n",
 		static_cast<u32>(s_rslc_refused), static_cast<u32>(s_interface_differs), static_cast<u32>(s_driver_refused), static_cast<u32>(s_rslc_words), static_cast<u32>(s_reference_words));
 	std::printf("test_shader_corpus: %u sources gathered, %u refused by the reference compiler\n", ::size32(s_corpus), static_cast<u32>(reference_failed));
