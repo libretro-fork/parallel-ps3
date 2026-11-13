@@ -1,9 +1,5 @@
 #pragma once
 
-#ifdef HAVE_X11
-#include <X11/Xutil.h>
-#endif
-
 #include "../../display.h"
 #include "../VulkanAPI.h"
 #include "image.h"

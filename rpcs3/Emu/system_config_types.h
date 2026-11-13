@@ -114,9 +114,6 @@ enum class camera_handler
 	null,
 	fake,
 	qt,
-#ifdef HAVE_SDL3
-	sdl,
-#endif
 };
 
 enum class camera_flip

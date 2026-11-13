@@ -239,10 +239,6 @@ private:
 	vk::shader_interpreter m_shader_interpreter;
 	u32 m_interpreter_state;
 
-#if defined(HAVE_X11) && defined(HAVE_VULKAN)
-	Display *m_display_handle = nullptr;
-#endif
-
 public:
 	u64 get_cycles() final;
 	~VKGSRender() override;

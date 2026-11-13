@@ -1520,9 +1520,6 @@ void gem_config_data::operator()()
 
 		switch (g_cfg.io.camera)
 		{
-#ifdef HAVE_SDL3
-		case camera_handler::sdl:
-#endif
 		case camera_handler::qt:
 			break;
 		case camera_handler::fake:

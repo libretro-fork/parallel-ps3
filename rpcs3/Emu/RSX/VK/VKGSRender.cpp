@@ -457,19 +457,6 @@ VKGSRender::VKGSRender(utils::serial* ar) noexcept : GSRender(ar)
 
 	display_handle_t display = m_frame->handle();
 
-#ifdef HAVE_X11
-	std::visit([this](auto&& p) {
-		using T = std::decay_t<decltype(p)>;
-		if constexpr (std::is_same_v<T, std::pair<Display*, Window>>)
-		{
-			// The libretro frame has no window and hands back an empty
-			// handle, whose Display* is null - XFlush would dereference it.
-			m_display_handle = p.first;
-			if (m_display_handle) XFlush(m_display_handle);
-		}
-	}, display);
-#endif
-
 	for (auto &gpu : gpus)
 	{
 		if (gpu.get_name() == adapter_name)
@@ -939,11 +926,6 @@ VKGSRender::~VKGSRender()
 	else
 		m_swapchain->destroy();
 	m_instance.destroy();
-
-#if defined(HAVE_X11) && defined(HAVE_VULKAN)
-	if (m_display_handle)
-		XCloseDisplay(m_display_handle);
-#endif
 }
 
 bool VKGSRender::on_access_violation(u32 address, bool is_writing)

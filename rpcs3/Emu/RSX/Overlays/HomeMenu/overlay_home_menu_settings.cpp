@@ -196,9 +196,6 @@ namespace rsx
 
 			switch (g_cfg.io.camera)
 			{
-	#ifdef HAVE_SDL3
-			case camera_handler::sdl:
-	#endif
 			case camera_handler::qt:
 				add_dropdown(&g_cfg.io.camera_flip_option, localized_string_id::HOME_MENU_SETTINGS_INPUT_CAMERA_FLIP);
 				break;
