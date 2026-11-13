@@ -10,6 +10,8 @@
 #include "cellAtracXdec.h"
 #include "cellAtracXdec_pcm.h"
 
+#include <retro_atomic.h>
+
 vm::gvar<CellAdecCoreOps> g_cell_adec_core_ops_atracx2ch;
 vm::gvar<CellAdecCoreOps> g_cell_adec_core_ops_atracx6ch;
 vm::gvar<CellAdecCoreOps> g_cell_adec_core_ops_atracx8ch;
@@ -430,8 +432,31 @@ void AtracXdecContext::exec(ppu_thread& ppu)
 
 				if (ratrac3p_decode_float(decoder.dec, au_start_addr, decoder.nbytes, pcm) < 0)
 				{
-					// Game sent invalid data
-					cellAtracXdec.error("ratrac3p_decode_float() failed: the frame does not parse");
+					// Game sent invalid data - or the decoder cannot read what
+					// it sent. For a bug report the first few such frames go
+					// into the log whole (only when the log is on; eight, so that
+					// a run of them can be decoded elsewhere).
+					static retro_atomic_int_t bad_frames_logged;
+
+					if (cellAtracXdec.error && retro_atomic_fetch_add_int(&bad_frames_logged, 1) < 8)
+					{
+
+						std::string hex;
+						hex.reserve(decoder.nbytes * 2);
+						for (u32 i = 0; i < decoder.nbytes; i++)
+						{
+							static constexpr char digits[] = "0123456789abcdef";
+							hex += digits[au_start_addr[i] >> 4];
+							hex += digits[au_start_addr[i] & 15];
+						}
+
+						cellAtracXdec.error("ratrac3p_decode_float() failed: the frame does not parse (ch_config_idx=%u, nbytes=%u, ats_hdr=%u): %s",
+							decoder.ch_config_idx, u32{decoder.nbytes}, +atracx_param.au_includes_ats_hdr_flg, hex);
+					}
+					else
+					{
+						cellAtracXdec.error("ratrac3p_decode_float() failed: the frame does not parse");
+					}
 					error = CELL_ADEC_ERROR_ATX_NON_FATAL; // Not accurate, the decoder doesn't provide detailed errors like LLE
 				}
 				else
