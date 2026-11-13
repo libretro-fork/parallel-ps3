@@ -1240,73 +1240,9 @@ stx::reset_lock acquire_reset_lock(stx::init_mutex& mtx, ppu_thread* ppu)
 	}, ppu);
 }
 
-class ppu_syscall_usage
-{
-	// Internal buffer
-	std::string m_stats;
-	u64 m_old_stat[1024]{};
-
-public:
-	// Public info collection buffers
-	atomic_t<u64> stat[1024]{};
-
-	void print_stats(bool force_print) noexcept
-	{
-		std::multimap<u64, u64, std::greater<u64>> usage;
-
-		for (u32 i = 0; i < 1024; i++)
-		{
-			if (u64 v = stat[i]; m_old_stat[i] != v || (force_print && v))
-			{
-				// Only add syscalls with non-zero usage counter and only if caught new calls since last print
-				usage.emplace(v, i);
-				m_old_stat[i] = v;
-			}
-		}
-
-		m_stats.clear();
-
-		for (auto&& pair : usage)
-		{
-			fmt::append(m_stats, u8"\n\t⁂ %s [%u]", ppu_get_syscall_name(pair.second), pair.first);
-		}
-
-		if (!m_stats.empty())
-		{
-			ppu_log.notice("PPU Syscall Usage Stats:%s", m_stats);
-		}
-	}
-
-	void operator()()
-	{
-		bool was_paused = false;
-		u64 sleep_until = get_system_time();
-
-		for (u32 i = 1; thread_ctrl::state() != thread_state::aborting; i++)
-		{
-			thread_ctrl::wait_until(&sleep_until, 1'000'000);
-
-			const bool is_paused = Emu.IsPaused();
-
-			// Force-print all if paused
-			const bool force_print = is_paused && !was_paused;
-
-			if (force_print || i % 10 == 0)
-			{
-				was_paused = is_paused;
-				print_stats(force_print);
-			}
-		}
-	}
-
-	~ppu_syscall_usage()
-	{
-		print_stats(true);
-	}
-
-	static constexpr auto thread_name = "PPU Syscall Usage Thread"sv;
-};
-
+// No count of the syscalls made: it was an add to a counter all PPU threads
+// share on every syscall, and a thread that woke every second to write the
+// counts into the log
 extern void ppu_execute_syscall(ppu_thread& ppu, u64 code)
 {
 	if (g_cfg.core.ppu_decoder == ppu_decoder_type::llvm)
@@ -1316,8 +1252,6 @@ extern void ppu_execute_syscall(ppu_thread& ppu, u64 code)
 
 	if (code < g_ppu_syscall_table.size())
 	{
-		g_fxo->get<named_thread<ppu_syscall_usage>>().stat[code]++;
-
 		if (const auto func = g_ppu_syscall_table[code].first)
 		{
 			func(ppu, {}, vm::_ptr<u32>(ppu.cia), nullptr);

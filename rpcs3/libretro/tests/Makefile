@@ -549,6 +549,9 @@ check: all
 	@if grep -rn "g_tty\b\|g_tty_size" ../.. --include=*.h --include=*.hpp --include=*.cpp | grep -v "^\.\./\.\./libretro/tests/"; then echo "TTY: the TTY.log file is back - a write to it for every line a game prints (CHANGELOG)"; exit 1; else echo "TTY: no TTY.log"; fi
 	@# The caches that were many small files are packs
 	@if grep -n "fs::write_file\|raw/%llX" ../../Emu/RSX/rsx_cache.h | grep -v "import_files\|%s/raw/%llX\.[vf]p\", root_path"; then echo "shader cache: a file a pipeline or a program is back - they are records in the cache's pack (AGENTS.md)"; exit 1; else echo "shader cache: one pack"; fi
+	@# No statistics kept for a log on the way of every syscall
+	@if grep -rn "ppu_syscall_usage" ../../Emu --include=*.h --include=*.cpp; then echo "syscalls: the usage counter is back - an add to a counter every PPU thread shares on each syscall, and a thread that wakes every second for it (CHANGELOG)"; exit 1; else echo "syscalls: not counted"; fi
+	@if ! grep -q "if (ppu.syscall_history.count_debug_arguments) \[\[unlikely\]\] {" ../../Emu/Cell/PPUFunction.h; then echo "calls: every HLE call and syscall writes itself into the thread's history again, kept or not (CHANGELOG)"; exit 1; else echo "calls: history written only when kept"; fi
 	@# Nor do the mice: no lock in the handler, none taken by those that read them
 	@if grep -n "shared_mutex\|std::mutex\|lock_guard\|scoped_lock" ../../Emu/Io/MouseHandler.h ../../Emu/Io/MouseHandler.cpp ../libretro_mouse_handler.h ../libretro_mouse_handler.cpp || grep -rn "handler\.mutex\|take_pending()" ../../Emu/Cell/Modules/cellMouse.cpp ../../Emu/Cell/Modules/cellGem.cpp ../../Emu/Io/usio.cpp ../../Emu/Io/GunCon3.cpp ../../Emu/Io/TopShotElite.cpp ../../Emu/Io/TopShotFearmaster.cpp ../../Emu/Io/GameTablet.cpp; then echo "mice: the mouse handler's lock is back - a mouse is a record read whole (AGENTS.md)"; exit 1; else echo "mice: no mouse lock"; fi
 

@@ -6,6 +6,9 @@
 #include "util/v128.hpp"
 
 // BIND_FUNC macro "converts" any appropriate HLE function to ppu_intrp_func_t, binding it to PPU thread context.
+// The call is written into the thread's history only when the history is kept
+// (the PPU call history setting): without it the history is one entry long,
+// and writing that entry cost every call a division and four stores.
 #define BIND_FUNC(func, ...) (static_cast<ppu_intrp_func_t>([](ppu_thread& ppu, ppu_opcode_t, be_t<u32>* this_op, ppu_intrp_func*) {\
 	const auto old_f = ppu.current_function;\
 	if (!old_f) ppu.last_function = #func;\
@@ -14,11 +17,13 @@
 	std::memcpy(ppu.syscall_args, ppu.gpr + 3, sizeof(ppu.syscall_args)); \
 	ppu_func_detail::do_call(ppu, func);\
 	static_cast<void>(ppu.test_stopped());\
-	auto& history = ppu.syscall_history.data[ppu.syscall_history.index++ % ppu.syscall_history.data.size()];\
-	history.cia = ppu.cia;\
-	history.func_name = ppu.current_function;\
-	history.error = ppu.gpr[3];\
-	if (ppu.syscall_history.count_debug_arguments) std::copy_n(ppu.syscall_args, std::size(history.args), history.args.data());\
+	if (ppu.syscall_history.count_debug_arguments) [[unlikely]] {\
+		auto& history = ppu.syscall_history.data[ppu.syscall_history.index++ % ppu.syscall_history.data.size()];\
+		history.cia = ppu.cia;\
+		history.func_name = ppu.current_function;\
+		history.error = ppu.gpr[3];\
+		std::copy_n(ppu.syscall_args, std::size(history.args), history.args.data());\
+	}\
 	ppu.current_function = old_f;\
 	ppu.cia += 4;\
 	__VA_ARGS__;\
