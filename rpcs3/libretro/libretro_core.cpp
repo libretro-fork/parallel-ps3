@@ -1036,6 +1036,8 @@ namespace
 // longer mapped - on Windows, about a second after closing content.
 static bool s_logs_hooked = false;
 
+// Utilities/JIT.h, which brings LLVM's headers with it
+void jit_close_object_packs();
 static std::unique_ptr<logs::listener> s_file_logger;
 static std::string s_log_path;
 
@@ -3079,6 +3081,10 @@ void retro_unload_game(void)
         stop_emulation();
         game_loaded = false;
         game_path.clear();
+
+        // The object caches' files, and what was read of them that no
+        // compiler has kept
+        jit_close_object_packs();
 
 
         // Drops the disc device, and with it the handle on the image.

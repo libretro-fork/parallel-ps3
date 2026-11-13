@@ -13,6 +13,7 @@
 
 #include "Crypto/unzip.h"
 #include "Utilities/File.h"
+#include "Utilities/object_pack.h"
 
 #include <cstdio>
 #include <filesystem>
@@ -125,10 +126,14 @@ int main()
 		CHECK(z[0] == 2.0f && z[1] == 0.0f && z[2] == 2.0f && z[3] == 8.0f);
 	}
 
-	// The object cache: a compiled module is stored as the object it is,
-	// not compressed - inflating it again on every boot costs many times what
-	// reading the larger file does - and comes back from there in another
-	// compiler; a cache written compressed, as they were, still loads
+	// The object cache. A directory's objects are in one file, the pack, not
+	// a file each, stored as the objects they are (not compressed: inflating
+	// one on every boot cost many times what reading it does). An object
+	// comes back from the pack in another compiler, in the session that
+	// wrote it and - lent from the pack as it was read - in a later one; an
+	// object in a file of its own, as they were kept, plain or compressed,
+	// loads, moves into the pack and its file goes; a pack cut short counts
+	// up to there and is written on from there.
 	{
 		const std::string dir = fmt::format("%s/test_llvm_jit_%u/", std::filesystem::temp_directory_path().string(), static_cast<u32>(getpid()));
 		std::filesystem::create_directories(dir);
@@ -139,33 +144,103 @@ int main()
 		}
 
 		const std::string object = dir + "test_llvm_jit";
-		CHECK(fs::is_file(object));
+		const std::string pack = dir + "objects.pack";
+		CHECK(fs::is_file(pack));
+		CHECK(!fs::is_file(object));
 		CHECK(!fs::is_file(object + ".gz"));
 		CHECK(jit_compiler::check(object));
+		CHECK(!jit_compiler::check(dir + "not_there"));
 
+		const auto runs = [&](const std::string& path)
+		{
+			jit_compiler reader({}, jit_compiler::cpu(""));
+			if (!reader.add(path))
+				return false;
+			reader.fin();
+			const auto cached_sum = reinterpret_cast<s64 (*)(s64)>(reader.get("sum_mul_add"));
+			return cached_sum && cached_sum(10) == 355;
+		};
+
+		// What the pack holds: read as the file it is
 		std::vector<u8> bytes;
-		if (fs::file f{object, fs::read})
-			bytes = f.to_vector<u8>();
-		// An object file as the linker knows it, not a compressed stream
-		CHECK(bytes.size() > 4 && !(bytes[0] == 0x1f && bytes[1] == 0x8b));
+		const auto records = [&]() -> usz
+		{
+			std::vector<u8> image;
+			if (fs::file f{pack, fs::read})
+				image = f.to_vector<u8>();
+			object_pack_entry entries[8]{};
+			usz count = 0;
+			const u64 valid = object_pack_scan(image.data(), image.size(), entries, 8, &count);
+			if (count && count <= 8)
+			{
+				const object_pack_entry& last = entries[count - 1];
+				CHECK(last.offset + last.size <= valid);
+				bytes.assign(image.data() + entries[0].offset, image.data() + entries[0].offset + entries[0].size);
+				CHECK(std::string_view(entries[0].name, entries[0].name_len) == "test_llvm_jit");
+			}
+			return count;
+		};
 
+		// In the session that compiled it
+		CHECK(runs(object));
+		CHECK(records() == 1);
+		// An object file as the linker knows it, not a compressed stream
+		CHECK(bytes.size() > 4 && bytes[0] == 0x7f && bytes[1] == 'E' && bytes[2] == 'L' && bytes[3] == 'F');
+
+		// In a later one, and with the pack closed again under the compiler
+		// that has it
+		jit_compiler::close_object_packs();
+		CHECK(jit_compiler::check(object));
 		{
 			jit_compiler reader({}, jit_compiler::cpu(""));
 			CHECK(reader.add(object));
+			jit_compiler::close_object_packs();
 			reader.fin();
 			const auto cached_sum = reinterpret_cast<s64 (*)(s64)>(reader.get("sum_mul_add"));
 			CHECK(cached_sum && cached_sum(10) == 355);
 		}
 
+		// Objects in files of their own
 		{
 			fs::file old(dir + "old.gz", fs::rewrite);
 			CHECK(zip(bytes.data(), bytes.size(), old));
+			fs::file loose(dir + "loose", fs::rewrite);
+			CHECK(loose.write(bytes.data(), bytes.size()) == bytes.size());
 		}
 		CHECK(jit_compiler::check(dir + "old"));
-		// and is the object itself after that first load
-		CHECK(fs::is_file(dir + "old") && !fs::is_file(dir + "old.gz"));
+		CHECK(runs(dir + "loose"));
+		CHECK(!fs::is_file(dir + "old") && !fs::is_file(dir + "old.gz") && !fs::is_file(dir + "loose"));
 		CHECK(jit_compiler::check(dir + "old"));
+		jit_compiler::close_object_packs();
+		CHECK(records() == 3);
+		CHECK(runs(dir + "old") && runs(dir + "loose") && runs(object));
 
+		// A pack cut short in its last record, with whatever after it
+		jit_compiler::close_object_packs();
+		{
+			const u64 size = fs::file(pack).size();
+			fs::file f(pack, fs::read + fs::write);
+			CHECK(f.trunc(size - 24));
+			f.seek(0, fs::seek_end);
+			const std::vector<u8> junk(4096, 0x5a);
+			f.write(junk.data(), junk.size());
+		}
+		CHECK(records() == 2);
+		CHECK(jit_compiler::check(object) && jit_compiler::check(dir + "old"));
+		CHECK(!jit_compiler::check(dir + "loose"));
+		{
+			jit_compiler writer({}, jit_compiler::cpu(""));
+			auto again = make_module(writer.get_context());
+			again->setModuleIdentifier("again");
+			writer.add(std::move(again), dir);
+			writer.fin();
+		}
+		CHECK(runs(dir + "again"));
+		jit_compiler::close_object_packs();
+		CHECK(records() == 3);
+		CHECK(runs(dir + "again") && runs(object));
+
+		jit_compiler::close_object_packs();
 		std::filesystem::remove_all(dir);
 	}
 

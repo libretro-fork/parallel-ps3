@@ -374,6 +374,12 @@ namespace fs
 		return {};
 	}
 
+	u64 file_base::write_at(u64, const void*, u64)
+	{
+		g_tls_error = error::inval;
+		return 0;
+	}
+
 	u64 file_base::write_gather(const iovec_clone* buffers, u64 buf_count)
 	{
 		u64 total = 0;
@@ -633,6 +639,38 @@ namespace fs
 			return nread_sum;
 		}
 
+		u64 write_at(u64 offset, const void* buffer, u64 count) override
+		{
+			u64 nwritten_sum = 0;
+
+			for (const char* data = static_cast<const char*>(buffer); count;)
+			{
+				const DWORD size = static_cast<DWORD>(std::min<u64>(count, DWORD{umax} & -4096));
+
+				DWORD nwritten = 0;
+				OVERLAPPED ovl{};
+				ovl.Offset = DWORD(offset);
+				ovl.OffsetHigh = DWORD(offset >> 32);
+				if (!WriteFile(m_handle, data, size, &nwritten, &ovl))
+				{
+					break;
+				}
+
+				nwritten_sum += nwritten;
+
+				if (nwritten < size)
+				{
+					break;
+				}
+
+				count -= size;
+				data += size;
+				offset += size;
+			}
+
+			return nwritten_sum;
+		}
+
 		u64 write(const void* buffer, u64 count) override
 		{
 			u64 nwritten_sum = 0;
@@ -818,6 +856,24 @@ namespace fs
 				buffer = static_cast<u8*>(buffer) + r;
 				if (!count)
 					break;
+			}
+
+			return result;
+		}
+
+		u64 write_at(u64 offset, const void* buffer, u64 count) override
+		{
+			u64 result = 0;
+
+			while (count)
+			{
+				const auto r = ::pwrite(m_fd, buffer, count, offset);
+				if (r <= 0)
+					break;
+				count -= r;
+				offset += r;
+				result += r;
+				buffer = static_cast<const u8*>(buffer) + r;
 			}
 
 			return result;

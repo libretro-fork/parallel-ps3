@@ -9,6 +9,9 @@
 #include "util/vm.hpp"
 #include "util/asm.hpp"
 #include "Crypto/unzip.h"
+#include "object_pack.h"
+
+#include <retro_atomic.h>
 
 #include <charconv>
 
@@ -438,6 +441,298 @@ struct MemoryManager2 : llvm::RTDyldMemoryManager
 	}
 };
 
+// A directory's compiled objects are kept in one file, "objects.pack"
+// (object_pack.h), not in a file each: a game's PPU modules come to hundreds
+// of objects and its SPU functions to thousands, and every one of them was a
+// file opened, read and closed on each boot - twice, once to see that it was
+// there. The pack is read once, whole, when its directory is first asked
+// for, and the objects found in it then are lent to LLVM from that one block
+// with no copy; the block is let go when the last of them is. An object
+// compiled since is written at the pack's end straight from LLVM's buffer.
+// Nothing here takes a lock.
+namespace
+{
+	// A pack as it was read. Lent objects count on it.
+	struct pack_image
+	{
+		retro_atomic_int_t refs;
+		u64 len;
+
+		// 16-aligned, as objects are in the file
+		static constexpr usz header = 64;
+
+		u8* data() { return reinterpret_cast<u8*>(this) + header; }
+
+		static pack_image* make(u64 len)
+		{
+			pack_image* image = static_cast<pack_image*>(std::malloc(header + len));
+			if (image)
+			{
+				retro_atomic_int_init(&image->refs, 1);
+				image->len = len;
+			}
+			return image;
+		}
+
+		void take() { retro_atomic_fetch_add_int(&refs, 1); }
+
+		void drop()
+		{
+			if (retro_atomic_fetch_sub_int(&refs, 1) == 1)
+				std::free(this);
+		}
+	};
+
+	// An object lent from a pack's image
+	class lent_object final : public llvm::MemoryBuffer
+	{
+		pack_image* const m_image;
+
+	public:
+		lent_object(pack_image* image, const u8* start, u64 size)
+			: m_image(image)
+		{
+			image->take();
+			init(reinterpret_cast<const char*>(start), reinterpret_cast<const char*>(start) + size, false);
+		}
+
+		~lent_object() override { m_image->drop(); }
+
+		BufferKind getBufferKind() const override { return MemoryBuffer_Malloc; }
+	};
+
+	struct object_pack
+	{
+		object_pack* next = nullptr;
+		std::string dir;
+		fs::file file;
+		retro_atomic_64_t end;            // where the next record goes
+		pack_image* image = nullptr;      // null when the pack had no objects
+		u64 lent_len = 0;                 // the part of the image that counts
+		object_pack_entry* scanned = nullptr;
+		usz scanned_count = 0;
+		object_pack_index index;
+
+		~object_pack()
+		{
+			// The entries added since the scan are their own allocations
+			for (usz i = 0; i < OBJECT_PACK_BUCKETS; i++)
+			{
+				auto e = static_cast<object_pack_entry*>(retro_atomic_load_acquire_ptr(&index.buckets[i]));
+				while (e)
+				{
+					const auto next_entry = e->next;
+					if (e < scanned || e >= scanned + scanned_count)
+						std::free(e);
+					e = next_entry;
+				}
+			}
+
+			std::free(scanned);
+			if (image)
+				image->drop();
+		}
+	};
+
+	constexpr usz s_pack_buckets = 64;
+	retro_atomic_ptr_t s_packs[s_pack_buckets];
+
+	object_pack* find_pack(void* head, const void* until, const std::string& dir)
+	{
+		for (auto p = static_cast<object_pack*>(head); p && p != until; p = p->next)
+		{
+			if (p->dir == dir)
+				return p;
+		}
+
+		return nullptr;
+	}
+
+	object_pack* open_pack(const std::string& dir)
+	{
+		auto pack = std::make_unique<object_pack>();
+		pack->dir = dir;
+		object_pack_index_init(&pack->index);
+		retro_atomic_store_relaxed_64(&pack->end, OBJECT_PACK_FILE_HEADER);
+
+		if (!pack->file.open(dir + "objects.pack", fs::read + fs::write + fs::create))
+		{
+			jit_log.error("LLVM: Failed to open object pack in %s (%s)", dir, fs::g_tls_error);
+			return pack.release();
+		}
+
+		u64 valid = 0;
+
+		if (const u64 size = pack->file.size())
+		{
+			// The whole pack in one read
+			pack_image* image = pack_image::make(size);
+
+			if (image && pack->file.read_at(0, image->data(), size) == size)
+			{
+				usz count = 0;
+				valid = object_pack_scan(image->data(), size, nullptr, 0, &count);
+
+				if (count)
+				{
+					pack->scanned = static_cast<object_pack_entry*>(std::malloc(count * sizeof(object_pack_entry)));
+				}
+
+				if (pack->scanned)
+				{
+					object_pack_scan(image->data(), size, pack->scanned, count, &count);
+					pack->scanned_count = count;
+					pack->image = image;
+					pack->lent_len = valid;
+					image = nullptr;
+
+					for (usz i = 0; i < count; i++)
+						object_pack_index_add(&pack->index, &pack->scanned[i]);
+				}
+			}
+
+			if (image)
+				image->drop();
+		}
+
+		if (!valid)
+		{
+			// New, or not a pack: started over
+			u8 header[OBJECT_PACK_FILE_HEADER];
+			object_pack_file_header(header);
+			pack->file.write_at(0, header, sizeof(header));
+			valid = OBJECT_PACK_FILE_HEADER;
+		}
+
+		retro_atomic_store_release_64(&pack->end, static_cast<s64>(valid));
+		return pack.release();
+	}
+
+	// The directory's pack, opened and read the first time it is asked for
+	object_pack& pack_for(const std::string& dir)
+	{
+		retro_atomic_ptr_t* bucket = &s_packs[std::hash<std::string>{}(dir) % s_pack_buckets];
+		void* head = retro_atomic_load_acquire_ptr(bucket);
+
+		if (object_pack* found = find_pack(head, nullptr, dir))
+			return *found;
+
+		object_pack* made = open_pack(dir);
+
+		while (true)
+		{
+			made->next = static_cast<object_pack*>(head);
+			if (retro_atomic_cas_ptr(bucket, head, made))
+				return *made;
+
+			// Another thread added one: the same directory's, maybe. Nothing
+			// was written by this one but the file's header, the same bytes.
+			void* now = retro_atomic_load_acquire_ptr(bucket);
+			if (object_pack* found = find_pack(now, head, dir))
+			{
+				delete made;
+				return *found;
+			}
+
+			head = now;
+		}
+	}
+
+	// Splits "dir/name" where the last '/' is
+	bool split_object_path(const std::string& path, std::string& dir, std::string_view& name)
+	{
+		const usz slash = path.find_last_of('/');
+		if (slash == umax || slash + 1 == path.size())
+			return false;
+
+		dir.assign(path, 0, slash + 1);
+		name = std::string_view(path).substr(slash + 1);
+		return true;
+	}
+
+	// Writes an object at the pack's end: the record's start, the object
+	// from where it is, and the end mark that makes the record count
+	bool pack_append(object_pack& pack, std::string_view name, const char* data, u64 size)
+	{
+		if (!pack.file)
+			return false;
+
+		const u32 name_len = static_cast<u32>(name.size());
+		const u64 total = object_pack_record_size(name_len, size);
+
+		const auto entry = static_cast<object_pack_entry*>(std::malloc(sizeof(object_pack_entry) + name_len));
+		if (!entry)
+			return false;
+
+		u8 head[16 + 256];
+		u8 tail[16 + 16];
+		if (name_len > 240)
+		{
+			std::free(entry);
+			return false;
+		}
+
+		const u64 at = static_cast<u64>(retro_atomic_fetch_add_64(&pack.end, static_cast<s64>(total)));
+		const u64 head_len = object_pack_record_begin(head, name.data(), name_len, size);
+		object_pack_record_end(tail, name_len, size);
+		const u64 tail_len = total - head_len - size;
+
+		if (pack.file.write_at(at, head, head_len) != head_len
+			|| pack.file.write_at(at + head_len, data, size) != size
+			|| pack.file.write_at(at + head_len + size, tail, tail_len) != tail_len)
+		{
+			// The pack counts up to here the next time it is read
+			std::free(entry);
+			return false;
+		}
+
+		char* entry_name = reinterpret_cast<char*>(entry + 1);
+		std::memcpy(entry_name, name.data(), name_len);
+		entry->name = entry_name;
+		entry->name_len = name_len;
+		entry->offset = at + head_len;
+		entry->size = size;
+		object_pack_index_add(&pack.index, entry);
+		return true;
+	}
+
+	std::unique_ptr<llvm::MemoryBuffer> pack_load(object_pack& pack, std::string_view name)
+	{
+		const object_pack_entry* entry = object_pack_index_find(&pack.index, name.data(), static_cast<u32>(name.size()));
+
+		if (!entry || !entry->size)
+			return nullptr;
+
+		if (pack.image && entry->offset + entry->size <= pack.lent_len)
+		{
+			// Lent as it lies in the pack
+			return std::make_unique<lent_object>(pack.image, pack.image->data() + entry->offset, entry->size);
+		}
+
+		// Written since the pack was read
+		auto buf = llvm::WritableMemoryBuffer::getNewUninitMemBuffer(entry->size);
+		if (!buf || pack.file.read_at(entry->offset, buf->getBufferStart(), entry->size) != entry->size)
+			return nullptr;
+
+		return buf;
+	}
+}
+
+void jit_compiler::close_object_packs()
+{
+	for (auto& bucket : s_packs)
+	{
+		auto pack = static_cast<object_pack*>(retro_atomic_exchange_ptr(&bucket, nullptr));
+
+		while (pack)
+		{
+			const auto next_pack = pack->next;
+			delete pack;
+			pack = next_pack;
+		}
+	}
+}
+
 // Helper class
 class ObjectCache final : public llvm::ObjectCache
 {
@@ -455,52 +750,41 @@ public:
 
 	void notifyObjectCompiled(const llvm::Module* _module, llvm::MemoryBufferRef obj) override
 	{
-		std::string name = m_path;
-
-		// As it is: a compressed object is inflated on every boot it is
-		// loaded on, and that costs many times what reading the larger file
-		// does (ObjectCache::load)
-		name.append(_module->getName());
+		const std::string name = std::string(_module->getName());
 
 		if (!obj.getBufferSize())
 		{
-			jit_log.error("LLVM: Nothing to write: %s", name);
+			jit_log.error("LLVM: Nothing to write: %s%s", m_path, name);
 			return;
 		}
 
 		ensure(m_compiler);
 
-		fs::pending_file module_file;
-
-		if (!module_file.open((name)))
-		{
-			jit_log.error("LLVM: Failed to create module file: %s (%s)", name, fs::g_tls_error);
-			return;
-		}
-
 		const usz size = obj.getBufferSize();
 
 		if (!m_compiler->add_sub_disk_space(0 - size))
 		{
-			jit_log.error("LLVM: Failed to create module file: %s (not enough disk space left)", name);
+			jit_log.error("LLVM: Failed to store module: %s%s (not enough disk space left)", m_path, name);
 			return;
 		}
 
-		if (module_file.file.write(obj.getBufferStart(), size) != size)
+		// As it is - a compressed object was inflated on every boot it was
+		// loaded on - and into the directory's pack
+		if (!pack_append(pack_for(m_path), name, obj.getBufferStart(), size))
 		{
-			jit_log.error("LLVM: Failed to write module: %s", std::string(_module->getName()));
+			jit_log.error("LLVM: Failed to write module: %s%s (%s)", m_path, name, fs::g_tls_error);
 			ensure(m_compiler->add_sub_disk_space(size));
 			return;
 		}
 
-		jit_log.trace("LLVM: Created module: %s", std::string(_module->getName()));
-		module_file.commit();
+		jit_log.trace("LLVM: Created module: %s", name);
 	}
 
-	static std::unique_ptr<llvm::MemoryBuffer> load(const std::string& path)
+	// A file of its own, as objects were kept before the packs: read, moved
+	// into the pack and removed
+	static std::unique_ptr<llvm::MemoryBuffer> load_loose(const std::string& path)
 	{
-		// The object as it was written, read once, straight into the buffer
-		// LLVM keeps
+		// As it was written
 		if (fs::file cached{path, fs::read})
 		{
 			if (cached.size() == 0) [[unlikely]]
@@ -513,7 +797,7 @@ public:
 			return buf;
 		}
 
-		// A cache from before objects were stored as they are: compressed
+		// Older still: compressed
 		if (fs::file cached{path + ".gz", fs::read})
 		{
 			const std::vector<u8> cached_data = cached.to_vector<u8>();
@@ -531,16 +815,39 @@ public:
 				return nullptr;
 			}
 
-			// Stored as it is from here on, so this is the last time it is
-			// inflated
-			cached.close();
-			if (fs::pending_file plain; plain.open(path) && plain.file.write(out.data(), out.size()) == out.size() && plain.commit())
+			auto buf = llvm::WritableMemoryBuffer::getNewUninitMemBuffer(out.size());
+			std::memcpy(buf->getBufferStart(), out.data(), out.size());
+			return buf;
+		}
+
+		return nullptr;
+	}
+
+	static std::unique_ptr<llvm::MemoryBuffer> load(const std::string& path)
+	{
+		std::string dir;
+		std::string_view name;
+
+		if (!split_object_path(path, dir, name))
+		{
+			return nullptr;
+		}
+
+		object_pack& pack = pack_for(dir);
+
+		if (auto buf = pack_load(pack, name))
+		{
+			return buf;
+		}
+
+		if (auto buf = load_loose(path))
+		{
+			if (pack_append(pack, name, buf->getBufferStart(), buf->getBufferSize()))
 			{
+				fs::remove_file(path);
 				fs::remove_file(path + ".gz");
 			}
 
-			auto buf = llvm::WritableMemoryBuffer::getNewUninitMemBuffer(out.size());
-			std::memcpy(buf->getBufferStart(), out.data(), out.size());
 			return buf;
 		}
 
@@ -943,10 +1250,8 @@ bool jit_compiler::check(const std::string& path)
 			return true;
 		}
 
-		if (fs::remove_file(path))
-		{
-			jit_log.error("ObjectCache: Removed damaged file: %s", path);
-		}
+		// Compiled again, and that one is the one found from then on
+		jit_log.error("ObjectCache: Damaged object: %s", path);
 	}
 
 	return false;
@@ -1068,3 +1373,10 @@ const char * fallback_cpu_detection()
 }
 
 #endif // LLVM_AVAILABLE
+
+void jit_close_object_packs()
+{
+#ifdef LLVM_AVAILABLE
+	jit_compiler::close_object_packs();
+#endif
+}

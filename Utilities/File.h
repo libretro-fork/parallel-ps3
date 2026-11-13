@@ -114,6 +114,10 @@ namespace fs
 		virtual native_handle get_handle();
 		virtual file_id get_id();
 		virtual u64 write_gather(const iovec_clone* buffers, u64 buf_count);
+		// Writes at an offset without using or moving the handle's position, so
+		// threads can write different parts of one file at once. 0 when the
+		// file cannot (only real files can).
+		virtual u64 write_at(u64 offset, const void* buffer, u64 size);
 		virtual void release()
 		{
 		}
@@ -366,6 +370,13 @@ namespace fs
 		{
 			if (!m_file) xnull(src_loc);
 			return m_file->write(buffer, count);
+		}
+
+		// Write the data at the specified offset in a thread-safe manner
+		u64 write_at(u64 offset, const void* buffer, u64 count, std::source_location src_loc = std::source_location::current()) const
+		{
+			if (!m_file) xnull(src_loc);
+			return m_file->write_at(offset, buffer, count);
 		}
 
 		// Change current position, returns resulting position

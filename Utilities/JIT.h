@@ -584,6 +584,11 @@ public:
 	// Check object file
 	static bool check(const std::string& path);
 
+	// Closes the object packs the cache directories were read from (one file
+	// of objects a directory). While nothing is compiling or loading objects;
+	// objects already lent to an engine stay valid.
+	static void close_object_packs();
+
 	// Finalize
 	void fin();
 
@@ -608,3 +613,7 @@ public:
 const char *fallback_cpu_detection();
 
 #endif // LLVM_AVAILABLE
+
+// jit_compiler::close_object_packs(), for code built without LLVM's headers;
+// does nothing in a build without LLVM
+void jit_close_object_packs();

@@ -18,7 +18,7 @@ LRC_DEFS := -DHAVE_SSL -DHAVE_RETROSSL -DHAVE_CRYPTO \
 	-DHAVE_RWAV -DHAVE_RFLAC -DHAVE_RVORBIS -DHAVE_ROPUS -DHAVE_RMP3 -DHAVE_RAAC \
 	-DHAVE_RMP4 -DHAVE_RAC3 -DHAVE_RWMA -DHAVE_RWEBM -DHAVE_RATRAC3 -DHAVE_RATRAC3P
 
-TESTS := test_zstd test_deflate test_rxml test_png_rows test_images test_jpg_rows test_http test_bcn test_tls_duplex test_yaml test_font test_np2 test_rsx_scale test_vpost test_atracx test_vdec test_media test_record test_config_database test_vblank_list test_video_sink test_video_sink_tsan test_vk_images test_vk_images_tsan test_sw_frames test_sw_frames_tsan test_gl_frames test_gl_fallback test_pad_values test_input_poll test_audio_handover test_audio_ring test_audio_ring_tsan test_audio_mix
+TESTS := test_zstd test_deflate test_rxml test_png_rows test_images test_jpg_rows test_http test_bcn test_tls_duplex test_yaml test_font test_np2 test_rsx_scale test_vpost test_atracx test_vdec test_media test_record test_config_database test_vblank_list test_video_sink test_video_sink_tsan test_vk_images test_vk_images_tsan test_sw_frames test_sw_frames_tsan test_gl_frames test_gl_fallback test_pad_values test_input_poll test_audio_handover test_audio_ring test_audio_ring_tsan test_audio_mix test_object_pack test_object_pack_tsan
 
 test_zstd_LRC := \
 	$(LRC)/encodings/encoding_rzstd.c \
@@ -449,6 +449,21 @@ test_audio_handover: test_audio_handover.c test_common.h ../libretro_audio_out.c
 	$(CC) $(CFLAGS) $(TEST_STD) $(SANITIZE) -c -o obj/libretro_audio_out.o ../libretro_audio_out.c
 	$(CC) $(CFLAGS) -std=gnu99 -w $(SANITIZE) -o $@ obj/test_audio_handover.o obj/libretro_audio_out.o $(LRC)/audio/conversion/float_to_s16.c $(LRC)/features/features_cpu.c $(LDFLAGS) $(LDLIBS)
 
+# The object cache's pack file: the module and the test as C89
+OBJECT_PACK_DEPS := test_object_pack.c test_common.h ../../../Utilities/object_pack.c ../../../Utilities/object_pack.h
+
+test_object_pack: $(OBJECT_PACK_DEPS)
+	@mkdir -p obj
+	$(CC) $(CFLAGS) $(TEST_STD) $(SANITIZE) -c -o obj/test_object_pack.o test_object_pack.c
+	$(CC) $(CFLAGS) $(TEST_STD) $(SANITIZE) -c -o obj/object_pack.o ../../../Utilities/object_pack.c
+	$(CC) $(CFLAGS) -std=gnu99 $(SANITIZE) -o $@ obj/test_object_pack.o obj/object_pack.o $(LDFLAGS) $(LDLIBS) -lpthread
+
+test_object_pack_tsan: $(OBJECT_PACK_DEPS)
+	@mkdir -p obj
+	$(CC) $(CFLAGS) $(TEST_STD) -fsanitize=thread -c -o obj/test_object_pack_tsan.o test_object_pack.c
+	$(CC) $(CFLAGS) $(TEST_STD) -fsanitize=thread -c -o obj/object_pack_tsan.o ../../../Utilities/object_pack.c
+	$(CC) $(CFLAGS) -std=gnu99 -fsanitize=thread -o $@ obj/test_object_pack_tsan.o obj/object_pack_tsan.o $(LDFLAGS) $(LDLIBS) -lpthread
+
 # The module and the test as C89; libretro-common's ring as it is built
 AUDIO_RING_DEPS := test_audio_ring.c test_common.h ../libretro_audio_ring.c ../libretro_audio_ring.h $(LRC)/queues/retro_spsc.c $(LRC)/include/retro_spsc.h
 
@@ -508,6 +523,8 @@ check: all
 	./test_audio_handover
 	./test_audio_ring
 	./test_audio_ring_tsan
+	./test_object_pack
+	./test_object_pack_tsan
 	./test_audio_mix
 	./no_host_clock.sh $(CLOCK_FILES)
 	@# The pads take no lock: pad::g_pad_mutex is gone, and a merge of

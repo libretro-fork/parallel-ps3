@@ -268,6 +268,36 @@ namespace libretro_vfs
 			return result > 0 ? static_cast<u64>(result) : 0;
 		}
 
+		u64 write_at(u64 offset, const void* buffer, u64 count) override
+		{
+			if (!m_handle || !s_vfs_interface || !s_vfs_interface->write)
+				return 0;
+
+			int64_t result;
+
+			if (m_at)
+			{
+				result = s_vfs_interface->write_at(m_handle, buffer, count, static_cast<s64>(offset));
+				if (result > 0)
+					raise_end(static_cast<s64>(offset) + result);
+			}
+			else
+			{
+				// An older frontend: through the handle's position, under the
+				// file's lock, which is then put back where it was
+				std::lock_guard lock(m_mutex);
+
+				if (!s_vfs_interface->seek)
+					return 0;
+
+				s_vfs_interface->seek(m_handle, offset, RETRO_VFS_SEEK_POSITION_START);
+				result = s_vfs_interface->write(m_handle, buffer, count);
+				s_vfs_interface->seek(m_handle, retro_atomic_load_relaxed_64(&m_pos), RETRO_VFS_SEEK_POSITION_START);
+			}
+
+			return result > 0 ? static_cast<u64>(result) : 0;
+		}
+
 		u64 seek(s64 offset, fs::seek_mode whence) override
 		{
 			if (!m_handle || !s_vfs_interface)
