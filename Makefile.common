@@ -70,6 +70,8 @@ SOURCES_LRC := \
 	$(CORE_DIR)/rpcs3/libretro/libretro-common/gfx/scaler/scaler.c \
 	$(CORE_DIR)/rpcs3/libretro/libretro-common/gfx/scaler/scaler_filter.c \
 	$(CORE_DIR)/rpcs3/libretro/libretro-common/gfx/scaler/scaler_int.c \
+	$(CORE_DIR)/rpcs3/libretro/libretro-common/gfx/shaders/rslc_front.c \
+	$(CORE_DIR)/rpcs3/libretro/libretro-common/gfx/shaders/rslc_ir.c \
 	$(CORE_DIR)/rpcs3/libretro/libretro-common/hash/lrc_hash.c \
 	$(CORE_DIR)/rpcs3/libretro/libretro-common/lists/string_list.c \
 	$(CORE_DIR)/rpcs3/libretro/libretro-common/memmap/memalign.c \
@@ -800,9 +802,12 @@ SOURCES_GENERATED := \
 	$(GEN_DIR)/libretro_vblank_unlock.cpp
 
 # Per-library flags, as each library's CMake target has them
+# rslc (the shader compiler) as an emulator needs it: its extended dialect,
+# SPIR-V out, no Direct3D bytecode, no printed text
 FLAGS_LRC     := -std=gnu99 -DHAVE_SSL -DHAVE_RETROSSL -DHAVE_CRYPTO \
 	-DHAVE_RWAV -DHAVE_RFLAC -DHAVE_RVORBIS -DHAVE_ROPUS -DHAVE_RMP3 -DHAVE_RAAC \
 	-DHAVE_RMP4 -DHAVE_RAC3 -DHAVE_RWMA -DHAVE_RWEBM -DHAVE_RATRAC3 -DHAVE_RATRAC3P \
+	-DRSLC_EXTENDED -DRSLC_NO_DXBC -DRSLC_NO_TEXT \
 	-I$(CORE_DIR)/rpcs3/libretro/libretro-common/include
 FLAGS_LIBUSB  := -std=gnu99 -fvisibility=hidden -w \
 	-I$(CORE_DIR)/rpcs3/libretro/make/libusb \

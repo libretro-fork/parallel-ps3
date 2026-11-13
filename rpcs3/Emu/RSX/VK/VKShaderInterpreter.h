@@ -5,6 +5,7 @@
 #include "vkutils/descriptors.h"
 #include <unordered_map>
 
+struct shader_corpus_test;
 class VKVertexProgram;
 class VKFragmentProgram;
 
@@ -20,6 +21,8 @@ namespace vk
 
 	class shader_interpreter
 	{
+		friend struct ::shader_corpus_test; // the tests build its shaders without a draw
+
 		using async_build_fn_callback = std::function<void(std::shared_ptr<glsl::program>&)>;
 
 		VkDevice m_device = VK_NULL_HANDLE;
