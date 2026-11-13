@@ -12,6 +12,8 @@
 #include <span>
 #include <unordered_map>
 
+#include <retro_atomic.h>
+
 enum class SHADER_TYPE
 {
 	SHADER_TYPE_VERTEX,
@@ -142,6 +144,115 @@ namespace rsx
 }
 
 
+// A hash map that only gains entries until it is cleared, looked up in and
+// added to by any number of threads with no lock: the program cache's maps.
+// Every draw that changes program looks three of them up, and each lookup
+// took a reader lock - two writes to a word the shader compiler threads
+// share - and waited whenever one of those threads was adding a program.
+//
+// Buckets of chains; an entry is pushed at the head of its bucket with a
+// compare-and-swap and never moves or goes until clear(), so a pointer to it
+// stays good. Two threads adding the same key end with one entry: the one
+// that loses finds the winner's in what was pushed since it looked.
+// clear() is for when nothing else uses the map.
+template <typename Key, typename Value, typename Hash, typename Equal>
+class program_cache_map
+{
+public:
+	struct node
+	{
+		node* next = nullptr;
+		const usz hash;
+		const Key key;
+		Value value{};
+
+		node(const Key& key, usz hash)
+			: hash(hash)
+			, key(key)
+		{
+		}
+	};
+
+private:
+	static constexpr usz bucket_count = 4096;
+
+	retro_atomic_ptr_t m_buckets[bucket_count]{};
+
+	static node* find_in(void* head, const void* until, const Key& key, usz hash)
+	{
+		for (node* n = static_cast<node*>(head); n && n != until; n = n->next)
+		{
+			if (n->hash == hash && Equal{}(n->key, key))
+			{
+				return n;
+			}
+		}
+
+		return nullptr;
+	}
+
+public:
+	program_cache_map() = default;
+	program_cache_map(const program_cache_map&) = delete;
+	program_cache_map& operator=(const program_cache_map&) = delete;
+
+	~program_cache_map()
+	{
+		clear();
+	}
+
+	// The key's entry, made if there is none; true when this call made it
+	std::pair<node*, bool> try_emplace(const Key& key)
+	{
+		const usz hash = Hash{}(key);
+		retro_atomic_ptr_t* bucket = &m_buckets[hash % bucket_count];
+		void* head = retro_atomic_load_acquire_ptr(bucket);
+
+		if (node* found = find_in(head, nullptr, key, hash))
+		{
+			return {found, false};
+		}
+
+		node* made = new node(key, hash);
+
+		while (true)
+		{
+			made->next = static_cast<node*>(head);
+
+			if (retro_atomic_cas_ptr(bucket, head, made))
+			{
+				return {made, true};
+			}
+
+			// Entries were pushed meanwhile: this key's, maybe
+			void* now = retro_atomic_load_acquire_ptr(bucket);
+
+			if (node* found = find_in(now, head, key, hash))
+			{
+				delete made;
+				return {found, false};
+			}
+
+			head = now;
+		}
+	}
+
+	void clear()
+	{
+		for (auto& bucket : m_buckets)
+		{
+			node* n = static_cast<node*>(retro_atomic_exchange_ptr(&bucket, nullptr));
+
+			while (n)
+			{
+				node* next = n->next;
+				delete n;
+				n = next;
+			}
+		}
+	}
+};
+
 /**
 * Cache for program help structure (blob, string...)
 * The class is responsible for creating the object so the state only has to call getGraphicPipelineState
@@ -166,8 +277,8 @@ class program_state_cache
 	using vertex_program_type = typename backend_traits::vertex_program_type;
 	using fragment_program_type = typename backend_traits::fragment_program_type;
 
-	using binary_to_vertex_program = std::unordered_map<RSXVertexProgram, vertex_program_type, program_hash_util::vertex_program_storage_hash, program_hash_util::vertex_program_compare> ;
-	using binary_to_fragment_program = std::unordered_map<RSXFragmentProgram, fragment_program_type, program_hash_util::fragment_program_storage_hash, program_hash_util::fragment_program_compare>;
+	using binary_to_vertex_program = program_cache_map<RSXVertexProgram, vertex_program_type, program_hash_util::vertex_program_storage_hash, program_hash_util::vertex_program_compare>;
+	using binary_to_fragment_program = program_cache_map<RSXFragmentProgram, fragment_program_type, program_hash_util::fragment_program_storage_hash, program_hash_util::fragment_program_compare>;
 
 	using pipeline_data_type = std::tuple<pipeline_type*, const vertex_program_type*, const fragment_program_type*>;
 
@@ -201,17 +312,20 @@ class program_state_cache
 protected:
 	using decompiler_callback_t = std::function<void(const pipeline_properties&, const RSXVertexProgram&, const RSXFragmentProgram&)>;
 
-	shared_mutex m_vertex_mutex;
-	shared_mutex m_fragment_mutex;
-	shared_mutex m_pipeline_mutex;
-	shared_mutex m_decompiler_mutex;
+	// A linked pipeline: its owner, written once by whoever links it, and
+	// the pointer those who look it up read - null until it is linked
+	struct pipeline_slot
+	{
+		pipeline_storage_type storage{};
+		retro_atomic_ptr_t ready{};
+	};
 
 	atomic_t<usz> m_next_id = 0;
 	bool m_cache_miss_flag; // Set if last lookup did not find any usable cached programs
 
 	binary_to_vertex_program m_vertex_shader_cache;
 	binary_to_fragment_program m_fragment_shader_cache;
-	std::unordered_map<pipeline_key, pipeline_storage_type, pipeline_key_hash, pipeline_key_compare> m_storage;
+	program_cache_map<pipeline_key, pipeline_slot, pipeline_key_hash, pipeline_key_compare> m_storage;
 
 	decompiler_callback_t notify_pipeline_compiled;
 
@@ -230,25 +344,17 @@ protected:
 			return std::forward_as_tuple(*cache_hint->get_vertex_program<vertex_program_type>(), true);
 		}
 
-		bool recompile = false;
-		vertex_program_type* new_shader;
+		// No lock: found, or added by this thread, which then compiles it
+		const auto [entry, recompile] = m_vertex_shader_cache.try_emplace(rsx_vp);
+		vertex_program_type* new_shader = &entry->value;
+
+		if (!recompile)
 		{
-			reader_lock lock(m_vertex_mutex);
-
-			const auto& I = m_vertex_shader_cache.find(rsx_vp);
-			if (I != m_vertex_shader_cache.end())
-			{
-				rsx::program_cache_hint_t::cache_vertex_program(cache_hint, rsx_vp, &(I->second));
-				return std::forward_as_tuple(I->second, true);
-			}
-
-			rsx_log.trace("VP not found in buffer!");
-
-			lock.upgrade();
-			auto [it, inserted] = m_vertex_shader_cache.try_emplace(rsx_vp);
-			new_shader = &(it->second);
-			recompile = inserted;
+			rsx::program_cache_hint_t::cache_vertex_program(cache_hint, rsx_vp, new_shader);
+			return std::forward_as_tuple(*new_shader, true);
 		}
+
+		rsx_log.trace("VP not found in buffer!");
 
 		if (recompile)
 		{
@@ -268,31 +374,20 @@ protected:
 			return std::forward_as_tuple(*cache_hint->get_fragment_program<fragment_program_type>(), true);
 		}
 
-		bool recompile = false;
-		typename binary_to_fragment_program::iterator it;
-		fragment_program_type* new_shader;
+		// No lock: found, or added by this thread, which then compiles it
+		const auto [entry, recompile] = m_fragment_shader_cache.try_emplace(rsx_fp);
+		fragment_program_type* new_shader = &entry->value;
+
+		if (!recompile)
 		{
-			reader_lock lock(m_fragment_mutex);
-
-			const auto& I = m_fragment_shader_cache.find(rsx_fp);
-			if (I != m_fragment_shader_cache.end())
-			{
-				rsx::program_cache_hint_t::cache_fragment_program(cache_hint, rsx_fp, &(I->second));
-				return std::forward_as_tuple(I->second, true);
-			}
-
-			rsx_log.trace("FP not found in buffer!");
-
-			lock.upgrade();
-			std::tie(it, recompile) = m_fragment_shader_cache.try_emplace(rsx_fp);
-			new_shader = &(it->second);
+			rsx::program_cache_hint_t::cache_fragment_program(cache_hint, rsx_fp, new_shader);
+			return std::forward_as_tuple(*new_shader, true);
 		}
 
-		if (recompile)
-		{
-			it->first.clone_data();
-			backend_traits::recompile_fragment_program(rsx_fp, *new_shader, m_next_id++);
-		}
+		rsx_log.trace("FP not found in buffer!");
+
+		entry->key.clone_data();
+		backend_traits::recompile_fragment_program(rsx_fp, *new_shader, m_next_id++);
 
 		rsx::program_cache_hint_t::cache_fragment_program(cache_hint, rsx_fp, new_shader);
 		return std::forward_as_tuple(*new_shader, false);
@@ -373,27 +468,19 @@ public:
 		{
 			// There is a high chance the pipeline object was compiled if the two shaders already existed before
 			backend_traits::validate_pipeline_properties(vertex_program, fragment_program, pipeline_properties);
-
-			reader_lock lock(m_pipeline_mutex);
-			if (const auto I = m_storage.find(key); I != m_storage.end())
-			{
-				m_cache_miss_flag = (I->second == __null_pipeline_handle);
-				return { I->second.get(), &vertex_program, &fragment_program };
-			}
 		}
 
+		// No lock: the pipeline's entry is found, or made here as the
+		// placeholder that keeps the same pipeline from being linked twice
+		const auto [entry, inserted] = m_storage.try_emplace(key);
+		pipeline_slot* const slot = &entry->value;
+
+		if (!inserted)
 		{
-			std::lock_guard lock(m_pipeline_mutex);
-
-			// Check if another submission completed in the mean time
-			if (const auto I = m_storage.find(key); I != m_storage.end())
-			{
-				m_cache_miss_flag = (I->second == __null_pipeline_handle);
-				return { I->second.get(), &vertex_program, &fragment_program };
-			}
-
-			// Insert a placeholder if the key still doesn't exist to avoid re-linking of the same pipeline
-			m_storage[key] = std::move(__null_pipeline_handle);
+			// Linked, or being linked by whoever made the entry
+			const auto ready = static_cast<pipeline_type*>(retro_atomic_load_acquire_ptr(&slot->ready));
+			m_cache_miss_flag = !ready;
+			return { ready, &vertex_program, &fragment_program };
 		}
 
 		rsx_log.notice("Add program (vp id = %d, fp id = %d)", vertex_program.id, fragment_program.id);
@@ -402,7 +489,7 @@ public:
 
 		if (allow_notification)
 		{
-			callback = [this, vertex_shader, fragment_shader_ = RSXFragmentProgram::clone(fragment_shader), key]
+			callback = [this, vertex_shader, fragment_shader_ = RSXFragmentProgram::clone(fragment_shader), key, slot]
 			(pipeline_storage_type& pipeline) -> pipeline_type*
 			{
 				if (!pipeline)
@@ -413,25 +500,26 @@ public:
 				rsx_log.success("Program compiled successfully");
 				notify_pipeline_compiled(key.properties, vertex_shader, fragment_shader_);
 
-				std::lock_guard lock(m_pipeline_mutex);
-				auto& pipe_result = m_storage[key];
-				pipe_result = std::move(pipeline);
-				return pipe_result.get();
+				// Into the entry this thread made, then published
+				slot->storage = std::move(pipeline);
+				pipeline_type* const ready = slot->storage.get();
+				retro_atomic_store_release_ptr(&slot->ready, ready);
+				return ready;
 			};
 		}
 		else
 		{
-			callback = [this, key](pipeline_storage_type& pipeline) -> pipeline_type*
+			callback = [slot](pipeline_storage_type& pipeline) -> pipeline_type*
 			{
 				if (!pipeline)
 				{
 					return nullptr;
 				}
 
-				std::lock_guard lock(m_pipeline_mutex);
-				auto& pipe_result = m_storage[key];
-				pipe_result = std::move(pipeline);
-				return pipe_result.get();
+				slot->storage = std::move(pipeline);
+				pipeline_type* const ready = slot->storage.get();
+				retro_atomic_store_release_ptr(&slot->ready, ready);
+				return ready;
 			};
 		}
 
@@ -460,8 +548,7 @@ public:
 
 	void clear()
 	{
-		std::scoped_lock lock(m_vertex_mutex, m_fragment_mutex, m_decompiler_mutex, m_pipeline_mutex);
-
+		// When nothing else uses the cache: the renderer is going
 		notify_pipeline_compiled = {};
 		m_fragment_shader_cache.clear();
 		m_vertex_shader_cache.clear();

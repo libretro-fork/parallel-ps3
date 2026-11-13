@@ -88,6 +88,7 @@
 #include <map>
 #include <set>
 #include <tuple>
+#include <thread>
 
 #include "shader_runner.h"
 
@@ -1232,9 +1233,81 @@ namespace shaders_cache_test
 	}
 }
 
+// The program cache's maps (program_cache_map) are looked up in and added to
+// with no lock: six threads add the same 20000 keys in different orders -
+// each key ends with one entry, made by exactly one of them, and every thread
+// is handed that same entry for it, with what its maker put in it.
+namespace program_cache_map_test
+{
+	struct key_hash
+	{
+		usz operator()(const u64& key) const { return static_cast<usz>(key % 977); } // crowded on purpose
+	};
+
+	struct key_equal
+	{
+		bool operator()(const u64& a, const u64& b) const { return a == b; }
+	};
+
+	using map_t = program_cache_map<u64, u64, key_hash, key_equal>;
+
+	constexpr u32 keys = 20000;
+	constexpr u32 workers = 6;
+
+	static void run()
+	{
+		map_t map;
+		static retro_atomic_int_t made[keys];
+		static map_t::node* seen[workers][keys];
+
+		std::thread threads[workers];
+		for (u32 t = 0; t < workers; t++)
+		{
+			threads[t] = std::thread([&map, t]
+			{
+				for (u32 n = 0; n < keys; n++)
+				{
+					// Each thread in an order of its own (steps with no factor
+					// in common with the number of keys)
+					static constexpr u32 steps[workers] = {1, 3, 7, 9, 11, 13};
+					const u32 k = (n * steps[t] + t * 7919) % keys;
+					const auto [entry, inserted] = map.try_emplace(u64{k} * 0x10001);
+					if (inserted)
+					{
+						entry->value = u64{k} + 1;
+						retro_atomic_fetch_add_int(&made[k], 1);
+					}
+					seen[t][k] = entry;
+				}
+			});
+		}
+		for (auto& t : threads)
+			t.join();
+
+		u32 not_once = 0, differ = 0, wrong = 0;
+		for (u32 k = 0; k < keys; k++)
+		{
+			not_once += retro_atomic_load_acquire_int(&made[k]) != 1;
+			for (u32 t = 1; t < workers; t++)
+				differ += seen[t][k] != seen[0][k];
+			wrong += seen[0][k]->key != u64{k} * 0x10001 || seen[0][k]->value != u64{k} + 1;
+			const auto [entry, inserted] = map.try_emplace(u64{k} * 0x10001);
+			wrong += inserted || entry != seen[0][k];
+		}
+		CHECK(not_once == 0);
+		CHECK(differ == 0);
+		CHECK(wrong == 0);
+
+		map.clear();
+		const auto [entry, inserted] = map.try_emplace(5);
+		CHECK(inserted && entry->value == 0);
+	}
+}
+
 int main()
 {
 	shaders_cache_test::run();
+	program_cache_map_test::run();
 
 	void* lib = dlopen("libvulkan.so.1", RTLD_NOW | RTLD_LOCAL);
 	const auto gipa = lib ? reinterpret_cast<PFN_vkGetInstanceProcAddr>(dlsym(lib, "vkGetInstanceProcAddr")) : nullptr;
