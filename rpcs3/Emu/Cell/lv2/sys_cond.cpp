@@ -86,7 +86,8 @@ error_code sys_cond_create(ppu_thread& ppu, vm::ptr<u32> cond_id, u32 mutex_id, 
 
 	sys_cond.trace("sys_cond_create(cond_id=*0x%x, mutex_id=0x%x, attr=*0x%x)", cond_id, mutex_id, attr);
 
-	auto mutex = idm::get_unlocked<lv2_obj, lv2_mutex>(mutex_id);
+	// The ID's own mutex, not a new object in a destroyed one's place (idm::hold)
+	auto mutex = idm::hold<lv2_obj, lv2_mutex>(mutex_id);
 
 	if (!mutex)
 	{
@@ -175,7 +176,8 @@ error_code sys_cond_signal(ppu_thread& ppu, u32 cond_id)
 
 		ppu.state += cpu_flag::wait;
 
-		const auto cond = idm::check<lv2_obj, lv2_cond>(cond_id, [&, notify = lv2_obj::notify_all_t()](lv2_cond& cond)
+		// Found with no lock over the IDs: waking threads makes none wait on the condition, which is all sys_cond_destroy asks about
+		const auto cond = idm::get_held<lv2_obj, lv2_cond>(cond_id, [&, notify = lv2_obj::notify_all_t()](lv2_cond& cond)
 		{
 			if (atomic_storage<ppu_thread*>::load(cond.sq))
 			{
@@ -247,7 +249,8 @@ error_code sys_cond_signal_all(ppu_thread& ppu, u32 cond_id)
 
 		ppu.state += cpu_flag::wait;
 
-		const auto cond = idm::check<lv2_obj, lv2_cond>(cond_id, [&, notify = lv2_obj::notify_all_t()](lv2_cond& cond)
+		// Found with no lock over the IDs: waking threads makes none wait on the condition, which is all sys_cond_destroy asks about
+		const auto cond = idm::get_held<lv2_obj, lv2_cond>(cond_id, [&, notify = lv2_obj::notify_all_t()](lv2_cond& cond)
 		{
 			if (atomic_storage<ppu_thread*>::load(cond.sq))
 			{
@@ -332,7 +335,8 @@ error_code sys_cond_signal_to(ppu_thread& ppu, u32 cond_id, u32 thread_id)
 
 		ppu.state += cpu_flag::wait;
 
-		const auto cond = idm::check<lv2_obj, lv2_cond>(cond_id, [&, notify = lv2_obj::notify_all_t()](lv2_cond& cond)
+		// Found with no lock over the IDs: waking threads makes none wait on the condition, which is all sys_cond_destroy asks about
+		const auto cond = idm::get_held<lv2_obj, lv2_cond>(cond_id, [&, notify = lv2_obj::notify_all_t()](lv2_cond& cond)
 		{
 			const auto target_ppu = idm::check_unlocked<named_thread<ppu_thread>>(thread_id);
 
@@ -438,7 +442,10 @@ error_code sys_cond_wait(ppu_thread& ppu, u32 cond_id, u64 timeout)
 
 	auto& sstate = *ppu.optional_savestate_state;
 
-	const auto cond = idm::get<lv2_obj, lv2_cond>(cond_id, [&, notify = lv2_obj::notify_all_t()](lv2_cond& cond) -> s64
+	// Found with no lock over the IDs. The thread makes itself a waiter, so a
+	// destroy that is looking for waiters waits for it to be in the queue
+	// (idm::get_entered).
+	const auto cond = idm::get_entered<lv2_obj, lv2_cond>(cond_id, [&, notify = lv2_obj::notify_all_t()](lv2_cond& cond) -> s64
 	{
 		if (!ppu.loaded_from_savestate && atomic_storage<u32>::load(cond.mutex->control.raw().owner) != ppu.id)
 		{

@@ -1125,8 +1125,9 @@ int main()
 		}
 
 		// Lightweight mutexes: threads put themselves in the queue by ID the
-		// way _sys_lwmutex_lock now does - a counted reference, idm::enter,
-		// then the queue, with no second look and nothing to undo - while
+		// way _sys_lwmutex_lock and sys_cond_wait now do - a counted
+		// reference, idm::enter, then the queue (idm::get_entered), with no
+		// second look and nothing to undo - while
 		// another thread destroys and recreates them the way
 		// _sys_lwmutex_destroy does, refusing while the queue has a thread.
 		// A destroy waits for a thread that has entered, so it never
@@ -1143,6 +1144,26 @@ int main()
 
 			for (u32 i = 0; i < slots; i++)
 				retro_atomic_store_release_int(&s_lids[i], static_cast<int>(make_lwmutex()));
+
+			// get_held and get_entered find what get finds, and leave nothing
+			// behind that a withdrawal would wait for
+			{
+				const u32 id = make_lwmutex();
+				int ran = 0;
+				const auto held = idm::get_held<lv2_obj, lv2_lwmutex>(id, [&](lv2_lwmutex&) { ran++; return 7; });
+				CHECK((held && held.ret == 7 && held.ptr.get() == idm::check_unlocked<lv2_obj, lv2_lwmutex>(id)));
+				const auto in = idm::get_entered<lv2_obj, lv2_lwmutex>(id, [&](lv2_lwmutex&) { ran++; return 9; });
+				CHECK((in && in.ret == 9 && in.ptr.get() == held.ptr.get()));
+				CHECK((!idm::get_held<lv2_obj, lv2_lwmutex>(id + 0x100, [&](lv2_lwmutex&) { ran++; return 1; })));
+				CHECK((!idm::get_entered<lv2_obj, lv2_lwmutex>(id + 0x100, [&](lv2_lwmutex&) { ran++; return 1; })));
+				CHECK((!idm::get_entered<lv2_obj, lv2_mutex>(id, [&](lv2_mutex&) { ran++; return 1; })));
+				CHECK(ran == 2);
+				const auto gone = idm::withdraw<lv2_obj, lv2_lwmutex>(id, [](lv2_lwmutex&) -> CellError { return {}; });
+				CHECK((gone && !gone.ret));
+				CHECK((!idm::get_held<lv2_obj, lv2_lwmutex>(id, [&](lv2_lwmutex&) { ran++; return 1; })));
+				CHECK((!idm::get_entered<lv2_obj, lv2_lwmutex>(id, [&](lv2_lwmutex&) { ran++; return 1; })));
+				CHECK(ran == 2);
+			}
 
 			const auto set_queue = [](lv2_lwmutex& mutex, ppu_thread* to)
 			{
@@ -1164,37 +1185,40 @@ int main()
 						const u32 slot = (x >> 16) % slots;
 						const u32 id = static_cast<u32>(retro_atomic_load_acquire_int(&s_lids[slot]));
 
-						const auto mutex = idm::hold<lv2_obj, lv2_lwmutex>(id);
-						if (!mutex)
-							continue;
-
-						if (x & 0x100)
-							std::this_thread::yield();
-
 						// One thread in a queue at a time, to keep the stand-in simple
-						std::lock_guard lock(mutex->mutex);
-
-						if (const auto entered = idm::enter<lv2_obj, lv2_lwmutex>(id, mutex.get()))
+						const auto mutex = idm::get_entered<lv2_obj, lv2_lwmutex>(id, [&](lv2_lwmutex& mutex)
 						{
 							if (x & 0x200)
 								std::this_thread::yield();
-							set_queue(*mutex, self);
-						}
-						else
+
+							return mutex.lv2_control.fetch_op([&](lv2_lwmutex::control_data_t& data)
+							{
+								if (data.sq)
+									return false;
+
+								data.sq = self;
+								return true;
+							}).second;
+						});
+
+						if (!mutex)
 						{
 							retro_atomic_fetch_add_int(&s_refused4, 1);
 							continue;
 						}
+
+						if (!mutex.ret)
+							continue;
 
 						// In the queue: a destroy must fail until the thread leaves
 						retro_atomic_fetch_add_int(&s_in_queue4[(id >> 8) & 8191], 1);
 						retro_atomic_fetch_add_int(&s_queued4, 1);
 						for (int spin = 0; spin < 20; spin++)
 							(void)retro_atomic_load_relaxed_int(&s_stop4);
-						if (idm::check_unlocked<lv2_obj, lv2_lwmutex>(id) != mutex.get())
+						if (idm::check_unlocked<lv2_obj, lv2_lwmutex>(id) != mutex.ptr.get())
 							retro_atomic_fetch_add_int(&s_bad4, 1);
 						retro_atomic_fetch_sub_int(&s_in_queue4[(id >> 8) & 8191], 1);
-						set_queue(*mutex, nullptr);
+						set_queue(*mutex.ptr, nullptr);
 					}
 				});
 			}

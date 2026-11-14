@@ -1268,6 +1268,70 @@ public:
 		}
 	}
 
+	// get() without the lock, for a function that does nothing a withdrawal
+	// asks about (it makes no waiter, takes no ownership): the object is
+	// found and kept with a counted reference, and what the function does
+	// is as if it came before a withdrawal that ran meanwhile.
+	template <typename T, typename Get = T, typename F, typename FRT = std::invoke_result_t<F, Get&>>
+		requires IdmTypesCompatible<T, Get>
+	static inline std::conditional_t<std::is_void_v<FRT>, stx::shared_ptr<Get>, return_pair<stx::shared_ptr<Get>, FRT>> get_held(u32 id, F&& func)
+	{
+		auto ptr = hold<T, Get>(id);
+
+		if (!ptr) [[unlikely]]
+		{
+			return {};
+		}
+
+		Get* obj_ptr = ptr.get();
+
+		if constexpr (std::is_void_v<FRT>)
+		{
+			func(*obj_ptr);
+			return ptr;
+		}
+		else
+		{
+			return {std::move(ptr), func(*obj_ptr)};
+		}
+	}
+
+	// get() without the lock, for a function that may make the thread
+	// something a withdrawal asks about - a waiter, as a rule: the
+	// function runs inside enter(), so a withdrawal with a question waits
+	// for it before asking, as it waited for the reader lock. The function
+	// is to be short: it queues the thread, it does not wait.
+	template <typename T, typename Get = T, typename F, typename FRT = std::invoke_result_t<F, Get&>>
+		requires IdmTypesCompatible<T, Get>
+	static inline std::conditional_t<std::is_void_v<FRT>, stx::shared_ptr<Get>, return_pair<stx::shared_ptr<Get>, FRT>> get_entered(u32 id, F&& func)
+	{
+		auto ptr = hold<T, Get>(id);
+
+		if (!ptr) [[unlikely]]
+		{
+			return {};
+		}
+
+		Get* obj_ptr = ptr.get();
+
+		const auto inside = enter<T, Get>(id, obj_ptr);
+
+		if (!inside) [[unlikely]]
+		{
+			return {};
+		}
+
+		if constexpr (std::is_void_v<FRT>)
+		{
+			func(*obj_ptr);
+			return ptr;
+		}
+		else
+		{
+			return {std::move(ptr), func(*obj_ptr)};
+		}
+	}
+
 	// For a thread that found @object under @id without the lock and has
 	// acted on it: true if the ID still names the object. If a withdrawal
 	// is asking its question about the object right now, this waits for
