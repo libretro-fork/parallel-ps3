@@ -290,15 +290,15 @@ struct lv2_spu_group
 
 	shared_mutex mutex;
 
-	atomic_t<u32> init; // Initialization Counter
+	retro_atomic_int_t init; // Initialization Counter (a u32)
 	atomic_t<typename spu_thread::spu_prio_t> prio{}; // SPU Thread Group Priority
-	atomic_t<spu_group_status> run_state; // SPU Thread Group State
-	atomic_t<s32> exit_status; // SPU Thread Group Exit Status
-	atomic_t<u32> join_state; // flags used to detect exit cause and signal
-	atomic_t<u32> running = 0; // Number of running threads
+	retro_atomic_int_t run_state; // SPU Thread Group State (a spu_group_status)
+	retro_atomic_int_t exit_status; // SPU Thread Group Exit Status
+	retro_atomic_int_t join_state; // flags used to detect exit cause and signal (a u32)
+	retro_atomic_int_t running{}; // Number of running threads
 	atomic_t<u32> spurs_running = 0;
-	atomic_t<u32> stop_count = 0;
-	atomic_t<u32> wait_term_count = 0; 
+	retro_atomic_int_t stop_count{}; // a u32, waited on with retro_waitaddr
+	retro_atomic_int_t wait_term_count{};
 	u32 waiter_spu_index = -1; // Index of SPU executing a waiting syscall
 	class ppu_thread* waiter = nullptr;
 	bool set_terminate = false;
@@ -322,7 +322,7 @@ struct lv2_spu_group
 		, has_scheduler_context(uses_scheduler)
 		, max_run(num)
 		, init(0)
-		, run_state(SPU_THREAD_GROUP_STATUS_NOT_INITIALIZED)
+		, run_state(static_cast<int>(SPU_THREAD_GROUP_STATUS_NOT_INITIALIZED))
 		, exit_status(0)
 		, join_state(0)
 		, args({})

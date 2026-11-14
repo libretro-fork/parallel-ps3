@@ -22,6 +22,9 @@
 
 #include "util/asm.hpp"
 
+#include <retro_atomic.h>
+#include <rthreads/retro_waitaddr.h>
+
 LOG_CHANNEL(sys_spu);
 
 template <>
@@ -236,7 +239,7 @@ lv2_spu_group::lv2_spu_group(utils::serial& ar) noexcept
 	, ct(lv2_memory_container::search(ar.pop<u32>()))
 	, has_scheduler_context(ar.pop<u8>())
 	, max_run(ar)
-	, init(ar.pop<u32>())
+	, init(static_cast<int>(ar.pop<u32>()))
 	, prio([&ar]()
 	{
 		std::common_type_t<decltype(lv2_spu_group::prio)> prio{};
@@ -245,7 +248,7 @@ lv2_spu_group::lv2_spu_group(utils::serial& ar) noexcept
 
 		return prio;
 	}())
-	, run_state(ar.pop<spu_group_status>())
+	, run_state(static_cast<int>(ar.pop<spu_group_status>()))
 	, exit_status(ar.pop<s32>())
 {
 	for (auto& thread : threads)
@@ -255,7 +258,7 @@ lv2_spu_group::lv2_spu_group(utils::serial& ar) noexcept
 			ar(id_manager::g_id);
 			thread = stx::make_shared<named_thread<spu_thread>>(stx::launch_retainer{}, ar, this);
 			ensure(idm::import_existing<named_thread<spu_thread>>(thread, idm::last_id()));
-			running += !thread->stop_flag_removal_protection;
+			retro_atomic_fetch_add_int(&running, !thread->stop_flag_removal_protection);
 		}
 	}
 
@@ -270,7 +273,7 @@ lv2_spu_group::lv2_spu_group(utils::serial& ar) noexcept
 
 	waiter_spu_index = -1;
 
-	switch (run_state)
+	switch (static_cast<spu_group_status>(retro_atomic_load_acquire_int(&run_state)))
 	{
 	// Commented stuff are handled by different means currently
 	//case SPU_THREAD_GROUP_STATUS_NOT_INITIALIZED:
@@ -278,15 +281,15 @@ lv2_spu_group::lv2_spu_group(utils::serial& ar) noexcept
 	//case SPU_THREAD_GROUP_STATUS_READY:
 	case SPU_THREAD_GROUP_STATUS_WAITING:
 	{
-		run_state = SPU_THREAD_GROUP_STATUS_RUNNING;
+		retro_atomic_store_release_int(&run_state, SPU_THREAD_GROUP_STATUS_RUNNING);
 		ar(waiter_spu_index);
 		[[fallthrough]];
 	}
 	case SPU_THREAD_GROUP_STATUS_WAITING_AND_SUSPENDED:
 	{
-		if (run_state == SPU_THREAD_GROUP_STATUS_WAITING_AND_SUSPENDED)
+		if (static_cast<spu_group_status>(retro_atomic_load_acquire_int(&run_state)) == SPU_THREAD_GROUP_STATUS_WAITING_AND_SUSPENDED)
 		{
-			run_state = SPU_THREAD_GROUP_STATUS_SUSPENDED;
+			retro_atomic_store_release_int(&run_state, SPU_THREAD_GROUP_STATUS_SUSPENDED);
 		}
 
 		[[fallthrough]];
@@ -324,7 +327,7 @@ void lv2_spu_group::save(utils::serial& ar)
 {
 	USING_SERIALIZATION_VERSION(spu);
 
-	ar(name, max_num, mem_size, type, ct->id, has_scheduler_context, max_run, init, prio.load().all, run_state, exit_status);
+	ar(name, max_num, mem_size, type, ct->id, has_scheduler_context, max_run, static_cast<u32>(retro_atomic_load_acquire_int(&init)), prio.load().all, static_cast<spu_group_status>(retro_atomic_load_acquire_int(&run_state)), static_cast<s32>(retro_atomic_load_acquire_int(&exit_status)));
 
 	for (const auto& thread : threads)
 	{
@@ -346,7 +349,7 @@ void lv2_spu_group::save(utils::serial& ar)
 		ar(lv2_obj::check(*ep) ? (*ep)->id : 0);
 	}
 
-	if (run_state == SPU_THREAD_GROUP_STATUS_WAITING)
+	if (static_cast<spu_group_status>(retro_atomic_load_acquire_int(&run_state)) == SPU_THREAD_GROUP_STATUS_WAITING)
 	{
 		ar(waiter_spu_index);
 	}
@@ -379,7 +382,7 @@ std::pair<named_thread<spu_thread>*, shared_ptr<lv2_spu_group>> lv2_spu_group::g
 	// Bits 24-31 contain thread index within the group
 	const u32 index = id >> 24;
 
-	if (auto group = res.second.get(); group && group->init > index)
+	if (auto group = res.second.get(); group && static_cast<u32>(retro_atomic_load_acquire_int(&group->init)) > index)
 	{
 		res.first = group->threads[index].get();
 	}
@@ -807,7 +810,7 @@ error_code sys_spu_thread_initialize(ppu_thread& ppu, vm::ptr<u32> thread, u32 g
 		return CELL_ESRCH;
 	}
 
-	if (auto state = +group->run_state; state != SPU_THREAD_GROUP_STATUS_NOT_INITIALIZED)
+	if (auto state = static_cast<spu_group_status>(retro_atomic_load_acquire_int(&group->run_state)); state != SPU_THREAD_GROUP_STATUS_NOT_INITIALIZED)
 	{
 		if (state == SPU_THREAD_GROUP_STATUS_DESTROYED)
 		{
@@ -822,7 +825,7 @@ error_code sys_spu_thread_initialize(ppu_thread& ppu, vm::ptr<u32> thread, u32 g
 		return CELL_EBUSY;
 	}
 
-	const u32 inited_before_lock = group->init;
+	const u32 inited_before_lock = static_cast<u32>(retro_atomic_load_acquire_int(&group->init));
 
 	u32 tid = (inited_before_lock << 24) | (group_id & 0xffffff);
 	
@@ -830,7 +833,7 @@ error_code sys_spu_thread_initialize(ppu_thread& ppu, vm::ptr<u32> thread, u32 g
 	
 	std::unique_lock lock(group->mutex);
 
-	if (auto state = +group->run_state; state != SPU_THREAD_GROUP_STATUS_NOT_INITIALIZED)
+	if (auto state = static_cast<spu_group_status>(retro_atomic_load_acquire_int(&group->run_state)); state != SPU_THREAD_GROUP_STATUS_NOT_INITIALIZED)
 	{
 		lock.unlock();
 		ensure(idm::remove<named_thread<spu_thread>>(idm::last_id<spu_thread>()));
@@ -855,7 +858,7 @@ error_code sys_spu_thread_initialize(ppu_thread& ppu, vm::ptr<u32> thread, u32 g
 		sys_spu.warning("Unimplemented SPU Thread options (0x%x)", option);
 	}
 
-	const u32 inited = group->init;
+	const u32 inited = static_cast<u32>(retro_atomic_load_acquire_int(&group->init));
 
 	tid = (inited << 24) | (group_id & 0xffffff);
 
@@ -874,9 +877,20 @@ error_code sys_spu_thread_initialize(ppu_thread& ppu, vm::ptr<u32> thread, u32 g
 	group->imgs[inited].first = image.entry_point;
 	group->imgs[inited].second = std::move(spu_segs);
 
-	if (++group->init == group->max_num)
+	if (static_cast<u32>(retro_atomic_fetch_add_int(&group->init, 1) + 1) == group->max_num)
 	{
-		const auto old = group->run_state.compare_and_swap(SPU_THREAD_GROUP_STATUS_NOT_INITIALIZED, SPU_THREAD_GROUP_STATUS_INITIALIZED);
+		const auto old = [&]
+		{
+			for (;;)
+			{
+				const int seen = retro_atomic_load_acquire_int(&group->run_state);
+
+				if (seen != static_cast<int>(SPU_THREAD_GROUP_STATUS_NOT_INITIALIZED) || retro_atomic_cas_int(&group->run_state, seen, static_cast<int>(SPU_THREAD_GROUP_STATUS_INITIALIZED)))
+				{
+					return static_cast<spu_group_status>(seen);
+				}
+			}
+		}();
 
 		if (old == SPU_THREAD_GROUP_STATUS_DESTROYED)
 		{
@@ -1153,18 +1167,19 @@ error_code sys_spu_thread_group_destroy(ppu_thread& ppu, u32 id)
 
 	const auto group = idm::withdraw<lv2_spu_group>(id, [](lv2_spu_group& group) -> CellError
 	{
-		if (!group.run_state.fetch_op([](spu_group_status& state)
+		for (;;)
 		{
-			if (state <= SPU_THREAD_GROUP_STATUS_INITIALIZED)
+			const int seen = retro_atomic_load_acquire_int(&group.run_state);
+
+			if (static_cast<spu_group_status>(seen) > SPU_THREAD_GROUP_STATUS_INITIALIZED)
 			{
- 				state = SPU_THREAD_GROUP_STATUS_DESTROYED;
-				return true;
+				return CELL_EBUSY;
 			}
 
-			return false;
-		}).second)
-		{
-			return CELL_EBUSY;
+			if (retro_atomic_cas_int(&group.run_state, seen, static_cast<int>(SPU_THREAD_GROUP_STATUS_DESTROYED)))
+			{
+				break;
+			}
 		}
 
 		group.ct->free(group.mem_size);
@@ -1228,7 +1243,18 @@ error_code sys_spu_thread_group_start(ppu_thread& ppu, u32 id)
 	std::lock_guard lock(group->mutex);
 
 	// SPU_THREAD_GROUP_STATUS_READY state is not used
-	switch (group->run_state.compare_and_swap(SPU_THREAD_GROUP_STATUS_INITIALIZED, SPU_THREAD_GROUP_STATUS_RUNNING))
+	switch ([&]
+	{
+		for (;;)
+		{
+			const int seen = retro_atomic_load_acquire_int(&group->run_state);
+
+			if (seen != static_cast<int>(SPU_THREAD_GROUP_STATUS_INITIALIZED) || retro_atomic_cas_int(&group->run_state, seen, static_cast<int>(SPU_THREAD_GROUP_STATUS_RUNNING)))
+			{
+				return static_cast<spu_group_status>(seen);
+			}
+		}
+	}())
 	{
 	case SPU_THREAD_GROUP_STATUS_INITIALIZED: break;
 	case SPU_THREAD_GROUP_STATUS_DESTROYED: return CELL_ESRCH;
@@ -1237,9 +1263,9 @@ error_code sys_spu_thread_group_start(ppu_thread& ppu, u32 id)
 
 	const u32 max_threads = group->max_num;
 
-	group->join_state = 0;
-	group->exit_status = 0;
-	group->running = max_threads;
+	retro_atomic_store_release_int(&group->join_state, 0);
+	retro_atomic_store_release_int(&group->exit_status, 0);
+	retro_atomic_store_release_int(&group->running, static_cast<int>(max_threads));
 	group->set_terminate = false;
 
 	for (auto& thread : group->threads)
@@ -1249,7 +1275,7 @@ error_code sys_spu_thread_group_start(ppu_thread& ppu, u32 id)
 			auto& args = group->args[thread->lv2_id >> 24];
 			auto& img = group->imgs[thread->lv2_id >> 24];
 
-			sys_spu_image::deploy(thread->ls, std::span(img.second.data(), img.second.size()), group->stop_count < 5);
+			sys_spu_image::deploy(thread->ls, std::span(img.second.data(), img.second.size()), (static_cast<u32>(retro_atomic_load_acquire_int(&group->stop_count)) < 5));
 
 			thread->cpu_init();
 			thread->gpr[3] = v128::from64(0, args[0]);
@@ -1311,7 +1337,7 @@ error_code sys_spu_thread_group_suspend(ppu_thread& ppu, u32 id)
 
 	CellError error;
 
-	group->run_state.fetch_op([&error](spu_group_status& state)
+	const auto change_state = [&error](spu_group_status& state)
 	{
 		if (state == SPU_THREAD_GROUP_STATUS_DESTROYED)
 		{
@@ -1349,7 +1375,18 @@ error_code sys_spu_thread_group_suspend(ppu_thread& ppu, u32 id)
 
 		error = CellError{CELL_CANCEL + 0u};
 		return true;
-	});
+	};
+
+	for (;;)
+	{
+		const int seen = retro_atomic_load_acquire_int(&group->run_state);
+		spu_group_status state = static_cast<spu_group_status>(seen);
+
+		if (!change_state(state) || retro_atomic_cas_int(&group->run_state, seen, static_cast<int>(state)))
+		{
+			break;
+		}
+	}
 
 	if (error != CELL_CANCEL + 0u)
 	{
@@ -1413,7 +1450,7 @@ error_code sys_spu_thread_group_resume(ppu_thread& ppu, u32 id)
 
 	CellError error;
 
-	group->run_state.fetch_op([&error](spu_group_status& state)
+	const auto change_state = [&error](spu_group_status& state)
 	{
 		if (state == SPU_THREAD_GROUP_STATUS_DESTROYED)
 		{
@@ -1441,7 +1478,18 @@ error_code sys_spu_thread_group_resume(ppu_thread& ppu, u32 id)
 
 		error = CellError{CELL_CANCEL + 0u};
 		return true;
-	});
+	};
+
+	for (;;)
+	{
+		const int seen = retro_atomic_load_acquire_int(&group->run_state);
+		spu_group_status state = static_cast<spu_group_status>(seen);
+
+		if (!change_state(state) || retro_atomic_cas_int(&group->run_state, seen, static_cast<int>(state)))
+		{
+			break;
+		}
+	}
 
 	if (error != CELL_CANCEL + 0u)
 	{
@@ -1484,7 +1532,7 @@ error_code sys_spu_thread_group_yield(ppu_thread& ppu, u32 id)
 		return CELL_OK;
 	}
 
-	if (auto state = +group->run_state; state != SPU_THREAD_GROUP_STATUS_RUNNING)
+	if (auto state = static_cast<spu_group_status>(retro_atomic_load_acquire_int(&group->run_state)); state != SPU_THREAD_GROUP_STATUS_RUNNING)
 	{
 		if (state == SPU_THREAD_GROUP_STATUS_DESTROYED)
 		{
@@ -1523,7 +1571,7 @@ error_code sys_spu_thread_group_terminate(ppu_thread& ppu, u32 id, s32 value)
 		ppu.state += cpu_flag::wait;
 	};
 
-	if (auto state = +group->run_state;
+	if (auto state = static_cast<spu_group_status>(retro_atomic_load_acquire_int(&group->run_state));
 		state <= SPU_THREAD_GROUP_STATUS_INITIALIZED ||
 		state == SPU_THREAD_GROUP_STATUS_WAITING ||
 		state == SPU_THREAD_GROUP_STATUS_WAITING_AND_SUSPENDED ||
@@ -1540,17 +1588,18 @@ error_code sys_spu_thread_group_terminate(ppu_thread& ppu, u32 id, s32 value)
 	if (group->set_terminate)
 	{
 		// Wait for termination, only then return error code
-		const u32 last_stop = group->stop_count;
-		group->wait_term_count++;
+		const u32 last_stop = static_cast<u32>(retro_atomic_load_acquire_int(&group->stop_count));
+		retro_atomic_fetch_add_int(&group->wait_term_count, 1);
 		lock.unlock();
 		short_sleep(ppu);
 
-		while (group->stop_count == last_stop)
+		while (static_cast<u32>(retro_atomic_load_acquire_int(&group->stop_count)) == last_stop)
 		{
-			group->stop_count.wait(last_stop);
+			const retro_waitaddr_t w{&group->stop_count, last_stop};
+			retro_waitaddr_wait(&w, 1, -1);
 		}
 
-		group->wait_term_count--;
+		retro_atomic_fetch_add_int(&group->wait_term_count, -1);
 		return CELL_ESTAT;
 	}
 
@@ -1579,7 +1628,7 @@ error_code sys_spu_thread_group_terminate(ppu_thread& ppu, u32 id, s32 value)
 
 	for (auto& thread : group->threads)
 	{
-		while (thread && group->running && thread->state & cpu_flag::wait)
+		while (thread && retro_atomic_load_acquire_int(&group->running) && thread->state & cpu_flag::wait)
 		{
 			thread_ctrl::notify(*thread);
 
@@ -1602,21 +1651,22 @@ error_code sys_spu_thread_group_terminate(ppu_thread& ppu, u32 id, s32 value)
 		vm::reservation_notifier_notify(prev_resv, prev_time);
 	}
 
-	group->exit_status = value;
-	group->join_state = SYS_SPU_THREAD_GROUP_JOIN_TERMINATED;
+	retro_atomic_store_release_int(&group->exit_status, value);
+	retro_atomic_store_release_int(&group->join_state, SYS_SPU_THREAD_GROUP_JOIN_TERMINATED);
 
 	// Wait until the threads are actually stopped
-	const u32 last_stop = group->stop_count;
-	group->wait_term_count++;
+	const u32 last_stop = static_cast<u32>(retro_atomic_load_acquire_int(&group->stop_count));
+	retro_atomic_fetch_add_int(&group->wait_term_count, 1);
 	lock.unlock();
 	short_sleep(ppu);
 
-	while (group->stop_count == last_stop)
+	while (static_cast<u32>(retro_atomic_load_acquire_int(&group->stop_count)) == last_stop)
 	{
-		group->stop_count.wait(last_stop);
+		const retro_waitaddr_t w{&group->stop_count, last_stop};
+		retro_waitaddr_wait(&w, 1, -1);
 	}
 
-	group->wait_term_count--;
+	retro_atomic_fetch_add_int(&group->wait_term_count, -1);
 	return CELL_OK;
 }
 
@@ -1639,7 +1689,7 @@ error_code sys_spu_thread_group_join(ppu_thread& ppu, u32 id, vm::ptr<u32> cause
 
 		std::unique_lock lock(group->mutex);
 
-		const auto state = +group->run_state;
+		const auto state = static_cast<spu_group_status>(retro_atomic_load_acquire_int(&group->run_state));
 
 		if (state == SPU_THREAD_GROUP_STATUS_DESTROYED)
 		{
@@ -1657,12 +1707,12 @@ error_code sys_spu_thread_group_join(ppu_thread& ppu, u32 id, vm::ptr<u32> cause
 			return CELL_EBUSY;
 		}
 
-		if (group->join_state && state == SPU_THREAD_GROUP_STATUS_INITIALIZED)
+		if (retro_atomic_load_acquire_int(&group->join_state) && state == SPU_THREAD_GROUP_STATUS_INITIALIZED)
 		{
 			// Already signaled
-			ppu.gpr[4] = group->join_state;
-			ppu.gpr[5] = group->exit_status;
-			group->join_state.release(0);
+			ppu.gpr[4] = static_cast<u32>(retro_atomic_load_acquire_int(&group->join_state));
+			ppu.gpr[5] = static_cast<s32>(retro_atomic_load_acquire_int(&group->exit_status));
+			retro_atomic_store_release_int(&group->join_state, 0);
 			break;
 		}
 		else
@@ -1864,7 +1914,7 @@ error_code sys_spu_thread_write_ls(ppu_thread& ppu, u32 id, u32 lsa, u64 value, 
 
 	std::lock_guard lock(group->mutex);
 
-	if (auto state = +group->run_state;
+	if (auto state = static_cast<spu_group_status>(retro_atomic_load_acquire_int(&group->run_state));
 		state < SPU_THREAD_GROUP_STATUS_WAITING || state > SPU_THREAD_GROUP_STATUS_RUNNING)
 	{
 		if (state == SPU_THREAD_GROUP_STATUS_DESTROYED)
@@ -1907,7 +1957,7 @@ error_code sys_spu_thread_read_ls(ppu_thread& ppu, u32 id, u32 lsa, vm::ptr<u64>
 
 	std::unique_lock lock(group->mutex);
 
-	if (auto state = +group->run_state;
+	if (auto state = static_cast<spu_group_status>(retro_atomic_load_acquire_int(&group->run_state));
 		state < SPU_THREAD_GROUP_STATUS_WAITING || state > SPU_THREAD_GROUP_STATUS_RUNNING)
 	{
 		if (state == SPU_THREAD_GROUP_STATUS_DESTROYED)
@@ -2292,7 +2342,7 @@ error_code sys_spu_thread_group_connect_event_all_threads(ppu_thread& ppu, u32 i
 
 	std::unique_lock lock(group->mutex);
 
-	if (auto state = +group->run_state;
+	if (auto state = static_cast<spu_group_status>(retro_atomic_load_acquire_int(&group->run_state));
 		state < SPU_THREAD_GROUP_STATUS_INITIALIZED || state == SPU_THREAD_GROUP_STATUS_DESTROYED)
 	{
 		if (state == SPU_THREAD_GROUP_STATUS_DESTROYED)

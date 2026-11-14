@@ -13,6 +13,9 @@
 #include "Emu/Cell/PPUThread.h"
 #include "Emu/Cell/ErrorCodes.h"
 #include "Emu/Cell/lv2/sys_spu.h"
+
+#include <retro_atomic.h>
+#include <rthreads/retro_waitaddr.h>
 #include "Emu/Cell/lv2/sys_event_flag.h"
 #include "Emu/Cell/lv2/sys_event.h"
 #include "Emu/Cell/lv2/sys_interrupt.h"
@@ -1421,17 +1424,17 @@ void spu_thread::cpu_return()
 	{
 		ch_in_mbox.clear();
 
-		if (ensure(group->running)-- == 1)
+		if (ensure(retro_atomic_fetch_add_int(&group->running, -1)) == 1)
 		{
 			u32 last_stop = 0;
 			{
 				lv2_obj::notify_all_t notify;
 				std::lock_guard lock(group->mutex);
-				group->run_state = SPU_THREAD_GROUP_STATUS_INITIALIZED;
+				retro_atomic_store_release_int(&group->run_state, SPU_THREAD_GROUP_STATUS_INITIALIZED);
 
-				if (!group->join_state)
+				if (!retro_atomic_load_acquire_int(&group->join_state))
 				{
-					group->join_state = SYS_SPU_THREAD_GROUP_JOIN_ALL_THREADS_EXIT;
+					retro_atomic_store_release_int(&group->join_state, SYS_SPU_THREAD_GROUP_JOIN_ALL_THREADS_EXIT);
 				}
 
 				for (const auto& thread : group->threads)
@@ -1453,33 +1456,33 @@ void spu_thread::cpu_return()
 					exit_status.set_value(last_exit_status);
 				}
 
-				last_stop = group->stop_count;
+				last_stop = static_cast<u32>(retro_atomic_load_acquire_int(&group->stop_count));
 
 				if (last_stop == umax)
 				{
 					// Restart with some high count to preserve some meaning
-					group->stop_count = 1000;
+					retro_atomic_store_release_int(&group->stop_count, 1000);
 				}
 				else
 				{
-					group->stop_count++;
+					retro_atomic_fetch_add_int(&group->stop_count, 1);
 				}
 
 				if (const auto ppu = std::exchange(group->waiter, nullptr))
 				{
 					// Send exit status directly to the joining thread
-					ppu->gpr[4] = group->join_state;
-					ppu->gpr[5] = group->exit_status;
-					group->join_state.release(0);
+					ppu->gpr[4] = static_cast<u32>(retro_atomic_load_acquire_int(&group->join_state));
+					ppu->gpr[5] = static_cast<s32>(retro_atomic_load_acquire_int(&group->exit_status));
+					retro_atomic_store_release_int(&group->join_state, 0);
 					lv2_obj::awake(ppu);
 				}
 			}
 
 			// Notify on last thread stopped
-			group->stop_count.notify_all();
+			retro_waitaddr_notify_all(&group->stop_count);
 
 			// Wait for terminators manually if needed (ensuring they quit before value-wrapping)
-			while (last_stop == umax && group->wait_term_count)
+			while (last_stop == umax && retro_atomic_load_acquire_int(&group->wait_term_count))
 			{
 				std::this_thread::yield();
 			}
@@ -1596,7 +1599,7 @@ void spu_thread::cpu_task()
 		}
 
 		// Print some stats
-		(!group || group->stop_count < 5 ? spu_log.notice : spu_log.trace)("Stats: Block Weight: %u (Retreats: %u);", block_counter, block_failure);
+		(!group || static_cast<u32>(retro_atomic_load_acquire_int(&group->stop_count)) < 5 ? spu_log.notice : spu_log.trace)("Stats: Block Weight: %u (Retreats: %u);", block_counter, block_failure);
 	}
 	else
 	{
@@ -5664,7 +5667,7 @@ s64 spu_thread::get_ch_value(u32 ch)
 
 		if (is_LR_wait)
 		{
-			const u32 spu_group_restart = group ? +group->stop_count : 0;
+			const u32 spu_group_restart = group ? static_cast<u32>(retro_atomic_load_acquire_int(&group->stop_count)) : 0;
 
 			// Check if waiting session changed
 			if (eventstat_raddr != raddr || eventstat_block_counter != block_counter || last_getllar != eventstat_getllar || eventstat_spu_group_restart != spu_group_restart)
@@ -6493,13 +6496,13 @@ extern void resume_spu_thread_group_from_waiting(spu_thread& spu, std::array<sha
 
 	std::lock_guard lock(group->mutex);
 
-	if (group->run_state == SPU_THREAD_GROUP_STATUS_WAITING)
+	if (static_cast<spu_group_status>(retro_atomic_load_acquire_int(&group->run_state)) == SPU_THREAD_GROUP_STATUS_WAITING)
 	{
-		group->run_state = SPU_THREAD_GROUP_STATUS_RUNNING;
+		retro_atomic_store_release_int(&group->run_state, SPU_THREAD_GROUP_STATUS_RUNNING);
 	}
-	else if (group->run_state == SPU_THREAD_GROUP_STATUS_WAITING_AND_SUSPENDED)
+	else if (static_cast<spu_group_status>(retro_atomic_load_acquire_int(&group->run_state)) == SPU_THREAD_GROUP_STATUS_WAITING_AND_SUSPENDED)
 	{
-		group->run_state = SPU_THREAD_GROUP_STATUS_SUSPENDED;
+		retro_atomic_store_release_int(&group->run_state, SPU_THREAD_GROUP_STATUS_SUSPENDED);
 		spu.state += cpu_flag::signal;
 		ensure(spu.state & cpu_flag::suspend);
 		return;
@@ -6674,7 +6677,7 @@ bool spu_thread::stop_and_signal(u32 code)
 				lv2_obj::sleep(*this);
 			}
 
-			if (group->run_state >= SPU_THREAD_GROUP_STATUS_WAITING && group->run_state <= SPU_THREAD_GROUP_STATUS_WAITING_AND_SUSPENDED)
+			if (const auto _state = static_cast<spu_group_status>(retro_atomic_load_acquire_int(&group->run_state)); _state >= SPU_THREAD_GROUP_STATUS_WAITING && _state <= SPU_THREAD_GROUP_STATUS_WAITING_AND_SUSPENDED)
 			{
 				// Try again
 				ensure(state & cpu_flag::suspend);
@@ -6695,7 +6698,7 @@ bool spu_thread::stop_and_signal(u32 code)
 			if (lv2_events_empty(&queue->events))
 			{
 				lv2_obj::emplace(queue->sq, this);
-				group->run_state = SPU_THREAD_GROUP_STATUS_WAITING;
+				retro_atomic_store_release_int(&group->run_state, SPU_THREAD_GROUP_STATUS_WAITING);
 				group->waiter_spu_index = index;
 
 				for (auto& thread : group->threads)
@@ -6881,7 +6884,7 @@ bool spu_thread::stop_and_signal(u32 code)
 
 			std::lock_guard lock(group->mutex);
 
-			if (auto _state = +group->run_state;
+			if (auto _state = static_cast<spu_group_status>(retro_atomic_load_acquire_int(&group->run_state));
 				_state >= SPU_THREAD_GROUP_STATUS_WAITING && _state <= SPU_THREAD_GROUP_STATUS_WAITING_AND_SUSPENDED)
 			{
 				// We can't exit while we are waiting on an SPU event
@@ -6912,8 +6915,8 @@ bool spu_thread::stop_and_signal(u32 code)
 				}
 			}
 
-			group->exit_status = value;
-			group->join_state = SYS_SPU_THREAD_GROUP_JOIN_GROUP_EXIT;
+			retro_atomic_store_release_int(&group->exit_status, value);
+			retro_atomic_store_release_int(&group->join_state, SYS_SPU_THREAD_GROUP_JOIN_GROUP_EXIT);
 			set_status_npc();
 			break;
 		}
