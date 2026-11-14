@@ -23,6 +23,7 @@
 #include "Emu/Cell/lv2/sys_semaphore.h"
 #include "Emu/Cell/lv2/sys_event_flag.h"
 #include "Emu/Cell/lv2/sys_lwmutex.h"
+#include "Emu/Cell/lv2/sys_lwcond.h"
 #include "Emu/Cell/lv2/sys_cond.h"
 #include "Emu/IdManager.h"
 #include "Emu/VFS.h"
@@ -1255,6 +1256,150 @@ int main()
 			CHECK(retro_atomic_load_acquire_int(&s_queued4) > 100);
 			std::printf("  ids: %d lwmutex waits entered, %d refused, %d destroys\n", retro_atomic_load_acquire_int(&s_queued4),
 				retro_atomic_load_acquire_int(&s_refused4), retro_atomic_load_acquire_int(&s_destroyed4));
+		}
+
+		// Two IDs at once, as _sys_lwcond_queue_wait has them: a thread
+		// enters the lwcond and, inside, the lwmutex, and counts itself
+		// among the waiters of both, while another thread destroys and
+		// recreates lwconds and lwmutexes in turn, each destroy refusing
+		// while its object has such a waiter. Neither kind of destroy
+		// succeeds on an object a thread counted itself in on, and nobody
+		// is left waiting for anybody (the test ends).
+		{
+			const auto make_lwmutex = []
+			{
+				return idm::make<lv2_obj, lv2_lwmutex>(u32{SYS_SYNC_PRIORITY}, vm::ptr<sys_lwmutex_t>{}, u64{0});
+			};
+
+			const auto make_lwcond = []
+			{
+				return idm::make<lv2_obj, lv2_lwcond>(u64{0}, u32{0}, u32{SYS_SYNC_PRIORITY}, vm::ptr<sys_lwcond_t>{});
+			};
+
+			static retro_atomic_int_t s_stop5, s_bad5, s_both, s_refused5, s_destroyed5;
+			static retro_atomic_int_t s_cids[slots], s_mids[slots];
+			static retro_atomic_int_t s_on_cond[8192], s_on_mutex[8192]; // By the ID's place, as s_held
+
+			for (u32 i = 0; i < slots; i++)
+			{
+				retro_atomic_store_release_int(&s_cids[i], static_cast<int>(make_lwcond()));
+				retro_atomic_store_release_int(&s_mids[i], static_cast<int>(make_lwmutex()));
+			}
+
+			std::thread waiters[4];
+			for (u32 t = 0; t < 4; t++)
+			{
+				waiters[t] = std::thread([t]
+				{
+					u32 x = t * 2654435761u + 17;
+
+					while (!retro_atomic_load_acquire_int(&s_stop5))
+					{
+						x = x * 1664525u + 1013904223u;
+						const u32 cid = static_cast<u32>(retro_atomic_load_acquire_int(&s_cids[(x >> 16) % slots]));
+						const u32 mid = static_cast<u32>(retro_atomic_load_acquire_int(&s_mids[(x >> 20) % slots]));
+
+						stx::shared_ptr<lv2_lwmutex> mutex;
+
+						const auto cond = idm::get_entered<lv2_obj, lv2_lwcond>(cid, [&](lv2_lwcond& cond)
+						{
+							mutex = idm::hold<lv2_obj, lv2_lwmutex>(mid);
+
+							if (!mutex)
+								return false;
+
+							if (x & 0x100)
+								std::this_thread::yield();
+
+							const auto mutex_entered = idm::enter<lv2_obj, lv2_lwmutex>(mid, mutex.get());
+
+							if (!mutex_entered)
+								return false;
+
+							mutex->lwcond_waiters++;
+							cond.lwmutex_waiters++;
+							return true;
+						});
+
+						if (!cond || !cond.ret)
+						{
+							retro_atomic_fetch_add_int(&s_refused5, 1);
+							continue;
+						}
+
+						// A waiter of both: neither may be destroyed until it leaves
+						retro_atomic_fetch_add_int(&s_on_cond[(cid >> 8) & 8191], 1);
+						retro_atomic_fetch_add_int(&s_on_mutex[(mid >> 8) & 8191], 1);
+						retro_atomic_fetch_add_int(&s_both, 1);
+						for (int spin = 0; spin < 20; spin++)
+							(void)retro_atomic_load_relaxed_int(&s_stop5);
+						if (idm::check_unlocked<lv2_obj, lv2_lwcond>(cid) != cond.ptr.get() || idm::check_unlocked<lv2_obj, lv2_lwmutex>(mid) != mutex.get())
+							retro_atomic_fetch_add_int(&s_bad5, 1);
+						retro_atomic_fetch_sub_int(&s_on_cond[(cid >> 8) & 8191], 1);
+						retro_atomic_fetch_sub_int(&s_on_mutex[(mid >> 8) & 8191], 1);
+						cond->lwmutex_waiters--;
+						mutex->lwcond_waiters--;
+					}
+				});
+			}
+
+			for (u32 n = 0; n < 60000 || (n < 60000000 && retro_atomic_load_acquire_int(&s_both) <= 1000); n++)
+			{
+				const u32 slot = (n / 2) % slots;
+
+				if (n & 1)
+				{
+					const u32 id = static_cast<u32>(retro_atomic_load_acquire_int(&s_cids[slot]));
+
+					const auto gone = idm::withdraw<lv2_obj, lv2_lwcond>(id, [&](lv2_lwcond& cond) -> CellError
+					{
+						if (cond.lwmutex_waiters)
+							return CELL_EBUSY;
+
+						if (retro_atomic_load_acquire_int(&s_on_cond[place(id)]))
+							retro_atomic_fetch_add_int(&s_bad5, 1);
+
+						return {};
+					});
+
+					if (gone && !gone.ret)
+					{
+						retro_atomic_fetch_add_int(&s_destroyed5, 1);
+						retro_atomic_store_release_int(&s_cids[slot], static_cast<int>(make_lwcond()));
+					}
+				}
+				else
+				{
+					const u32 id = static_cast<u32>(retro_atomic_load_acquire_int(&s_mids[slot]));
+
+					const auto gone = idm::withdraw<lv2_obj, lv2_lwmutex>(id, [&](lv2_lwmutex& mutex) -> CellError
+					{
+						if (mutex.lwcond_waiters)
+							return CELL_EBUSY;
+
+						if (retro_atomic_load_acquire_int(&s_on_mutex[place(id)]))
+							retro_atomic_fetch_add_int(&s_bad5, 1);
+
+						return {};
+					});
+
+					if (gone && !gone.ret)
+					{
+						retro_atomic_fetch_add_int(&s_destroyed5, 1);
+						retro_atomic_store_release_int(&s_mids[slot], static_cast<int>(make_lwmutex()));
+					}
+				}
+			}
+
+			retro_atomic_store_release_int(&s_stop5, 1);
+			for (auto& t : waiters)
+				t.join();
+
+			CHECK(retro_atomic_load_acquire_int(&s_bad5) == 0);
+			CHECK(retro_atomic_load_acquire_int(&s_destroyed5) > 100);
+			CHECK(retro_atomic_load_acquire_int(&s_both) > 100);
+			std::printf("  ids: %d lwcond waits entered on both, %d refused, %d destroys\n", retro_atomic_load_acquire_int(&s_both),
+				retro_atomic_load_acquire_int(&s_refused5), retro_atomic_load_acquire_int(&s_destroyed5));
 		}
 
 		// What a lookup costs one thread: the reader lock, and the pin

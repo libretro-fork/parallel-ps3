@@ -34,10 +34,11 @@ error_code _sys_lwcond_create(ppu_thread& ppu, vm::ptr<u32> lwcond_id, u32 lwmut
 	u32 protocol;
 
 	// Extract protocol from lwmutex
-	if (!idm::check<lv2_obj, lv2_lwmutex>(lwmutex_id, [&protocol](lv2_lwmutex& mutex)
+	if (const auto mutex = idm::pin<lv2_obj, lv2_lwmutex>(lwmutex_id))
 	{
-		protocol = mutex.protocol;
-	}))
+		protocol = mutex->protocol;
+	}
+	else
 	{
 		return CELL_ESRCH;
 	}
@@ -167,13 +168,25 @@ error_code _sys_lwcond_signal(ppu_thread& ppu, u32 lwcond_id, u32 lwmutex_id, u6
 
 		ppu.state += cpu_flag::wait;
 
-		const auto cond = idm::check<lv2_obj, lv2_lwcond>(lwcond_id, [&, notify = lv2_obj::notify_all_t()](lv2_lwcond& cond) -> int
+		// Found with no lock over the IDs. Waking a thread makes none wait on
+		// the lwcond, which is what _sys_lwcond_destroy asks about, so the
+		// lwcond is only kept (idm::get_held). The thread and the lwmutex
+		// the call names were looked up as bare pointers, which the lock
+		// over all IDs kept alive; they are kept with references now. And
+		// the woken thread may be put in the lwmutex's queue, which is what
+		// _sys_lwmutex_destroy asks about: the lwmutex is entered
+		// (idm::enter), before any of the objects' own locks is taken - a
+		// thread that waits for a destroy to decide must not hold a lock
+		// that a thread the destroy waits for needs.
+		const auto cond = idm::get_held<lv2_obj, lv2_lwcond>(lwcond_id, [&, notify = lv2_obj::notify_all_t()](lv2_lwcond& cond) -> int
 		{
+			stx::shared_ptr<named_thread<ppu_thread>> target;
 			ppu_thread* cpu = nullptr;
 
 			if (ppu_thread_id != u32{umax})
 			{
-				cpu = idm::check_unlocked<named_thread<ppu_thread>>(static_cast<u32>(ppu_thread_id));
+				target = idm::hold<named_thread<ppu_thread>>(static_cast<u32>(ppu_thread_id));
+				cpu = target.get();
 
 				if (!cpu)
 				{
@@ -181,16 +194,25 @@ error_code _sys_lwcond_signal(ppu_thread& ppu, u32 lwcond_id, u32 lwmutex_id, u6
 				}
 			}
 
+			stx::shared_ptr<lv2_lwmutex> lwmutex;
 			lv2_lwmutex* mutex = nullptr;
 
 			if (mode != 2)
 			{
-				mutex = idm::check_unlocked<lv2_obj, lv2_lwmutex>(lwmutex_id);
+				lwmutex = idm::hold<lv2_obj, lv2_lwmutex>(lwmutex_id);
+				mutex = lwmutex.get();
 
 				if (!mutex)
 				{
 					return -1;
 				}
+			}
+
+			const auto mutex_entered = mutex ? idm::enter<lv2_obj, lv2_lwmutex>(lwmutex_id, mutex) : idm::entered{};
+
+			if (mutex && !mutex_entered)
+			{
+				return -1;
 			}
 
 			if (atomic_storage<ppu_thread*>::load(cond.sq))
@@ -234,7 +256,9 @@ error_code _sys_lwcond_signal(ppu_thread& ppu, u32 lwcond_id, u32 lwmutex_id, u6
 
 						// Respect ordering of the sleep queue
 						mutex->try_own(result, true);
-						auto result2 = mutex->reown<ppu_thread>();
+
+						// There is one: the thread just queued, if no other
+						auto result2 = ensure(mutex->reown<ppu_thread>());
 
 						if (result2->state & cpu_flag::again)
 						{
@@ -335,18 +359,28 @@ error_code _sys_lwcond_signal_all(ppu_thread& ppu, u32 lwcond_id, u32 lwmutex_id
 
 		ppu.state += cpu_flag::wait;
 
-		const auto cond = idm::check<lv2_obj, lv2_lwcond>(lwcond_id, [&, notify = lv2_obj::notify_all_t()](lv2_lwcond& cond) -> int
+		// As _sys_lwcond_signal
+		const auto cond = idm::get_held<lv2_obj, lv2_lwcond>(lwcond_id, [&, notify = lv2_obj::notify_all_t()](lv2_lwcond& cond) -> int
 		{
+			stx::shared_ptr<lv2_lwmutex> lwmutex;
 			lv2_lwmutex* mutex{};
 
 			if (mode != 2)
 			{
-				mutex = idm::check_unlocked<lv2_obj, lv2_lwmutex>(lwmutex_id);
+				lwmutex = idm::hold<lv2_obj, lv2_lwmutex>(lwmutex_id);
+				mutex = lwmutex.get();
 
 				if (!mutex)
 				{
 					return -1;
 				}
+			}
+
+			const auto mutex_entered = mutex ? idm::enter<lv2_obj, lv2_lwmutex>(lwmutex_id, mutex) : idm::entered{};
+
+			if (mutex && !mutex_entered)
+			{
+				return -1;
 			}
 
 			if (atomic_storage<ppu_thread*>::load(cond.sq))
@@ -446,12 +480,25 @@ error_code _sys_lwcond_queue_wait(ppu_thread& ppu, u32 lwcond_id, u32 lwmutex_id
 
 	auto& sstate = *ppu.optional_savestate_state;
 
-	const auto cond = idm::get<lv2_obj, lv2_lwcond>(lwcond_id, [&, notify = lv2_obj::notify_all_t()](lv2_lwcond& cond)
+	// Found with no lock over the IDs. The thread makes itself a waiter of
+	// the lwcond, which _sys_lwcond_destroy asks about (idm::get_entered),
+	// and counts itself among the lwmutex's lwcond waiters, which
+	// _sys_lwmutex_destroy asks about: the lwmutex is entered too, before
+	// either object's own lock is taken (see _sys_lwcond_signal).
+	const auto cond = idm::get_entered<lv2_obj, lv2_lwcond>(lwcond_id, [&, notify = lv2_obj::notify_all_t()](lv2_lwcond& cond)
 	{
-		mutex = idm::get_unlocked<lv2_obj, lv2_lwmutex>(lwmutex_id);
+		mutex = idm::hold<lv2_obj, lv2_lwmutex>(lwmutex_id);
 
 		if (!mutex)
 		{
+			return;
+		}
+
+		const auto mutex_entered = idm::enter<lv2_obj, lv2_lwmutex>(lwmutex_id, mutex.get());
+
+		if (!mutex_entered)
+		{
+			mutex = null_ptr;
 			return;
 		}
 
