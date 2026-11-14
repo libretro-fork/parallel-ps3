@@ -15,6 +15,11 @@
 #include "Emu/perf_meter.hpp"
 
 #include "util/asm.hpp"
+
+#include <retro_atomic.h>
+#include <rthreads/retro_waitaddr.h>
+
+#include "cpu_slots.h"
 #include <thread>
 #include <unordered_map>
 #include <map>
@@ -502,23 +507,26 @@ extern f64 get_cpu_program_usage_percent(u64 hash)
 
 thread_local DECLARE(cpu_thread::g_tls_this_thread) = nullptr;
 
-// Total number of CPU threads
-static atomic_t<u64, 128> s_cpu_counter{0};
+// Total number of CPU threads (a line of its own)
+alignas(128) static retro_atomic_64_t s_cpu_counter{0};
 
-// List of posted tasks for suspend_all
-//static atomic_t<cpu_thread::suspend_work*> s_cpu_work[128]{};
-
-// Linked list of pushed tasks for suspend_all
-static atomic_t<cpu_thread::suspend_work*> s_pushed{};
+// Linked list of pushed tasks for suspend_all (a cpu_thread::suspend_work*)
+static retro_atomic_ptr_t s_pushed{};
 
 // Lock for suspend_all operations
 static shared_mutex s_cpu_lock;
 
-// Bit allocator for threads which need to be suspended
-static atomic_t<u128> s_cpu_bits{};
+// Bit allocator for threads which need to be suspended (cpu_slots.c)
+static retro_atomic_128_t s_cpu_bits{};
 
-// List of active threads which need to be suspended
-static atomic_t<cpu_thread*> s_cpu_list[128]{};
+static u128 load_cpu_bits()
+{
+	const retro_u128_t v = cpu_slots_taken(&s_cpu_bits);
+	return (u128{v.hi} << 64) | v.lo;
+}
+
+// List of active threads which need to be suspended (cpu_thread*)
+static retro_atomic_ptr_t s_cpu_list[128]{};
 
 namespace cpu_counter
 {
@@ -538,25 +546,15 @@ namespace cpu_counter
 
 		for (u64 i = 0;; i++)
 		{
-			const auto [bits, ok] = s_cpu_bits.fetch_op([](u128& bits)
-			{
-				if (~bits) [[likely]]
-				{
-					// Set lowest clear bit
-					bits |= bits + 1;
-					return true;
-				}
+			// The lowest free slot
+			const int slot = cpu_slots_take(&s_cpu_bits);
 
-				return false;
-			});
-
-			if (ok) [[likely]]
+			if (slot >= 0) [[likely]]
 			{
-				// Get actual slot number
-				id = utils::ctz128(~bits);
+				id = slot;
 
 				// Register thread
-				if (s_cpu_list[id].compare_and_swap_test(nullptr, _this)) [[likely]]
+				if (retro_atomic_cas_ptr(&s_cpu_list[id], nullptr, _this)) [[likely]]
 				{
 					break;
 				}
@@ -580,10 +578,7 @@ namespace cpu_counter
 
 	static void remove_cpu_bit(u32 bit)
 	{
-		s_cpu_bits.atomic_op([=](u128& val)
-		{
-			val &= ~(u128{1} << (bit % 128));
-		});
+		cpu_slots_give(&s_cpu_bits, bit);
 	}
 
 	void remove(cpu_thread* _this) noexcept
@@ -603,7 +598,7 @@ namespace cpu_counter
 		}
 
 		// Asynchronous unregister
-		if (!s_cpu_list[slot].compare_and_swap_test(_this, nullptr))
+		if (!retro_atomic_cas_ptr(&s_cpu_list[slot], _this, nullptr))
 		{
 			sys_log.fatal("Inconsistency for array slot %u", slot);
 			return;
@@ -621,7 +616,7 @@ namespace cpu_counter
 		{
 			const u32 index = utils::ctz128(bits);
 
-			if (cpu_thread* cpu = s_cpu_list[index].load())
+			if (cpu_thread* cpu = static_cast<cpu_thread*>(retro_atomic_load_acquire_ptr(&s_cpu_list[index])))
 			{
 				if constexpr (std::is_invocable_v<F, cpu_thread*, u32>)
 				{
@@ -686,7 +681,7 @@ void cpu_thread::operator()()
 	}
 
 	// Register thread in g_cpu_array
-	s_cpu_counter++;
+	retro_atomic_fetch_add_64(&s_cpu_counter, 1);
 
 	static thread_local struct thread_cleanup_t
 	{
@@ -714,13 +709,13 @@ void cpu_thread::operator()()
 
 			s_cpu_lock.lock_unlock();
 
-			s_cpu_counter--;
+			retro_atomic_fetch_add_64(&s_cpu_counter, -1);
 
 			g_tls_log_prefix = log_prefix;
 
 			g_tls_this_thread = nullptr;
 
-			g_threads_deleted++;
+			retro_atomic_fetch_add_64(&g_threads_deleted, 1);
 
 			_this = nullptr;
 		}
@@ -800,7 +795,7 @@ cpu_thread::cpu_thread(u32 id)
 		state += cpu_flag::exit;
 	}
 
-	g_threads_created++;
+	retro_atomic_fetch_add_64(&g_threads_created, 1);
 
 	if (u32* pc2 = get_pc2())
 	{
@@ -813,7 +808,13 @@ void cpu_thread::cpu_wait(bs_t<cpu_flag> old)
 	state.wait(old);
 }
 
-static atomic_t<u32> s_dummy_atomic = 0;
+// Never changes: a short yield waits on it until its bound runs out
+static retro_atomic_int_t s_dummy_atomic{};
+
+static u64 suspend_counter()
+{
+	return static_cast<u32>(retro_atomic_load_acquire_int(&cpu_thread::g_suspend_counter));
+}
 
 bool cpu_thread::check_state() noexcept
 {
@@ -835,7 +836,7 @@ bool cpu_thread::check_state() noexcept
 				// Save value before state is saved and cpu_flag::wait is observed
 				if (s_tls_sctr == umax)
 				{
-					u64 ctr = g_suspend_counter;
+					u64 ctr = suspend_counter();
 
 					if (flags & cpu_flag::wait)
 					{
@@ -983,11 +984,11 @@ bool cpu_thread::check_state() noexcept
 				}
 			}
 
-			if (const u128 bits = s_cpu_bits)
+			if (const u128 bits = load_cpu_bits())
 			{
 				reader_lock lock(s_cpu_lock);
 
-				cpu_counter::for_all_cpu(bits & s_cpu_bits, [](cpu_thread* cpu)
+				cpu_counter::for_all_cpu(bits & load_cpu_bits(), [](cpu_thread* cpu)
 				{
 					if (cpu->state.none_of(cpu_flag::wait + cpu_flag::yield))
 					{
@@ -1072,7 +1073,7 @@ bool cpu_thread::check_state() noexcept
 				// Wait for current suspend_all operation
 				for (u64 i = 0;; i++)
 				{
-					u64 ctr = g_suspend_counter;
+					u64 ctr = suspend_counter();
 
 					if (ctr >> 2 == s_tls_sctr >> 2 && state & cpu_flag::pause)
 					{
@@ -1083,7 +1084,8 @@ bool cpu_thread::check_state() noexcept
 						else
 						{
 							// TODO: fix the workaround
-							g_suspend_counter.wait(ctr, atomic_wait_timeout{10'000});
+							const retro_waitaddr_t w{&g_suspend_counter, static_cast<int>(static_cast<u32>(ctr))};
+							retro_waitaddr_wait(&w, 1, 10);
 						}
 					}
 					else
@@ -1124,7 +1126,8 @@ bool cpu_thread::check_state() noexcept
 				}
 
 				// Short sleep when yield flag is present alone (makes no sense when other methods which can stop thread execution have been done)
-				s_dummy_atomic.wait(0, atomic_wait_timeout{80'000});
+				const retro_waitaddr_t w{&s_dummy_atomic, 0};
+				retro_waitaddr_wait(&w, 1, 80);
 			}
 		}
 	}
@@ -1388,7 +1391,7 @@ bool cpu_thread::suspend_work::push(cpu_thread* _this) noexcept
 	do
 	{
 		// Load current head
-		next = s_pushed.load();
+		next = static_cast<suspend_work*>(retro_atomic_load_acquire_ptr(&s_pushed));
 
 		if (!next && cancel_if_not_suspended) [[unlikely]]
 		{
@@ -1403,7 +1406,7 @@ bool cpu_thread::suspend_work::push(cpu_thread* _this) noexcept
 			continue;
 		}
 	}
-	while (!s_pushed.compare_and_swap_test(next, this));
+	while (!retro_atomic_cas_ptr(&s_pushed, next, this));
 
 	if (!next)
 	{
@@ -1413,7 +1416,7 @@ bool cpu_thread::suspend_work::push(cpu_thread* _this) noexcept
 		// First thread to push the work to the workload list pauses all threads and processes it
 		std::lock_guard lock(s_cpu_lock);
 
-		u128 copy = s_cpu_bits.load();
+		u128 copy = load_cpu_bits();
 
 		// Try to prefetch cpu->state earlier
 		copy = cpu_counter::for_all_cpu(copy, [&](cpu_thread* cpu)
@@ -1428,7 +1431,7 @@ bool cpu_thread::suspend_work::push(cpu_thread* _this) noexcept
 		});
 
 		// Initialization (first increment)
-		g_suspend_counter += 2;
+		retro_atomic_fetch_add_int(&g_suspend_counter, 2);
 
 		// Copy snapshot for finalization
 		u128 copy2 = copy;
@@ -1466,10 +1469,10 @@ bool cpu_thread::suspend_work::push(cpu_thread* _this) noexcept
 		}
 
 		// Second increment: all threads paused
-		g_suspend_counter++;
+		retro_atomic_fetch_add_int(&g_suspend_counter, 1);
 
 		// Extract queue and reverse element order (FILO to FIFO) (TODO: maybe leave order as is?)
-		auto* head = s_pushed.exchange(nullptr);
+		auto* head = static_cast<suspend_work*>(retro_atomic_exchange_ptr(&s_pushed, nullptr));
 
 		u8 min_prio = head->prio;
 		u8 max_prio = head->prio;
@@ -1522,7 +1525,7 @@ bool cpu_thread::suspend_work::push(cpu_thread* _this) noexcept
 		}
 
 		// Finalization (last increment)
-		ensure(g_suspend_counter++ & 1);
+		ensure(retro_atomic_fetch_add_int(&g_suspend_counter, 1) & 1);
 
 		cpu_counter::for_all_cpu(copy2, [&](cpu_thread* cpu)
 		{
@@ -1533,28 +1536,28 @@ bool cpu_thread::suspend_work::push(cpu_thread* _this) noexcept
 	else
 	{
 		// Seems safe to set pause on self because wait flag hasn't been observed yet
-		s_tls_sctr = g_suspend_counter;
+		s_tls_sctr = suspend_counter();
 		_this->state += cpu_flag::pause + cpu_flag::wait + cpu_flag::temp;
 		_this->check_state();
 		s_tls_sctr = -1;
 		return true;
 	}
 
-	g_suspend_counter.notify_all();
+	retro_waitaddr_notify_all(&g_suspend_counter);
 	return true;
 }
 
 void cpu_thread::cleanup() noexcept
 {
-	if (u64 count = s_cpu_counter)
+	if (u64 count = retro_atomic_load_acquire_64(&s_cpu_counter))
 	{
-		fmt::throw_exception("cpu_thread::cleanup(): %u threads are still active! (created=%u, destroyed=%u)", count, +g_threads_created, +g_threads_deleted);
+		fmt::throw_exception("cpu_thread::cleanup(): %u threads are still active! (created=%u, destroyed=%u)", count, u64(retro_atomic_load_acquire_64(&g_threads_created)), u64(retro_atomic_load_acquire_64(&g_threads_deleted)));
 	}
 
-	sys_log.notice("All CPU threads have been stopped. [+: %u]", +g_threads_created);
+	sys_log.notice("All CPU threads have been stopped. [+: %u]", u64(retro_atomic_load_acquire_64(&g_threads_created)));
 
-	g_threads_deleted -= g_threads_created.load();
-	g_threads_created = 0;
+	retro_atomic_fetch_add_64(&g_threads_deleted, -retro_atomic_load_acquire_64(&g_threads_created));
+	retro_atomic_store_release_64(&g_threads_created, 0);
 }
 
 void cpu_thread::flush_profilers() noexcept
@@ -1586,7 +1589,7 @@ extern bool try_lock_spu_threads_in_a_state_compatible_with_savestates(bool reve
 
 	auto get_spus = [old_counter = u64{umax}, spu_list = std::vector<shared_ptr<named_thread<spu_thread>>>()](bool can_collect, bool force_collect) mutable
 	{
-		const u64 new_counter = cpu_thread::g_threads_created + cpu_thread::g_threads_deleted;
+		const u64 new_counter = retro_atomic_load_acquire_64(&cpu_thread::g_threads_created) + retro_atomic_load_acquire_64(&cpu_thread::g_threads_deleted);
 
 		if (old_counter != new_counter)
 		{

@@ -3,6 +3,8 @@
 #include "../Utilities/Thread.h"
 #include "../Utilities/bit_set.h"
 
+#include <retro_atomic.h>
+
 #include <vector>
 #include <any>
 
@@ -159,7 +161,10 @@ public:
 	void add_remove_flags(bs_t<cpu_flag> to_add, bs_t<cpu_flag> to_remove);
 
 	// Thread stats for external observation
-	static atomic_t<u64> g_threads_created, g_threads_deleted, g_suspend_counter;
+	static retro_atomic_64_t g_threads_created, g_threads_deleted;
+
+	// Counts suspend_all passes, by four: a word waited on with retro_waitaddr
+	static retro_atomic_int_t g_suspend_counter;
 
 	// Get thread name (as assigned to named_thread)
 	std::string get_name() const;
