@@ -37,7 +37,7 @@ struct lv2_mutex final : lv2_obj
 
 	u32 cond_count = 0; // Condition Variables
 	shared_mutex mutex;
-	atomic_t<u32> lock_count{0}; // Recursive Locks
+	retro_atomic_int_t lock_count{}; // Recursive Locks (a u32)
 
 	struct alignas(16) control_data_t
 	{
@@ -83,12 +83,12 @@ struct lv2_mutex final : lv2_obj
 			// Recursive locking
 			if (recursive == SYS_SYNC_RECURSIVE)
 			{
-				if (lock_count == 0xffffffffu)
+				if (static_cast<u32>(retro_atomic_load_acquire_int(&lock_count)) == 0xffffffffu)
 				{
 					return CELL_EKRESOURCE;
 				}
 
-				lock_count++;
+				retro_atomic_fetch_add_int(&lock_count, 1);
 				return {};
 			}
 
@@ -105,7 +105,7 @@ struct lv2_mutex final : lv2_obj
 		{
 			if (data.owner)
 			{
-				cpu.prio.atomic_op([tag = ++g_priority_order_tag](std::common_type_t<decltype(T::prio)>& prio)
+				cpu.prio.atomic_op([tag = retro_atomic_fetch_add_64(&g_priority_order_tag, 1) + 1](std::common_type_t<decltype(T::prio)>& prio)
 				{
 					prio.order = tag;
 				});
@@ -138,9 +138,9 @@ struct lv2_mutex final : lv2_obj
 			return CELL_EPERM;
 		}
 
-		if (lock_count)
+		if (retro_atomic_load_acquire_int(&lock_count))
 		{
-			lock_count--;
+			retro_atomic_fetch_add_int(&lock_count, -1);
 			return {};
 		}
 

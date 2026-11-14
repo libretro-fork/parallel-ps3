@@ -581,7 +581,7 @@ class rsxaudio_data_thread
 public:
 
 	// Prevent creation of multiple rsxaudio contexts
-	atomic_t<bool> rsxaudio_ctx_allocated = false;
+	retro_atomic_int_t rsxaudio_ctx_allocated{};
 
 	shared_mutex rsxaudio_obj_upd_m{};
 	shared_ptr<lv2_rsxaudio> rsxaudio_obj_ptr{};

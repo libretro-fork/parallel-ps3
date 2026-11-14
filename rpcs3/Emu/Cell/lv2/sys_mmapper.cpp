@@ -69,7 +69,7 @@ lv2_memory::lv2_memory(utils::serial& ar)
 {
 	const u32 addr{ar};
 	counter = ar.pop<u32>();
-	external_refs = ar.pop<u32>();
+	retro_atomic_store_release_int(&external_refs, static_cast<int>(ar.pop<u32>()));
 
 	if (addr)
 	{
@@ -85,7 +85,7 @@ lv2_memory::lv2_memory(utils::serial& ar)
 
 CellError lv2_memory::on_id_create()
 {
-	if (!exists && !external_refs && ct && !ct->take(size))
+	if (!exists && !retro_atomic_load_acquire_int(&external_refs) && ct && !ct->take(size))
 	{
 		sys_mmapper.error("lv2_memory::on_id_create(): Cannot allocate 0x%x bytes (0x%x available)", size, ct->size - ct->used);
 		return CELL_ENOMEM;
@@ -143,7 +143,7 @@ void lv2_memory::save_data(utils::serial& ar)
 	const auto data = shm.load();
 	const u32 addr = data ? vm::get_shm_addr(*data) : 0;
 	ar(addr);
-	ar(counter, external_refs);
+	ar(counter, static_cast<u32>(retro_atomic_load_acquire_int(&external_refs)));
 
 	if (!addr)
 	{
@@ -159,7 +159,7 @@ void lv2_memory::save_data(utils::serial& ar)
 void lv2_memory::release_memory()
 {
 	// the caller holds the id manager lock
-	if (exists || external_refs)
+	if (exists || retro_atomic_load_acquire_int(&external_refs))
 	{
 		return;
 	}

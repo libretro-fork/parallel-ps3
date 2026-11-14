@@ -1336,11 +1336,11 @@ static usz to_sleep_index(const cpu_thread* cpu)
 	return count;
 }
 
-static atomic_t<bool> g_scheduler_ready = false;
-static atomic_t<u64> s_yield_frequency = 0;
-static atomic_t<u64> s_max_allowed_yield_tsc = 0;
+static retro_atomic_int_t g_scheduler_ready{};
+static retro_atomic_64_t s_yield_frequency{0};
+static retro_atomic_64_t s_max_allowed_yield_tsc{0};
 static u64 s_last_yield_tsc = 0;
-atomic_t<u32> g_lv2_preempts_taken = 0;
+retro_atomic_int_t g_lv2_preempts_taken{};
 
 namespace cpu_counter
 {
@@ -1635,7 +1635,7 @@ bool lv2_obj::awake_unlocked(cpu_thread* cpu, s32 prio)
 
 			if (increment_order_first || increment_order_last)
 			{
-				tag = ++g_priority_order_tag;
+				tag = retro_atomic_fetch_add_64(&g_priority_order_tag, 1) + 1;
 			}
 
 			prio.atomic_op([&](ppu_thread::ppu_prio_t& prio)
@@ -1869,19 +1869,19 @@ bool lv2_obj::awake_unlocked(cpu_thread* cpu, s32 prio)
 void lv2_obj::cleanup()
 {
 	g_ppu = nullptr;
-	g_scheduler_ready = false;
+	retro_atomic_store_release_int(&g_scheduler_ready, 0);
 	lv2_threads_clear(&g_to_sleep);
 	retro_atomic_store_release_int(&g_to_sleep_count, 0);
 	lv2_deadlines_clear(&g_waiting);
 	g_pending = 0;
-	s_yield_frequency = 0;
+	retro_atomic_store_release_64(&s_yield_frequency, 0);
 }
 
 void lv2_obj::schedule_all(u64 current_time)
 {
 	auto it = std::find(g_to_notify, std::end(g_to_notify), std::add_pointer_t<const void>{});
 
-	if (!g_pending && g_scheduler_ready)
+	if (!g_pending && retro_atomic_load_acquire_int(&g_scheduler_ready))
 	{
 		auto target = +g_ppu;
 
@@ -1960,12 +1960,12 @@ void lv2_obj::schedule_all(u64 current_time)
 		*it = nullptr;
 	}
 
-	if (const u64 freq = s_yield_frequency)
+	if (const u64 freq = retro_atomic_load_acquire_64(&s_yield_frequency))
 	{
 		const u64 tsc = utils::get_tsc();
 		const u64 last_tsc = s_last_yield_tsc;
 
-		if (tsc >= last_tsc && tsc <= s_max_allowed_yield_tsc && tsc - last_tsc >= freq)
+		if (tsc >= last_tsc && tsc <= static_cast<u64>(retro_atomic_load_acquire_64(&s_max_allowed_yield_tsc)) && tsc - last_tsc >= freq)
 		{
 			auto target = +g_ppu;
 			cpu_thread* cpu = nullptr;
@@ -1999,7 +1999,7 @@ void lv2_obj::schedule_all(u64 current_time)
 			if (cpu && cpu_flag::preempt - cpu->state && !cpu->state.test_and_set(cpu_flag::preempt))
 			{
 				s_last_yield_tsc = tsc;
-				g_lv2_preempts_taken.release(g_lv2_preempts_taken.load() + 1); // Has a minor race but performance is more important
+				retro_atomic_store_release_int(&g_lv2_preempts_taken, retro_atomic_load_acquire_int(&g_lv2_preempts_taken) + 1); // Has a minor race but performance is more important
 				rsx::set_rsx_yield_flag();
 			}
 		}
@@ -2008,7 +2008,7 @@ void lv2_obj::schedule_all(u64 current_time)
 
 void lv2_obj::make_scheduler_ready()
 {
-	g_scheduler_ready.release(true);
+	retro_atomic_store_release_int(&g_scheduler_ready, 1);
 	lv2_obj::awake_all();
 }
 
@@ -2102,9 +2102,9 @@ ppu_non_sleeping_count_t lv2_obj::count_non_sleeping_threads()
 
 void lv2_obj::set_yield_frequency(u64 freq, u64 max_allowed_tsc)
 {
-	s_yield_frequency.release(freq);
-	s_max_allowed_yield_tsc.release(max_allowed_tsc);
-	g_lv2_preempts_taken.release(0);
+	retro_atomic_store_release_64(&s_yield_frequency, freq);
+	retro_atomic_store_release_64(&s_max_allowed_yield_tsc, max_allowed_tsc);
+	retro_atomic_store_release_int(&g_lv2_preempts_taken, 0);
 }
 
 #if defined(_MSC_VER)

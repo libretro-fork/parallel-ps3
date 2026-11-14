@@ -1084,7 +1084,7 @@ bool cpu_thread::check_state() noexcept
 						else
 						{
 							// TODO: fix the workaround
-							const retro_waitaddr_t w{&g_suspend_counter, static_cast<int>(static_cast<u32>(ctr))};
+							const retro_waitaddr_t w{&g_suspend_counter, static_cast<u32>(ctr)};
 							retro_waitaddr_wait(&w, 1, 10);
 						}
 					}

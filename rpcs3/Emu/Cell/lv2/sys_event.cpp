@@ -230,7 +230,7 @@ CellError lv2_event_queue::send(lv2_event event, bool* notified_thread, lv2_even
 		{
 			// Block event port disconnection for the time being of sending events
 			// PPU -> lower prio PPU is the only case that can cause thread blocking 
-			port->is_busy++;
+			retro_atomic_fetch_add_int(&port->is_busy, 1);
 			ensure(notified_thread);
 			*notified_thread = true;
 		}
@@ -809,7 +809,7 @@ error_code sys_event_port_disconnect(ppu_thread& ppu, u32 eport_id)
 		return CELL_ENOTCONN;
 	}
 
-	if (port->is_busy)
+	if (retro_atomic_load_acquire_int(&port->is_busy))
 	{
 		return CELL_EBUSY;
 	}
@@ -841,7 +841,7 @@ error_code sys_event_port_send(u32 eport_id, u64 data1, u64 data2, u64 data3)
 	{
 		if (ppu && ppu->loaded_from_savestate)
 		{
-			port.is_busy++;
+			retro_atomic_fetch_add_int(&port.is_busy, 1);
 			notified_thread = true;
 			return {};
 		}
@@ -870,7 +870,7 @@ error_code sys_event_port_send(u32 eport_id, u64 data1, u64 data2, u64 data3)
 			ppu->state += cpu_flag::again;
 		}
 
-		port->is_busy--;
+		retro_atomic_fetch_add_int(&port->is_busy, -1);
 		return CELL_OK;
 	}
 

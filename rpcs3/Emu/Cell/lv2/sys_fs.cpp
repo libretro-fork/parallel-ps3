@@ -130,8 +130,8 @@ void fmt_class_string<lv2_file>::format(std::string& out, u64 arg)
 
 	const usz pos = file.file ? file.file.pos() : umax;
 	const usz size = file.file ? file.file.size() : umax;
-	const usz read = file.reads_total;
-	const usz write = file.writes_total;
+	const usz read = retro_atomic_load_acquire_64(&file.reads_total);
+	const usz write = retro_atomic_load_acquire_64(&file.writes_total);
 
 	fmt::append(out, u8"%s, '%s', Mode: 0x%x, Flags: 0x%x, Pos/Size: %s/%s (0x%x/0x%x), Read/Written: %s/%s (0x%x/0x%x)", file.type, file.name.data(), file.mode, file.flags, get_size(pos), get_size(size), pos, size
 		, get_size(read), get_size(write), read, write);
@@ -1588,7 +1588,7 @@ error_code sys_fs_read(ppu_thread& ppu, u32 fd, vm::ptr<void> buf, u64 nbytes, v
 	const u64 read_bytes = file->op_read(buf, nbytes);
 	const bool failure = !read_bytes && file->file.pos() < file->file.size();
 
-	file->reads_total += read_bytes;
+	retro_atomic_fetch_add_64(&file->reads_total, read_bytes);
 
 	const u64 read_end = file->schedule_read(read_bytes, read_start, read_offset);
 	file->io_end();
@@ -1681,7 +1681,7 @@ error_code sys_fs_write(ppu_thread& ppu, u32 fd, vm::cptr<void> buf, u64 nbytes,
 	}
 
 	const u64 written = file->op_write(buf, nbytes);
-	file->writes_total += written;
+	retro_atomic_fetch_add_64(&file->writes_total, written);
 
 	lock.unlock();
 	ppu.check_state();
@@ -2634,7 +2634,7 @@ error_code sys_fs_fcntl(ppu_thread& ppu, u32 fd, u32 op, vm::ptr<void> _arg, u32
 			lv2_file::wait_read(ppu, read_end);
 		}
 
-		(op == 0x8000000a ? &file->reads_total : &file->writes_total)->fetch_add(done_size);
+		retro_atomic_fetch_add_64(op == 0x8000000a ? &file->reads_total : &file->writes_total, done_size);
 
 		// TODO: EDATA corruption detection
 

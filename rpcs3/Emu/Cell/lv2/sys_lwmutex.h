@@ -93,7 +93,7 @@ struct lv2_lwmutex final : lv2_obj
 		{
 			if (!data.signaled)
 			{
-				cpu->prio.atomic_op([tag = ++g_priority_order_tag](std::common_type_t<decltype(T::prio)>& prio)
+				cpu->prio.atomic_op([tag = retro_atomic_fetch_add_64(&g_priority_order_tag, 1) + 1](std::common_type_t<decltype(T::prio)>& prio)
 				{
 					prio.order = tag;
 				});

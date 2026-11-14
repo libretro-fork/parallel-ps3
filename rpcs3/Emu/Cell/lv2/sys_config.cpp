@@ -120,7 +120,7 @@ void lv2_config::remove_service_event(u32 id)
 
 lv2_config_service_event& lv2_config_service_event::operator=(thread_state s) noexcept
 {
-	if (s == thread_state::destroying_context && !m_destroyed.exchange(true))
+	if (s == thread_state::destroying_context && !retro_atomic_exchange_int(&m_destroyed, 1))
 	{
 		if (auto global = g_fxo->try_get<lv2_config>())
 		{
@@ -143,7 +143,7 @@ lv2_config::~lv2_config() noexcept
 		if (event)
 		{
 			// Avoid collision with lv2_config_service_event destructor
-			event->m_destroyed = true;
+			retro_atomic_store_release_int(&event->m_destroyed, 1);
 		}
 	}
 }

@@ -232,7 +232,7 @@ public:
 		atomic_storage<T>::release(object->next_cpu, first);
 		atomic_storage<T>::release(first, object);
 
-		object->prio.atomic_op([order = ++g_priority_order_tag](std::common_type_t<decltype(std::declval<T>()->prio.load())>& prio)
+		object->prio.atomic_op([order = retro_atomic_fetch_add_64(&g_priority_order_tag, 1) + 1](std::common_type_t<decltype(std::declval<T>()->prio.load())>& prio)
 		{
 			if constexpr (requires { +std::declval<decltype(prio)>().preserve_bit; } )
 			{
@@ -508,7 +508,7 @@ public:
 	static shared_mutex g_mutex;
 
 	// Proirity tags
-	static atomic_t<u64> g_priority_order_tag;
+	static retro_atomic_64_t g_priority_order_tag;
 
 private:
 	// Pending list of threads to run

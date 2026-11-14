@@ -2959,7 +2959,7 @@ ppu_thread::ppu_thread(utils::serial& ar)
 
 	if (version >= 2 && !g_fxo->get<save_lv2_tag>().loaded.exchange(true))
 	{
-		ar(lv2_obj::g_priority_order_tag);
+		retro_atomic_store_release_64(&lv2_obj::g_priority_order_tag, ar.pop<u64>());
 	}
 
 	if (version >= 3)
@@ -3143,7 +3143,7 @@ void ppu_thread::save(utils::serial& ar)
 
 	if (!is_null && !g_fxo->get<save_lv2_tag>().saved.exchange(true))
 	{
-		ar(lv2_obj::g_priority_order_tag);
+		ar(static_cast<u64>(retro_atomic_load_acquire_64(&lv2_obj::g_priority_order_tag)));
 	}
 
 	if (current_module && current_module[0])

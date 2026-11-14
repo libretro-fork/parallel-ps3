@@ -167,8 +167,8 @@ public:
 	shared_mutex mutex_sq;
 	ppu_thread* sq{};
 
-	atomic_t<u64> usb_hotplug_timeout = umax;
-	atomic_t<bool> hotplug_supported = false;
+	retro_atomic_64_t usb_hotplug_timeout{-1};
+	retro_atomic_int_t hotplug_supported{};
 
 	static constexpr auto thread_name = "Usb Manager Thread"sv;
 
@@ -182,7 +182,7 @@ private:
 
 private:
 	// Counters for device IDs, transfer IDs and pipe IDs
-	atomic_t<u8> dev_counter = 1;
+	retro_atomic_int_t dev_counter{1}; // a u8
 	u32 transfer_counter     = 0;
 	u32 pipe_counter         = 0x10; // Start at 0x10 only for tracing purposes
 
@@ -492,11 +492,11 @@ usb_handler_thread::usb_handler_thread()
 		}
 		else
 		{
-			hotplug_supported = true;
+			retro_atomic_store_release_int(&hotplug_supported, 1);
 		}
 	}
 #elif defined(_WIN32)
-	hotplug_supported = true;
+	retro_atomic_store_release_int(&hotplug_supported, 1);
 #endif
 
 	for (u32 index = 0; index < MAX_SYS_USBD_TRANSFERS; index++)
@@ -653,7 +653,7 @@ usb_handler_thread::~usb_handler_thread()
 	}
 
 #if SYS_USBD_HOTPLUG_SUPPORTED
-	if (ctx && hotplug_supported)
+	if (ctx && retro_atomic_load_acquire_int(&hotplug_supported))
 		libusb_hotplug_deregister_callback(ctx, callback_handle);
 #endif
 
@@ -664,20 +664,20 @@ usb_handler_thread::~usb_handler_thread()
 void usb_handler_thread::operator()()
 {
 	timeval lusb_tv{0, 0};
-	if (!hotplug_supported)
+	if (!retro_atomic_load_acquire_int(&hotplug_supported))
 	{
-		usb_hotplug_timeout = get_system_time() + 4'000'000ull;
+		retro_atomic_store_release_64(&usb_hotplug_timeout, get_system_time() + 4'000'000ull);
 	}
 	while (ctx && thread_ctrl::state() != thread_state::aborting)
 	{
 		const u64 now = get_system_time();
-		if (now > usb_hotplug_timeout)
+		if (now > static_cast<u64>(retro_atomic_load_acquire_64(&usb_hotplug_timeout)))
 		{
 			// If we did the hotplug scan each cycle the game performance was significantly degraded, so we only perform this scan
 			// every 4 seconds.
 			// On systems where hotplug is native, we wait a little bit for devices to settle before we start the scan
 			perform_scan();
-			usb_hotplug_timeout = hotplug_supported ? umax : (get_system_time() + 4'000'000ull);
+			retro_atomic_store_release_64(&usb_hotplug_timeout, retro_atomic_load_acquire_int(&hotplug_supported) ? u64{umax} : (get_system_time() + 4'000'000ull));
 		}
 
 		// Process asynchronous requests that are pending
@@ -995,7 +995,7 @@ void usb_handler_thread::connect_usb_device(std::shared_ptr<usb_device> dev, boo
 			}
 
 			dev->read_descriptors();
-			dev->assigned_number = dev_counter++; // assign current dev_counter, and atomically increment0
+			dev->assigned_number = static_cast<u8>(retro_atomic_fetch_add_int(&dev_counter, 1)); // assign current dev_counter, and atomically increment
 			handled_devices.emplace(dev->assigned_number, std::pair(UsbInternalDevice{0x00, narrow<u8>(dev->assigned_number), 0x02, 0x40}, dev));
 			send_message(SYS_USBD_ATTACH, dev->assigned_number);
 			sys_usbd.success("USB device(VID=0x%04x, PID=0x%04x) matches up with LDD <%s>, assigned as handled_device=0x%x", dev->device._device.idVendor, dev->device._device.idProduct, name, dev->assigned_number);
@@ -1167,11 +1167,11 @@ void handle_hotplug_event(bool connected, bool source_is_libusb)
 {
 	if (auto usbh = g_fxo->try_get<named_thread<usb_handler_thread>>())
 	{
-		if (usbh->hotplug_supported && !source_is_libusb) return;
+		if (retro_atomic_load_acquire_int(&usbh->hotplug_supported) && !source_is_libusb) return;
 
 		sys_usbd.notice("handle_hotplug_event: connected=%d", connected);
 
-		usbh->usb_hotplug_timeout = get_system_time() + (connected ? 1'000'000ull : 0);
+		retro_atomic_store_release_64(&usbh->usb_hotplug_timeout, get_system_time() + (connected ? 1'000'000ull : 0));
 	}
 }
 

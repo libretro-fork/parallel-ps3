@@ -148,14 +148,14 @@ error_code sys_rsxaudio_initialize(ppu_thread& ppu, vm::ptr<u32> handle)
 
 	auto& rsxaudio_thread = g_fxo->get<rsx_audio_data>();
 
-	if (rsxaudio_thread.rsxaudio_ctx_allocated.test_and_set())
+	if (retro_atomic_exchange_int(&rsxaudio_thread.rsxaudio_ctx_allocated, 1))
 	{
 		return CELL_EINVAL;
 	}
 
 	if (!vm::check_addr(handle.addr(), vm::page_writable, sizeof(u32)))
 	{
-		rsxaudio_thread.rsxaudio_ctx_allocated = false;
+		retro_atomic_store_release_int(&rsxaudio_thread.rsxaudio_ctx_allocated, 0);
 		return CELL_EFAULT;
 	}
 
@@ -163,7 +163,7 @@ error_code sys_rsxaudio_initialize(ppu_thread& ppu, vm::ptr<u32> handle)
 
 	if (!id)
 	{
-		rsxaudio_thread.rsxaudio_ctx_allocated = false;
+		retro_atomic_store_release_int(&rsxaudio_thread.rsxaudio_ctx_allocated, 0);
 		return CELL_ENOMEM;
 	}
 
@@ -175,7 +175,7 @@ error_code sys_rsxaudio_initialize(ppu_thread& ppu, vm::ptr<u32> handle)
 	if (!rsxaudio_obj->shmem)
 	{
 		idm::remove<lv2_obj, lv2_rsxaudio>(id);
-		rsxaudio_thread.rsxaudio_ctx_allocated = false;
+		retro_atomic_store_release_int(&rsxaudio_thread.rsxaudio_ctx_allocated, 0);
 		return CELL_ENOMEM;
 	}
 
@@ -231,7 +231,7 @@ error_code sys_rsxaudio_finalize(ppu_thread& ppu, u32 handle)
 	vm::dealloc(rsxaudio_obj->shmem, vm::main);
 
 	idm::remove<lv2_obj, lv2_rsxaudio>(handle);
-	rsxaudio_thread.rsxaudio_ctx_allocated = false;
+	retro_atomic_store_release_int(&rsxaudio_thread.rsxaudio_ctx_allocated, 0);
 
 	return CELL_OK;
 }

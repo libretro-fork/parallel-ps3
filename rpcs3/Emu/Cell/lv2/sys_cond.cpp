@@ -479,7 +479,7 @@ error_code sys_cond_wait(ppu_thread& ppu, u32 cond_id, u64 timeout)
 		lv2_obj::emplace(cond.sq, &ppu);
 
 		// Unlock the mutex
-		const u32 count = cond.mutex->lock_count.exchange(0);
+		const u32 count = static_cast<u32>(retro_atomic_exchange_int(&cond.mutex->lock_count, 0));
 
 		if (const auto cpu = cond.mutex->reown<ppu_thread>())
 		{
@@ -618,7 +618,7 @@ error_code sys_cond_wait(ppu_thread& ppu, u32 cond_id, u64 timeout)
 	ensure(atomic_storage<u32>::load(cond->mutex->control.raw().owner) == ppu.id);
 
 	// Restore the recursive value
-	cond->mutex->lock_count.release(static_cast<u32>(cond.ret));
+	retro_atomic_store_release_int(&cond->mutex->lock_count, static_cast<int>(cond.ret));
 
 	return not_an_error(ppu.gpr[3]);
 }

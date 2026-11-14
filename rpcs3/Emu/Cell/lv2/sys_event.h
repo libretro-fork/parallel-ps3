@@ -134,7 +134,7 @@ struct lv2_event_port final : lv2_obj
 	const s32 type; // Port type, either IPC or local
 	const u64 name; // Event source (generated from id and process id if not set)
 
-	atomic_t<usz> is_busy = 0; // Counts threads waiting on event sending
+	retro_atomic_int_t is_busy{}; // Counts threads waiting on event sending
 	shared_ptr<lv2_event_queue> queue; // Event queue this port is connected to
 
 	lv2_event_port(s32 type, u64 name)

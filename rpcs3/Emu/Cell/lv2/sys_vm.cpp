@@ -33,7 +33,7 @@ LOG_CHANNEL(sys_vm);
 
 struct sys_vm_global_t
 {
-	atomic_t<u32> total_vsize = 0;
+	retro_atomic_int_t total_vsize{}; // a u32
 };
 
 sys_vm_t::sys_vm_t(utils::serial& ar)
@@ -44,7 +44,7 @@ sys_vm_t::sys_vm_t(utils::serial& ar)
 {
 	g_ids[addr >> 28].release(idm::last_id());
 	g_fxo->need<sys_vm_global_t>();
-	g_fxo->get<sys_vm_global_t>().total_vsize += size;
+	retro_atomic_fetch_add_int(&g_fxo->get<sys_vm_global_t>().total_vsize, static_cast<int>(size));
 }
 
 error_code sys_vm_memory_map(ppu_thread& ppu, u64 vsize, u64 psize, u32 cid, u64 flag, u64 policy, vm::ptr<u32> addr)
@@ -72,25 +72,26 @@ error_code sys_vm_memory_map(ppu_thread& ppu, u64 vsize, u64 psize, u32 cid, u64
 		return CELL_ESRCH;
 	}
 
-	if (!g_fxo->get<sys_vm_global_t>().total_vsize.fetch_op([vsize, has_root = g_ps3_process_info.has_root_perm()](u32& size)
+	// A single process can hold up to 256MB of virtual memory, even on DECR
+	// VSH can hold more
+	for (retro_atomic_int_t& total = g_fxo->get<sys_vm_global_t>().total_vsize;;)
 	{
-		// A single process can hold up to 256MB of virtual memory, even on DECR
-		// VSH can hold more
-		if ((has_root ? 0x1E000000 : 0x10000000) - size < vsize)
+		const u32 size = static_cast<u32>(retro_atomic_load_acquire_int(&total));
+
+		if ((g_ps3_process_info.has_root_perm() ? 0x1E000000 : 0x10000000) - size < vsize)
 		{
-			return false;
+			return CELL_EBUSY;
 		}
 
-		size += static_cast<u32>(vsize);
-		return true;
-	}).second)
-	{
-		return CELL_EBUSY;
+		if (retro_atomic_cas_int(&total, static_cast<int>(size), static_cast<int>(size + static_cast<u32>(vsize))))
+		{
+			break;
+		}
 	}
 
 	if (!ct->take(psize))
 	{
-		g_fxo->get<sys_vm_global_t>().total_vsize -= static_cast<u32>(vsize);
+		retro_atomic_fetch_add_int(&g_fxo->get<sys_vm_global_t>().total_vsize, -static_cast<int>(vsize));
 		return CELL_ENOMEM;
 	}
 
@@ -112,7 +113,7 @@ error_code sys_vm_memory_map(ppu_thread& ppu, u64 vsize, u64 psize, u32 cid, u64
 	}
 
 	ct->free(psize);
-	g_fxo->get<sys_vm_global_t>().total_vsize -= static_cast<u32>(vsize);
+	retro_atomic_fetch_add_int(&g_fxo->get<sys_vm_global_t>().total_vsize, -static_cast<int>(vsize));
 	return CELL_ENOMEM;
 }
 
@@ -146,7 +147,7 @@ error_code sys_vm_unmap(ppu_thread& ppu, u32 addr)
 
 		// Return memory
 		vmo.ct->free(vmo.psize);
-		g_fxo->get<sys_vm_global_t>().total_vsize -= vmo.size;
+		retro_atomic_fetch_add_int(&g_fxo->get<sys_vm_global_t>().total_vsize, -static_cast<int>(vmo.size));
 	});
 
 	if (!vmo)

@@ -31,7 +31,7 @@ struct lv2_memory : lv2_obj
 
 	atomic_t<u32> counter{0};
 	// the game can drop its handle while audio still needs the buffer
-	atomic_t<u32> external_refs{0};
+	retro_atomic_int_t external_refs{}; // a u32
 
 	lv2_memory(u32 size, u32 align, u64 flags, u64 key, bool pshared, lv2_memory_container* ct);
 

@@ -1,6 +1,8 @@
 #pragma once
 
 #include "util/atomic.hpp"
+
+#include <retro_atomic.h>
 #include "util/shared_ptr.hpp"
 #include "Emu/Cell/timers.hpp"
 
@@ -358,7 +360,7 @@ class lv2_config_service_event
 		return g_fxo->get<service_event_id>().next_id++;
 	}
 
-	atomic_t<bool> m_destroyed = false;
+	retro_atomic_int_t m_destroyed{};
 
 	friend class lv2_config;
 

@@ -19,7 +19,8 @@ lv2_mutex::lv2_mutex(utils::serial& ar)
 	, key(ar)
 	, name(ar)
 {
-	ar(lock_count, control.raw().owner);
+	retro_atomic_store_release_int(&lock_count, static_cast<int>(ar.pop<u32>()));
+	ar(control.raw().owner);
 
 	// For backwards compatibility
 	control.raw().owner >>= 1;
@@ -32,7 +33,7 @@ std::function<void(void*)> lv2_mutex::load(utils::serial& ar)
 
 void lv2_mutex::save(utils::serial& ar)
 {
-	ar(protocol, recursive, adaptive, key, name, lock_count, control.raw().owner << 1);
+	ar(protocol, recursive, adaptive, key, name, static_cast<u32>(retro_atomic_load_acquire_int(&lock_count)), control.raw().owner << 1);
 }
 
 error_code sys_mutex_create(ppu_thread& ppu, vm::ptr<u32> mutex_id, vm::ptr<sys_mutex_attribute_t> attr)

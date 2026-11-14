@@ -375,7 +375,7 @@ namespace
 		}
 
 		auto memory = make_shared<lv2_memory>(stx::exact_t<utils::serial&>(ar));
-		ensure(memory->external_refs);
+		ensure(retro_atomic_load_acquire_int(&memory->external_refs));
 		ensure((g_fxo->get<ipc_manager<lv2_memory, u64>>().add(memory->key, [&] { return memory; }).first));
 		return memory;
 	}
@@ -419,7 +419,7 @@ namespace
 		// this (idm::get_entered)
 		return idm::get_entered<lv2_obj, lv2_memory>(id, [](lv2_memory& memory)
 		{
-			memory.external_refs++;
+			retro_atomic_fetch_add_int(&memory.external_refs, 1);
 		});
 	}
 
@@ -428,7 +428,7 @@ namespace
 		if (memory)
 		{
 			std::lock_guard lock(id_manager::g_mutex);
-			ensure(memory->external_refs--);
+			ensure(retro_atomic_fetch_add_int(&memory->external_refs, -1));
 			memory->release_memory();
 			memory.reset();
 		}
