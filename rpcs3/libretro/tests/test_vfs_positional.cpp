@@ -1283,6 +1283,30 @@ int main()
 				return ((b.tv_sec - a.tv_sec) * 1e9 + (b.tv_nsec - a.tv_nsec)) / rounds;
 			};
 			std::printf("  id lookup, one thread: %.1f ns under the reader lock, %.1f ns pinned (%llu)\n", ns(t0, t1), ns(t1, t2), static_cast<unsigned long long>(sink));
+
+			// And with the object kept, as a thread that may sleep keeps it:
+			// idm::get, and its two replacements
+			timespec t3, t4, t5, t6;
+			clock_gettime(CLOCK_MONOTONIC, &t3);
+			for (int i = 0; i < rounds; i++)
+			{
+				const auto found = idm::get<lv2_obj, lv2_mutex>(id, [&](lv2_mutex& mutex) { return mutex.recursive; });
+				sink += found.ret;
+			}
+			clock_gettime(CLOCK_MONOTONIC, &t4);
+			for (int i = 0; i < rounds; i++)
+			{
+				const auto found = idm::get_held<lv2_obj, lv2_mutex>(id, [&](lv2_mutex& mutex) { return mutex.recursive; });
+				sink += found.ret;
+			}
+			clock_gettime(CLOCK_MONOTONIC, &t5);
+			for (int i = 0; i < rounds; i++)
+			{
+				const auto found = idm::get_entered<lv2_obj, lv2_mutex>(id, [&](lv2_mutex& mutex) { return mutex.recursive; });
+				sink += found.ret;
+			}
+			clock_gettime(CLOCK_MONOTONIC, &t6);
+			std::printf("  id lookup keeping the object, one thread: %.1f ns under the reader lock, %.1f ns held, %.1f ns entered (%llu)\n", ns(t3, t4), ns(t4, t5), ns(t5, t6), static_cast<unsigned long long>(sink));
 		}
 
 		g_fxo->clear();

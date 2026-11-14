@@ -1150,8 +1150,8 @@ public:
 	// the two the ID can be withdrawn and its place given to a new object
 	// with another ID, which it then returns for an ID that no longer
 	// exists. Here the object is pinned first, which settles that the ID
-	// names it, and the reference is taken while the pin keeps the place
-	// from being given away.
+	// names it, and the reference is taken while the pin keeps the object
+	// alive.
 	template <typename T, typename Get = T>
 		requires IdmTypesCompatible<T, Get>
 	static inline stx::shared_ptr<Get> hold(u32 id)
@@ -1163,24 +1163,17 @@ public:
 			return null_ptr;
 		}
 
-		const u32 index = get_index<Get>(id);
-		auto& map = g_fxo->get<id_manager::id_map<T>>();
-
 		if (found.cell < 0) [[unlikely]]
 		{
 			// No hazard cell: the pin is a reference already
 			return std::move(found.counted);
 		}
 
-		auto result = static_cast<stx::shared_ptr<Get>>(map.vec_data[index].load());
-
-		if (result.get() != found.ptr)
-		{
-			// Withdrawn since it was pinned: as if looked up after that
-			return null_ptr;
-		}
-
-		return result;
+		// Pinned, the object is alive and somebody holds a reference to it
+		// (the ID's place, or whoever is withdrawing it and waits for the
+		// pin to go), so one more is one increment - where loading the
+		// place's pointer is three interlocked steps
+		return stx::make_shared_from_this<Get>(found.ptr);
 	}
 
 	// What idm::enter gives: while it is alive, a withdrawal that asks a

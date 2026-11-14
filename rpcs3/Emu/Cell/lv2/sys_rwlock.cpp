@@ -101,7 +101,10 @@ error_code sys_rwlock_rlock(ppu_thread& ppu, u32 rw_lock_id, u64 timeout)
 
 	sys_rwlock.trace("sys_rwlock_rlock(rw_lock_id=0x%x, timeout=0x%llx)", rw_lock_id, timeout);
 
-	const auto rwlock = idm::get<lv2_obj, lv2_rwlock>(rw_lock_id, [&, notify = lv2_obj::notify_all_t()](lv2_rwlock& rwlock)
+	// Found with no lock over the IDs. Taking the lock, or waiting for it, is
+	// what sys_rwlock_destroy asks about, so a destroy waits for this to be
+	// done before it looks (idm::get_entered).
+	const auto rwlock = idm::get_entered<lv2_obj, lv2_rwlock>(rw_lock_id, [&, notify = lv2_obj::notify_all_t()](lv2_rwlock& rwlock)
 	{
 		const s64 val = rwlock.owner;
 
@@ -229,7 +232,8 @@ error_code sys_rwlock_tryrlock(ppu_thread& ppu, u32 rw_lock_id)
 
 	sys_rwlock.trace("sys_rwlock_tryrlock(rw_lock_id=0x%x)", rw_lock_id);
 
-	const auto rwlock = idm::check<lv2_obj, lv2_rwlock>(rw_lock_id, [](lv2_rwlock& rwlock)
+	// As sys_rwlock_rlock: it takes the lock
+	const auto rwlock = idm::get_entered<lv2_obj, lv2_rwlock>(rw_lock_id, [](lv2_rwlock& rwlock)
 	{
 		auto [_, ok] = rwlock.owner.fetch_op([](s64& val)
 		{
@@ -264,7 +268,9 @@ error_code sys_rwlock_runlock(ppu_thread& ppu, u32 rw_lock_id)
 
 	sys_rwlock.trace("sys_rwlock_runlock(rw_lock_id=0x%x)", rw_lock_id);
 
-	const auto rwlock = idm::get<lv2_obj, lv2_rwlock>(rw_lock_id, [](lv2_rwlock& rwlock)
+	// Found with no lock over the IDs: giving the lock up takes nothing a
+	// destroy asks about
+	const auto rwlock = idm::get_held<lv2_obj, lv2_rwlock>(rw_lock_id, [](lv2_rwlock& rwlock)
 	{
 		const s64 val = rwlock.owner;
 
@@ -340,7 +346,8 @@ error_code sys_rwlock_wlock(ppu_thread& ppu, u32 rw_lock_id, u64 timeout)
 
 	sys_rwlock.trace("sys_rwlock_wlock(rw_lock_id=0x%x, timeout=0x%llx)", rw_lock_id, timeout);
 
-	const auto rwlock = idm::get<lv2_obj, lv2_rwlock>(rw_lock_id, [&, notify = lv2_obj::notify_all_t()](lv2_rwlock& rwlock) -> s64
+	// As sys_rwlock_rlock
+	const auto rwlock = idm::get_entered<lv2_obj, lv2_rwlock>(rw_lock_id, [&, notify = lv2_obj::notify_all_t()](lv2_rwlock& rwlock) -> s64
 	{
 		const s64 val = rwlock.owner;
 
@@ -494,7 +501,8 @@ error_code sys_rwlock_trywlock(ppu_thread& ppu, u32 rw_lock_id)
 
 	sys_rwlock.trace("sys_rwlock_trywlock(rw_lock_id=0x%x)", rw_lock_id);
 
-	const auto rwlock = idm::check<lv2_obj, lv2_rwlock>(rw_lock_id, [&](lv2_rwlock& rwlock)
+	// As sys_rwlock_rlock: it takes the lock
+	const auto rwlock = idm::get_entered<lv2_obj, lv2_rwlock>(rw_lock_id, [&](lv2_rwlock& rwlock)
 	{
 		const s64 val = rwlock.owner;
 
@@ -526,7 +534,8 @@ error_code sys_rwlock_wunlock(ppu_thread& ppu, u32 rw_lock_id)
 
 	sys_rwlock.trace("sys_rwlock_wunlock(rw_lock_id=0x%x)", rw_lock_id);
 
-	const auto rwlock = idm::get<lv2_obj, lv2_rwlock>(rw_lock_id, [&](lv2_rwlock& rwlock)
+	// As sys_rwlock_runlock
+	const auto rwlock = idm::get_held<lv2_obj, lv2_rwlock>(rw_lock_id, [&](lv2_rwlock& rwlock)
 	{
 		const s64 val = rwlock.owner;
 
