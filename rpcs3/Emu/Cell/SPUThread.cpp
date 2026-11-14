@@ -726,17 +726,41 @@ void spu_int_ctrl_t::set(u64 ints)
 	// notify if at least 1 bit was set
 	if (ints && ~stat.fetch_or(ints) & ints)
 	{
-		std::shared_lock rlock(id_manager::g_mutex);
+		// No lock over all IDs: the thread counts itself in on the tag's own
+		// ID, which keeps the tag, and with it the handler it points at and
+		// that handler's thread, until the notify is done. Destroying the
+		// tag, and establishing a handler on it, let a thread that is in
+		// here finish first (idm::withdraw, idm::close).
+		const u32 id = static_cast<u32>(retro_atomic_load_acquire_int(&tag_id));
 
-		if (lv2_obj::check(tag))
+		if (!id)
 		{
-			if (auto handler = tag->handler; lv2_obj::check(handler))
+			return;
+		}
+
+		idm::check_entered<lv2_obj, lv2_int_tag>(id, [&](lv2_int_tag& found)
+		{
+			// The ID may have gone to another tag since
+			if (&found != retro_atomic_load_acquire_ptr(&tag_obj) || !found.exists)
 			{
-				rlock.unlock();
+				return;
+			}
+
+			if (lv2_int_serv* handler = found.handler.get(); lv2_obj::check(handler))
+			{
 				thread_ctrl::notify(*handler->thread);
 			}
-		}
+		});
 	}
+}
+
+void spu_int_ctrl_t::set_tag(shared_ptr<lv2_int_tag> new_tag)
+{
+	// Nothing to go by while the three change
+	retro_atomic_store_release_int(&tag_id, 0);
+	tag = std::move(new_tag);
+	retro_atomic_store_release_ptr(&tag_obj, tag.get());
+	retro_atomic_store_release_int(&tag_id, tag ? static_cast<int>(tag->id) : 0);
 }
 
 const spu_imm_table_t g_spu_imm;
@@ -1941,7 +1965,7 @@ spu_thread::spu_thread(utils::serial& ar, lv2_spu_group* group)
 		for (spu_int_ctrl_t& ctrl : int_ctrl)
 		{
 			ar(ctrl.mask, ctrl.stat);
-			ctrl.tag = idm::get_unlocked<lv2_obj, lv2_int_tag>(ar.pop<u32>());
+			ctrl.set_tag(idm::get_unlocked<lv2_obj, lv2_int_tag>(ar.pop<u32>()));
 		}
 
 		g_raw_spu_ctr++;

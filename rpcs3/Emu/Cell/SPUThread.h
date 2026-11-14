@@ -1,5 +1,6 @@
 #pragma once
 
+#include <retro_atomic.h>
 #include "Emu/CPU/CPUThread.h"
 #include "Emu/CPU/Hypervisor.h"
 #include "Emu/Cell/SPUInterpreter.h"
@@ -464,6 +465,14 @@ struct spu_int_ctrl_t
 
 	shared_ptr<struct lv2_int_tag> tag;
 
+	// What set() goes by, with no lock: the tag's ID, and the tag itself
+	// to tell it from another object that got the ID later. Written with
+	// tag, by set_tag().
+	retro_atomic_int_t tag_id{};
+	retro_atomic_ptr_t tag_obj{};
+
+	void set_tag(shared_ptr<struct lv2_int_tag> new_tag);
+
 	void set(u64 ints);
 
 	void clear(u64 ints)
@@ -475,7 +484,7 @@ struct spu_int_ctrl_t
 	{
 		mask.release(0);
 		stat.release(0);
-		tag.reset();
+		set_tag({});
 	}
 };
 

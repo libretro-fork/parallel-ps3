@@ -2692,7 +2692,7 @@ error_code raw_spu_create_interrupt_tag(u32 id, u32 class_id, u32 /*hwthread*/, 
 		}
 
 		result = make_single<lv2_int_tag>();
-		int_ctrl.tag = result;
+		int_ctrl.set_tag(result);
 		return result;
 	});
 

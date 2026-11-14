@@ -174,7 +174,14 @@ error_code _sys_interrupt_thread_establish(ppu_thread& ppu, vm::ptr<u32> ih, u32
 		}
 
 		result = make_shared<lv2_int_serv>(it, arg1, arg2);
-		tag->handler = result;
+
+		{
+			// A raw SPU raising an interrupt reads the tag's handler with no
+			// lock, counted in on the tag's ID (spu_int_ctrl_t::set): it is
+			// let finish before the handler it may be reading is replaced
+			const auto closed = idm::close<lv2_obj, lv2_int_tag>(intrtag);
+			tag->handler = result;
+		}
 
 		it->cmd_list
 		({
