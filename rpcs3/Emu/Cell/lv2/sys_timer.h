@@ -24,15 +24,15 @@ struct lv2_timer : lv2_obj
 	static const u32 id_base = 0x11000000;
 
 	shared_mutex mutex;
-	atomic_t<u32> state{SYS_TIMER_STATE_STOP};
+	retro_atomic_int_t state{SYS_TIMER_STATE_STOP}; // a u32
 
 	shared_ptr<lv2_event_queue> port;
 	u64 source;
 	u64 data1;
 	u64 data2;
 
-	atomic_t<u64> expire{0}; // Next expiration time
-	atomic_t<u64> period{0}; // Period (oneshot if 0)
+	retro_atomic_64_t expire{0}; // Next expiration time (a u64)
+	retro_atomic_64_t period{0}; // Period (oneshot if 0) (a u64)
 
 	u64 check(u64 _now) noexcept;
 	u64 check_unlocked(u64 _now) noexcept;
@@ -44,11 +44,11 @@ struct lv2_timer : lv2_obj
 
 	void get_information(sys_timer_information_t& info) const
 	{
-		if (state == SYS_TIMER_STATE_RUN)
+		if (const u32 _state = static_cast<u32>(retro_atomic_load_acquire_int(&state)); _state == SYS_TIMER_STATE_RUN)
 		{
-			info.timer_state = state;
-			info.next_expire = expire;
-			info.period      = period;
+			info.timer_state = _state;
+			info.next_expire = static_cast<u64>(retro_atomic_load_acquire_64(&expire));
+			info.period      = static_cast<u64>(retro_atomic_load_acquire_64(&period));
 		}
 		else
 		{

@@ -29,7 +29,7 @@ struct lv2_sema final : lv2_obj
 	const s32 max;
 
 	shared_mutex mutex;
-	atomic_t<s32> val;
+	retro_atomic_int_t val;
 	ppu_thread* sq{};
 
 	lv2_sema(u32 protocol, u64 key, u64 name, s32 max, s32 value) noexcept
@@ -55,11 +55,11 @@ struct lv2_sema final : lv2_obj
 	// after all.
 	s32 enter(u32 id)
 	{
-		if (val-- <= 0)
+		if (retro_atomic_fetch_add_int(&val, -1) <= 0)
 		{
 			if (!idm::still_named<lv2_obj, lv2_sema>(id, this)) [[unlikely]]
 			{
-				val++;
+				retro_atomic_fetch_add_int(&val, 1);
 				return -1;
 			}
 

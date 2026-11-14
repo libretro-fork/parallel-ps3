@@ -15,7 +15,7 @@ lv2_rwlock::lv2_rwlock(utils::serial& ar)
 	, key(ar)
 	, name(ar)
 {
-	ar(owner);
+	retro_atomic_store_release_64(&owner, ar.pop<s64>());
 }
 
 std::function<void(void*)> lv2_rwlock::load(utils::serial& ar)
@@ -26,7 +26,7 @@ std::function<void(void*)> lv2_rwlock::load(utils::serial& ar)
 void lv2_rwlock::save(utils::serial& ar)
 {
 	USING_SERIALIZATION_VERSION(lv2_sync);
-	ar(protocol, key, name, owner);
+	ar(protocol, key, name, static_cast<s64>(retro_atomic_load_acquire_64(&owner)));
 }
 
 error_code sys_rwlock_create(ppu_thread& ppu, vm::ptr<u32> rw_lock_id, vm::ptr<sys_rwlock_attribute_t> attr)
@@ -73,7 +73,7 @@ error_code sys_rwlock_destroy(ppu_thread& ppu, u32 rw_lock_id)
 
 	const auto rwlock = idm::withdraw<lv2_obj, lv2_rwlock>(rw_lock_id, [](lv2_rwlock& rw) -> CellError
 	{
-		if (rw.owner)
+		if (retro_atomic_load_acquire_64(&rw.owner))
 		{
 			return CELL_EBUSY;
 		}
@@ -106,11 +106,11 @@ error_code sys_rwlock_rlock(ppu_thread& ppu, u32 rw_lock_id, u64 timeout)
 	// done before it looks (idm::get_entered).
 	const auto rwlock = idm::get_entered<lv2_obj, lv2_rwlock>(rw_lock_id, [&, notify = lv2_obj::notify_all_t()](lv2_rwlock& rwlock)
 	{
-		const s64 val = rwlock.owner;
+		const s64 val = retro_atomic_load_acquire_64(&rwlock.owner);
 
 		if (val <= 0 && !(val & 1))
 		{
-			if (rwlock.owner.compare_and_swap_test(val, val - 2))
+			if (retro_atomic_cas_64(&rwlock.owner, val, val - 2))
 			{
 				return true;
 			}
@@ -120,17 +120,27 @@ error_code sys_rwlock_rlock(ppu_thread& ppu, u32 rw_lock_id, u64 timeout)
 
 		std::lock_guard lock(rwlock.mutex);
 
-		const s64 _old = rwlock.owner.fetch_op([&](s64& val)
+		const s64 _old = [&]
 		{
-			if (val <= 0 && !(val & 1))
+			for (;;)
 			{
-				val -= 2;
+				const s64 seen = retro_atomic_load_acquire_64(&rwlock.owner);
+				s64 val = seen;
+				if (val <= 0 && !(val & 1))
+				{
+					val -= 2;
+				}
+				else
+				{
+					val |= 1;
+				}
+		
+				if (retro_atomic_cas_64(&rwlock.owner, seen, val))
+				{
+					return seen;
+				}
 			}
-			else
-			{
-				val |= 1;
-			}
-		});
+		}();
 
 		if (_old > 0 || _old & 1)
 		{
@@ -235,16 +245,23 @@ error_code sys_rwlock_tryrlock(ppu_thread& ppu, u32 rw_lock_id)
 	// As sys_rwlock_rlock: it takes the lock
 	const auto rwlock = idm::get_entered<lv2_obj, lv2_rwlock>(rw_lock_id, [](lv2_rwlock& rwlock)
 	{
-		auto [_, ok] = rwlock.owner.fetch_op([](s64& val)
+		bool ok = false;
+
+		for (;;)
 		{
-			if (val <= 0 && !(val & 1))
+			const s64 val = retro_atomic_load_acquire_64(&rwlock.owner);
+
+			if (!(val <= 0 && !(val & 1)))
 			{
-				val -= 2;
-				return true;
+				break;
 			}
 
-			return false;
-		});
+			if (retro_atomic_cas_64(&rwlock.owner, val, val - 2))
+			{
+				ok = true;
+				break;
+			}
+		}
 
 		return ok;
 	});
@@ -272,11 +289,11 @@ error_code sys_rwlock_runlock(ppu_thread& ppu, u32 rw_lock_id)
 	// destroy asks about
 	const auto rwlock = idm::get_held<lv2_obj, lv2_rwlock>(rw_lock_id, [](lv2_rwlock& rwlock)
 	{
-		const s64 val = rwlock.owner;
+		const s64 val = retro_atomic_load_acquire_64(&rwlock.owner);
 
 		if (val < 0 && !(val & 1))
 		{
-			if (rwlock.owner.compare_and_swap_test(val, val + 2))
+			if (retro_atomic_cas_64(&rwlock.owner, val, val + 2))
 			{
 				return true;
 			}
@@ -301,13 +318,23 @@ error_code sys_rwlock_runlock(ppu_thread& ppu, u32 rw_lock_id)
 		std::lock_guard lock(rwlock->mutex);
 
 		// Remove one reader
-		const s64 _old = rwlock->owner.fetch_op([](s64& val)
+		const s64 _old = [&]
 		{
-			if (val < -1)
+			for (;;)
 			{
-				val += 2;
+				const s64 seen = retro_atomic_load_acquire_64(&rwlock->owner);
+				s64 val = seen;
+				if (val < -1)
+				{
+					val += 2;
+				}
+		
+				if (retro_atomic_cas_64(&rwlock->owner, seen, val))
+				{
+					return seen;
+				}
 			}
-		});
+		}();
 
 		if (_old >= 0)
 		{
@@ -324,13 +351,13 @@ error_code sys_rwlock_runlock(ppu_thread& ppu, u32 rw_lock_id)
 					return {};
 				}
 
-				rwlock->owner = cpu->id << 1 | !!rwlock->wq | !!rwlock->rq;
+				retro_atomic_store_release_64(&rwlock->owner, static_cast<s64>(cpu->id << 1 | !!rwlock->wq | !!rwlock->rq));
 
 				rwlock->awake(cpu);
 			}
 			else
 			{
-				rwlock->owner = 0;
+				retro_atomic_store_release_64(&rwlock->owner, 0);
 
 				ensure(!rwlock->rq);
 			}
@@ -349,11 +376,11 @@ error_code sys_rwlock_wlock(ppu_thread& ppu, u32 rw_lock_id, u64 timeout)
 	// As sys_rwlock_rlock
 	const auto rwlock = idm::get_entered<lv2_obj, lv2_rwlock>(rw_lock_id, [&, notify = lv2_obj::notify_all_t()](lv2_rwlock& rwlock) -> s64
 	{
-		const s64 val = rwlock.owner;
+		const s64 val = retro_atomic_load_acquire_64(&rwlock.owner);
 
 		if (val == 0)
 		{
-			if (rwlock.owner.compare_and_swap_test(0, ppu.id << 1))
+			if (retro_atomic_cas_64(&rwlock.owner, 0, static_cast<s64>(ppu.id << 1)))
 			{
 				return 0;
 			}
@@ -367,17 +394,27 @@ error_code sys_rwlock_wlock(ppu_thread& ppu, u32 rw_lock_id, u64 timeout)
 
 		std::lock_guard lock(rwlock.mutex);
 
-		const s64 _old = rwlock.owner.fetch_op([&](s64& val)
+		const s64 _old = [&]
 		{
-			if (val == 0)
+			for (;;)
 			{
-				val = ppu.id << 1;
+				const s64 seen = retro_atomic_load_acquire_64(&rwlock.owner);
+				s64 val = seen;
+				if (val == 0)
+				{
+					val = ppu.id << 1;
+				}
+				else
+				{
+					val |= 1;
+				}
+		
+				if (retro_atomic_cas_64(&rwlock.owner, seen, val))
+				{
+					return seen;
+				}
 			}
-			else
-			{
-				val |= 1;
-			}
-		});
+		}();
 
 		if (_old != 0)
 		{
@@ -458,7 +495,7 @@ error_code sys_rwlock_wlock(ppu_thread& ppu, u32 rw_lock_id, u64 timeout)
 				}
 
 				// If the last waiter quit the writer sleep queue, wake blocked readers
-				if (rwlock->rq && !rwlock->wq && rwlock->owner < 0)
+				if (rwlock->rq && !rwlock->wq && retro_atomic_load_acquire_64(&rwlock->owner) < 0)
 				{
 					s64 size = 0;
 
@@ -469,17 +506,27 @@ error_code sys_rwlock_wlock(ppu_thread& ppu, u32 rw_lock_id, u64 timeout)
 						rwlock->append(cpu);
 					}
 
-					rwlock->owner.atomic_op([&](s64& owner)
+					[&]
 					{
-						owner -= 2 * size; // Add readers to value
-						owner &= -2; // Clear wait bit
-					});
+						for (;;)
+						{
+							const s64 seen = retro_atomic_load_acquire_64(&rwlock->owner);
+							s64 val = seen;
+							val -= 2 * size; // Add readers to value
+							val &= -2; // Clear wait bit
+					
+							if (retro_atomic_cas_64(&rwlock->owner, seen, val))
+							{
+								return seen;
+							}
+						}
+					}();
 
 					lv2_obj::awake_all();
 				}
 				else if (!rwlock->rq && !rwlock->wq)
 				{
-					rwlock->owner &= -2;
+					retro_atomic_fetch_and_64(&rwlock->owner, -2);
 				}
 
 				ppu.gpr[3] = CELL_ETIMEDOUT;
@@ -504,10 +551,17 @@ error_code sys_rwlock_trywlock(ppu_thread& ppu, u32 rw_lock_id)
 	// As sys_rwlock_rlock: it takes the lock
 	const auto rwlock = idm::get_entered<lv2_obj, lv2_rwlock>(rw_lock_id, [&](lv2_rwlock& rwlock)
 	{
-		const s64 val = rwlock.owner;
+		const s64 val = retro_atomic_load_acquire_64(&rwlock.owner);
 
 		// Return previous value
-		return val ? val : rwlock.owner.compare_and_swap(0, ppu.id << 1);
+		// The old value: 0 if it was taken
+		for (s64 seen = val;; seen = retro_atomic_load_acquire_64(&rwlock.owner))
+		{
+			if (seen != 0 || retro_atomic_cas_64(&rwlock.owner, 0, static_cast<s64>(ppu.id << 1)))
+			{
+				return seen;
+			}
+		}
 	});
 
 	if (!rwlock)
@@ -537,10 +591,17 @@ error_code sys_rwlock_wunlock(ppu_thread& ppu, u32 rw_lock_id)
 	// As sys_rwlock_runlock
 	const auto rwlock = idm::get_held<lv2_obj, lv2_rwlock>(rw_lock_id, [&](lv2_rwlock& rwlock)
 	{
-		const s64 val = rwlock.owner;
+		const s64 val = retro_atomic_load_acquire_64(&rwlock.owner);
 
 		// Return previous value
-		return val != ppu.id << 1 ? val : rwlock.owner.compare_and_swap(val, 0);
+		// The old value: ours if it was released
+		for (s64 seen = val;; seen = retro_atomic_load_acquire_64(&rwlock.owner))
+		{
+			if (seen != static_cast<s64>(ppu.id << 1) || retro_atomic_cas_64(&rwlock.owner, seen, 0))
+			{
+				return seen;
+			}
+		}
 	});
 
 	if (!rwlock)
@@ -565,7 +626,7 @@ error_code sys_rwlock_wunlock(ppu_thread& ppu, u32 rw_lock_id)
 				return {};
 			}
 
-			rwlock->owner = cpu->id << 1 | !!rwlock->wq | !!rwlock->rq;
+			retro_atomic_store_release_64(&rwlock->owner, static_cast<s64>(cpu->id << 1 | !!rwlock->wq | !!rwlock->rq));
 
 			rwlock->awake(cpu);
 		}
@@ -589,12 +650,12 @@ error_code sys_rwlock_wunlock(ppu_thread& ppu, u32 rw_lock_id)
 				rwlock->append(cpu);
 			}
 
-			rwlock->owner.release(-2 * static_cast<s64>(size));
+			retro_atomic_store_release_64(&rwlock->owner, -2 * static_cast<s64>(size));
 			lv2_obj::awake_all();
 		}
 		else
 		{
-			rwlock->owner = 0;
+			retro_atomic_store_release_64(&rwlock->owner, 0);
 		}
 	}
 

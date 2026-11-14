@@ -83,31 +83,31 @@ struct lv2_timer_thread
 
 lv2_timer::lv2_timer(utils::serial& ar)
 	: lv2_obj(1)
-	, state(ar.pop<u32>())
+	, state(static_cast<int>(ar.pop<u32>()))
 	, port(lv2_event_queue::load_ptr(ar, port, "timer"))
 	, source(ar)
 	, data1(ar)
 	, data2(ar)
-	, expire(ar.pop<u64>())
-	, period(ar.pop<u64>())
+	, expire(static_cast<s64>(ar.pop<u64>()))
+	, period(static_cast<s64>(ar.pop<u64>()))
 {
 }
 
 void lv2_timer::save(utils::serial& ar)
 {
 	USING_SERIALIZATION_VERSION(lv2_sync);
-	ar(state), lv2_event_queue::save_ptr(ar, port.get()), ar(source, data1, data2, expire, period);
+	ar(static_cast<u32>(retro_atomic_load_acquire_int(&state))), lv2_event_queue::save_ptr(ar, port.get()), ar(source, data1, data2, static_cast<u64>(retro_atomic_load_acquire_64(&expire)), static_cast<u64>(retro_atomic_load_acquire_64(&period)));
 }
 
 u64 lv2_timer::check(u64 _now) noexcept
 {
 	while (true)
 	{
-		const u32 _state = +state;
+		const u32 _state = static_cast<u32>(retro_atomic_load_acquire_int(&state));
 
 		if (_state == SYS_TIMER_STATE_RUN)
 		{
-			u64 next = expire;
+			u64 next = static_cast<u64>(retro_atomic_load_acquire_64(&expire));
 
 			// If aborting, perform the last accurate check for event
 			if (_now >= next)
@@ -129,9 +129,9 @@ u64 lv2_timer::check(u64 _now) noexcept
 
 u64 lv2_timer::check_unlocked(u64 _now) noexcept
 {
-	const u64 next = expire;
+	const u64 next = static_cast<u64>(retro_atomic_load_acquire_64(&expire));
 
-	if (_now < next || state != SYS_TIMER_STATE_RUN)
+	if (_now < next || static_cast<u32>(retro_atomic_load_acquire_int(&state)) != SYS_TIMER_STATE_RUN)
 	{
 		return umax;
 	}
@@ -141,16 +141,16 @@ u64 lv2_timer::check_unlocked(u64 _now) noexcept
 		port->send(source, data1, data2, next);
 	}
 
-	if (period)
+	if (const u64 _period = static_cast<u64>(retro_atomic_load_acquire_64(&period)))
 	{
 		// Set next expiration time and check again
-		const u64 expire0 = utils::add_saturate<u64>(next, period);
-		expire.release(expire0);
+		const u64 expire0 = utils::add_saturate<u64>(next, _period);
+		retro_atomic_store_release_64(&expire, static_cast<s64>(expire0));
 		return utils::sub_saturate<u64>(expire0, _now);
 	}
 
 	// Stop after oneshot
-	state.release(SYS_TIMER_STATE_STOP);
+	retro_atomic_store_release_int(&state, SYS_TIMER_STATE_STOP);
 	return umax;
 }
 
@@ -356,7 +356,7 @@ error_code _sys_timer_start(ppu_thread& ppu, u32 timer_id, u64 base_time, u64 pe
 		}
 
 		timer.check_unlocked(start_time);
-		if (timer.state != SYS_TIMER_STATE_STOP)
+		if (static_cast<u32>(retro_atomic_load_acquire_int(&timer.state)) != SYS_TIMER_STATE_STOP)
 		{
 			return CELL_EBUSY;
 		}
@@ -384,9 +384,9 @@ error_code _sys_timer_start(ppu_thread& ppu, u32 timer_id, u64 base_time, u64 pe
 				return utils::add_saturate(start_time_with_base_time_reminder, start_time_with_base_time_reminder < start_time ? period : 0);
 			}();
 
-		timer.expire = expire;
-		timer.period = period;
-		timer.state  = SYS_TIMER_STATE_RUN;
+		retro_atomic_store_release_64(&timer.expire, static_cast<s64>(expire));
+		retro_atomic_store_release_64(&timer.period, static_cast<s64>(period));
+		retro_atomic_store_release_int(&timer.state, SYS_TIMER_STATE_RUN);
 		return {};
 	});
 
@@ -420,7 +420,7 @@ error_code sys_timer_stop(ppu_thread& ppu, u32 timer_id)
 	{
 		std::lock_guard lock(timer.mutex);
 		timer.check_unlocked(now);
-		timer.state = SYS_TIMER_STATE_STOP;
+		retro_atomic_store_release_int(&timer.state, SYS_TIMER_STATE_STOP);
 	});
 
 	if (!timer)
@@ -485,7 +485,7 @@ error_code sys_timer_disconnect_event_queue(ppu_thread& ppu, u32 timer_id)
 		std::lock_guard lock(timer.mutex);
 
 		timer.check_unlocked(now);
-		timer.state = SYS_TIMER_STATE_STOP;
+		retro_atomic_store_release_int(&timer.state, SYS_TIMER_STATE_STOP);
 
 		if (!lv2_obj::check(timer.port))
 		{

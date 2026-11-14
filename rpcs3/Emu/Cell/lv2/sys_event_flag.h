@@ -41,7 +41,7 @@ struct lv2_event_flag final : lv2_obj
 	const u64 name;
 
 	shared_mutex mutex;
-	atomic_t<u64> pattern;
+	retro_atomic_64_t pattern;
 	ppu_thread* sq{};
 
 	lv2_event_flag(u32 protocol, u64 key, s32 type, u64 name, u64 pattern) noexcept
@@ -49,7 +49,7 @@ struct lv2_event_flag final : lv2_obj
 		, key(key)
 		, type(type)
 		, name(name)
-		, pattern(pattern)
+		, pattern(static_cast<s64>(pattern))
 	{
 	}
 
@@ -76,6 +76,26 @@ struct lv2_event_flag final : lv2_obj
 		}
 
 		return true;
+	}
+
+	// check_pattern on the flag's word, with one compare-and-swap
+	static bool check_pattern(retro_atomic_64_t& word, u64 bitptn, u64 mode, u64* result)
+	{
+		for (;;)
+		{
+			const s64 seen = retro_atomic_load_acquire_64(&word);
+			u64 pattern = static_cast<u64>(seen);
+
+			if (!check_pattern(pattern, bitptn, mode, result))
+			{
+				return false;
+			}
+
+			if (pattern == static_cast<u64>(seen) || retro_atomic_cas_64(&word, seen, static_cast<s64>(pattern)))
+			{
+				return true;
+			}
+		}
 	}
 
 	// Check and clear pattern (must be atomic op)

@@ -16,7 +16,7 @@ lv2_event_flag::lv2_event_flag(utils::serial& ar)
 	, type(ar)
 	, name(ar)
 {
-	ar(pattern);
+	retro_atomic_store_release_64(&pattern, ar.pop<s64>());
 }
 
 // Always set result
@@ -42,7 +42,7 @@ std::function<void(void*)> lv2_event_flag::load(utils::serial& ar)
 
 void lv2_event_flag::save(utils::serial& ar)
 {
-	ar(protocol, key, type, name, pattern);
+	ar(protocol, key, type, name, static_cast<u64>(retro_atomic_load_acquire_64(&pattern)));
 }
 
 error_code sys_event_flag_create(ppu_thread& ppu, vm::ptr<u32> id, vm::ptr<sys_event_flag_attribute_t> attr, u64 init)
@@ -152,10 +152,7 @@ error_code sys_event_flag_wait(ppu_thread& ppu, u32 id, u64 bitptn, u32 mode, vm
 	// as if it came before a destroy that ran meanwhile.
 	if (const auto pinned = idm::pin<lv2_obj, lv2_event_flag>(id))
 	{
-		if (pinned->pattern.fetch_op([&](u64& pat)
-		{
-			return lv2_event_flag::check_pattern(pat, bitptn, mode, &ppu.gpr[6]);
-		}).second)
+		if (lv2_event_flag::check_pattern(pinned->pattern, bitptn, mode, &ppu.gpr[6]))
 		{
 			// TODO: is it possible to return EPERM in this case?
 			store.val = ppu.gpr[6];
@@ -182,10 +179,7 @@ error_code sys_event_flag_wait(ppu_thread& ppu, u32 id, u64 bitptn, u32 mode, vm
 	{
 		flag.ret = [&, notify = lv2_obj::notify_all_t()](lv2_event_flag& flag) -> CellError
 		{
-			if (flag.pattern.fetch_op([&](u64& pat)
-			{
-				return lv2_event_flag::check_pattern(pat, bitptn, mode, &ppu.gpr[6]);
-			}).second)
+			if (lv2_event_flag::check_pattern(flag.pattern, bitptn, mode, &ppu.gpr[6]))
 			{
 				return {};
 			}
@@ -194,10 +188,7 @@ error_code sys_event_flag_wait(ppu_thread& ppu, u32 id, u64 bitptn, u32 mode, vm
 
 			std::lock_guard lock(flag.mutex);
 
-			if (flag.pattern.fetch_op([&](u64& pat)
-			{
-				return lv2_event_flag::check_pattern(pat, bitptn, mode, &ppu.gpr[6]);
-			}).second)
+			if (lv2_event_flag::check_pattern(flag.pattern, bitptn, mode, &ppu.gpr[6]))
 			{
 				return {};
 			}
@@ -306,7 +297,7 @@ error_code sys_event_flag_wait(ppu_thread& ppu, u32 id, u64 bitptn, u32 mode, vm
 				}
 
 				ppu.gpr[3] = CELL_ETIMEDOUT;
-				ppu.gpr[6] = flag->pattern;
+				ppu.gpr[6] = static_cast<u64>(retro_atomic_load_acquire_64(&flag->pattern));
 				break;
 			}
 		}
@@ -344,10 +335,7 @@ error_code sys_event_flag_trywait(ppu_thread& ppu, u32 id, u64 bitptn, u32 mode,
 		return CELL_ESRCH;
 	}
 
-	if (!flag->pattern.fetch_op([&](u64& pat)
-	{
-		return lv2_event_flag::check_pattern(pat, bitptn, mode, &pattern);
-	}).second)
+	if (!lv2_event_flag::check_pattern(flag->pattern, bitptn, mode, &pattern))
 	{
 		return not_an_error(CELL_EBUSY);
 	}
@@ -367,7 +355,7 @@ error_code sys_event_flag_set(cpu_thread& cpu, u32 id, u64 bitptn)
 	// no reference counted
 	if (const auto pinned = idm::pin<lv2_obj, lv2_event_flag>(id))
 	{
-		if ((pinned->pattern & bitptn) == bitptn)
+		if ((static_cast<u64>(retro_atomic_load_acquire_64(&pinned->pattern)) & bitptn) == bitptn)
 		{
 			return CELL_OK;
 		}
@@ -386,7 +374,7 @@ error_code sys_event_flag_set(cpu_thread& cpu, u32 id, u64 bitptn)
 		return CELL_ESRCH;
 	}
 
-	if ((flag->pattern & bitptn) == bitptn)
+	if ((static_cast<u64>(retro_atomic_load_acquire_64(&flag->pattern)) & bitptn) == bitptn)
 	{
 		return CELL_OK;
 	}
@@ -409,7 +397,7 @@ error_code sys_event_flag_set(cpu_thread& cpu, u32 id, u64 bitptn)
 		u32 count = 0;
 
 		// Process all waiters in single atomic op
-		for (u64 pattern = flag->pattern, to_write = pattern, dependant_mask = 0;; to_write = pattern, dependant_mask = 0)
+		for (u64 pattern = static_cast<u64>(retro_atomic_load_acquire_64(&flag->pattern)), to_write = pattern, dependant_mask = 0;; to_write = pattern, dependant_mask = 0)
 		{
 			count = 0;
 			to_write |= bitptn;
@@ -475,19 +463,29 @@ error_code sys_event_flag_set(cpu_thread& cpu, u32 id, u64 bitptn)
 
 			dependant_mask &= ~bitptn;
 
-			auto [new_val, ok] = flag->pattern.fetch_op([&](u64& x)
+			u64 new_val;
+			bool ok;
+
+			for (;;)
 			{
-				if ((x ^ pattern) & dependant_mask)
+				new_val = static_cast<u64>(retro_atomic_load_acquire_64(&flag->pattern));
+				ok = !((new_val ^ pattern) & dependant_mask);
+
+				if (!ok)
 				{
-					return false;
+					break;
 				}
 
-				x |= bitptn;
+				u64 x = new_val | bitptn;
 
 				// Clear the bit-wise difference
 				x &= ~((pattern | bitptn) & ~to_write);
-				return true;
-			});
+
+				if (retro_atomic_cas_64(&flag->pattern, static_cast<s64>(new_val), static_cast<s64>(x)))
+				{
+					break;
+				}
+			}
 
 			if (ok)
 			{
@@ -532,7 +530,7 @@ error_code sys_event_flag_clear(ppu_thread& ppu, u32 id, u64 bitptn)
 
 	if (const auto flag = idm::pin<lv2_obj, lv2_event_flag>(id))
 	{
-		flag->pattern &= bitptn;
+		retro_atomic_fetch_and_64(&flag->pattern, static_cast<s64>(bitptn));
 	}
 	else
 	{
@@ -573,7 +571,7 @@ error_code sys_event_flag_cancel(ppu_thread& ppu, u32 id, vm::ptr<u32> num)
 		}
 
 		// Get current pattern
-		const u64 pattern = flag->pattern;
+		const u64 pattern = static_cast<u64>(retro_atomic_load_acquire_64(&flag->pattern));
 
 		// Signal all threads to return CELL_ECANCELED (protocol does not matter)
 		while (auto ppu = flag->schedule<ppu_thread>(flag->sq, SYS_SYNC_FIFO))
@@ -607,7 +605,7 @@ error_code sys_event_flag_get(ppu_thread& ppu, u32 id, vm::ptr<u64> flags)
 
 	if (const auto flag = idm::pin<lv2_obj, lv2_event_flag>(id))
 	{
-		pattern = flag->pattern;
+		pattern = static_cast<u64>(retro_atomic_load_acquire_64(&flag->pattern));
 	}
 	else
 	{

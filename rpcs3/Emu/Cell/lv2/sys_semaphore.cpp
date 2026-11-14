@@ -16,7 +16,7 @@ lv2_sema::lv2_sema(utils::serial& ar)
 	, name(ar)
 	, max(ar)
 {
-	ar(val);
+	retro_atomic_store_release_int(&val, ar.pop<s32>());
 }
 
 std::function<void(void*)> lv2_sema::load(utils::serial& ar)
@@ -27,7 +27,7 @@ std::function<void(void*)> lv2_sema::load(utils::serial& ar)
 void lv2_sema::save(utils::serial& ar)
 {
 	USING_SERIALIZATION_VERSION(lv2_sync);
-	ar(protocol, key, name, max, std::max<s32>(+val, 0));
+	ar(protocol, key, name, max, std::max<s32>(retro_atomic_load_acquire_int(&val), 0));
 }
 
 error_code sys_semaphore_create(ppu_thread& ppu, vm::ptr<u32> sem_id, vm::ptr<sys_semaphore_attribute_t> attr, s32 initial_val, s32 max_val)
@@ -86,7 +86,7 @@ error_code sys_semaphore_destroy(ppu_thread& ppu, u32 sem_id)
 
 	const auto sem = idm::withdraw<lv2_obj, lv2_sema>(sem_id, [](lv2_sema& sema) -> CellError
 	{
-		if (sema.val < 0)
+		if (retro_atomic_load_acquire_int(&sema.val) < 0)
 		{
 			return CELL_EBUSY;
 		}
@@ -125,9 +125,9 @@ error_code sys_semaphore_wait(ppu_thread& ppu, u32 sem_id, u64 timeout)
 	// is as if it came before a destroy that ran meanwhile.
 	if (const auto pinned = idm::pin<lv2_obj, lv2_sema>(sem_id))
 	{
-		const s32 val = pinned->val;
+		const s32 val = retro_atomic_load_acquire_int(&pinned->val);
 
-		if (val > 0 && pinned->val.compare_and_swap_test(val, val - 1))
+		if (val > 0 && retro_atomic_cas_int(&pinned->val, val, val - 1))
 		{
 			return CELL_OK;
 		}
@@ -152,11 +152,11 @@ error_code sys_semaphore_wait(ppu_thread& ppu, u32 sem_id, u64 timeout)
 	{
 		sem.ret = [&, notify = lv2_obj::notify_all_t()](lv2_sema& sema) -> s32
 		{
-			const s32 val = sema.val;
+			const s32 val = retro_atomic_load_acquire_int(&sema.val);
 
 			if (val > 0)
 			{
-				if (sema.val.compare_and_swap_test(val, val - 1))
+				if (retro_atomic_cas_int(&sema.val, val, val - 1))
 				{
 					return 1;
 				}
@@ -242,13 +242,19 @@ error_code sys_semaphore_wait(ppu_thread& ppu, u32 sem_id, u64 timeout)
 					break;
 				}
 
-				ensure(0 > sem->val.fetch_op([](s32& val)
+				// Give back the count the thread was waiting with
+				ensure(0 > [&]
 				{
-					if (val < 0)
+					for (;;)
 					{
-						val++;
+						const s32 val = retro_atomic_load_acquire_int(&sem->val);
+
+						if (val >= 0 || retro_atomic_cas_int(&sem->val, val, val + 1))
+						{
+							return val;
+						}
 					}
-				}));
+				}());
 
 				ppu.gpr[3] = CELL_ETIMEDOUT;
 				break;
@@ -277,7 +283,24 @@ error_code sys_semaphore_trywait(ppu_thread& ppu, u32 sem_id)
 		return CELL_ESRCH;
 	}
 
-	if (!sem->val.try_dec(0))
+	// Take a count if there is one
+	if (![&]
+	{
+		for (;;)
+		{
+			const s32 val = retro_atomic_load_acquire_int(&sem->val);
+
+			if (val <= 0)
+			{
+				return false;
+			}
+
+			if (retro_atomic_cas_int(&sem->val, val, val - 1))
+			{
+				return true;
+			}
+		}
+	}())
 	{
 		return not_an_error(CELL_EBUSY);
 	}
@@ -295,11 +318,11 @@ error_code sys_semaphore_post(ppu_thread& ppu, u32 sem_id, s32 count)
 	// reference counted (see sys_semaphore_wait)
 	if (const auto pinned = idm::pin<lv2_obj, lv2_sema>(sem_id))
 	{
-		const s32 val = pinned->val;
+		const s32 val = retro_atomic_load_acquire_int(&pinned->val);
 
 		if (val >= 0 && count > 0 && count <= pinned->max - val)
 		{
-			if (pinned->val.compare_and_swap_test(val, val + count))
+			if (retro_atomic_cas_int(&pinned->val, val, val + count))
 			{
 				return CELL_OK;
 			}
@@ -338,16 +361,19 @@ error_code sys_semaphore_post(ppu_thread& ppu, u32 sem_id, s32 count)
 			}
 		}
 
-		const auto [val, ok] = sem->val.fetch_op([&](s32& val)
-		{
-			if (count + 0u <= sem->max + 0u - val)
-			{
-				val += count;
-				return true;
-			}
+		s32 val;
+		bool ok;
 
-			return false;
-		});
+		for (;;)
+		{
+			val = retro_atomic_load_acquire_int(&sem->val);
+			ok = count + 0u <= sem->max + 0u - val;
+
+			if (!ok || retro_atomic_cas_int(&sem->val, val, val + count))
+			{
+				break;
+			}
+		}
 
 		if (!ok)
 		{
@@ -381,7 +407,7 @@ error_code sys_semaphore_get_value(ppu_thread& ppu, u32 sem_id, vm::ptr<s32> cou
 
 	if (const auto sema = idm::pin<lv2_obj, lv2_sema>(sem_id))
 	{
-		value = std::max<s32>(0, sema->val);
+		value = std::max<s32>(0, retro_atomic_load_acquire_int(&sema->val));
 	}
 	else
 	{

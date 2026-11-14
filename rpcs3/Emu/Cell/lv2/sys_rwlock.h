@@ -28,7 +28,7 @@ struct lv2_rwlock final : lv2_obj
 	const u64 name;
 
 	shared_mutex mutex;
-	atomic_t<s64> owner{0};
+	retro_atomic_64_t owner{0};
 	ppu_thread* rq{};
 	ppu_thread* wq{};
 
