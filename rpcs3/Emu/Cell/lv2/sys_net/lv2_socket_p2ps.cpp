@@ -137,7 +137,7 @@ public:
 					}
 
 					// resend the message
-					const auto res = idm::check<lv2_socket>(msg.sock_id, [&](lv2_socket& sock) -> bool
+					const auto res = idm::check_entered<lv2_socket>(msg.sock_id, [&](lv2_socket& sock) -> bool
 						{
 							ensure(sock.get_type() == SYS_NET_SOCK_STREAM_P2P);
 							auto& sock_p2ps = reinterpret_cast<lv2_socket_p2ps&>(sock);
@@ -190,7 +190,7 @@ public:
 
 			for (const s32 sock_id : streams_to_close)
 			{
-				idm::check<lv2_socket>(sock_id, [](lv2_socket& sock)
+				idm::check_entered<lv2_socket>(sock_id, [](lv2_socket& sock)
 					{
 						ensure(sock.get_type() == SYS_NET_SOCK_STREAM_P2P);
 						auto& sock_p2ps = reinterpret_cast<lv2_socket_p2ps&>(sock);

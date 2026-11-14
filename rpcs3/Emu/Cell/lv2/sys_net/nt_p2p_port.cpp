@@ -17,7 +17,7 @@ namespace sys_net_helpers
 	{
 		for (const s32 sock_id : sock_ids)
 		{
-			const auto [_, reusable] = idm::check<lv2_socket>(sock_id, [&](lv2_socket& sock) -> bool
+			const auto [_, reusable] = idm::check_entered<lv2_socket>(sock_id, [&](lv2_socket& sock) -> bool
 				{
 					auto [res_reuseaddr, optval_reuseaddr, optlen_reuseaddr] = sock.getsockopt(SYS_NET_SOL_SOCKET, SYS_NET_SO_REUSEADDR, sizeof(s32));
 					auto [res_reuseport, optval_reuseport, optlen_reuseport] = sock.getsockopt(SYS_NET_SOL_SOCKET, SYS_NET_SO_REUSEPORT, sizeof(s32));
@@ -121,7 +121,7 @@ u16 nt_p2p_port::get_port()
 
 bool nt_p2p_port::handle_connected(s32 sock_id, p2ps_encapsulated_tcp* tcp_header, u8* data, ::sockaddr_storage* op_addr)
 {
-	const auto sock = idm::check<lv2_socket>(sock_id, [&](lv2_socket& sock) -> bool
+	const auto sock = idm::check_entered<lv2_socket>(sock_id, [&](lv2_socket& sock) -> bool
 		{
 			ensure(sock.get_type() == SYS_NET_SOCK_STREAM_P2P);
 			auto& sock_p2ps = reinterpret_cast<lv2_socket_p2ps&>(sock);
@@ -146,7 +146,7 @@ bool nt_p2p_port::handle_connected(s32 sock_id, p2ps_encapsulated_tcp* tcp_heade
 
 bool nt_p2p_port::handle_listening(s32 sock_id, p2ps_encapsulated_tcp* tcp_header, u8* data, ::sockaddr_storage* op_addr)
 {
-	auto sock = idm::get_unlocked<lv2_socket>(sock_id);
+	auto sock = idm::hold<lv2_socket>(sock_id);
 	if (!sock)
 		return false;
 
@@ -257,7 +257,7 @@ bool nt_p2p_port::recv_data()
 			for (auto it = bound_sockets.begin(); it != bound_sockets.end();)
 			{
 				s32 sock_id = *it;
-				const auto sock = idm::check<lv2_socket>(sock_id, [&](lv2_socket& sock)
+				const auto sock = idm::check_entered<lv2_socket>(sock_id, [&](lv2_socket& sock)
 					{
 						ensure(sock.get_type() == SYS_NET_SOCK_DGRAM_P2P);
 						auto& sock_p2p = reinterpret_cast<lv2_socket_p2p&>(sock);

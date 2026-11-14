@@ -414,7 +414,10 @@ namespace
 
 	shared_ptr<lv2_memory> acquire_audio_memory(u32 id)
 	{
-		return idm::get<lv2_obj, lv2_memory>(id, [](lv2_memory& memory)
+		// Found with no lock over the IDs; the reference it counts on the
+		// memory is what freeing the memory asks about, so that waits for
+		// this (idm::get_entered)
+		return idm::get_entered<lv2_obj, lv2_memory>(id, [](lv2_memory& memory)
 		{
 			memory.external_refs++;
 		});
