@@ -7,7 +7,8 @@
 # enough for RPCS3, only Linux runners.
 #
 # clang64 has LLVM as a package; a cross toolchain does not, so it is built
-# here from its submodule (BUILD_LLVM), the way the Android build gets it.
+# here from the sources in the repository (BUILD_LLVM), the way the Android
+# build gets it.
 # The Vulkan headers come from the tree and the loader that comes with the
 # GPU driver is opened at run time (volk); GLEW is not used on Windows.
 # OpenCV is left out, as it is optional.

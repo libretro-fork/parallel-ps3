@@ -3,61 +3,106 @@ if(WITH_LLVM)
 	check_cxx_compiler_flag("-march=armv8-a+lse" COMPILER_ARM)
 
 	if(BUILD_LLVM)
-		message(STATUS "LLVM will be built from the submodule.")
+		# LLVM's sources are in this repository (llvm/): the part of LLVM the
+		# core is built from, without LLVM's own CMake. The core's Makefile
+		# knows how to build it (rpcs3/libretro/make/llvm), so it is asked
+		# to: one description of the build, the same LLVM in every build.
+		message(STATUS "LLVM will be built from 3rdparty/llvm/llvm by the core's Makefile.")
 
-		if (ANDROID)
-			if (COMPILER_ARM)
-				set(LLVM_TARGETS_TO_BUILD "AArch64" CACHE STRING "Semicolon-separated list of targets to build, or \"all\".")
-				set(LLVM_TARGET_ARCH "${CMAKE_SYSTEM_PROCESSOR}-none-linux-android${ANDROID_NATIVE_API_LEVEL}" CACHE STRING "")
-			else()
-				set(LLVM_TARGETS_TO_BUILD "X86" CACHE STRING "Semicolon-separated list of targets to build, or \"all\".")
-			endif()
+		find_program(LLVM_TREE_MAKE NAMES gmake make mingw32-make REQUIRED)
+		include(ProcessorCount)
+		ProcessorCount(LLVM_TREE_JOBS)
+		if(LLVM_TREE_JOBS EQUAL 0)
+			set(LLVM_TREE_JOBS 1)
+		endif()
+
+		# Where its objects, TableGen's output and the archive go. A cache
+		# variable so that a tree built by the Makefile can be reused.
+		set(LLVM_TREE_OUT "${CMAKE_CURRENT_BINARY_DIR}/llvm_build" CACHE PATH "Where LLVM is built from the tree")
+		set(LLVM_TREE_ARCHIVE "${LLVM_TREE_OUT}/libllvm.a")
+		get_filename_component(LLVM_TREE_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../.." ABSOLUTE)
+		set(LLVM_TREE_SRC "${CMAKE_CURRENT_SOURCE_DIR}/llvm/llvm")
+		set(LLVM_TREE_CFG "${LLVM_TREE_ROOT}/rpcs3/libretro/make/llvm/include")
+
+		if(WIN32)
+			set(LLVM_TREE_PLATFORM win)
+			set(LLVM_TREE_OS windows)
+		elseif(APPLE)
+			set(LLVM_TREE_PLATFORM osx)
+			set(LLVM_TREE_OS darwin)
 		else()
-			set(LLVM_TARGETS_TO_BUILD "AArch64;X86" CACHE STRING "Semicolon-separated list of targets to build, or \"all\".")
+			set(LLVM_TREE_PLATFORM unix)
+			set(LLVM_TREE_OS linux)
 		endif()
 
-		option(LLVM_BUILD_RUNTIME "Build the LLVM runtime libraries." OFF)
-		option(LLVM_BUILD_TOOLS "Build the LLVM tools. If OFF, just generate build targets." OFF)
-		option(LLVM_INCLUDE_BENCHMARKS "Generate benchmark targets. If OFF, benchmarks can't be built." OFF)
-		option(LLVM_INCLUDE_DOCS "Generate build targets for llvm documentation." OFF)
-		option(LLVM_INCLUDE_EXAMPLES "Generate build targets for the LLVM examples" OFF)
-		option(LLVM_INCLUDE_TESTS "Generate build targets for the LLVM unit tests." OFF)
-		option(LLVM_INCLUDE_TOOLS "Generate build targets for the LLVM tools." OFF)
-		option(LLVM_INCLUDE_UTILS "Generate build targets for the LLVM utils." OFF)
-		option(LLVM_CCACHE_BUILD "Set to ON for a ccache enabled build" OFF)
-		set(LLVM_ENABLE_WARNINGS OFF CACHE BOOL "Enable compiler warnings.")
-		# The core builds no zlib or zstd of its own any more
-		set(LLVM_ENABLE_ZLIB OFF CACHE STRING "Use zlib for compression/decompression if available.")
-		set(LLVM_ENABLE_ZSTD OFF CACHE STRING "Use zstd for compression/decompression if available.")
-
-		# For Windows x86 (not Windows AArch64).
-		# Check on MSVC is needed due to COMPILER_X86, COMPILER_ARM etc. are not set/supported by the MSVC compiler, if used.
-		# Furthermore, the MSVC compiler is not available/supported on Windows AArch64
-		if(WIN32 AND (COMPILER_X86 OR MSVC))
-			set(LLVM_USE_INTEL_JITEVENTS ON)
+		if(COMPILER_ARM)
+			set(LLVM_TREE_ARCH aarch64)
+		else()
+			set(LLVM_TREE_ARCH x86)
 		endif()
 
-		if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
-			if(COMPILER_X86)
-				set(LLVM_USE_INTEL_JITEVENTS ON)
+		# The compilers as CMake calls them: with the target and the sysroot
+		# of a cross build (the NDK's clang, llvm-mingw, a macOS slice)
+		set(LLVM_TREE_TARGET_FLAGS "")
+		if(CMAKE_CXX_COMPILER_TARGET)
+			string(APPEND LLVM_TREE_TARGET_FLAGS " --target=${CMAKE_CXX_COMPILER_TARGET}")
+		endif()
+		if(CMAKE_SYSROOT)
+			string(APPEND LLVM_TREE_TARGET_FLAGS " --sysroot=${CMAKE_SYSROOT}")
+		endif()
+		if(APPLE)
+			if(CMAKE_OSX_ARCHITECTURES)
+				string(APPEND LLVM_TREE_TARGET_FLAGS " -arch ${CMAKE_OSX_ARCHITECTURES}")
 			endif()
-			set(LLVM_USE_PERF ON)
+			if(CMAKE_OSX_SYSROOT)
+				string(APPEND LLVM_TREE_TARGET_FLAGS " -isysroot ${CMAKE_OSX_SYSROOT}")
+			endif()
+			if(CMAKE_OSX_DEPLOYMENT_TARGET)
+				string(APPEND LLVM_TREE_TARGET_FLAGS " -mmacosx-version-min=${CMAKE_OSX_DEPLOYMENT_TARGET}")
+			endif()
 		endif()
 
-		if (MSVC)
-			add_compile_definitions("$<$<COMPILE_LANGUAGE:CXX>:_SILENCE_ALL_CXX17_DEPRECATION_WARNINGS>")
+		# TableGen runs on the machine that builds
+		if(CMAKE_CROSSCOMPILING)
+			find_program(LLVM_TREE_HOST_CXX NAMES c++ g++ clang++ REQUIRED)
+		else()
+			set(LLVM_TREE_HOST_CXX "${CMAKE_CXX_COMPILER}")
 		endif()
 
-		# LLVM needs to be built out-of-tree
-		add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/llvm/llvm ${CMAKE_CURRENT_BINARY_DIR}/llvm_build EXCLUDE_FROM_ALL)
-		set(LLVM_DIR "${CMAKE_CURRENT_BINARY_DIR}/llvm_build/lib/cmake/llvm/")
+		add_custom_target(llvm_from_tree
+			COMMAND ${LLVM_TREE_MAKE} -C "${LLVM_TREE_ROOT}" -j${LLVM_TREE_JOBS} llvm
+				HAVE_LLVM=1 SYSTEM_LLVM=0
+				platform=${LLVM_TREE_PLATFORM}
+				arch=${LLVM_TREE_ARCH}
+				"CC=${CMAKE_C_COMPILER}${LLVM_TREE_TARGET_FLAGS}"
+				"CXX=${CMAKE_CXX_COMPILER}${LLVM_TREE_TARGET_FLAGS}"
+				"AR=${CMAKE_AR}"
+				"HOST_CXX=${LLVM_TREE_HOST_CXX}"
+				"LLVM_OUT=${LLVM_TREE_OUT}"
+				"LLVM_ARCHIVE=${LLVM_TREE_ARCHIVE}"
+			BYPRODUCTS "${LLVM_TREE_ARCHIVE}"
+			COMMENT "LLVM, from 3rdparty/llvm/llvm"
+			VERBATIM)
 
-		set(STATIC_LINK_LLVM ON CACHE BOOL "Link against LLVM statically. This will get set to ON if you build LLVM from the submodule." FORCE)
+		set(STATIC_LINK_LLVM ON CACHE BOOL "Link against LLVM statically. This will get set to ON if you build LLVM from the tree." FORCE)
 
-		find_package(LLVM 22.1 CONFIG)
-		if(NOT LLVM_FOUND)
-			message(FATAL_ERROR "Couldn't build LLVM from the submodule. You might need to run `git submodule update --init`")
+		add_library(3rdparty_llvm INTERFACE)
+		add_dependencies(3rdparty_llvm llvm_from_tree)
+		target_link_libraries(3rdparty_llvm INTERFACE "${LLVM_TREE_ARCHIVE}")
+		if(WIN32)
+			target_link_libraries(3rdparty_llvm INTERFACE psapi shell32 ole32 uuid advapi32 ws2_32 ntdll)
 		endif()
+		target_include_directories(3rdparty_llvm SYSTEM INTERFACE
+			"${LLVM_TREE_SRC}/include"
+			"${LLVM_TREE_OUT}/gen/include"
+			"${LLVM_TREE_CFG}/${LLVM_TREE_OS}"
+			"${LLVM_TREE_CFG}/${LLVM_TREE_ARCH}"
+			"${LLVM_TREE_CFG}/common")
+		target_compile_definitions(3rdparty_llvm INTERFACE LLVM_AVAILABLE
+			__STDC_CONSTANT_MACROS __STDC_FORMAT_MACROS __STDC_LIMIT_MACROS)
+
+		add_library(3rdparty::llvm ALIAS 3rdparty_llvm)
+		return()
 	else()
 		message(STATUS "Using prebuilt or system LLVM")
 
@@ -69,10 +114,10 @@ if(WITH_LLVM)
 		find_package(LLVM CONFIG)
 
 		if (NOT LLVM_FOUND)
-			message(FATAL_ERROR "Can't find LLVM libraries from the CMAKE_PREFIX_PATH path or LLVM_DIR. Enable BUILD_LLVM option to build LLVM from included as a git submodule.")
+			message(FATAL_ERROR "Can't find LLVM libraries from the CMAKE_PREFIX_PATH path or LLVM_DIR. Enable the BUILD_LLVM option to build LLVM from the sources in 3rdparty/llvm/llvm.")
 		endif()
 		if (LLVM_VERSION VERSION_LESS 18)
-			message(FATAL_ERROR "Found LLVM version ${LLVM_VERSION}. Required version 18 or above. Enable BUILD_LLVM option to build LLVM from included as a git submodule.")
+			message(FATAL_ERROR "Found LLVM version ${LLVM_VERSION}. Required version 18 or above. Enable the BUILD_LLVM option to build LLVM from the sources in 3rdparty/llvm/llvm.")
 		endif()
 	endif()
 

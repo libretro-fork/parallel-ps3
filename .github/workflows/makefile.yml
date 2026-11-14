@@ -1,7 +1,7 @@
 name: Makefile build
 
 # The core built with the Makefile instead of CMake (Linux x86_64, GCC, LLVM
-# built from the submodule into the core), then
+# built from the sources in the repository into the core), then
 # loaded with every symbol resolved and asked what it is, and in-memory save
 # states written and read through RPCS3's serializer (make check).
 on:
@@ -53,20 +53,17 @@ jobs:
       - name: Dependencies
         run: sudo apt-get install -y -q zlib1g-dev unzip libvulkan1 mesa-vulkan-drivers >/dev/null
 
-      # LLVM from the submodule, built by the Makefile into the core. Its
-      # objects and TableGen's output are kept between runs: they change only
-      # with the submodule or the lists and headers they are built from.
-      - name: LLVM submodule
-        if: matrix.llvm == '1'
-        run: git submodule -q update --init --depth 1 3rdparty/llvm/llvm
-
+      # LLVM from the sources in the repository (3rdparty/llvm/llvm), built
+      # by the Makefile into the core. Its objects and TableGen's output are
+      # kept between runs: they change only with those sources or the lists
+      # and headers they are built from.
       - name: LLVM objects
         if: matrix.llvm == '1'
         uses: actions/cache@v4
         with:
           path: rpcs3/libretro/generated/llvm
-          key: llvm-objects-${{ hashFiles('.gitmodules', 'rpcs3/libretro/make/llvm/**') }}-${{ github.sha }}
-          restore-keys: llvm-objects-${{ hashFiles('.gitmodules', 'rpcs3/libretro/make/llvm/**') }}-
+          key: llvm-objects-${{ hashFiles('3rdparty/llvm/**', 'rpcs3/libretro/make/llvm/**') }}-${{ github.sha }}
+          restore-keys: llvm-objects-${{ hashFiles('3rdparty/llvm/**', 'rpcs3/libretro/make/llvm/**') }}-
 
       - name: Build
         run: make -j"$(nproc)" HAVE_LLVM=${{ matrix.llvm }}

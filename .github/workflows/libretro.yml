@@ -193,7 +193,7 @@ jobs:
     # principle - 3rdparty/llvm/CMakeLists.txt has an if(ANDROID) branch that
     # builds LLVM for AArch64 with an Android triple - but cross-building LLVM
     # is far larger than the core it serves and does not belong in a test run.
-    # LLVM is built from the submodule here, for the ABI being built - the
+    # LLVM is built from the sources in the repository here, for the ABI being built - the
     # branch for that is already in 3rdparty/llvm/CMakeLists.txt, AArch64 on
     # arm64 and X86 on x86_64. Skipping it was the plan
     # and did not survive contact: the AArch64 CPU backend uses llvm:: types

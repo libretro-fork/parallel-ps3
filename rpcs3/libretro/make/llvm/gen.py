@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 """Makes rpcs3/libretro/make/llvm/llvm.mk and the configured headers beside it
 from LLVM's own build description, so that the Makefile builds the LLVM the
-core links - from the 3rdparty/llvm submodule, with make and a compiler and
+core links - from the sources in 3rdparty/llvm/llvm, with make and a compiler and
 nothing else - without CMake.
 
-For the maintainer only, when the LLVM submodule moves: configure the
-submodule's LLVM twice with CMake and Ninja (README in this folder gives the
+For the maintainer only, when LLVM is moved to another release: configure a
+checkout of llvm-project twice with CMake and Ninja (README in this folder gives the
 two commands), then
 
     python3 rpcs3/libretro/make/llvm/gen.py LINUX_BUILD_DIR MINGW_BUILD_DIR
@@ -39,7 +39,7 @@ SRC = os.path.join(CORE, "3rdparty", "llvm", "llvm", "llvm")
 COMPONENTS = ["core", "executionengine", "mcjit", "passes"]
 TARGET_COMPONENTS = {"x86": ["x86"], "aarch64": ["aarch64"]}
 # Intel's VTune listener is left out: its ittapi sources are not in the
-# submodule (LLVM's CMake downloads them), and only a profiler uses it
+# LLVM tree (LLVM's CMake downloads them), and only a profiler uses it
 LISTENERS = ["perfjitevents"]
 
 PLATFORM_DEFINES = {"-D_GNU_SOURCE", "-D_FILE_OFFSET_BITS=64", "-DNDEBUG",

@@ -1,5 +1,5 @@
 # The core without CMake: make and a compiler. LLVM is built from the
-# 3rdparty/llvm submodule into the core, the GL and Vulkan headers are in
+# 3rdparty/llvm sources into the core, the GL and Vulkan headers are in
 # the tree. What it builds is what the CMake
 # build (BUILD_LIBRETRO_CORE_ONLY, as .ci/build-libretro.sh configures it)
 # builds, from the same sources with the same flags: Makefile.common has
@@ -10,7 +10,7 @@
 #   make platform=win                   Windows, with MinGW-w64
 #   make HAVE_LLVM=0                    without the LLVM recompilers
 #   make SYSTEM_LLVM=1                  the system's LLVM (llvm-config, 21 or
-#                                       newer) instead of the submodule's
+#                                       newer) instead of the tree's
 #   make EMBED_PATCHES=0                without downloading patch.yml
 #   make DEBUG=1                        -O0 -g
 #   make check                          the core, loaded as a frontend loads it
@@ -146,8 +146,8 @@ else
 endif
 
 # LLVM, for the PPU and SPU recompilers. By default the LLVM the core needs is
-# built from the 3rdparty/llvm submodule (fetched the first time when it is
-# not there) and linked into the core: nothing to install. The lists it is
+# built from the sources in 3rdparty/llvm/llvm, which are part of this
+# repository, and linked into the core: nothing to install or fetch. The lists it is
 # built from, and the headers LLVM's configuration would write, are in
 # rpcs3/libretro/make/llvm. SYSTEM_LLVM=1 takes the system's through
 # llvm-config instead; HAVE_LLVM=0 builds without the recompilers.
@@ -234,12 +234,10 @@ endif
 
 ifeq ($(HAVE_LLVM)$(SYSTEM_LLVM),10)
    LLVM_SRC := $(CORE_DIR)/3rdparty/llvm/llvm/llvm
-   ifeq ($(wildcard $(LLVM_SRC)/CMakeLists.txt),)
-      $(info Fetching the LLVM submodule (3rdparty/llvm/llvm) once: it is a large download)
-      LLVM_FETCH := $(shell git -C $(CORE_DIR) submodule update --init --depth 1 3rdparty/llvm/llvm >&2 && echo ok)
-      ifneq ($(LLVM_FETCH),ok)
-         $(error 3rdparty/llvm/llvm is missing and could not be fetched: run git submodule update --init 3rdparty/llvm/llvm, or build with HAVE_LLVM=0)
-      endif
+   # The sources are in the tree (3rdparty/llvm/llvm): the part of LLVM the
+   # core is built from, and the core's own to change. Nothing is fetched.
+   ifeq ($(wildcard $(LLVM_SRC)/include/llvm/IR/Module.h),)
+      $(error 3rdparty/llvm/llvm is incomplete: it is part of this repository, check the checkout - or build with HAVE_LLVM=0)
    endif
 
    # The system and processor LLVM is built for, and those of the machine
@@ -389,8 +387,10 @@ REMOVE_OBJECTS = $(if $(wildcard $(OBJ_DIRS)),find $(wildcard $(OBJ_DIRS)) -maxd
 # which toolchain made them: a build for another platform or processor in
 # the same checkout clears the last one's first, at parse time, before make
 # reads their dependency files. Not for `make clean`, which removes them all.
+# Nor for `make llvm`, which the CMake build runs with its own compilers and
+# its own place for LLVM's objects: it must not clear this build's.
 BUILD_TAG := $(CC)|$(CXX)|$(platform)|$(arch)|$(HAVE_LLVM)|$(SYSTEM_LLVM)|$(if $(filter 1,$(SYSTEM_LLVM)),$(shell $(LLVM_CONFIG) --version))|$(DEBUG)|$(LTO)
-ifeq ($(filter clean,$(MAKECMDGOALS)),)
+ifeq ($(filter clean llvm,$(MAKECMDGOALS)),)
 BUILD_TAG_STATUS := $(shell \
 	if [ ! -f .build-tag ] || [ "`cat .build-tag 2>/dev/null`" != "$(BUILD_TAG)" ]; then \
 		if [ -f .build-tag ]; then \
@@ -433,7 +433,13 @@ $(filter-out $(LLVM_ARCHIVE),$(ARCHIVES)):
 	$(Q)$(AR) rcs $@ $^
 
 ifneq ($(LLVM_ARCHIVE),)
-# ---- LLVM, from the submodule ----
+# ---- LLVM, from 3rdparty/llvm/llvm ----
+
+# LLVM alone: its archive and the headers TableGen writes. For the CMake
+# build, which has this Makefile build LLVM rather than describe it a second
+# time (3rdparty/llvm/CMakeLists.txt): LLVM_OUT and LLVM_ARCHIVE say where.
+llvm: $(LLVM_ARCHIVE) $(LLVM_TBLGEN_OUT)
+
 
 # Its objects through a list, too many for a command line on Windows
 $(LLVM_ARCHIVE): $(LLVM_OBJS)
@@ -864,4 +870,4 @@ clean:
 
 FORCE:
 
-.PHONY: all check clean patches FORCE
+.PHONY: all check clean patches llvm FORCE

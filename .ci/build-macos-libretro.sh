@@ -3,10 +3,10 @@
 # Builds the libretro core for macOS on the libretro buildbot's Macs: Xcode's
 # clang, cmake, ninja and git, and no Homebrew - so nothing the GitHub workflow
 # takes from Homebrew is there. Instead:
-# - LLVM is built from its submodule into a prefix of its own, which the
-#   GitLab cache keeps between pipelines (a stamp names the submodule commit
-#   it was built from, so a new one is built when the submodule moves);
-# - so is clang, from the same submodule, for the machine: Xcode's clang 16
+# - LLVM is built from the sources in the repository (3rdparty/llvm/llvm) by
+#   the core's own build;
+# - clang is built for the machine from LLVM's release, fetched here into a
+#   prefix the GitLab cache keeps between pipelines: Xcode's clang 16
 #   rejects RPCS3's C++ (fmt::throw_exception not taken as [[noreturn]],
 #   SPULLVMRecompiler's deduced return types), and upstream builds macOS with
 #   Homebrew's LLVM clang for the same reason;
@@ -47,43 +47,24 @@ git submodule -q update --init --force --depth 1 $(awk '/path/ && !/opencv/ && !
 
 mkdir -p "$DEPS"
 
-# LLVM, static, for this slice only.
-LLVM_COMMIT="$(git rev-parse HEAD:3rdparty/llvm/llvm)"
-if [ "$(cat "$DEPS/llvm/stamp" 2>/dev/null)" != "$LLVM_COMMIT-$ARCH-$TARGET_OS" ]; then
-    rm -rf "$DEPS/llvm" "$DEPS/llvm-build"
-    cmake -S 3rdparty/llvm/llvm/llvm -B "$DEPS/llvm-build" -G Ninja \
-        -DCMAKE_BUILD_TYPE=Release \
-        -DCMAKE_INSTALL_PREFIX="$DEPS/llvm" \
-        -DCMAKE_OSX_ARCHITECTURES=$ARCH \
-        -DCMAKE_OSX_DEPLOYMENT_TARGET=$TARGET_OS \
-        -DCMAKE_OSX_SYSROOT="$SDK" \
-        -DCMAKE_IGNORE_PREFIX_PATH="$IGNORE" \
-        -DLLVM_HOST_TRIPLE=$TRIPLE \
-        -DLLVM_TARGETS_TO_BUILD=$LLVM_TARGET \
-        -DLLVM_BUILD_TOOLS=OFF \
-        -DLLVM_INCLUDE_TESTS=OFF \
-        -DLLVM_INCLUDE_EXAMPLES=OFF \
-        -DLLVM_INCLUDE_BENCHMARKS=OFF \
-        -DLLVM_INCLUDE_DOCS=OFF \
-        -DLLVM_ENABLE_ZSTD=OFF \
-        -DLLVM_ENABLE_ZLIB=OFF \
-        -DLLVM_ENABLE_LIBXML2=OFF \
-        -DLLVM_ENABLE_LIBEDIT=OFF \
-        -DLLVM_ENABLE_TERMINFO=OFF \
-        -DLLVM_ENABLE_WARNINGS=OFF
-    cmake --build "$DEPS/llvm-build" -j "$JOBS"
-    cmake --install "$DEPS/llvm-build"
-    rm -rf "$DEPS/llvm-build"
-    echo "$LLVM_COMMIT-$ARCH-$TARGET_OS" > "$DEPS/llvm/stamp"
-fi
+# LLVM for the core is built from the sources in the repository
+# (3rdparty/llvm/llvm) by the core's own build, below: BUILD_LLVM=ON.
+
+# clang needs the whole of LLVM's source, which the repository does not
+# carry: it is fetched here, at the release the tree's LLVM was taken from.
+LLVM_COMMIT=ca7933e47d3a3451d81e72ac174dcb5aa28b59d1
 
 # clang for this machine, the compiler the core is built with; it targets
 # both slices, and takes the libc++ headers from the SDK.
 HOST="$SRC/deps-macos-host"
 CLANG="$HOST/clang/bin/clang"
 if [ "$(cat "$HOST/clang/stamp" 2>/dev/null)" != "$LLVM_COMMIT" ]; then
-    rm -rf "$HOST/clang" "$HOST/clang-build"
-    cmake -S 3rdparty/llvm/llvm/llvm -B "$HOST/clang-build" -G Ninja \
+    rm -rf "$HOST/clang" "$HOST/clang-build" "$HOST/llvm-project"
+    mkdir -p "$HOST/llvm-project"
+    git -C "$HOST/llvm-project" init -q
+    git -C "$HOST/llvm-project" fetch -q --depth 1 https://github.com/llvm/llvm-project.git "$LLVM_COMMIT"
+    git -C "$HOST/llvm-project" checkout -q FETCH_HEAD
+    cmake -S "$HOST/llvm-project/llvm" -B "$HOST/clang-build" -G Ninja \
         -DCMAKE_BUILD_TYPE=Release \
         -DCMAKE_INSTALL_PREFIX="$HOST/clang" \
         -DCMAKE_OSX_ARCHITECTURES="$(uname -m)" \
@@ -105,7 +86,7 @@ if [ "$(cat "$HOST/clang/stamp" 2>/dev/null)" != "$LLVM_COMMIT" ]; then
         -DLLVM_ENABLE_TERMINFO=OFF \
         -DLLVM_ENABLE_WARNINGS=OFF
     cmake --build "$HOST/clang-build" --target install-distribution -j "$JOBS"
-    rm -rf "$HOST/clang-build"
+    rm -rf "$HOST/clang-build" "$HOST/llvm-project"
     echo "$LLVM_COMMIT" > "$HOST/clang/stamp"
 fi
 "$CLANG" --version
@@ -143,9 +124,7 @@ cmake -S . -B build -G Ninja $CROSS                    \
     -DCMAKE_IGNORE_PREFIX_PATH="$IGNORE"               \
     -DBUILD_LIBRETRO_CORE_ONLY=ON                      \
     -DWITH_LLVM=ON                                     \
-    -DBUILD_LLVM=OFF                                   \
-    -DSTATIC_LINK_LLVM=ON                              \
-    -DLLVM_DIR="$DEPS/llvm/lib/cmake/llvm"             \
+    -DBUILD_LLVM=ON                                    \
     -DUSE_NATIVE_INSTRUCTIONS=OFF                      \
     -DUSE_PRECOMPILED_HEADERS=OFF                      \
     -DUSE_SYSTEM_OPENCV=OFF                            \

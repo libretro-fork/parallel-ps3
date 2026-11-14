@@ -3,10 +3,6 @@
 	url = ../../asmjit/asmjit.git
 	branch = master
 	ignore = dirty
-[submodule "3rdparty/llvm/llvm"]
-	path = 3rdparty/llvm/llvm
-	url = ../../llvm/llvm-project.git
-	ignore = dirty
 [submodule "3rdparty/libusb"]
 	path = 3rdparty/libusb/libusb
 	url = ../../libusb/libusb.git
