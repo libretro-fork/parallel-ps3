@@ -774,6 +774,13 @@ public:
 		auto ptr = static_cast<stx::shared_ptr<Get>>(found.first->load());
 		Get* obj_ptr = ptr.get();
 
+		// It is there, under the lock. The compiler cannot tell: without
+		// this it warns that func may be writing to address zero.
+		if (!obj_ptr) [[unlikely]]
+		{
+			return {};
+		}
+
 		if constexpr (std::is_void_v<FRT>)
 		{
 			func(*obj_ptr);
