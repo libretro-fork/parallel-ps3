@@ -19,6 +19,9 @@
 
 LOG_CHANNEL(sys_log, "SYS");
 
+// See Utilities/File.cpp
+extern std::string g_libretro_data_dir;
+
 namespace rpcs3::utils
 {
 	u32 get_max_threads()
@@ -289,6 +292,12 @@ namespace rpcs3::utils
 
 	std::string get_data_dir()
 	{
+		// The libretro core's stays where users have their disc keys
+		if (!::g_libretro_data_dir.empty())
+		{
+			return ::g_libretro_data_dir;
+		}
+
 		return fs::get_config_dir() + "data/";
 	}
 

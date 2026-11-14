@@ -17,13 +17,17 @@
 
 using namespace std::literals::string_literals;
 
-// Set by the core to <system>/rpcs3/ as soon as the frontend has named its
+// Set by the core to <system>/parallel-ps3/ as soon as the frontend has named its
 // system directory. RPCS3 otherwise keeps its config and caches next to the
 // executable on Windows - which in a core is retroarch.exe, so config/, cache/,
 // patches/ and the rest landed in RetroArch's own folder (NNshi) - and under
 // ~/.config and ~/.cache elsewhere. Checked on every call rather than cached,
 // so a call made before the core knows the directory does not pin the old one.
 std::string g_libretro_config_dir;
+
+// Where the user puts what the core is given - disc keys (data/redump/) -
+// when that is not the core's own directory; with a trailing slash
+std::string g_libretro_data_dir;
 
 #ifdef ANDROID
 std::string g_android_executable_dir;

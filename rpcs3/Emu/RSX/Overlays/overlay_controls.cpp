@@ -17,6 +17,10 @@
 #include <formats/rjpeg.h>
 #include <formats/rpng.h>
 
+#ifdef LIBRETRO_CORE
+#include "libretro/libretro_ui_icons.h"
+#endif
+
 #ifndef _WIN32
 #include <unistd.h>
 #include <libgen.h>
@@ -247,6 +251,19 @@ namespace rsx
 		std::unique_ptr<image_info> resource_config::load_icon(std::string_view relative_path)
 		{
 			const std::string res = relative_path.data();
+
+#ifdef LIBRETRO_CORE
+			// The libretro core has the icons in itself and decodes them
+			// from there: no Icons folder is written for them to be read
+			// back from
+			for (std::size_t i = 0; i < g_libretro_ui_icon_count; i++)
+			{
+				if (res == g_libretro_ui_icons[i].name)
+				{
+					return std::make_unique<image_info>(std::span<const u8>{g_libretro_ui_icons[i].data, g_libretro_ui_icons[i].size});
+				}
+			}
+#endif
 
 			// First check the global config dir
 			const std::string image_path = fs::get_config_dir() + "Icons/ui/" + res;

@@ -28,6 +28,9 @@
 #include "Emu/Cell/lv2/sys_cond.h"
 #include "Emu/IdManager.h"
 #include "Emu/VFS.h"
+#include "Emu/vfs_config.h"
+#include "Emu/system_utils.hpp"
+#include "Emu/RSX/Overlays/overlay_controls.h"
 #include "Utilities/lf_u64_map.h"
 
 #include <malloc.h>
@@ -54,6 +57,8 @@ int main()
 #include <sys/stat.h>
 
 static int failures = 0;
+
+extern void libretro_use_system_dir(const std::string& dir);
 
 LOG_CHANNEL(test_log, "TEST");
 
@@ -1588,6 +1593,46 @@ int main()
 
 	libretro_vfs::set_vfs_interface(nullptr, 0);
 	rmdir(dir);
+
+	// The core's folders under the frontend's system directory: its config,
+	// caches and log in parallel-ps3/, not in rpcs3/ where the RPCS3 core
+	// has its own; the disc keys still looked for in rpcs3/data/; and a
+	// vfs.yml left where the config used to be is taken over, once.
+	{
+		char sys[] = "/tmp/test_core_dirs.XXXXXX";
+		CHECK(mkdtemp(sys) != nullptr);
+		const std::string root = sys;
+
+		CHECK(fs::create_path(root + "/rpcs3"));
+		CHECK(fs::write_file(root + "/rpcs3/vfs.yml", fs::rewrite, std::string("$(EmulatorDir): \"/somewhere/else/\"\n")));
+
+		libretro_use_system_dir(root);
+
+		CHECK(fs::get_config_dir() == root + "/parallel-ps3/");
+		CHECK(fs::get_cache_dir() == root + "/parallel-ps3/");
+		CHECK(fs::is_dir(root + "/parallel-ps3"));
+		CHECK(rpcs3::utils::get_data_dir() == root + "/rpcs3/data/");
+		CHECK(rpcs3::utils::get_redump_key_dir() == root + "/rpcs3/data/redump/");
+		CHECK(cfg_vfs::get_path().starts_with(root + "/parallel-ps3/"));
+
+		CHECK(fs::file(cfg_vfs::get_path()).to_string().find("/somewhere/else/") != umax);
+
+		// The overlays' icons come out of the core itself: none is read
+		// from an Icons folder, and none is written
+		{
+			const auto icon = rsx::overlays::resource_config::load_icon("circle.png");
+			CHECK(icon && icon->get_data() && icon->w > 0 && icon->h > 0);
+			CHECK(!fs::is_dir(root + "/parallel-ps3/Icons"));
+			CHECK(!fs::is_dir(root + "/rpcs3/Icons"));
+		}
+
+		// Not again: the core's own copy stands
+		CHECK(fs::write_file(cfg_vfs::get_path(), fs::rewrite, std::string("$(EmulatorDir): \"/mine/\"\n")));
+		libretro_use_system_dir(root);
+		CHECK(fs::file(cfg_vfs::get_path()).to_string().find("/mine/") != umax);
+
+		fs::remove_all(root);
+	}
 
 	std::printf("test_vfs_positional: %s\n", failures ? "FAIL" : "ok");
 	return failures ? 1 : 0;

@@ -78,7 +78,6 @@
 #include "libretro_pad_handler.h"
 #include "libretro_mouse_handler.h"
 #include "libretro_vfs.h"
-#include "libretro_ui_icons.h"
 #include "Loader/ISO.h"
 
 #include <clocale>
@@ -396,9 +395,51 @@ static std::string game_serial(const std::string& path);
 // 30 fps game of the list, whose VBlank runs at 120. 0: the VBlank Frequency.
 static u32 s_output_hz = 0;
 
+// Where the core keeps things under the frontend's system directory.
+//
+// Its config, caches and log go under <system>/parallel-ps3/ (see
+// g_libretro_config_dir in File.cpp). They are this core's own:
+// <system>/rpcs3/, where they were, is also where the RPCS3 core keeps its
+// config, caches and log, and the two cores cannot read each other's caches
+// (the RPCS3 core deletes this core's shader pack). The firmware, the
+// emulated drives - installed games, saves, trophies - and the disc keys
+// stay in <system>/rpcs3/, shared, so nothing is installed or copied twice.
+void libretro_use_system_dir(const std::string& dir)
+{
+    extern std::string g_libretro_config_dir;
+    g_libretro_config_dir = dir + "/parallel-ps3/";
+    fs::create_path(g_libretro_config_dir);
+
+    // What the user supplies stays put: disc keys in rpcs3/data/redump/
+    extern std::string g_libretro_data_dir;
+    g_libretro_data_dir = dir + "/rpcs3/data/";
+
+    // vfs.yml moved with the config. One that was edited where it used to be
+    // (to keep dev_hdd0 somewhere else, say) is taken over once.
+    if (!fs::is_file(cfg_vfs::get_path()))
+    {
+#ifdef _WIN32
+        const std::string old_vfs = dir + "/rpcs3/config/vfs.yml";
+#else
+        const std::string old_vfs = dir + "/rpcs3/vfs.yml";
+#endif
+        if (fs::is_file(old_vfs))
+        {
+            fs::create_path(fs::get_parent_dir(cfg_vfs::get_path()));
+            fs::copy_file(old_vfs, cfg_vfs::get_path(), false);
+        }
+    }
+}
+
 static std::string vblank_unlock_path()
 {
-    return (system_dir.empty() ? fs::get_config_dir() : system_dir + "/rpcs3/") + "vblank_unlock.txt";
+    if (system_dir.empty())
+        return fs::get_config_dir() + "vblank_unlock.txt";
+
+    // With the core's own files; where it used to be if it is only there
+    const std::string path = system_dir + "/parallel-ps3/vblank_unlock.txt";
+    const std::string old_path = system_dir + "/rpcs3/vblank_unlock.txt";
+    return !fs::is_file(path) && fs::is_file(old_path) ? old_path : path;
 }
 
 static void install_vblank_unlock()
@@ -1155,32 +1196,6 @@ static bool file_has_contents(const std::string &path, const void *data, std::si
     return true;
 }
 
-static void install_ui_icons()
-{
-    const std::string dir = fs::get_config_dir() + "Icons/ui/";
-    if (!fs::create_path(dir))
-    {
-        if (log_cb)
-            log_cb(RETRO_LOG_WARN, "RPCS3: could not create %s, in-game dialogs will lack their icons\n", dir.c_str());
-        return;
-    }
-
-    for (std::size_t i = 0; i < g_libretro_ui_icon_count; i++)
-    {
-        const libretro_ui_icon& icon = g_libretro_ui_icons[i];
-        const std::string path = dir + icon.name;
-
-        // The home menu's are in a subdirectory (home/32/).
-        if (const std::string parent = fs::get_parent_dir(path); !fs::is_dir(parent))
-            fs::create_path(parent);
-        if (file_has_contents(path, icon.data, icon.size))
-            continue;
-
-        if (!fs::write_file(path, fs::rewrite, icon.data, icon.size) && log_cb)
-            log_cb(RETRO_LOG_WARN, "RPCS3: could not write %s\n", path.c_str());
-    }
-}
-
 // RPCS3's per-game settings database (embed_config_database.cmake). The copy in
 // GuiConfigs is standalone's file, so a standalone pointed at the same folder
 // sees it too; it is written when it is missing or older than the one in the
@@ -1733,13 +1748,9 @@ void retro_init(void)
         system_dir = sys_dir;
     }
 
-    // RPCS3's config and cache directories go under <system>/rpcs3/ too, before
-    // anything below asks for them (see g_libretro_config_dir in File.cpp).
     if (!system_dir.empty())
     {
-        extern std::string g_libretro_config_dir;
-        g_libretro_config_dir = system_dir + "/rpcs3/";
-        fs::create_path(g_libretro_config_dir);
+        libretro_use_system_dir(system_dir);
     }
 
     // Get save directory
@@ -1756,9 +1767,9 @@ void retro_init(void)
         logs::listener::add(&g_libretro_logs);
         s_logs_hooked = true;
 
-        // In system/rpcs3, beside everything else the core keeps (NNshi); the
+        // In system/parallel-ps3, beside the core's config and caches; the
         // save directory only when there is no system directory
-        const std::string log_dir = !system_dir.empty() ? system_dir + "/rpcs3/" : (save_dir.empty() ? std::string() : save_dir + "/");
+        const std::string log_dir = !system_dir.empty() ? system_dir + "/parallel-ps3/" : (save_dir.empty() ? std::string() : save_dir + "/");
         if (!log_dir.empty())
             s_log_path = log_dir + "rpcs3_detailed.log";
 
@@ -2861,8 +2872,8 @@ bool retro_load_game(const struct retro_game_info* game)
     // dialogs ("install game data?", errors), save data lists, the on-screen
     // keyboard - into the picture, driven with the pad. Without it every one of
     // those calls failed at once, as there is no Qt dialog to fall back to
-    // (NNshi). It was off because its icons were missing, which the core now
-    // installs (install_ui_icons). The software present reads the picture back
+    // (NNshi). It was off because its icons were missing; they are in the
+    // core itself and read from there. The software present reads the picture back
     // before the overlays are drawn on the output, unless it records with them.
     g_cfg.misc.use_native_interface.set(true);
     g_cfg.video.record_with_overlays.set(true);
@@ -2886,7 +2897,6 @@ bool retro_load_game(const struct retro_game_info* game)
     const std::string config_path = fs::get_config_dir(true) + "config.yml";
     g_cfg.save(config_path);
 
-    install_ui_icons();
     install_config_database();
     install_patches();
 

@@ -96,7 +96,7 @@ The shader cache (`rsx::shaders_cache`) and RPCS3's pipeline cache help a warm r
 5. **The cache is never what removes a stutter.** Invariants 1 and 2 hold with nothing on disk. With caches on:
    - nothing reads or writes the disk on the RSX thread, the PPU/SPU threads or anything `retro_run` waits on;
    - what is new collects in memory and is written by a worker, or at shutdown;
-   - cache files live under `system/rpcs3/`;
+   - cache files live under `system/parallel-ps3/`;
    - a corrupt, rejected or mismatched file is a recoverable miss: start from an empty cache, never crash, never reuse wrong code.
 6. **Cache the right representation.** Recorded microcode and pipeline keys are portable recipes and survive a driver update; a `VkPipelineCache` blob is tied to its device, driver and version and is never reused on the strength of a portable key.
 7. **Stable identity.** Keys are compared byte for byte: zero the padding before hashing; clear the fields a pipeline does not read; audit every field through key construction, pipeline creation and dynamic-state emission before removing one; include the shader quality, the decompiler's options and the host configuration; never key on a pointer or a handle. A hash match needs an exact-key compare. Changing what a key or a cached entry means, even when its size stays the same, bumps the cache version in the same commit.
@@ -214,7 +214,7 @@ Not there yet, in the core's own glue. These are debts, not precedent:
 
 ## Testing
 
-- The core logs, at start, its version and the commit of this repository it was built from. Ask testers for RetroArch's log and, with the core's "Detailed Log" option turned on for that run, `system/rpcs3/rpcs3_detailed.log` (the emulator logs nothing without the option), and check which commit a log came from before drawing conclusions from it.
+- The core logs, at start, its version and the commit of this repository it was built from. Ask testers for RetroArch's log and, with the core's "Detailed Log" option turned on for that run, `system/parallel-ps3/rpcs3_detailed.log` (the emulator logs nothing without the option), and check which commit a log came from before drawing conclusions from it.
 - Compare with standalone RPCS3 at the same upstream build before calling something a core bug; when standalone fails the same way, it is upstream's.
 - Do the measuring and testing yourself rather than asking testers for numbers. Batch what needs a tester's hands into as few runs as possible, and say up front how many there are.
 - A GPU fix tried only on a software device (lavapipe, llvmpipe) or under wine is unverified on real hardware until someone runs it there; say so, and check the other renderer (Vulkan, OpenGL, software hand-over) for regressions before delivering. For a live run use the latest RetroArch nightly or RetroArch built from source, never an old distro package.
@@ -227,7 +227,7 @@ Not there yet, in the core's own glue. These are debts, not precedent:
 ## Measuring honestly
 
 - **Clean runs.** Time on an idle machine, with nothing else building and no other emulator running, alternating parent and candidate (ABBA) with reverse-order repeats. Timing runs take no screenshots, picture hashes, readbacks or GPU query polling; picture checks are separate runs. Report medians, p95, p99 and max with frame numbers, never a single run and never a best of several.
-- **Record the controls.** Revisions, driver, GPU, OS, the extensions actually enabled, compiler flags, cache state and the core options go with every result. Use private copies of `system/rpcs3/`; never empty a user's caches or replace an installed core to make a cold run.
+- **Record the controls.** Revisions, driver, GPU, OS, the extensions actually enabled, compiler flags, cache state and the core options go with every result. Use private copies of `system/parallel-ps3/` and `system/rpcs3/`; never empty a user's caches or replace an installed core to make a cold run.
 - **Explain hitches with counters.** Don't diagnose a hitch by how it looks. A long frame is a compile only when the compile counters put one at that frame; PPU/SPU recompilation, readbacks, the game's own CPU work, disc reads and page faults look the same.
 - **Counters cost nothing in release builds.** They exist only in an opt-in build: one atomic add where the event happens, no logging, no wall clocks, no extra work.
 - **Keep work and time apart.** Fewer compiles, fewer bytes copied and fewer allocations are work results. They are not frame-time results until timing shows it.
@@ -245,7 +245,7 @@ Not there yet, in the core's own glue. These are debts, not precedent:
 
 Each of these was a bug in at least one of the other cores (cemu, dolphin, flycast, pcsx2, rpcs3, shadps4, vita3k, xenia, xemu). Check new code against them before asking testers.
 
-- Files: everything the core writes goes under `system/rpcs3/` (or saves/); nothing next to the RetroArch executable. The emulator's own log goes there too, and its warnings and errors also go to RetroArch's log.
+- Files: the core's own config, caches and log go under `system/parallel-ps3/`; the firmware and the emulated drives (installed games, saves) under `system/rpcs3/`, which the RPCS3 core shares; nothing else outside saves/, and nothing next to the RetroArch executable. The emulator's own log goes there too, and its warnings and errors also go to RetroArch's log.
 - No window: the standalone's UI (on-screen keyboard, notifications, message boxes, profile dialogs) has no window in a core. Every path that reaches for the window or its UI thread needs a headless branch that answers the way the user most likely would.
 - Unload: never end the process (no exit, no TerminateTitle-style shutdown). Stop and join every thread in upstream's order, and never wait without a timeout on a fence, event or thread the frontend has to drive. No `vkQueueWaitIdle`/`vkDeviceWaitIdle` while RetroArch holds its queue lock.
 - Libraries that pin themselves (statically linked OpenSSL and the like) keep the core loaded after `dlclose`; build them so they do not. No `thread_local` objects with destructors, and no static TLS, in what the frontend loads with `dlopen`.
