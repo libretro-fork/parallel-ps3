@@ -142,10 +142,10 @@ std::string getCodeGenDataSectionName(CGDataSectKind CGSK,
 }
 
 std::unique_ptr<CodeGenData> CodeGenData::Instance = nullptr;
-std::once_flag CodeGenData::OnceFlag;
+llvm::once_flag CodeGenData::OnceFlag;
 
 CodeGenData &CodeGenData::getInstance() {
-  std::call_once(CodeGenData::OnceFlag, []() {
+  llvm::call_once(CodeGenData::OnceFlag, []() {
     Instance = std::unique_ptr<CodeGenData>(new CodeGenData());
 
     if (CodeGenDataGenerate || CodeGenDataThinLTOTwoRounds)

@@ -147,7 +147,7 @@ void StableFunctionMap::deserializeLazyLoadingEntry(
     HashFuncsMapType::iterator It) const {
   assert(isLazilyLoaded() && "Cannot deserialize non-lazily-loaded map");
   auto &[Hash, Storage] = *It;
-  std::call_once(Storage.LazyLoadFlag,
+  llvm::call_once(Storage.LazyLoadFlag,
                  [this, HashArg = Hash, &StorageArg = Storage]() {
                    for (auto Offset : StorageArg.Offsets)
                      StableFunctionMapRecord::deserializeEntry(

@@ -13,7 +13,6 @@
 #include "llvm/ADT/StringRef.h"
 #include "llvm/Support/Compiler.h"
 #include "llvm/Support/DataTypes.h"
-#include "llvm/Support/Mutex.h"
 #include <cassert>
 #include <string>
 #include <vector>
@@ -217,7 +216,7 @@ class TimerGroup {
 
   friend class TimerGlobals;
   explicit TimerGroup(StringRef Name, StringRef Description,
-                      sys::SmartMutex<true> &lock, bool PrintOnExit);
+                      bool PrintOnExit, int);
 
 public:
   LLVM_ABI explicit TimerGroup(StringRef Name, StringRef Description,

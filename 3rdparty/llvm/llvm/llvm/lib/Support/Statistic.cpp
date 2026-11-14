@@ -30,7 +30,6 @@
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/Format.h"
 #include "llvm/Support/ManagedStatic.h"
-#include "llvm/Support/Mutex.h"
 #include "llvm/Support/Timer.h"
 #include "llvm/Support/YAMLTraits.h"
 #include "llvm/Support/raw_ostream.h"
@@ -91,31 +90,22 @@ public:
 } // end anonymous namespace
 
 static ManagedStatic<StatisticInfo> StatInfo;
-static ManagedStatic<sys::SmartMutex<true> > StatLock;
+// libretro: no lock. Statistics are a report a tool asks for (-stats) and
+// are compiled out of a release build of the library; compiled in, the
+// report and the registrations are one thread's.
 
 /// RegisterStatistic - The first time a statistic is bumped, this method is
 /// called.
 void TrackingStatistic::RegisterStatistic() {
   // If stats are enabled, inform StatInfo that this statistic should be
   // printed.
-  // llvm_shutdown calls destructors while holding the ManagedStatic mutex.
-  // These destructors end up calling PrintStatistics, which takes StatLock.
-  // Since dereferencing StatInfo and StatLock can require taking the
-  // ManagedStatic mutex, doing so with StatLock held would lead to a lock
-  // order inversion. To avoid that, we dereference the ManagedStatics first,
-  // and only take StatLock afterwards.
   if (!Initialized.load(std::memory_order_relaxed)) {
-    sys::SmartMutex<true> &Lock = *StatLock;
     StatisticInfo &SI = *StatInfo;
-    sys::SmartScopedLock<true> Writer(Lock);
-    // Check Initialized again after acquiring the lock.
-    if (Initialized.load(std::memory_order_relaxed))
+    // Registered once: whoever sets the flag does it
+    if (Initialized.exchange(true, std::memory_order_acq_rel))
       return;
     if (EnableStats || Enabled)
       SI.addStatistic(this);
-
-    // Remember we have been registered.
-    Initialized.store(true, std::memory_order_release);
   }
 }
 
@@ -152,7 +142,6 @@ void StatisticInfo::sort() {
 }
 
 void StatisticInfo::reset() {
-  sys::SmartScopedLock<true> Writer(*StatLock);
 
   // Tell each statistic that it isn't registered so it has to register
   // again. We're holding the lock so it won't be able to do so until we're
@@ -201,7 +190,6 @@ void llvm::PrintStatistics(raw_ostream &OS) {
 }
 
 void llvm::PrintStatisticsJSON(raw_ostream &OS) {
-  sys::SmartScopedLock<true> Reader(*StatLock);
   StatisticInfo &Stats = *StatInfo;
 
   Stats.sort();
@@ -228,7 +216,6 @@ void llvm::PrintStatisticsJSON(raw_ostream &OS) {
 
 void llvm::PrintStatistics() {
 #if LLVM_ENABLE_STATS
-  sys::SmartScopedLock<true> Reader(*StatLock);
   StatisticInfo &Stats = *StatInfo;
 
   // Statistics not enabled?
@@ -255,7 +242,6 @@ void llvm::PrintStatistics() {
 }
 
 std::vector<std::pair<StringRef, uint64_t>> llvm::GetStatistics() {
-  sys::SmartScopedLock<true> Reader(*StatLock);
   std::vector<std::pair<StringRef, uint64_t>> ReturnStats;
 
   for (const auto &Stat : StatInfo->statistics())

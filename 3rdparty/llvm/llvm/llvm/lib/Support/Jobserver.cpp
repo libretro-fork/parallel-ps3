@@ -17,7 +17,7 @@
 
 #include <atomic>
 #include <memory>
-#include <mutex>
+#include "llvm/Support/Threading.h"
 #include <new>
 
 #define DEBUG_TYPE "jobserver"
@@ -138,7 +138,7 @@ Expected<JobserverConfig> parseNativeMakeFlags(StringRef MakeFlags) {
   return Config;
 }
 
-std::once_flag GJobserverOnceFlag;
+llvm::once_flag GJobserverOnceFlag;
 JobserverClient *GJobserver = nullptr;
 
 } // namespace
@@ -192,13 +192,13 @@ uint8_t JobSlot::getExplicitValue() const {
 }
 
 /// This is the main entry point for acquiring a jobserver client. It uses a
-/// std::call_once to ensure the singleton `GJobserver` instance is created
+/// llvm::call_once to ensure the singleton `GJobserver` instance is created
 /// safely in a multi-threaded environment. On first call, it reads the
 /// `MAKEFLAGS` environment variable, parses it, and attempts to construct and
 /// initialize a `JobserverClientImpl`. If successful, the global instance is
 /// stored in `GJobserver`. Subsequent calls will return the existing instance.
 JobserverClient *JobserverClient::getInstance() {
-  std::call_once(GJobserverOnceFlag, []() {
+  llvm::call_once(GJobserverOnceFlag, []() {
     LLVM_DEBUG(
         dbgs()
         << "JobserverClient::getInstance() called for the first time.\n");
@@ -247,13 +247,13 @@ JobserverClient *JobserverClient::getInstance() {
 }
 
 /// For testing purposes only. This function resets the singleton instance by
-/// destroying the existing client and re-initializing the `std::once_flag`.
+/// destroying the existing client and re-initializing the once-flag.
 /// This allows tests to simulate the first-time initialization of the
 /// jobserver client multiple times.
 void JobserverClient::resetForTesting() {
   delete GJobserver;
   GJobserver = nullptr;
-  // Re-construct the std::once_flag in place to reset the singleton state.
-  new (&GJobserverOnceFlag) std::once_flag();
+  // Re-construct the once-flag in place to reset the singleton state.
+  new (&GJobserverOnceFlag) llvm::once_flag();
 }
 } // namespace llvm

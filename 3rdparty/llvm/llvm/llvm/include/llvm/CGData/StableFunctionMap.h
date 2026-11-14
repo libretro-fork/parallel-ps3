@@ -21,7 +21,7 @@
 #include "llvm/IR/StructuralHash.h"
 #include "llvm/Support/Compiler.h"
 #include "llvm/Support/MemoryBuffer.h"
-#include <mutex>
+#include "llvm/Support/Threading.h"
 #include <unordered_map>
 
 namespace llvm {
@@ -94,7 +94,7 @@ struct StableFunctionMap {
     /// The offsets are only populated when loading the map lazily, otherwise
     /// it is empty.
     SmallVector<uint64_t> Offsets;
-    std::once_flag LazyLoadFlag;
+    llvm::once_flag LazyLoadFlag;
     friend struct StableFunctionMap;
     friend struct StableFunctionMapRecord;
   };

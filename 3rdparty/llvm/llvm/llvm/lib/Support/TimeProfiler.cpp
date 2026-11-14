@@ -23,7 +23,6 @@
 #include <cassert>
 #include <chrono>
 #include <memory>
-#include <mutex>
 #include <string>
 #include <vector>
 
@@ -40,7 +39,9 @@ using std::chrono::time_point;
 using std::chrono::time_point_cast;
 
 struct TimeTraceProfilerInstances {
-  std::mutex Lock;
+  // libretro: no lock. The time trace is a report a tool asks for
+  // (-ftime-trace) and is never started in a library; started, its threads
+  // finish before the one that writes it does.
   std::vector<TimeTraceProfiler *> List;
 };
 
@@ -211,9 +212,7 @@ struct llvm::TimeTraceProfiler {
   // Write events from this TimeTraceProfilerInstance and
   // ThreadTimeTraceProfilerInstances.
   void write(raw_pwrite_stream &OS) {
-    // Acquire Mutex as reading ThreadTimeTraceProfilerInstances.
     auto &Instances = getTimeTraceProfilerInstances();
-    std::lock_guard<std::mutex> Lock(Instances.Lock);
     assert(Stack.empty() &&
            "All profiler sections should be ended when calling write");
     assert(llvm::all_of(Instances.List,
@@ -405,7 +404,6 @@ void llvm::timeTraceProfilerCleanup() {
   TimeTraceProfilerInstance = nullptr;
 
   auto &Instances = getTimeTraceProfilerInstances();
-  std::lock_guard<std::mutex> Lock(Instances.Lock);
   for (auto *TTP : Instances.List)
     delete TTP;
   Instances.List.clear();
@@ -415,7 +413,6 @@ void llvm::timeTraceProfilerCleanup() {
 // This doesn't remove the instance, just moves the pointer to global vector.
 void llvm::timeTraceProfilerFinishThread() {
   auto &Instances = getTimeTraceProfilerInstances();
-  std::lock_guard<std::mutex> Lock(Instances.Lock);
   Instances.List.push_back(TimeTraceProfilerInstance);
   TimeTraceProfilerInstance = nullptr;
 }

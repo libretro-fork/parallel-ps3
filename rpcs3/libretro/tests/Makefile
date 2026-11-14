@@ -539,11 +539,16 @@ test_dma_views_tsan: $(DMA_VIEWS_DEPS)
 # by direct retro_atomic calls, a directory at a time, and none comes back
 # Files of LLVM's (3rdparty/llvm) with no lock left: its locks are being
 # taken out for retro_atomic, the ones recompiler threads share first
-LLVM_LOCK_FREE := lib/IR/PassRegistry.cpp include/llvm/PassRegistry.h lib/Support/ManagedStatic.cpp include/llvm/Support/ManagedStatic.h \
-	lib/Support/DynamicLibrary.cpp lib/Support/Unix/DynamicLibrary.inc lib/Support/Windows/DynamicLibrary.inc lib/Support/ErrorHandling.cpp \
-	include/llvm/Support/Threading.h \
-	lib/ExecutionEngine/ExecutionEngine.cpp include/llvm/ExecutionEngine/ExecutionEngine.h lib/ExecutionEngine/MCJIT/MCJIT.cpp lib/ExecutionEngine/MCJIT/MCJIT.h \
-	lib/ExecutionEngine/RuntimeDyld/RuntimeDyld.cpp lib/ExecutionEngine/RuntimeDyld/RuntimeDyldImpl.h
+# The sources of LLVM's libraries that llvm.mk has built (after the lists
+# for its build tools, which are not part of the core)
+LLVM_BUILT := ${shell awk '/^LLVM_LIB_COMMON_SRCS/{on=1} on && /LLVM_SRC\)\/lib\// && / \\$$/{sub(/^.*LLVM_SRC\)\//,""); sub(/ \\$$/,""); print}' ../make/llvm/llvm.mk}
+LLVM_LOCK_WORDS := std::mutex|sys::Mutex|SmartMutex|recursive_mutex|RWMutex|lock_guard|unique_lock|ScopedLock|ScopedReader|ScopedWriter|condition_variable|shared_mutex|scoped_lock|std::call_once\(|std::once_flag [A-Za-z_:]+;|std::promise|std::future|pthread_mutex|<mutex>|CRITICAL_SECTION
+# Beside every library source llvm.mk builds: the headers and the parts
+# included into sources that were changed for it
+LLVM_LOCK_FREE := include/llvm/PassRegistry.h include/llvm/Support/ManagedStatic.h include/llvm/Support/Threading.h \
+	lib/Support/Unix/DynamicLibrary.inc lib/Support/Windows/DynamicLibrary.inc \
+	include/llvm/ExecutionEngine/ExecutionEngine.h lib/ExecutionEngine/MCJIT/MCJIT.h lib/ExecutionEngine/RuntimeDyld/RuntimeDyldImpl.h \
+	include/llvm/Support/Timer.h include/llvm/CGData/CodeGenData.h include/llvm/CGData/StableFunctionMap.h lib/Support/Unix/Process.inc
 
 ATOMIC_T_FREE := ../../Crypto ../../Loader ../../Emu/Audio ../../Emu/Io ../../Input
 
@@ -733,8 +738,9 @@ check: all
 	@if grep -n "reader_lock lock(lv2_obj::g_mutex)" ../../Emu/Cell/lv2/sys_ppu_thread.cpp || awk '/^bool lv2_obj::is_scheduler_ready/{f=1} f&&/g_mutex/{bad=1} f&&/^}/{exit} END{exit !bad}' ../../Emu/Cell/lv2/lv2.cpp; then echo "scheduler: reading a priority, or asking whether the scheduler is ready, takes the scheduler's lock again (CHANGELOG)"; exit 1; else echo "scheduler: readers take no lock"; fi
 	@if grep -rn --include=*.cpp --include=*.h --include=*.hpp "atomic_t<\|atomic_be_t<\|atomic_le_t<\|util/atomic.hpp" $(ATOMIC_T_FREE); then echo "atomic_t: back in a directory that was moved to retro_atomic - new code calls retro_atomic directly (AGENTS.md)"; exit 1; else echo "atomic_t: gone from $(words $(ATOMIC_T_FREE)) directories"; fi
 	@bad=0; for s in $$(grep -oh "g_cfg\.[a-z_]*\.[a-z_0-9]*" ../../Emu/Cell/SPULLVMRecompiler.cpp ../../Emu/Cell/SPUCommonRecompiler.cpp ../../Emu/CPU/CPUTranslator.cpp ../../Emu/CPU/CPUTranslator.h | sort -u); do grep -q "put($$s" ../../Emu/Cell/SPULLVMRecompiler.cpp || { echo "SPU notes: $$s is read by the recompiler and is not part of a note's name (note_name in SPULLVMRecompiler.cpp): an object noted with one value of it would be loaded for another"; bad=1; }; done; if [ $$bad = 1 ]; then exit 1; else echo "SPU notes: named by every setting the recompiler reads"; fi
-	@if grep -nE "std::mutex|sys::Mutex|SmartMutex|recursive_mutex|RWMutex|lock_guard|unique_lock|ScopedLock|ScopedReader|ScopedWriter|condition_variable|shared_mutex|scoped_lock|std::call_once\(|pthread_mutex|<mutex>" $(addprefix ../../../3rdparty/llvm/llvm/llvm/,$(LLVM_LOCK_FREE)); then echo "llvm: a lock is back in a file of LLVM's that was made lock-free - recompiler threads share these (CHANGELOG)"; exit 1; else echo "llvm: no lock in $(words $(LLVM_LOCK_FREE)) of its files"; fi
-	@bad=0; for f in $$(grep -v "^#" ../make/llvm/unlinked.txt); do if grep -qF "/$$f " ../make/llvm/llvm.mk || grep -qF "/$$f)" ../make/llvm/llvm.mk; then echo "llvm: $$f is in unlinked.txt and is built all the same (llvm.mk): no link takes anything from it - take it out of one or the other"; bad=1; fi; done; if [ $$bad = 1 ]; then exit 1; else echo "llvm: $$(grep -vc "^#" ../make/llvm/unlinked.txt) files nothing links are not built"; fi
+	@if grep -nE "$(LLVM_LOCK_WORDS)" $(addprefix ../../../3rdparty/llvm/llvm/llvm/,$(LLVM_BUILT) $(LLVM_LOCK_FREE)); then echo "llvm: a lock is back in a file of LLVM's that the core builds - none of them has one (CHANGELOG)"; exit 1; else echo "llvm: no lock in the $(words $(LLVM_BUILT)) files of its libraries that are built"; fi
+	@if [ -f ../../../libllvm.a ] && command -v nm >/dev/null 2>&1; then if nm -A -u ../../../libllvm.a 2>/dev/null | grep -E "pthread_mutex|pthread_rwlock|pthread_cond|call_once|__once_|pthread_once|_ZNSt5mutex|_ZNSt15recursive|_ZNSt18condition|CriticalSection|SRWLock"; then echo "llvm: an object of LLVM's calls a lock, a condition or a once-flag of the system's"; exit 1; else echo "llvm: no object in libllvm.a calls a lock of the system's"; fi; fi
+	@bad=0; for f in $(filter $(shell grep -v "^#" ../make/llvm/unlinked.txt),$(LLVM_BUILT)); do echo "llvm: $$f is in unlinked.txt and is built all the same (llvm.mk): no link takes anything from it - take it out of one or the other"; bad=1; done; if [ $$bad = 1 ]; then exit 1; else echo "llvm: $$(grep -vc "^#" ../make/llvm/unlinked.txt) files nothing links are not built"; fi
 	@if grep -q "^DEPFLAGS := .*-MD)" ../../../Makefile; then echo "llvm: the core's files follow its headers"; else echo "Makefile: the core's files must be made again when a header of the tree's LLVM changes (DEPFLAGS, -MD): its classes are edited, and a core file compiled against one as it was is linked to it as it is"; exit 1; fi
 	@if grep -n "Passes/PassBuilder.h\|PassBuilder pb\|PassBuilder(" ../../Emu/Cell/PPUThread.cpp ../../Emu/Cell/SPULLVMRecompiler.cpp ../../../Utilities/JITLLVM.cpp; then echo "llvm: PassBuilder is used again - it brings every pass LLVM has into the core; register what a pass needs in jit_register_analyses (CHANGELOG)"; exit 1; else echo "llvm: only the analyses the recompilers use"; fi
 	@# Nor do the mice: no lock in the handler, none taken by those that read them

@@ -23,7 +23,6 @@
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/FormatVariadic.h"
 #include "llvm/Support/ManagedStatic.h"
-#include "llvm/Support/Mutex.h"
 #include "llvm/Support/TypeName.h"
 #include "llvm/Support/raw_ostream.h"
 #include <string>
@@ -85,7 +84,7 @@ private:
   Timer *newPassTimer(StringRef PassID, StringRef PassDesc);
 };
 
-static ManagedStatic<sys::SmartMutex<true>> TimingInfoMutex;
+// libretro: no lock; see Timer.cpp
 
 void PassTimingInfo::init() {
   if (TheTimeInfo || !TimePassesIsEnabled)
@@ -122,7 +121,6 @@ Timer *PassTimingInfo::getPassTimer(Pass *P, PassInstanceID Pass) {
     return nullptr;
 
   init();
-  sys::SmartScopedLock<true> Lock(*TimingInfoMutex);
   std::unique_ptr<Timer> &T = TimingData[Pass];
 
   if (!T) {

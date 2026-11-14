@@ -21,7 +21,7 @@
 #include "llvm/Support/FileSystem.h"
 #include "llvm/Support/Format.h"
 #include "llvm/Support/ManagedStatic.h"
-#include "llvm/Support/Mutex.h"
+#include "llvm/Support/Threading.h"
 #include "llvm/Support/Process.h"
 #include "llvm/Support/Signposts.h"
 #include "llvm/Support/raw_ostream.h"
@@ -54,7 +54,10 @@ static bool trackSpace();
 static bool sortTimers();
 [[maybe_unused]]
 static SignpostEmitter &signposts();
-static sys::SmartMutex<true> &timerLock();
+// libretro: no lock. Timers are a report a tool asks for (-time-passes and
+// the like) and are off in a library; turned on, they are one thread's.
+// What made the lock is kept for what else it did: it makes the globals.
+static void timerGlobals();
 static TimerGroup &defaultTimerGroup();
 static Name2PairMap &namedGroupedTimers();
 static bool isTimerGlobalsConstructed();
@@ -220,7 +223,6 @@ public:
 
   Timer &get(StringRef Name, StringRef Description, StringRef GroupName,
              StringRef GroupDescription) {
-    sys::SmartScopedLock<true> L(timerLock());
 
     std::pair<TimerGroup *, Name2TimerMap> &GroupEntry =
         getGroupEntry(GroupName, GroupDescription);
@@ -231,7 +233,6 @@ public:
   }
 
   TimerGroup &getTimerGroup(StringRef GroupName, StringRef GroupDescription) {
-    sys::SmartScopedLock<true> L(timerLock());
     return *getGroupEntry(GroupName, GroupDescription).first;
   }
 
@@ -267,16 +268,15 @@ TimerGroup &NamedRegionTimer::getNamedTimerGroup(StringRef GroupName,
 //===----------------------------------------------------------------------===//
 
 /// This is the global list of TimerGroups, maintained by the TimerGroup
-/// ctor/dtor and is protected by the timerLock lock.
+/// ctor/dtor.
 static TimerGroup *TimerGroupList = nullptr;
 
 TimerGroup::TimerGroup(StringRef Name, StringRef Description,
-                       sys::SmartMutex<true> &lock, bool PrintOnExit)
+                       bool PrintOnExit, int)
     : Name(Name.begin(), Name.end()),
       Description(Description.begin(), Description.end()),
       PrintOnExit(PrintOnExit) {
   // Add the group to TimerGroupList.
-  sys::SmartScopedLock<true> L(lock);
   if (TimerGroupList)
     TimerGroupList->Prev = &Next;
   Next = TimerGroupList;
@@ -285,7 +285,7 @@ TimerGroup::TimerGroup(StringRef Name, StringRef Description,
 }
 
 TimerGroup::TimerGroup(StringRef Name, StringRef Description, bool PrintOnExit)
-    : TimerGroup(Name, Description, timerLock(), PrintOnExit) {}
+    : TimerGroup(Name, Description, PrintOnExit, (timerGlobals(), 0)) {}
 
 TimerGroup::TimerGroup(StringRef Name, StringRef Description,
                        const StringMap<TimeRecord> &Records, bool PrintOnExit)
@@ -314,22 +314,20 @@ TimerGroup::~TimerGroup() {
       Next->Prev = Prev;
   };
 
-  // TimerGlobals is always created implicity, through a call to timerLock(),
-  // when a TimeGroup is created. On CRT shutdown, the TimerGlobals instance
-  // might have been destroyed already. Avoid re-creating it if calling
-  // timerLock().
+  // TimerGlobals is always created implicity, through a call to
+  // timerGlobals(), when a TimeGroup is created. On CRT shutdown, the
+  // TimerGlobals instance might have been destroyed already. Avoid
+  // re-creating it.
   if (!isTimerGlobalsConstructed()) {
     unlink();
     return;
   }
 
   // Remove the group from the TimerGroupList.
-  sys::SmartScopedLock<true> L(timerLock());
   unlink();
 }
 
 void TimerGroup::removeTimer(Timer &T) {
-  sys::SmartScopedLock<true> L(timerLock());
 
   // If the timer was started, move its data to TimersToPrint.
   if (T.hasTriggered())
@@ -344,7 +342,6 @@ void TimerGroup::removeTimer(Timer &T) {
 }
 
 void TimerGroup::addTimer(Timer &T) {
-  sys::SmartScopedLock<true> L(timerLock());
 
   // Add the timer to our list.
   if (FirstTimer)
@@ -425,8 +422,6 @@ void TimerGroup::prepareToPrintList(bool ResetTime) {
 
 void TimerGroup::print(raw_ostream &OS, bool ResetAfterPrint) {
   {
-    // After preparing the timers we can free the lock
-    sys::SmartScopedLock<true> L(timerLock());
     prepareToPrintList(ResetAfterPrint);
   }
 
@@ -436,20 +431,17 @@ void TimerGroup::print(raw_ostream &OS, bool ResetAfterPrint) {
 }
 
 void TimerGroup::clear() {
-  sys::SmartScopedLock<true> L(timerLock());
   for (Timer *T = FirstTimer; T; T = T->Next)
     T->clear();
 }
 
 void TimerGroup::printAll(raw_ostream &OS) {
-  sys::SmartScopedLock<true> L(timerLock());
 
   for (TimerGroup *TG = TimerGroupList; TG; TG = TG->Next)
     TG->print(OS);
 }
 
 void TimerGroup::clearAll() {
-  sys::SmartScopedLock<true> L(timerLock());
   for (TimerGroup *TG = TimerGroupList; TG; TG = TG->Next)
     TG->clear();
 }
@@ -462,7 +454,6 @@ void TimerGroup::printJSONValue(raw_ostream &OS, const PrintRecord &R,
 }
 
 const char *TimerGroup::printJSONValues(raw_ostream &OS, const char *delim) {
-  sys::SmartScopedLock<true> L(timerLock());
 
   prepareToPrintList(false);
   for (const PrintRecord &R : TimersToPrint) {
@@ -489,7 +480,6 @@ const char *TimerGroup::printJSONValues(raw_ostream &OS, const char *delim) {
 }
 
 const char *TimerGroup::printAllJSONValues(raw_ostream &OS, const char *delim) {
-  sys::SmartScopedLock<true> L(timerLock());
   for (TimerGroup *TG = TimerGroupList; TG; TG = TG->Next)
     delim = TG->printJSONValues(OS, delim);
   return delim;
@@ -530,19 +520,18 @@ public:
                " time order"),
       cl::init(true), cl::Hidden};
 
-  sys::SmartMutex<true> TimerLock;
   TimerGroup DefaultTimerGroup{"misc", "Miscellaneous Ungrouped Timers",
-                               TimerLock, /*PrintOnExit=*/true};
+                               /*PrintOnExit=*/true, 0};
   SignpostEmitter Signposts;
 
   // Order of these members and initialization below is important. For example
   // the defaultTimerGroup uses the timerLock. Most of these also depend on the
   // options above.
-  std::once_flag InitDeferredFlag;
+  llvm::once_flag InitDeferredFlag;
   std::optional<Name2PairMap> NamedGroupedTimersPtr;
 
   TimerGlobals &initDeferred() {
-    std::call_once(InitDeferredFlag,
+    llvm::call_once(InitDeferredFlag,
                    [this]() { NamedGroupedTimersPtr.emplace(); });
     return *this;
   }
@@ -556,9 +545,7 @@ static std::string &libSupportInfoOutputFilename() {
 static bool trackSpace() { return ManagedTimerGlobals->TrackSpace; }
 static bool sortTimers() { return ManagedTimerGlobals->SortTimers; }
 static SignpostEmitter &signposts() { return ManagedTimerGlobals->Signposts; }
-static sys::SmartMutex<true> &timerLock() {
-  return ManagedTimerGlobals->TimerLock;
-}
+static void timerGlobals() { (void)*ManagedTimerGlobals; }
 static TimerGroup &defaultTimerGroup() {
   return ManagedTimerGlobals->DefaultTimerGroup;
 }

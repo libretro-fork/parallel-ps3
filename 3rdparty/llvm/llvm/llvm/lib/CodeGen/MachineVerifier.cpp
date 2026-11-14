@@ -80,7 +80,6 @@
 #include "llvm/Support/ManagedStatic.h"
 #include "llvm/Support/MathExtras.h"
 #include "llvm/Support/ModRef.h"
-#include "llvm/Support/Mutex.h"
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/Target/TargetMachine.h"
 #include <algorithm>
@@ -95,9 +94,8 @@ using namespace llvm;
 
 namespace {
 
-/// Used the by the ReportedErrors class to guarantee only one error is reported
-/// at one time.
-static ManagedStatic<sys::SmartMutex<true>> ReportedErrorsLock;
+// libretro: no lock around the reports of errors. Two threads verifying at
+// once write their reports as they come.
 
 struct MachineVerifier {
   MachineVerifier(MachineFunctionAnalysisManager &MFAM, const char *b,
@@ -257,19 +255,11 @@ struct MachineVerifier {
       if (AbortOnError)
         report_fatal_error("Found " + Twine(NumReported) +
                            " machine code errors.");
-      // Since we haven't aborted, release the lock to allow other threads to
-      // report errors.
-      ReportedErrorsLock->unlock();
     }
 
     /// Increment the number of reported errors.
     /// \returns true if this is the first reported error.
     bool increment() {
-      // If this is the first error this thread has encountered, grab the lock
-      // to prevent other threads from reporting errors at the same time.
-      // Otherwise we assume we already have the lock.
-      if (!hasError())
-        ReportedErrorsLock->lock();
       ++NumReported;
       return NumReported == 1;
     }

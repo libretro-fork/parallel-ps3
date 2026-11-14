@@ -14,7 +14,6 @@
 #include "llvm/Support/Endian.h"
 #include "llvm/Support/FileSystem.h"
 #include "llvm/Support/MemoryBuffer.h"
-#include "llvm/Support/Mutex.h"
 #include "llvm/Support/Process.h"
 #include "llvm/Support/ScopedPrinter.h"
 #include "llvm/Support/ToolOutputFile.h"
@@ -77,11 +76,11 @@ bool CodeGenCoverage::parse(MemoryBuffer &Buffer, StringRef BackendName) {
 bool CodeGenCoverage::emit(StringRef CoveragePrefix,
                            StringRef BackendName) const {
   if (!CoveragePrefix.empty() && !RuleCoverage.empty()) {
-    static sys::SmartMutex<true> OutputMutex;
-    sys::SmartScopedLock<true> Lock(OutputMutex);
-
-    // We can handle locking within a process easily enough but we don't want to
-    // manage it between multiple processes. Use the process ID to ensure no
+    // libretro: no lock around the file. Coverage of the instruction
+    // selector's rules is asked for by a tool (-gisel-coverage-file) and is
+    // one thread's.
+    //
+    // Use the process ID to ensure no
     // more than one process is ever writing to the same file at the same time.
     std::string Pid = llvm::to_string(sys::Process::getProcessId());
 

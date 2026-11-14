@@ -26,7 +26,7 @@
 #include "llvm/Support/Compiler.h"
 #include "llvm/Support/ErrorHandling.h"
 #include "llvm/TargetParser/Triple.h"
-#include <mutex>
+#include "llvm/Support/Threading.h"
 
 namespace llvm {
 
@@ -124,7 +124,7 @@ class CodeGenData {
   /// Therefore, this can be initialized once, and can be used across modules
   /// instead of constructing the same one for each codegen backend.
   static std::unique_ptr<CodeGenData> Instance;
-  static std::once_flag OnceFlag;
+  static llvm::once_flag OnceFlag;
 
   CodeGenData() = default;
 

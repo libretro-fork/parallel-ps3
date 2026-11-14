@@ -6,6 +6,10 @@
 # that is where what differs by system is. A link that asks for one of
 # these says which: take its line out of here and out of llvm.mk comes back
 # with gen.py - or add the file to llvm.mk's list by hand.
+#
+# Also here, whatever the directory: files that had locks in them and that
+# nothing refers to since the cuts in LLVM's sources (CHANGELOG) - the
+# DWARF and profile readers, crash recovery, the thread pool and the like.
 lib/Analysis/AliasAnalysisEvaluator.cpp
 lib/Analysis/Analysis.cpp
 lib/Analysis/CFGSCCPrinter.cpp
@@ -66,8 +70,6 @@ lib/Bitcode/Reader/BitcodeAnalyzer.cpp
 lib/Bitcode/Writer/BitWriter.cpp
 lib/Bitcode/Writer/BitcodeWriterPass.cpp
 lib/CodeGen/AsmPrinter/ErlangGCPrinter.cpp
-lib/CodeGen/AsmPrinter/ErlangGCPrinter.cpp
-lib/CodeGen/AsmPrinter/OcamlGCPrinter.cpp
 lib/CodeGen/AsmPrinter/OcamlGCPrinter.cpp
 lib/CodeGen/CommandFlags.cpp
 lib/CodeGen/IntrinsicLowering.cpp
@@ -102,7 +104,36 @@ lib/DebugInfo/CodeView/SymbolSerializer.cpp
 lib/DebugInfo/CodeView/TypeDumpVisitor.cpp
 lib/DebugInfo/CodeView/TypeRecordHelpers.cpp
 lib/DebugInfo/CodeView/TypeStreamMerger.cpp
+lib/DebugInfo/DWARF/DWARFAbbreviationDeclaration.cpp
+lib/DebugInfo/DWARF/DWARFAcceleratorTable.cpp
+lib/DebugInfo/DWARF/DWARFAddressRange.cpp
+lib/DebugInfo/DWARF/DWARFCFIPrinter.cpp
+lib/DebugInfo/DWARF/DWARFCompileUnit.cpp
+lib/DebugInfo/DWARF/DWARFContext.cpp
+lib/DebugInfo/DWARF/DWARFDebugAbbrev.cpp
+lib/DebugInfo/DWARF/DWARFDebugAddr.cpp
+lib/DebugInfo/DWARF/DWARFDebugArangeSet.cpp
+lib/DebugInfo/DWARF/DWARFDebugAranges.cpp
+lib/DebugInfo/DWARF/DWARFDebugFrame.cpp
+lib/DebugInfo/DWARF/DWARFDebugInfoEntry.cpp
+lib/DebugInfo/DWARF/DWARFDebugLine.cpp
+lib/DebugInfo/DWARF/DWARFDebugLoc.cpp
+lib/DebugInfo/DWARF/DWARFDebugMacro.cpp
+lib/DebugInfo/DWARF/DWARFDebugPubTable.cpp
+lib/DebugInfo/DWARF/DWARFDebugRangeList.cpp
+lib/DebugInfo/DWARF/DWARFDebugRnglists.cpp
+lib/DebugInfo/DWARF/DWARFDie.cpp
+lib/DebugInfo/DWARF/DWARFExpressionPrinter.cpp
+lib/DebugInfo/DWARF/DWARFFormValue.cpp
+lib/DebugInfo/DWARF/DWARFGdbIndex.cpp
+lib/DebugInfo/DWARF/DWARFListTable.cpp
 lib/DebugInfo/DWARF/DWARFLocationExpression.cpp
+lib/DebugInfo/DWARF/DWARFTypeUnit.cpp
+lib/DebugInfo/DWARF/DWARFUnit.cpp
+lib/DebugInfo/DWARF/DWARFUnitIndex.cpp
+lib/DebugInfo/DWARF/DWARFUnwindTablePrinter.cpp
+lib/DebugInfo/DWARF/DWARFVerifier.cpp
+lib/DebugInfo/DWARF/LowLevel/DWARFUnwindTable.cpp
 lib/DebugInfo/GSYM/CallSiteInfo.cpp
 lib/DebugInfo/GSYM/DwarfTransformer.cpp
 lib/DebugInfo/GSYM/ExtractRanges.cpp
@@ -242,6 +273,7 @@ lib/ExecutionEngine/Orc/TargetProcess/SimpleExecutorMemoryManager.cpp
 lib/ExecutionEngine/Orc/TargetProcess/SimpleRemoteEPCServer.cpp
 lib/ExecutionEngine/Orc/TargetProcess/TargetExecutionUtils.cpp
 lib/ExecutionEngine/Orc/TargetProcess/UnwindInfoManager.cpp
+lib/ExecutionEngine/PerfJITEvents/PerfJITEventListener.cpp
 lib/Frontend/Atomic/Atomic.cpp
 lib/Frontend/Directive/Spelling.cpp
 lib/Frontend/HLSL/CBuffer.cpp
@@ -272,12 +304,8 @@ lib/MC/MCAsmInfoGOFF.cpp
 lib/MC/MCAsmInfoWasm.cpp
 lib/MC/MCAsmMacro.cpp
 lib/MC/MCDisassembler/Disassembler.cpp
-lib/MC/MCDisassembler/Disassembler.cpp
-lib/MC/MCDisassembler/MCDisassembler.cpp
 lib/MC/MCDisassembler/MCDisassembler.cpp
 lib/MC/MCDisassembler/MCExternalSymbolizer.cpp
-lib/MC/MCDisassembler/MCExternalSymbolizer.cpp
-lib/MC/MCDisassembler/MCSymbolizer.cpp
 lib/MC/MCDisassembler/MCSymbolizer.cpp
 lib/MC/MCInstrInfo.cpp
 lib/MC/MCLabel.cpp
@@ -319,6 +347,7 @@ lib/Object/GOFFObjectFile.cpp
 lib/Object/MachOUniversalWriter.cpp
 lib/Object/Object.cpp
 lib/Object/OffloadBundle.cpp
+lib/Object/RelocationResolver.cpp
 lib/Object/SFrameParser.cpp
 lib/Object/WindowsMachineFlag.cpp
 lib/ObjectYAML/ArchiveEmitter.cpp
@@ -355,10 +384,16 @@ lib/Passes/PassBuilder.cpp
 lib/Passes/PassBuilderBindings.cpp
 lib/Passes/PassBuilderPipelines.cpp
 lib/Passes/StandardInstrumentations.cpp
+lib/ProfileData/DataAccessProf.cpp
 lib/ProfileData/GCOV.cpp
+lib/ProfileData/IndexedMemProfData.cpp
+lib/ProfileData/InstrProfCorrelator.cpp
+lib/ProfileData/InstrProfReader.cpp
 lib/ProfileData/InstrProfWriter.cpp
+lib/ProfileData/MemProf.cpp
 lib/ProfileData/MemProfCommon.cpp
 lib/ProfileData/MemProfReader.cpp
+lib/ProfileData/MemProfSummary.cpp
 lib/ProfileData/MemProfSummaryBuilder.cpp
 lib/ProfileData/PGOCtxProfWriter.cpp
 lib/ProfileData/SampleProfWriter.cpp
@@ -379,6 +414,13 @@ lib/SandboxIR/Type.cpp
 lib/SandboxIR/Use.cpp
 lib/SandboxIR/User.cpp
 lib/SandboxIR/Value.cpp
+lib/Support/BalancedPartitioning.cpp
+lib/Support/CrashRecoveryContext.cpp
+lib/Support/FileCollector.cpp
+lib/Support/Parallel.cpp
+lib/Support/PluginLoader.cpp
+lib/Support/RWMutex.cpp
+lib/Support/ThreadPool.cpp
 lib/Target/AArch64/Disassembler/AArch64Disassembler.cpp
 lib/Target/AArch64/Disassembler/AArch64ExternalSymbolizer.cpp
 lib/Target/Target.cpp

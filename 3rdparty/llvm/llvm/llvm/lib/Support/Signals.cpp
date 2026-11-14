@@ -353,9 +353,34 @@ static bool printMarkupStackTrace(StringRef Argv0, void **StackTrace, int Depth,
 }
 
 // Include the platform-specific parts of this class.
-#ifdef LLVM_ON_UNIX
-#include "Unix/Signals.inc"
-#endif
+// libretro: this LLVM is a library inside another program's process and
+// takes no part in its signals. It installs no handlers, removes no files
+// when one arrives and prints no stack traces: Unix/Signals.inc and
+// Windows/Signals.inc, which did that under two locks and a critical
+// section, are not compiled. Callbacks given to AddSignalHandler are kept
+// and run by RunSignalHandlers, which a fatal error calls.
+static bool findModulesAndOffsets(void **, int, const char **, intptr_t *,
+                                  const char *, StringSaver &) {
+  return false;
+}
+
+static bool printMarkupContext(raw_ostream &, const char *) { return false; }
+
+void sys::unregisterHandlers() {}
+void sys::CleanupOnSignal(uintptr_t) {}
+void sys::RunInterruptHandlers() {}
+void sys::SetInterruptFunction(void (*)()) {}
+void sys::SetInfoSignalFunction(void (*)()) {}
+void sys::SetOneShotPipeSignalFunction(void (*)()) {}
+void sys::DefaultOneShotPipeSignalHandler() {}
+bool sys::RemoveFileOnSignal(StringRef, std::string *) { return false; }
+void sys::DontRemoveFileOnSignal(StringRef) {}
+void sys::AddSignalHandler(sys::SignalHandlerCallback FnPtr, void *Cookie) {
+  insertSignalHandler(FnPtr, Cookie);
+}
+void sys::PrintStackTrace(raw_ostream &, int) {}
+void sys::DisableSystemDialogsOnCrash() {}
+void sys::PrintStackTraceOnErrorSignal(StringRef, bool) {}
 #ifdef _WIN32
-#include "Windows/Signals.inc"
+void sys::CallOneShotPipeSignalHandler() {}
 #endif

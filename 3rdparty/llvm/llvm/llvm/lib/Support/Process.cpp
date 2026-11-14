@@ -15,7 +15,6 @@
 #include "llvm/ADT/StringExtras.h"
 #include "llvm/Config/config.h"
 #include "llvm/Config/llvm-config.h"
-#include "llvm/Support/CrashRecoveryContext.h"
 #include "llvm/Support/FileSystem.h"
 #include "llvm/Support/Path.h"
 
@@ -108,9 +107,8 @@ static bool coreFilesPrevented = !LLVM_ENABLE_CRASH_DUMPS;
 bool Process::AreCoreFilesPrevented() { return coreFilesPrevented; }
 
 [[noreturn]] void Process::Exit(int RetCode, bool NoCleanup) {
-  if (CrashRecoveryContext *CRC = CrashRecoveryContext::GetCurrent())
-    CRC->HandleExit(RetCode);
-
+  // libretro: no crash recovery contexts (nothing in the library makes one),
+  // so an exit is an exit
   if (NoCleanup)
     ExitNoCleanup(RetCode);
   else

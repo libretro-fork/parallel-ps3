@@ -29,7 +29,6 @@
 #include "llvm/IR/Module.h"
 #include "llvm/IR/ProfDataUtils.h"
 #include "llvm/IR/Type.h"
-#include "llvm/ProfileData/InstrProfReader.h"
 #include "llvm/Support/Casting.h"
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/Compiler.h"
@@ -1553,33 +1552,10 @@ void createProfileFileNameVar(Module &M, StringRef InstrProfileOutput) {
   }
 }
 
-Error OverlapStats::accumulateCounts(const std::string &BaseFilename,
-                                     const std::string &TestFilename,
-                                     bool IsCS) {
-  auto GetProfileSum = [IsCS](const std::string &Filename,
-                              CountSumOrPercent &Sum) -> Error {
-    // This function is only used from llvm-profdata that doesn't use any kind
-    // of VFS. Just create a default RealFileSystem to read profiles.
-    auto FS = vfs::getRealFileSystem();
-    auto ReaderOrErr = InstrProfReader::create(Filename, *FS);
-    if (Error E = ReaderOrErr.takeError()) {
-      return E;
-    }
-    auto Reader = std::move(ReaderOrErr.get());
-    Reader->accumulateCounts(Sum, IsCS);
-    return Error::success();
-  };
-  auto Ret = GetProfileSum(BaseFilename, Base);
-  if (Ret)
-    return Ret;
-  Ret = GetProfileSum(TestFilename, Test);
-  if (Ret)
-    return Ret;
-  this->BaseFilename = &BaseFilename;
-  this->TestFilename = &TestFilename;
-  Valid = true;
-  return Error::success();
-}
+// libretro: OverlapStats::accumulateCounts(BaseFilename, TestFilename, IsCS),
+// which only llvm-profdata uses, is not here: it was the one thing that
+// brought the profile readers, and with them the whole DWARF reader, into
+// every program linking this library.
 
 void OverlapStats::addOneMismatch(const CountSumOrPercent &MismatchFunc) {
   Mismatch.NumEntries += 1;

@@ -15,7 +15,6 @@
 #include "llvm/ADT/StringRef.h"
 #include "llvm/Config/config.h"
 #include "llvm/Config/llvm-config.h" // for LLVM_ENABLE_THREADS
-#include <mutex>
 #include <optional>
 #include <fcntl.h>
 #include <sys/time.h>

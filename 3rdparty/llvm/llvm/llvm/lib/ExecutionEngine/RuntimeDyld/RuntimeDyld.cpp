@@ -21,7 +21,7 @@
 #include "llvm/Support/MSVCErrorWorkarounds.h"
 #include "llvm/Support/MathExtras.h"
 
-#include <future>
+#include <optional>
 
 using namespace llvm;
 using namespace llvm::object;
@@ -1189,21 +1189,25 @@ Error RuntimeDyldImpl::resolveExternalSymbols() {
       if (NewSymbols.empty())
         break;
 
-#ifdef _MSC_VER
-      using ExpectedLookupResult =
-          MSVCPExpected<JITSymbolResolver::LookupResult>;
-#else
-      using ExpectedLookupResult = Expected<JITSymbolResolver::LookupResult>;
-#endif
-
-      auto NewSymbolsP = std::make_shared<std::promise<ExpectedLookupResult>>();
-      auto NewSymbolsF = NewSymbolsP->get_future();
+      // libretro: the answer is taken where the resolver gives it, not
+      // through a promise and a future (an allocation, a once-flag and a
+      // condition to wait on for every object linked). Every resolver an
+      // MCJIT engine has answers before lookup returns - it is asked for
+      // one symbol after another and calls back at the end; one that put
+      // the answer off would have had this thread wait for it.
+      std::optional<Expected<JITSymbolResolver::LookupResult>> Answer;
       Resolver.lookup(NewSymbols,
-                      [=](Expected<JITSymbolResolver::LookupResult> Result) {
-                        NewSymbolsP->set_value(std::move(Result));
+                      [&](Expected<JITSymbolResolver::LookupResult> Result) {
+                        Answer.emplace(std::move(Result));
                       });
 
-      auto NewResolverResults = NewSymbolsF.get();
+      if (!Answer)
+        return make_error<StringError>(
+            "RuntimeDyld: the symbol resolver did not answer before it "
+            "returned",
+            inconvertibleErrorCode());
+
+      auto &NewResolverResults = *Answer;
 
       if (!NewResolverResults)
         return NewResolverResults.takeError();
