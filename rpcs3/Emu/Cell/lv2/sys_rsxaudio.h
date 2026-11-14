@@ -193,26 +193,21 @@ public:
 	rsxaudio_periodic_tmr(const rsxaudio_periodic_tmr&) = delete;
 	rsxaudio_periodic_tmr& operator=(const rsxaudio_periodic_tmr&) = delete;
 
-	// Wait until timer fires and calls callback.
+	// Wait until timer fires and calls callback. The data thread's alone:
+	// the virtual timers are its, and what is below is for it and for the
+	// callback it runs.
 	wait_result wait(const std::function<void()> &callback);
 
-	// Cancel wait() call
+	// Cancel wait() call. Any thread.
 	void cancel_wait();
 
+	// From any thread: a virtual timer at @rate, or off with 0. The waiter
+	// takes it up before it next works out when the next period is. No lock:
+	// the rate is one word, and a timer turned off on the way to the new
+	// rate is seen to have been (it restarts its periods, as before).
+	void request_vtimer(u32 vtimer_id, u32 rate);
+
 	// VTimer funtions
-
-	void vtimer_access_sec(std::invocable<> auto func)
-	{
-		std::lock_guard lock(mutex);
-		std::invoke(func);
-
-		// The waiter works out when the next period is again
-		wake_waiter();
-	}
-
-	void enable_vtimer(u32 vtimer_id, u32 rate, u64 crnt_time);
-
-	void disable_vtimer(u32 vtimer_id);
 
 	bool is_vtimer_behind(u32 vtimer_id, u64 crnt_time) const;
 
@@ -238,14 +233,21 @@ private:
 
 	std::array<vtimer, VTIMER_MAX> vtmr_pool{};
 
-	shared_mutex mutex{};
-	bool in_wait = false;
+	// What request_vtimer asked for, one word a timer: the rate in the low
+	// half, how many times it was turned off in the high half; and what the
+	// data thread has taken up
+	std::array<retro_atomic_64_t, VTIMER_MAX> requested{};
+	std::array<u64, VTIMER_MAX> taken_up{};
 
 	// Changed (and notified through retro_waitaddr) whenever the timers
 	// change or the wait is cancelled: the waiter wakes and looks again
 	retro_atomic_int_t wake_word{};
 
 	void wake_waiter();
+	void take_up_requests();
+
+	void enable_vtimer(u32 vtimer_id, u32 rate, u64 crnt_time);
+	void disable_vtimer(u32 vtimer_id);
 
 	bool is_vtimer_behind(const vtimer& vtimer, u64 crnt_time) const;
 

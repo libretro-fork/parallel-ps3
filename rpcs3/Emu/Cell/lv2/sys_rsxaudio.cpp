@@ -981,10 +981,7 @@ void rsxaudio_data_thread::update_hw_param(std::function<void(rsxaudio_hw_param_
 		// TODO: ideally, old data must be flushed from backend buffers if channel became inactive or its src changed
 		g_fxo->get<rsx_audio_backend>().set_new_stream_param(port_cfg, calc_avport_mute_state(*new_hw_param));
 
-		timer.vtimer_access_sec([&]()
 		{
-			const u64 crnt_time = get_hw_clock_time();
-
 			if (serial_active)
 			{
 				// 2 channels per stream, streams go in parallel
@@ -992,11 +989,11 @@ void rsxaudio_data_thread::update_hw_param(std::function<void(rsxaudio_hw_param_
 											static_cast<u8>(new_hw_param->serial.depth) *
 											SYS_RSXAUDIO_CH_PER_STREAM;
 
-				timer.enable_vtimer(static_cast<u32>(RsxaudioPort::SERIAL), new_timer_rate, crnt_time);
+				timer.request_vtimer(static_cast<u32>(RsxaudioPort::SERIAL), new_timer_rate);
 			}
 			else
 			{
-				timer.disable_vtimer(static_cast<u32>(RsxaudioPort::SERIAL));
+				timer.request_vtimer(static_cast<u32>(RsxaudioPort::SERIAL), 0);
 			}
 
 			for (u8 spdif_idx = 0; spdif_idx < SYS_RSXAUDIO_SPDIF_CNT; spdif_idx++)
@@ -1010,14 +1007,14 @@ void rsxaudio_data_thread::update_hw_param(std::function<void(rsxaudio_hw_param_
 												static_cast<u8>(new_hw_param->spdif[spdif_idx].depth) *
 												SYS_RSXAUDIO_CH_PER_STREAM;
 
-					timer.enable_vtimer(vtimer_id, new_timer_rate, crnt_time);
+					timer.request_vtimer(vtimer_id, new_timer_rate);
 				}
 				else
 				{
-					timer.disable_vtimer(vtimer_id);
+					timer.request_vtimer(vtimer_id, 0);
 				}
 			}
-		});
+		}
 
 		return new_hw_param;
 	});
@@ -2024,22 +2021,71 @@ void rsxaudio_periodic_tmr::wake_waiter()
 	retro_waitaddr_notify_all(&wake_word);
 }
 
+void rsxaudio_periodic_tmr::request_vtimer(u32 vtimer_id, u32 rate)
+{
+	retro_atomic_64_t& word = ::at32(requested, vtimer_id);
+
+	for (;;)
+	{
+		const u64 seen = static_cast<u64>(retro_atomic_load_acquire_64(&word));
+		const u64 offs = seen >> 32;
+
+		// Off: counted, so that off and on again at the same rate restarts
+		const u64 want = rate ? (offs << 32 | rate) : ((offs + 1) << 32);
+
+		if (want == seen || retro_atomic_cas_64(&word, static_cast<s64>(seen), static_cast<s64>(want)))
+		{
+			break;
+		}
+	}
+
+	wake_waiter();
+}
+
+void rsxaudio_periodic_tmr::take_up_requests()
+{
+	const u64 crnt_time = get_hw_clock_time();
+
+	for (u32 id = 0; id < VTIMER_MAX; id++)
+	{
+		const u64 word = static_cast<u64>(retro_atomic_load_acquire_64(&requested[id]));
+
+		if (word == taken_up[id])
+		{
+			continue;
+		}
+
+		if (word >> 32 != taken_up[id] >> 32)
+		{
+			disable_vtimer(id);
+		}
+
+		if (const u32 rate = static_cast<u32>(word))
+		{
+			enable_vtimer(id, rate, crnt_time);
+		}
+		else
+		{
+			disable_vtimer(id);
+		}
+
+		taken_up[id] = word;
+	}
+}
+
 rsxaudio_periodic_tmr::wait_result rsxaudio_periodic_tmr::wait(const std::function<void()> &callback)
 {
-	std::unique_lock lock(mutex);
-
-	if (in_wait || !callback)
+	if (!callback)
 	{
 		return wait_result::INVALID_PARAM;
 	}
 
+	// Before the requests are taken up: one made after is a change of it
 	const int wake = retro_atomic_load_acquire_int(&wake_word);
+	take_up_requests();
 
 	if (const u64 next = get_rel_next_time(); next != 0)
 	{
-		in_wait = true;
-		lock.unlock();
-
 		const retro_atomic_int_t* clock_word = static_cast<const retro_atomic_int_t*>(libretro_guest_clock_word());
 		const retro_waitaddr_t list[2] =
 		{
@@ -2049,9 +2095,6 @@ rsxaudio_periodic_tmr::wait_result rsxaudio_periodic_tmr::wait(const std::functi
 
 		// No period at all (no timer active): until the timers change
 		retro_waitaddr_wait(list, 2, next == umax ? -1 : static_cast<s64>(libretro_guest_wait_as_host(next)));
-
-		lock.lock();
-		in_wait = false;
 
 		if (retro_atomic_load_acquire_int(&wake_word) != wake)
 		{

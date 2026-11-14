@@ -259,8 +259,8 @@ int main()
 		});
 		sleep_ms(50);
 
-		timer.vtimer_access_sec([&] { timer.enable_vtimer(0, rate, get_hw_clock_time()); });
-
+		// The data thread first, with no timer: it waits until there is one.
+		// The rate comes from this thread, as a syscall's does, with no lock
 		std::thread audio([&]
 		{
 			while (!stop)
@@ -272,6 +272,8 @@ int main()
 				});
 			}
 		});
+		sleep_ms(20);
+		timer.request_vtimer(0, rate);
 
 		const u64 from = get_hw_clock_time();
 		const u32 periods_from = periods;
@@ -292,7 +294,7 @@ int main()
 		CHECK(while_paused <= 1);
 
 		// No period at all to wait for: the wait ends when cancelled
-		timer.vtimer_access_sec([&] { timer.disable_vtimer(0); });
+		timer.request_vtimer(0, 0);
 		sleep_ms(20);
 		stop = true;
 		const auto t0 = std::chrono::steady_clock::now();
