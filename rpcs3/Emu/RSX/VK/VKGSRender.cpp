@@ -976,9 +976,7 @@ bool VKGSRender::on_access_violation(u32 address, bool is_writing)
 		}
 
 		// Any other thread hands the fault to the renderer and waits for
-		// its answer (serve_guest_faults). Not posted only when the
-		// renderer is gone: then nobody else is in the cache, and the
-		// fault is handled here as it used to be.
+		// its answer (rsx::thread::serve_guest_faults)
 		rsx_guest_fault_t fault;
 
 		if (rsx_guest_faults_post(&fault, address, is_writing))
@@ -987,6 +985,11 @@ bool VKGSRender::on_access_violation(u32 address, bool is_writing)
 			vm::temporary_unlock();
 			return !!rsx_guest_fault_wait(&fault);
 		}
+
+		// The renderer is ending and has taken the fault handler down
+		// (rsx::thread::on_exit): the access is tried again without it.
+		// No thread but the renderer goes on from here.
+		return true;
 	}
 
 	vk::texture_cache::thrashed_set result;
@@ -1008,50 +1011,15 @@ bool VKGSRender::on_access_violation(u32 address, bool is_writing)
 
 	if (result.num_flushable > 0)
 	{
-		bool has_queue_ref = false;
-		std::function<void()> data_transfer_completed_callback{};
-
-		if (!is_current_thread()) [[likely]]
+		if (vk::is_uninterruptible())
 		{
-			// Always submit primary cb to ensure state consistency (flush pending changes such as image transitions)
-			vm::temporary_unlock();
-
-			std::lock_guard lock(m_flush_queue_mutex);
-
-			m_flush_requests.post(false);
-			m_eng_interrupt_mask |= rsx::backend_interrupt;
-			has_queue_ref = true;
-		}
-		else
-		{
-			if (vk::is_uninterruptible())
-			{
-				rsx_log.error("Fault in uninterruptible code!");
-			}
-
-			// Flush primary cb queue to sync pending changes (e.g image transitions!)
-			flush_command_queue();
+			rsx_log.error("Fault in uninterruptible code!");
 		}
 
-		if (has_queue_ref)
-		{
-			// Wait for the RSX thread to process request if it hasn't already
-			m_flush_requests.producer_wait();
+		// Flush primary cb queue to sync pending changes (e.g image transitions!)
+		flush_command_queue();
 
-			data_transfer_completed_callback = [&]()
-			{
-				m_flush_requests.remove_one();
-				has_queue_ref = false;
-			};
-		}
-
-		m_texture_cache.flush_all(*m_secondary_cb_list.next(), result, data_transfer_completed_callback);
-
-		if (has_queue_ref)
-		{
-			// Release RSX thread if it's still locked
-			m_flush_requests.remove_one();
-		}
+		m_texture_cache.flush_all(*m_secondary_cb_list.next(), result);
 	}
 
 	return true;
@@ -1076,22 +1044,6 @@ void VKGSRender::on_invalidate_memory_range(const utils::address_range32 &range,
 		}
 
 		vk::unmap_dma(range.start, range.length());
-	}
-}
-
-void VKGSRender::serve_guest_faults()
-{
-	if (!rsx_guest_faults_pending())
-	{
-		return;
-	}
-
-	for (rsx_guest_fault_t* fault = rsx_guest_faults_take(); fault;)
-	{
-		// The record is the waiting thread's again once it is finished
-		rsx_guest_fault_t* next = fault->next;
-		rsx_guest_fault_finish(fault, on_access_violation(fault->address, !!fault->writing));
-		fault = next;
 	}
 }
 
@@ -1366,12 +1318,6 @@ void VKGSRender::on_init_thread()
 
 void VKGSRender::on_exit()
 {
-	// No thread is left waiting for an answer, and none posts from here on
-	while (!rsx_guest_faults_close())
-	{
-		serve_guest_faults();
-	}
-
 	GSRender::on_exit();
 	vk::destroy_pipe_compiler(); // Ensure no pending shaders being compiled
 	zcull_ctrl.release();

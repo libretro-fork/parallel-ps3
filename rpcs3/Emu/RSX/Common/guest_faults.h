@@ -7,6 +7,9 @@
  * two pieces of its own work, handles the fault as it would one of its
  * own and wakes the thread. Only the renderer is ever inside the cache.
  *
+ * The same goes for memory that is unmapped: the thread that unmaps it
+ * asks the renderer to let go of it, and waits.
+ *
  * A fault is a record on the faulting thread's stack: nothing is
  * allocated, and posting is one compare-and-swap. */
 
@@ -20,11 +23,16 @@
 extern "C" {
 #endif
 
+/* Not a fault: guest memory was unmapped and what the renderer still
+ * holds of it has to go before the caller can carry on. Posted the same
+ * way, in the place of a fault's writing; the address is not used. */
+#define RSX_GUEST_MEMORY_UNMAPPED 2
+
 typedef struct rsx_guest_fault
 {
    struct rsx_guest_fault *next;    /* for the renderer: the one posted after */
    uint32_t                address;
-   int                     writing;
+   int                     writing; /* 0, 1, or RSX_GUEST_MEMORY_UNMAPPED */
    int                     handled; /* the renderer's answer */
    retro_atomic_int_t      done;
 } rsx_guest_fault_t;

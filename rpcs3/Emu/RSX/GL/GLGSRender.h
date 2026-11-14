@@ -41,26 +41,6 @@ namespace gl
 		std::optional<std::tuple<GLenum, u32> > index_info;
 	};
 
-	struct work_item
-	{
-		u32  address_to_flush = 0;
-		gl::texture_cache::thrashed_set section_data;
-
-		atomic_t<bool> processed = false;
-		volatile bool result = false;
-		atomic_t<bool> received = false;
-
-		void producer_wait()
-		{
-			utils::spin_wait(processed, [](auto v)
-			{
-				return v;
-			});
-
-			received = true;
-		}
-	};
-
 	struct present_surface_info
 	{
 		u32 address;
@@ -127,8 +107,6 @@ class GLGSRender : public GSRender, public ::rsx::reports::ZCULL_control
 	gl::ui_overlay_renderer m_ui_renderer;
 	gl::video_out_calibration_pass m_video_output_pass;
 
-	shared_mutex queue_guard;
-	std::list<gl::work_item> work_queue;
 
 	GLProgramBuffer m_prog_buffer;
 
@@ -193,7 +171,6 @@ public:
 	void set_viewport();
 	void set_scissor(bool clip_viewport);
 
-	gl::work_item& post_flush_request(u32 address, gl::texture_cache::thrashed_set& flush_data);
 
 	// NV3089
 	bool scaled_image_from_memory(const rsx::blit_src_info& src_info, const rsx::blit_dst_info& dst_info, bool interpolate) override;
@@ -232,7 +209,6 @@ protected:
 	void do_local_task(rsx::FIFO::state state) override;
 
 	bool on_access_violation(u32 address, bool is_writing) override;
-	void serve_guest_faults() override;
 	void on_invalidate_memory_range(const utils::address_range32 &range, rsx::invalidation_cause cause) override;
 	void notify_tile_unbound(u32 tile) override;
 	void on_semaphore_acquire_wait() override;

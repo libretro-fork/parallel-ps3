@@ -450,9 +450,14 @@ namespace rsx
 		 */
 		virtual void on_semaphore_acquire_wait() {}
 
-		// Handles the faults other threads have handed to this one and are
-		// waiting on (Common/guest_faults.h)
-		virtual void serve_guest_faults() {}
+		// Handles what other threads have handed to this one and are waiting
+		// on: their faults on memory the texture cache has locked, and
+		// unmapped memory to let go of (Common/guest_faults.h)
+		void serve_guest_faults();
+
+		// For any thread, without m_mtx_task: has the renderer handle the
+		// invalidated memory range that is waiting, and returns when it has
+		void request_invalidated_memory_handling();
 
 		/**
 		 * Load an image from memory with optional scaling and rotation.

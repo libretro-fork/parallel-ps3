@@ -3,6 +3,7 @@
  *
  * - with no renderer nothing can be posted; with one, a fault posted is
  *   pending, is taken once, and its thread gets the answer given for it;
+ *   a request to let go of unmapped memory is told apart from a fault;
  * - faults are taken in the order they were posted;
  * - the renderer cannot close while a fault waits, and nothing can be
  *   posted once it has closed;
@@ -133,14 +134,15 @@ int main(void)
 
    CHECK(rsx_guest_faults_post(&a, 0x1000, 1), "post a");
    CHECK(rsx_guest_faults_post(&b, 0x2000, 0), "post b");
-   CHECK(rsx_guest_faults_post(&c, 0x3000, 1), "post c");
+   CHECK(rsx_guest_faults_post(&c, 0, RSX_GUEST_MEMORY_UNMAPPED), "post c");
    CHECK(rsx_guest_faults_pending(), "three posted, none pending");
    CHECK(rsx_guest_faults_close() == 0, "closed over waiting faults");
 
    f = rsx_guest_faults_take();
    CHECK(f == &a && f->next == &b && b.next == &c && !c.next,
          "faults not taken in the order they were posted");
-   CHECK(a.address == 0x1000 && a.writing == 1 && b.writing == 0,
+   CHECK(a.address == 0x1000 && a.writing == 1 && b.writing == 0
+         && c.writing == RSX_GUEST_MEMORY_UNMAPPED,
          "a fault's address or kind");
    CHECK(!rsx_guest_faults_pending() && !rsx_guest_faults_take(),
          "faults taken twice");

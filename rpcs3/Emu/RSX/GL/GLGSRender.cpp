@@ -530,12 +530,6 @@ void GLGSRender::on_init_thread()
 
 void GLGSRender::on_exit()
 {
-	// No thread is left waiting for an answer, and none posts from here on
-	while (!rsx_guest_faults_close())
-	{
-		serve_guest_faults();
-	}
-
 	// Destroy internal RSX state, may call upon this->do_local_task
 	GSRender::on_exit();
 
@@ -1349,9 +1343,7 @@ bool GLGSRender::on_access_violation(u32 address, bool is_writing)
 		// Only the renderer enters the texture cache. Whether the fault is
 		// the cache's at all is read from the table of locked pages; if it
 		// is, it is handed to the renderer, which handles it as one of its
-		// own and wakes this thread (serve_guest_faults). Not posted only
-		// when the renderer is gone: then nobody else is in the cache, and
-		// the fault is handled here as it used to be.
+		// own and wakes this thread (rsx::thread::serve_guest_faults).
 		if (!m_gl_texture_cache.page_is_locked(address))
 		{
 			return zcull_ctrl->on_access_violation(address);
@@ -1365,14 +1357,16 @@ bool GLGSRender::on_access_violation(u32 address, bool is_writing)
 			vm::temporary_unlock();
 			return !!rsx_guest_fault_wait(&fault);
 		}
+
+		// The renderer is ending and has taken the fault handler down
+		// (rsx::thread::on_exit): the access is tried again without it.
+		// No thread but the renderer goes on from here.
+		return true;
 	}
 
-	const bool can_flush = is_current_thread();
-	const rsx::invalidation_cause cause = is_writing
-		? (can_flush ? rsx::invalidation_cause::write : rsx::invalidation_cause::deferred_write)
-		: (can_flush ? rsx::invalidation_cause::read  : rsx::invalidation_cause::deferred_read);
+	const rsx::invalidation_cause cause = is_writing ? rsx::invalidation_cause::write : rsx::invalidation_cause::read;
 
-	auto cmd = can_flush ? gl::command_context{ gl_state } : gl::command_context{};
+	gl::command_context cmd{ gl_state };
 	auto result = m_gl_texture_cache.invalidate_address(cmd, address, cause);
 
 	if (result.invalidate_samplers)
@@ -1386,15 +1380,8 @@ bool GLGSRender::on_access_violation(u32 address, bool is_writing)
 		return zcull_ctrl->on_access_violation(address);
 	}
 
-	if (result.num_flushable > 0)
-	{
-		auto &task = post_flush_request(address, result);
-
-		m_eng_interrupt_mask |= rsx::backend_interrupt;
-		vm::temporary_unlock();
-		task.producer_wait();
-	}
-
+	// What had to be written back was, in invalidate_address: only the
+	// renderer comes here, and it flushes as it invalidates
 	return true;
 }
 
@@ -1414,26 +1401,9 @@ void GLGSRender::on_invalidate_memory_range(const utils::address_range32 &range,
 	}
 }
 
-void GLGSRender::serve_guest_faults()
-{
-	if (!rsx_guest_faults_pending())
-	{
-		return;
-	}
-
-	for (rsx_guest_fault_t* fault = rsx_guest_faults_take(); fault;)
-	{
-		// The record is the waiting thread's again once it is finished
-		rsx_guest_fault_t* next = fault->next;
-		rsx_guest_fault_finish(fault, on_access_violation(fault->address, !!fault->writing));
-		fault = next;
-	}
-}
-
 void GLGSRender::on_semaphore_acquire_wait()
 {
-	if (!work_queue.empty() ||
-		rsx_guest_faults_pending() ||
+	if (rsx_guest_faults_pending() ||
 		(async_flip_requested & flip_request::emu_requested))
 	{
 		do_local_task(rsx::FIFO::state::lock_wait);
@@ -1445,22 +1415,7 @@ void GLGSRender::do_local_task(rsx::FIFO::state state)
 	// Faults other threads are waiting on
 	serve_guest_faults();
 
-	if (!work_queue.empty())
-	{
-		std::lock_guard lock(queue_guard);
-
-		work_queue.remove_if([](auto &q) { return q.received.load(); });
-
-		for (auto& q : work_queue)
-		{
-			if (q.processed.load()) continue;
-
-			gl::command_context cmd{ gl_state };
-			q.result = m_gl_texture_cache.flush_all(cmd, q.section_data);
-			q.processed = true;
-		}
-	}
-	else if (!in_begin_end && state != rsx::FIFO::state::lock_wait)
+	if (!in_begin_end && state != rsx::FIFO::state::lock_wait)
 	{
 		if (m_graphics_state & rsx::pipeline_state::framebuffer_reads_dirty)
 		{
@@ -1496,16 +1451,6 @@ void GLGSRender::do_local_task(rsx::FIFO::state state)
 			flip(info);
 		}
 	}
-}
-
-gl::work_item& GLGSRender::post_flush_request(u32 address, gl::texture_cache::thrashed_set& flush_data)
-{
-	std::lock_guard lock(queue_guard);
-
-	auto &result = work_queue.emplace_back();
-	result.address_to_flush = address;
-	result.section_data = std::move(flush_data);
-	return result;
 }
 
 bool GLGSRender::scaled_image_from_memory(const rsx::blit_src_info& src, const rsx::blit_dst_info& dst, bool interpolate)

@@ -1286,8 +1286,14 @@ namespace rsx
 		// Deregister violation handler
 		g_access_violation_handler = nullptr;
 
-		// Clear any pending flush requests to release threads
-		std::this_thread::sleep_for(10ms);
+		// The threads that wait for this one are answered, and nothing more
+		// can be asked: a thread that comes now is told so at once. (This
+		// used to sleep for 10 ms in the hope that they had all arrived.)
+		while (!rsx_guest_faults_close())
+		{
+			serve_guest_faults();
+		}
+
 		do_local_task(rsx::FIFO::state::lock_wait);
 
 		g_fxo->get<rsx::dma_manager>().join();
@@ -3147,16 +3153,76 @@ namespace rsx
 		if (!retro_atomic_load_acquire_int(&m_memory_invalidated)) [[likely]]
 			return;
 
-		std::lock_guard lock(m_mtx_task);
-
-		const auto map_range = address_range32::start_length(address, size);
-
-		if (!m_invalidated_memory_range.valid())
-			return;
-
-		if (m_invalidated_memory_range.overlaps(map_range))
 		{
-			handle_invalidated_memory_range();
+			std::lock_guard lock(m_mtx_task);
+
+			const auto map_range = address_range32::start_length(address, size);
+
+			if (!m_invalidated_memory_range.valid())
+				return;
+
+			if (!m_invalidated_memory_range.overlaps(map_range))
+				return;
+		}
+
+		// The renderer does it, and this thread waits: only the renderer
+		// enters the texture cache
+		request_invalidated_memory_handling();
+	}
+
+	void thread::request_invalidated_memory_handling()
+	{
+		if (is_current_thread())
+		{
+			std::lock_guard lock(m_mtx_task);
+
+			if (m_invalidated_memory_range.valid())
+			{
+				handle_invalidated_memory_range();
+			}
+
+			return;
+		}
+
+		rsx_guest_fault_t request;
+
+		// Not posted when the renderer is gone: nothing holds the memory then
+		if (rsx_guest_faults_post(&request, 0, RSX_GUEST_MEMORY_UNMAPPED))
+		{
+			m_eng_interrupt_mask |= rsx::backend_interrupt;
+			rsx_guest_fault_wait(&request);
+		}
+	}
+
+	void thread::serve_guest_faults()
+	{
+		if (!rsx_guest_faults_pending())
+		{
+			return;
+		}
+
+		for (rsx_guest_fault_t* fault = rsx_guest_faults_take(); fault;)
+		{
+			// The record is the waiting thread's again once it is finished
+			rsx_guest_fault_t* next = fault->next;
+			int handled = 1;
+
+			if (fault->writing == RSX_GUEST_MEMORY_UNMAPPED)
+			{
+				std::lock_guard lock(m_mtx_task);
+
+				if (m_invalidated_memory_range.valid())
+				{
+					handle_invalidated_memory_range();
+				}
+			}
+			else
+			{
+				handled = on_access_violation(fault->address, !!fault->writing);
+			}
+
+			rsx_guest_fault_finish(fault, handled);
+			fault = next;
 		}
 	}
 
@@ -3232,25 +3298,33 @@ namespace rsx
 			eng_lock elock(this);
 
 			// Queue up memory invalidation
-			std::lock_guard lock(m_mtx_task);
-			const bool existing_range_valid = m_invalidated_memory_range.valid();
+			std::unique_lock lock(m_mtx_task);
 			const auto unmap_range = address_range32::start_length(address, size);
 
-			if (existing_range_valid && m_invalidated_memory_range.touches(unmap_range))
+			for (;;)
 			{
-				// Merge range-to-invalidate in case of consecutive unmaps
-				m_invalidated_memory_range.set_min_max(unmap_range);
-			}
-			else
-			{
-				if (existing_range_valid)
+				if (!m_invalidated_memory_range.valid())
 				{
-					// We can only delay consecutive unmaps.
-					// Otherwise, to avoid VirtualProtect failures, we need to do the invalidation here
-					handle_invalidated_memory_range();
+					m_invalidated_memory_range = unmap_range;
+					break;
 				}
 
-				m_invalidated_memory_range = unmap_range;
+				if (m_invalidated_memory_range.touches(unmap_range))
+				{
+					// Merge range-to-invalidate in case of consecutive unmaps
+					m_invalidated_memory_range.set_min_max(unmap_range);
+					break;
+				}
+
+				// We can only delay consecutive unmaps.
+				// Otherwise, to avoid VirtualProtect failures, the invalidation
+				// that is waiting has to be done now - by the renderer, which
+				// is paused (eng_lock) and answers from there; this thread
+				// waits for it without the lock the renderer takes, and then
+				// looks again.
+				lock.unlock();
+				request_invalidated_memory_handling();
+				lock.lock();
 			}
 
 			retro_atomic_store_release_int(&m_memory_invalidated, 1);
