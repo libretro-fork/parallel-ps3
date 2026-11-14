@@ -22,6 +22,7 @@
 #include "test_common.h"
 
 #include <pthread.h>
+#include <sched.h>
 
 struct thing
 {
@@ -176,6 +177,13 @@ static void *owner(void *arg)
             || !lf_sig_table_add(&shared, it->key, it->sig, it)
             || lf_sig_table_find(&shared, it->key, it->sig) != it)
          retro_atomic_fetch_add_int(&bad, 1);
+
+      /* Until a lookup has found a thing in the table, the thing is left
+       * there for a moment: on a machine busy with something else the
+       * lookups otherwise may never come by while one is in, and the run
+       * has then tested nothing (it failed that check under load) */
+      if (!retro_atomic_load_acquire_int(&found_some))
+         sched_yield();
 
       m.going = it;
       if (lf_sig_table_sweep(&shared, is_going, was_dropped, &m) != 1

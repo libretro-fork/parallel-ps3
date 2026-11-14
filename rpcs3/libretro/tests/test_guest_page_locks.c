@@ -20,6 +20,7 @@
 
 #include <pthread.h>
 #include <sched.h>
+#include <unistd.h>
 #include <retro_atomic.h>
 
 /* A guest write fault, start to finish: 1 when a note was left */
@@ -347,6 +348,34 @@ static void take_notes(void)
    }
 }
 
+/* Until the game has left its share of notes, the renderer waits for one
+ * whenever there is a page the game can fault on: on a machine busy with
+ * something else it otherwise gets through all its rounds with the game
+ * hardly having run, and the run has then tested nothing (it failed that
+ * check under load) */
+static void wait_for_the_game(void)
+{
+   int before = retro_atomic_load_acquire_int(&game_notes);
+   uint32_t n;
+
+   if (before > 200)
+      return;
+
+   for (;;)
+   {
+      for (n = 0; n < MPAGES; n++)
+      {
+         if (retro_atomic_load_acquire_int(&prot[n]) == 1)
+            break;
+      }
+
+      if (n == MPAGES || retro_atomic_load_acquire_int(&game_notes) != before)
+         return;
+
+      sched_yield();
+   }
+}
+
 static void model(void)
 {
    pthread_t g[3];
@@ -360,6 +389,8 @@ static void model(void)
 
    for (i = 0; i < MROUNDS; i++)
    {
+      wait_for_the_game();
+
       x = x * 1664525u + 1013904223u;
       n = (x >> 16) % MPAGES;
 
@@ -443,6 +474,10 @@ static void model(void)
 
 int main(void)
 {
+   /* A lock that is broken can leave a page in a guest thread's hand for
+    * good, and the renderer then waits for it for ever: that is a failure,
+    * not a run that never ends */
+   alarm(300);
    alone();
    model();
    together();

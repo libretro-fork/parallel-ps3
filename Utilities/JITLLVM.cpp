@@ -49,6 +49,26 @@ LOG_CHANNEL(jit_log, "JIT");
 #include "llvm/ExecutionEngine/JITEventListener.h"
 #include "llvm/Object/ObjectFile.h"
 #include "llvm/Object/SymbolSize.h"
+#include "llvm/Analysis/AliasAnalysis.h"
+#include "llvm/Analysis/AssumptionCache.h"
+#include "llvm/Analysis/BasicAliasAnalysis.h"
+#include "llvm/Analysis/BlockFrequencyInfo.h"
+#include "llvm/Analysis/BranchProbabilityInfo.h"
+#include "llvm/Analysis/GlobalsModRef.h"
+#include "llvm/Analysis/LoopAnalysisManager.h"
+#include "llvm/Analysis/LoopInfo.h"
+#include "llvm/Analysis/MemorySSA.h"
+#include "llvm/Analysis/OptimizationRemarkEmitter.h"
+#include "llvm/Analysis/PostDominators.h"
+#include "llvm/Analysis/ProfileSummaryInfo.h"
+#include "llvm/Analysis/ScalarEvolution.h"
+#include "llvm/Analysis/ScopedNoAliasAA.h"
+#include "llvm/Analysis/TargetLibraryInfo.h"
+#include "llvm/Analysis/TargetTransformInfo.h"
+#include "llvm/Analysis/TypeBasedAliasAnalysis.h"
+#include "llvm/IR/Dominators.h"
+#include "llvm/IR/PassManager.h"
+#include "llvm/IR/PassInstrumentation.h"
 #ifdef _MSC_VER
 #pragma warning(pop)
 #else
@@ -58,6 +78,63 @@ LOG_CHANNEL(jit_log, "JIT");
 #ifdef ARCH_ARM64
 #include "Emu/CPU/Backends/AArch64/AArch64Common.h"
 #endif
+
+// The analyses the function passes the recompilers run can ask for
+// (EarlyCSE, SimplifyCFG, DSE, LICM through the loop adaptor, ADCE), with
+// what those analyses ask for in turn - each as llvm::PassBuilder registers
+// it without a target machine, so the passes decide exactly as they did.
+//
+// PassBuilder is not used: to register every analysis and parse any
+// pipeline it refers to every pass LLVM has, and using it put them all in
+// the core (the vectorizers, the inliner, OpenMP, coroutines, sanitizers).
+// A pass added to a recompiler's list gets what it asks for added here:
+// asking for an analysis that is not registered is a crash, not an error.
+void jit_register_analyses(llvm::LoopAnalysisManager& lam, llvm::FunctionAnalysisManager& fam, llvm::ModuleAnalysisManager& mam)
+{
+	using namespace llvm;
+
+	// Every manager's passes ask for this one first
+	mam.registerPass([] { return PassInstrumentationAnalysis(); });
+	fam.registerPass([] { return PassInstrumentationAnalysis(); });
+	lam.registerPass([] { return PassInstrumentationAnalysis(); });
+
+	// Asked for through the module's proxy, and only if already computed -
+	// which nothing here does: they are there so that asking is valid
+	mam.registerPass([] { return ProfileSummaryAnalysis(); });
+	mam.registerPass([] { return GlobalsAA(); });
+
+	fam.registerPass([] { return TargetLibraryAnalysis(); });
+	fam.registerPass([] { return TargetIRAnalysis(); });
+	fam.registerPass([] { return AssumptionAnalysis(); });
+	fam.registerPass([] { return DominatorTreeAnalysis(); });
+	fam.registerPass([] { return PostDominatorTreeAnalysis(); });
+	fam.registerPass([] { return LoopAnalysis(); });
+	fam.registerPass([] { return BranchProbabilityAnalysis(); });
+	fam.registerPass([] { return BlockFrequencyAnalysis(); });
+	fam.registerPass([] { return OptimizationRemarkEmitterAnalysis(); });
+	fam.registerPass([] { return ScalarEvolutionAnalysis(); });
+	fam.registerPass([] { return MemorySSAAnalysis(); });
+
+	// Alias analysis as PassBuilder::buildDefaultAAPipeline builds it
+	fam.registerPass([] { return BasicAA(); });
+	fam.registerPass([] { return ScopedNoAliasAA(); });
+	fam.registerPass([] { return TypeBasedAA(); });
+	fam.registerPass([]
+	{
+		AAManager aa;
+		aa.registerFunctionAnalysis<BasicAA>();
+		aa.registerFunctionAnalysis<ScopedNoAliasAA>();
+		aa.registerFunctionAnalysis<TypeBasedAA>();
+		aa.registerModuleAnalysis<GlobalsAA>();
+		return aa;
+	});
+
+	// As PassBuilder::crossRegisterProxies, without the call graph's
+	mam.registerPass([&] { return FunctionAnalysisManagerModuleProxy(fam); });
+	fam.registerPass([&] { return ModuleAnalysisManagerFunctionProxy(mam); });
+	fam.registerPass([&] { return LoopAnalysisManagerFunctionProxy(lam); });
+	lam.registerPass([&] { return FunctionAnalysisManagerLoopProxy(fam); });
+}
 
 namespace
 {

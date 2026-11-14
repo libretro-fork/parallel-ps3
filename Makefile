@@ -452,23 +452,23 @@ $(LLVM_ARCHIVE): $(LLVM_OBJS)
 $(LLVM_OBJ)/%.cpp.o: $(LLVM_SRC)/%.cpp | $(LLVM_TBLGEN_OUT)
 	@mkdir -p $(@D)
 	$(SAY) CXX $<
-	$(Q)$(CXX) -c -o $@ $< $(LLVM_CXXFLAGS) $(call llvm_defs,$(LLVM_OS)) $(LLVM_CPPFLAGS) $(CPPFLAGS)
+	$(Q)$(CXX) -MMD -MP -c -o $@ $< $(LLVM_CXXFLAGS) $(call llvm_defs,$(LLVM_OS)) $(LLVM_CPPFLAGS) $(CPPFLAGS)
 
 $(LLVM_OBJ)/%.c.o: $(LLVM_SRC)/%.c | $(LLVM_TBLGEN_OUT)
 	@mkdir -p $(@D)
 	$(SAY) CC $<
-	$(Q)$(CC) -c -o $@ $< $(LLVM_CFLAGS) $(call llvm_defs,$(LLVM_OS)) $(LLVM_CPPFLAGS) $(CPPFLAGS)
+	$(Q)$(CC) -MMD -MP -c -o $@ $< $(LLVM_CFLAGS) $(call llvm_defs,$(LLVM_OS)) $(LLVM_CPPFLAGS) $(CPPFLAGS)
 
 # TableGen, for the machine that runs the build
 $(LLVM_HOST_OBJ)/%.cpp.o: $(LLVM_SRC)/%.cpp
 	@mkdir -p $(@D)
 	$(SAY) HOSTCXX $<
-	$(Q)$(HOST_CXX) -c -o $@ $< $(LLVM_HOST_CXXFLAGS) $(call llvm_defs,$(HOST_OS)) $(LLVM_CPPFLAGS)
+	$(Q)$(HOST_CXX) -MMD -MP -c -o $@ $< $(LLVM_HOST_CXXFLAGS) $(call llvm_defs,$(HOST_OS)) $(LLVM_CPPFLAGS)
 
 $(LLVM_HOST_OBJ)/%.c.o: $(LLVM_SRC)/%.c
 	@mkdir -p $(@D)
 	$(SAY) HOSTCC $<
-	$(Q)$(HOST_CC) -c -o $@ $< -O2 -DNDEBUG -w $(call llvm_defs,$(HOST_OS)) $(LLVM_CPPFLAGS)
+	$(Q)$(HOST_CC) -MMD -MP -c -o $@ $< -O2 -DNDEBUG -w $(call llvm_defs,$(HOST_OS)) $(LLVM_CPPFLAGS)
 
 $(LLVM_MIN_TBLGEN): $(LLVM_MIN_OBJS)
 	$(SAY) LINK $@
@@ -477,6 +477,11 @@ $(LLVM_MIN_TBLGEN): $(LLVM_MIN_OBJS)
 $(LLVM_TBLGEN): $(LLVM_TBLGEN_OBJS)
 	$(SAY) LINK $@
 	$(Q)$(HOST_CXX) -o $@ $^ -pthread $(LLVM_HOST_LIBS)
+
+# What each of LLVM's objects includes, written as it is compiled: a header
+# of LLVM's that is changed rebuilds what includes it. (LLVM's sources are
+# the tree's own to change; without this only an object's own source did.)
+-include $(LLVM_OBJS:.o=.d) $(LLVM_MIN_OBJS:.o=.d) $(LLVM_TBLGEN_OBJS:.o=.d)
 
 # The core's own sources include LLVM's generated headers
 $(OBJ_RPCS3) $(OBJ_LIBRETRO): | $(LLVM_TBLGEN_OUT)

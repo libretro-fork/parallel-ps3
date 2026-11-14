@@ -14,6 +14,8 @@
 #include "Crypto/unzip.h"
 #include "Utilities/File.h"
 #include "Utilities/object_pack.h"
+
+#include <encodings/crc32.h>
 #include "Emu/IdManager.h"
 #include "Emu/system_config.h"
 #include "Emu/Cell/PPUAnalyser.h"
@@ -377,6 +379,16 @@ int main()
 		jit_compiler::close_object_packs();
 		const usz made = pack_records(pack);
 		CHECK(made == 200);
+
+		// What was compiled, as one number: the same on the same machine
+		// from run to run, and a change of it between two builds says the
+		// emitted code changed (it is for this CPU, so it is not held to a
+		// value here)
+		{
+			std::vector<u8> bytes;
+			CHECK(fs::file(pack).read(bytes, fs::file(pack).size()));
+			std::printf("test_llvm_jit: the 200 SPU objects are %zu bytes, crc32 %08x\n", bytes.size(), encoding_crc32(0, bytes.data(), bytes.size()));
+		}
 
 		const double second = spu_functions(dir, true);
 		jit_compiler::close_object_packs();

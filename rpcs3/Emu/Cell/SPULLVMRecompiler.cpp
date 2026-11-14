@@ -46,10 +46,8 @@ const extern spu_decoder<spu_iflag> g_spu_iflag;
 #include <llvm/Config/llvm-config.h>
 #include <llvm/TargetParser/Host.h>
 #include <llvm/Transforms/Utils/BasicBlockUtils.h>
-#include <llvm/Analysis/CGSCCPassManager.h>
 #include <llvm/Analysis/LoopAnalysisManager.h>
 #include <llvm/IR/PassManager.h>
-#include <llvm/Passes/PassBuilder.h>
 #include <llvm/Transforms/Scalar/ADCE.h>
 #include <llvm/Transforms/Scalar/DeadStoreElimination.h>
 #include <llvm/Transforms/Scalar/EarlyCSE.h>
@@ -61,6 +59,9 @@ const extern spu_decoder<spu_iflag> g_spu_iflag;
 #else
 #pragma GCC diagnostic pop
 #endif
+
+// Utilities/JITLLVM.cpp: the analyses the function passes run here ask for
+void jit_register_analyses(llvm::LoopAnalysisManager& lam, llvm::FunctionAnalysisManager& fam, llvm::ModuleAnalysisManager& mam);
 
 #ifdef ARCH_ARM64
 #include "Emu/CPU/Backends/AArch64/AArch64JIT.h"
@@ -3901,21 +3902,12 @@ public:
 			// correct order due to inter-analysis-manager references.
 			LoopAnalysisManager lam;
 			FunctionAnalysisManager fam;
-			CGSCCAnalysisManager cgam;
 			ModuleAnalysisManager mam;
 
-			// Create the new pass manager builder.
-			// Take a look at the PassBuilder constructor parameters for more
-			// customization, e.g. specifying a TargetMachine or various debugging
-			// options.
-			PassBuilder pb;
-
-			// Register all the basic analyses with the managers.
-			pb.registerModuleAnalyses(mam);
-			pb.registerCGSCCAnalyses(cgam);
-			pb.registerFunctionAnalyses(fam);
-			pb.registerLoopAnalyses(lam);
-			pb.crossRegisterProxies(lam, fam, cgam, mam);
+			// The analyses the passes below ask for, and no more. A PassBuilder
+			// registers every analysis LLVM has, and to be able to it brings
+			// every pass LLVM has into the core.
+			jit_register_analyses(lam, fam, mam);
 
 			FunctionPassManager fpm;
 			// Basic optimizations
