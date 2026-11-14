@@ -786,6 +786,78 @@ int main()
 		fs::remove_file(path);
 	}
 
+	// The mount table read with no lock (vfs::get, Emu/VFS.cpp): three
+	// threads resolve paths while another mounts and unmounts a device two
+	// thousand times. A path on a mount that stays always resolves to the
+	// same place; a path on the one that comes and goes resolves to where
+	// it is mounted or to what an unmounted path gives, never to anything
+	// else (a tree is not changed once it is published).
+	{
+		g_fxo->reset();
+		CHECK(vfs::mount("/dev_stays", std::string(dir) + "/"));
+
+		static std::string s_stays, s_gone, s_there;
+		s_stays = vfs::get("/dev_stays/some/file.bin");
+		s_gone = vfs::get("/dev_comes/other.bin");
+		CHECK(vfs::mount("/dev_comes", std::string(dir) + "/comes/"));
+		s_there = vfs::get("/dev_comes/other.bin");
+		CHECK(vfs::unmount("/dev_comes"));
+		CHECK(!s_stays.empty() && s_there != s_gone);
+		CHECK(vfs::get("/dev_comes/other.bin") == s_gone);
+
+		static retro_atomic_int_t s_vstop, s_vbad, s_vlooks, s_vthere;
+
+		std::thread lookers[3];
+		for (auto& t : lookers)
+		{
+			t = std::thread([]
+			{
+				while (!retro_atomic_load_acquire_int(&s_vstop))
+				{
+					if (vfs::get("/dev_stays/some/file.bin") != s_stays)
+						retro_atomic_fetch_add_int(&s_vbad, 1);
+
+					const std::string comes = vfs::get("/dev_comes/other.bin");
+
+					if (comes == s_there)
+						retro_atomic_fetch_add_int(&s_vthere, 1);
+					else if (comes != s_gone)
+						retro_atomic_fetch_add_int(&s_vbad, 1);
+
+					retro_atomic_fetch_add_int(&s_vlooks, 1);
+				}
+			});
+		}
+
+		for (u32 n = 0; n < 2000 || (n < 2000000 && (retro_atomic_load_acquire_int(&s_vlooks) < 20000 || retro_atomic_load_acquire_int(&s_vthere) < 100)); n++)
+		{
+			if (!vfs::mount("/dev_comes", std::string(dir) + "/comes/") || !vfs::unmount("/dev_comes"))
+				retro_atomic_fetch_add_int(&s_vbad, 1);
+		}
+
+		retro_atomic_store_release_int(&s_vstop, 1);
+		for (auto& t : lookers)
+			t.join();
+
+		CHECK(retro_atomic_load_acquire_int(&s_vbad) == 0);
+		CHECK(retro_atomic_load_acquire_int(&s_vthere) >= 100);
+		CHECK(vfs::get("/dev_stays/some/file.bin") == s_stays);
+		std::printf("test_vfs_positional: %d path lookups with no lock while a device was mounted and unmounted, %d saw it mounted\n",
+			retro_atomic_load_acquire_int(&s_vlooks), retro_atomic_load_acquire_int(&s_vthere));
+
+		// What a lookup costs one thread
+		{
+			constexpr int rounds = 300000;
+			timespec t0, t1;
+			usz sink = 0;
+			clock_gettime(CLOCK_MONOTONIC, &t0);
+			for (int i = 0; i < rounds; i++)
+				sink += vfs::get("/dev_stays/some/file.bin").size();
+			clock_gettime(CLOCK_MONOTONIC, &t1);
+			std::printf("test_vfs_positional: a path lookup, one thread: %.0f ns (%zu)\n", ((t1.tv_sec - t0.tv_sec) * 1e9 + (t1.tv_nsec - t0.tv_nsec)) / rounds, sink);
+		}
+	}
+
 	// An ID's object found with no lock (idm::pin), and what the lock over
 	// all IDs used to guarantee kept without it (idm::still_named).
 	//

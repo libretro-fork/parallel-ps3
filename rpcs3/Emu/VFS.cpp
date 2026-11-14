@@ -7,6 +7,8 @@
 #include "Cell/lv2/sys_fs.h"
 
 #include "Utilities/mutex.h"
+
+#include <retro_atomic.h>
 #include "Utilities/StrUtil.h"
 #include "util/cctype.hpp"
 
@@ -28,12 +30,61 @@ struct vfs_directory
 	std::map<std::string, std::unique_ptr<vfs_directory>> dirs;
 };
 
+// The mount table is read with no lock. A lookup - every open, stat and
+// directory listing a game makes - takes the tree that is current and walks
+// it; a tree is never changed once it is published. Mounting and unmounting,
+// which happen at boot and when a device comes or goes, copy the current
+// tree, change the copy and publish it, one at a time under the mutex. The
+// trees they replace are kept until the manager goes, so a lookup that is
+// still walking one walks memory that is there: a few dozen small trees over
+// a session.
 struct vfs_manager
 {
+	// Mounting and unmounting, against each other
 	shared_mutex mutex{};
 
-	// VFS root
-	vfs_directory root{};
+	// The current tree (const vfs_directory*)
+	retro_atomic_ptr_t root{};
+
+	// Every tree published so far, the current one last
+	std::vector<std::unique_ptr<vfs_directory>> trees;
+
+	vfs_manager()
+	{
+		trees.emplace_back(std::make_unique<vfs_directory>());
+		retro_atomic_ptr_init(&root, trees.back().get());
+	}
+
+	const vfs_directory* current() const
+	{
+		return static_cast<const vfs_directory*>(retro_atomic_load_acquire_ptr(const_cast<retro_atomic_ptr_t*>(&root)));
+	}
+
+	// A copy of the current tree, to change and publish (mutex held)
+	std::unique_ptr<vfs_directory> copy() const
+	{
+		return clone(*current());
+	}
+
+	void publish(std::unique_ptr<vfs_directory> tree)
+	{
+		trees.emplace_back(std::move(tree));
+		retro_atomic_store_release_ptr(&root, trees.back().get());
+	}
+
+private:
+	static std::unique_ptr<vfs_directory> clone(const vfs_directory& from)
+	{
+		auto to = std::make_unique<vfs_directory>();
+		to->path = from.path;
+
+		for (const auto& [name, dir] : from.dirs)
+		{
+			to->dirs.emplace(name, clone(*dir));
+		}
+
+		return to;
+	}
 };
 
 bool vfs::mount(std::string_view vpath, std::string_view path, bool is_dir)
@@ -56,7 +107,10 @@ bool vfs::mount(std::string_view vpath, std::string_view path, bool is_dir)
 
 	const std::string_view vpath_backup = vpath;
 
-	for (std::vector<vfs_directory*> list{&table.root};;)
+	// Changed in a copy, which is published once the mount is in it
+	std::unique_ptr<vfs_directory> tree = table.copy();
+
+	for (std::vector<vfs_directory*> list{tree.get()};;)
 	{
 		// Skip one or more '/'
 		const auto pos = vpath.find_first_not_of('/');
@@ -83,6 +137,7 @@ bool vfs::mount(std::string_view vpath, std::string_view path, bool is_dir)
 				list.back()->path = "/";
 
 			vfs_log.notice("Mounted path \"%s\" to \"%s\"", vpath_backup, list.back()->path);
+			table.publish(std::move(tree));
 			return true;
 		}
 
@@ -191,7 +246,10 @@ bool vfs::unmount(std::string_view vpath)
 			++it;
 		}
 	};
-	unmount_children(table.root, 0);
+	// In a copy, published when the entry is out of it
+	std::unique_ptr<vfs_directory> tree = table.copy();
+	unmount_children(*tree, 0);
+	table.publish(std::move(tree));
 
 	return true;
 }
@@ -205,9 +263,8 @@ std::string vfs::get(std::string_view vpath, std::vector<std::string>* out_dir, 
 		fmt::throw_exception("vfs_manager not initialized.%s", src_loc);
 	}
 
-	auto& table = g_fxo->get<vfs_manager>();
-
-	reader_lock lock(table.mutex);
+	// The tree as it is now: no lock (see vfs_manager)
+	const vfs_directory* const root = g_fxo->get<vfs_manager>().current();
 
 	// Resulting path fragments: decoded ones
 	std::vector<std::string_view> result;
@@ -230,7 +287,7 @@ std::string vfs::get(std::string_view vpath, std::vector<std::string>* out_dir, 
 		name_list.reserve(vpath.size() / 2);
 	}
 
-	for (std::vector<const vfs_directory*> list{&table.root};;)
+	for (std::vector<const vfs_directory*> list{root};;)
 	{
 		// Skip one or more '/'
 		const auto pos = vpath.find_first_not_of('/');
@@ -397,7 +454,8 @@ std::string vfs::retrieve(std::string_view path, const vfs_directory* node, std:
 			return {};
 		}
 
-		reader_lock lock(table.mutex);
+		// The tree as it is now: no lock (see vfs_manager)
+		const vfs_directory* const root = table.current();
 
 		std::vector<std::string_view> mount_path_empty;
 
@@ -405,7 +463,7 @@ std::string vfs::retrieve(std::string_view path, const vfs_directory* node, std:
 
 		if (!rpath.empty())
 		{
-			if (std::string res = vfs::retrieve(rpath, &table.root, &mount_path_empty); !res.empty())
+			if (std::string res = vfs::retrieve(rpath, root, &mount_path_empty); !res.empty())
 			{
 				return res;
 			}
@@ -413,7 +471,7 @@ std::string vfs::retrieve(std::string_view path, const vfs_directory* node, std:
 
 		mount_path_empty.clear();
 
-		return vfs::retrieve(path, &table.root, &mount_path_empty);
+		return vfs::retrieve(path, root, &mount_path_empty);
 	}
 
 	mount_path->emplace_back();
