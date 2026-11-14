@@ -95,6 +95,15 @@ void _sys_ppu_thread_exit(ppu_thread& ppu, u64 errorcode)
 
 		std::lock_guard lock(id_manager::g_mutex);
 
+		// Joining, detaching and the other calls on this thread's ID no
+		// longer take the lock over the IDs: they count themselves in on
+		// the ID. What this lock kept from them is kept this way - the ones
+		// inside finish first, and no other gets in until the thread has
+		// settled its joiner and, if nobody will join it, left the IDs. A
+		// join that had named itself the joiner is asleep by then, so the
+		// wake-up below finds it.
+		const auto closed = idm::close<named_thread<ppu_thread>>(ppu.id);
+
 		// Get joiner ID
 		old_status = ppu.joiner.fetch_op([](ppu_join_status& status)
 		{
