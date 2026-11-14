@@ -28,7 +28,7 @@
 #include "llvm/Support/raw_ostream.h"
 #include <cassert>
 #include <cstdlib>
-#include <mutex>
+#include <retro_atomic.h>
 #include <new>
 
 #if defined(HAVE_UNISTD_H)
@@ -41,27 +41,36 @@
 
 using namespace llvm;
 
-static fatal_error_handler_t ErrorHandler = nullptr;
-static void *ErrorHandlerUserData = nullptr;
+// libretro: no lock. A handler and its data are two words. The data is
+// stored before the handler and the handler read before the data, so a
+// call that finds a handler finds the data it was installed with; taking
+// a handler off clears the handler first. Handlers are installed once, at
+// start, as before: two threads installing different ones at the same time
+// was never meaningful.
+static retro_atomic_ptr_t ErrorHandler;
+static retro_atomic_ptr_t ErrorHandlerUserData;
 
-static fatal_error_handler_t BadAllocErrorHandler = nullptr;
-static void *BadAllocErrorHandlerUserData = nullptr;
+static retro_atomic_ptr_t BadAllocErrorHandler;
+static retro_atomic_ptr_t BadAllocErrorHandlerUserData;
 
-#if LLVM_ENABLE_THREADS == 1
-// Mutexes to synchronize installing error handlers and calling error handlers.
-// Do not use ManagedStatic, or that may allocate memory while attempting to
-// report an OOM.
-//
-// This usage of std::mutex has to be conditionalized behind ifdefs because
-// of this script:
-//   compiler-rt/lib/sanitizer_common/symbolizer/scripts/build_symbolizer.sh
-// That script attempts to statically link the LLVM symbolizer library with the
-// STL and hide all of its symbols with 'opt -internalize'. To reduce size, it
-// cuts out the threading portions of the hermetic copy of libc++ that it
-// builds. We can remove these ifdefs if that script goes away.
-static std::mutex ErrorHandlerMutex;
-static std::mutex BadAllocErrorHandlerMutex;
-#endif
+static void installHandler(retro_atomic_ptr_t &Handler, retro_atomic_ptr_t &Data,
+                           fatal_error_handler_t Fn, void *UserData) {
+  retro_atomic_store_release_ptr(&Data, UserData);
+  retro_atomic_store_release_ptr(&Handler, reinterpret_cast<void *>(Fn));
+}
+
+static void removeHandler(retro_atomic_ptr_t &Handler, retro_atomic_ptr_t &Data) {
+  retro_atomic_store_release_ptr(&Handler, nullptr);
+  retro_atomic_store_release_ptr(&Data, nullptr);
+}
+
+static fatal_error_handler_t readHandler(retro_atomic_ptr_t &Handler,
+                                         retro_atomic_ptr_t &Data,
+                                         void *&UserData) {
+  void *Fn = retro_atomic_load_acquire_ptr(&Handler);
+  UserData = retro_atomic_load_acquire_ptr(&Data);
+  return reinterpret_cast<fatal_error_handler_t>(Fn);
+}
 
 static bool write_retry(int fd, const char *buf, size_t count) {
   while (count > 0) {
@@ -76,20 +85,13 @@ static bool write_retry(int fd, const char *buf, size_t count) {
 
 void llvm::install_fatal_error_handler(fatal_error_handler_t handler,
                                        void *user_data) {
-#if LLVM_ENABLE_THREADS == 1
-  std::lock_guard<std::mutex> Lock(ErrorHandlerMutex);
-#endif
-  assert(!ErrorHandler && "Error handler already registered!\n");
-  ErrorHandler = handler;
-  ErrorHandlerUserData = user_data;
+  assert(!retro_atomic_load_acquire_ptr(&ErrorHandler) &&
+         "Error handler already registered!\n");
+  installHandler(ErrorHandler, ErrorHandlerUserData, handler, user_data);
 }
 
 void llvm::remove_fatal_error_handler() {
-#if LLVM_ENABLE_THREADS == 1
-  std::lock_guard<std::mutex> Lock(ErrorHandlerMutex);
-#endif
-  ErrorHandler = nullptr;
-  ErrorHandlerUserData = nullptr;
+  removeHandler(ErrorHandler, ErrorHandlerUserData);
 }
 
 void llvm::report_fatal_error(const char *Reason, bool GenCrashDiag) {
@@ -101,17 +103,9 @@ void llvm::report_fatal_error(StringRef Reason, bool GenCrashDiag) {
 }
 
 void llvm::report_fatal_error(const Twine &Reason, bool GenCrashDiag) {
-  llvm::fatal_error_handler_t handler = nullptr;
   void* handlerData = nullptr;
-  {
-    // Only acquire the mutex while reading the handler, so as not to invoke a
-    // user-supplied callback under a lock.
-#if LLVM_ENABLE_THREADS == 1
-    std::lock_guard<std::mutex> Lock(ErrorHandlerMutex);
-#endif
-    handler = ErrorHandler;
-    handlerData = ErrorHandlerUserData;
-  }
+  llvm::fatal_error_handler_t handler =
+      readHandler(ErrorHandler, ErrorHandlerUserData, handlerData);
 
   if (handler) {
     handler(handlerData, Reason.str().c_str(), GenCrashDiag);
@@ -158,35 +152,21 @@ void llvm::reportFatalUsageError(const Twine &reason) {
 
 void llvm::install_bad_alloc_error_handler(fatal_error_handler_t handler,
                                            void *user_data) {
-#if LLVM_ENABLE_THREADS == 1
-  std::lock_guard<std::mutex> Lock(BadAllocErrorHandlerMutex);
-#endif
-  assert(!BadAllocErrorHandler &&
+  assert(!retro_atomic_load_acquire_ptr(&BadAllocErrorHandler) &&
          "Bad alloc error handler already registered!\n");
-  BadAllocErrorHandler = handler;
-  BadAllocErrorHandlerUserData = user_data;
+  installHandler(BadAllocErrorHandler, BadAllocErrorHandlerUserData, handler,
+                 user_data);
 }
 
 void llvm::remove_bad_alloc_error_handler() {
-#if LLVM_ENABLE_THREADS == 1
-  std::lock_guard<std::mutex> Lock(BadAllocErrorHandlerMutex);
-#endif
-  BadAllocErrorHandler = nullptr;
-  BadAllocErrorHandlerUserData = nullptr;
+  removeHandler(BadAllocErrorHandler, BadAllocErrorHandlerUserData);
 }
 
 void llvm::report_bad_alloc_error(const char *Reason, bool GenCrashDiag) {
-  fatal_error_handler_t Handler = nullptr;
   void *HandlerData = nullptr;
-  {
-    // Only acquire the mutex while reading the handler, so as not to invoke a
-    // user-supplied callback under a lock.
-#if LLVM_ENABLE_THREADS == 1
-    std::lock_guard<std::mutex> Lock(BadAllocErrorHandlerMutex);
-#endif
-    Handler = BadAllocErrorHandler;
-    HandlerData = BadAllocErrorHandlerUserData;
-  }
+  fatal_error_handler_t Handler =
+      readHandler(BadAllocErrorHandler, BadAllocErrorHandlerUserData,
+                  HandlerData);
 
   if (Handler) {
     Handler(HandlerData, Reason, GenCrashDiag);

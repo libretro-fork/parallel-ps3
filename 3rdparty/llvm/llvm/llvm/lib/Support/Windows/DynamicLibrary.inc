@@ -22,11 +22,13 @@
 //===----------------------------------------------------------------------===//
 
 DynamicLibrary::HandleSet::~HandleSet() {
-  for (void *Handle : llvm::reverse(Handles))
+  eachHandle(true, [](void *Handle) -> void * {
     FreeLibrary(HMODULE(Handle));
+    return nullptr;
+  });
 
   // 'Process' should not be released on Windows.
-  assert((Process == &Invalid || Process == this) && "Bad Handle");
+  assert((process() == &Invalid || process() == this) && "Bad Handle");
   // llvm_shutdown called, Return to default
   DynamicLibrary::SearchOrder = DynamicLibrary::SO_Linker;
 }
@@ -60,7 +62,7 @@ static DynamicLibrary::HandleSet *IsOpenedHandlesInstance(void *Handle) {
 
 void DynamicLibrary::HandleSet::DLClose(void *Handle) {
   if (HandleSet *HS = IsOpenedHandlesInstance(Handle))
-    HS->Process = &Invalid; // Just drop the *Process* handle.
+    HS->dropProcess(); // Just drop the *Process* handle.
   else
     FreeLibrary((HMODULE)Handle);
 }
@@ -89,7 +91,7 @@ void *DynamicLibrary::HandleSet::DLSym(void *Handle, const char *Symbol) {
     return (void *)uintptr_t(GetProcAddress((HMODULE)Handle, Symbol));
 
   // Could have done a dlclose on the *Process* handle
-  if (HS->Process == &Invalid)
+  if (HS->process() == &Invalid)
     return nullptr;
 
   // Trials indicate EnumProcessModulesEx is consistantly faster than using

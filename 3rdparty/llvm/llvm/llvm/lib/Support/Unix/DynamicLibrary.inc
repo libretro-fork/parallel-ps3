@@ -15,10 +15,12 @@
 
 DynamicLibrary::HandleSet::~HandleSet() {
   // Close the libraries in reverse order.
-  for (void *Handle : llvm::reverse(Handles))
+  eachHandle(true, [](void *Handle) -> void * {
     ::dlclose(Handle);
-  if (Process != &Invalid)
-    ::dlclose(Process);
+    return nullptr;
+  });
+  if (process() != &Invalid)
+    ::dlclose(process());
 
   // llvm_shutdown called, Return to default
   DynamicLibrary::SearchOrder = DynamicLibrary::SO_Linker;

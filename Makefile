@@ -260,6 +260,13 @@ ifeq ($(HAVE_LLVM)$(SYSTEM_LLVM),10)
    LLVM_CONFIG_INC      = $(LLVM_CFG)/$(LLVM_OS) -I$(LLVM_CFG)/$(LLVM_ARCH) -I$(LLVM_CFG)/common
    LLVM_HOST_CONFIG_INC = $(LLVM_CFG)/$(HOST_OS) -I$(LLVM_CFG)/$(HOST_ARCH) -I$(LLVM_CFG)/common
 
+   # Every TableGen input and TableGen's own sources: what its output is
+   # made again for (llvm.mk). Not the tool itself, which is linked again
+   # whenever one of the Support files it shares with LLVM changes.
+   LLVM_TD_DEPS := $(wildcard $(LLVM_SRC)/include/llvm/*/*.td $(LLVM_SRC)/include/llvm/*/*/*.td \
+      $(LLVM_SRC)/lib/*/*.td $(LLVM_SRC)/lib/Target/*/*.td $(LLVM_SRC)/lib/Target/*/*/*.td \
+      $(LLVM_SRC)/utils/TableGen/*.cpp $(LLVM_SRC)/utils/TableGen/*.h $(LLVM_SRC)/utils/TableGen/*/*.cpp $(LLVM_SRC)/utils/TableGen/*/*.h \
+      $(LLVM_SRC)/lib/TableGen/*.cpp $(LLVM_SRC)/lib/TableGen/*.h $(LLVM_SRC)/include/llvm/TableGen/*.h)
    llvm_objs = $(patsubst $(LLVM_SRC)/%,$(1)/%.o,$(2))
    include $(CORE_DIR)/rpcs3/libretro/make/llvm/llvm.mk
 
@@ -276,10 +283,14 @@ ifeq ($(HAVE_LLVM)$(SYSTEM_LLVM),10)
 
    # As LLVM's release builds compile it
    llvm_defs = $(if $(filter linux,$(1)),-D_GNU_SOURCE,$(if $(filter windows,$(1)),-D_FILE_OFFSET_BITS=64))
+   # LLVM's own files call libretro-common's retro_atomic where they had
+   # locks: its headers after every other, so that none of them stands in
+   # for a system header
+   LLVM_LRC_INC  := -idirafter $(CORE_DIR)/rpcs3/libretro/libretro-common/include
    LLVM_CXXFLAGS := -std=c++17 -O2 -DNDEBUG -fno-exceptions -fno-rtti -funwind-tables \
-      -fvisibility-inlines-hidden -ffunction-sections -fdata-sections -w -pthread $(fpic) $(VISIBILITY) $(ARCH_FLAGS)
+      -fvisibility-inlines-hidden -ffunction-sections -fdata-sections -w -pthread $(fpic) $(VISIBILITY) $(ARCH_FLAGS) $(LLVM_LRC_INC)
    LLVM_CFLAGS   := -O2 -DNDEBUG -ffunction-sections -fdata-sections -w $(fpic) $(VISIBILITY) $(ARCH_FLAGS)
-   LLVM_HOST_CXXFLAGS := -std=c++17 -O2 -DNDEBUG -fno-exceptions -fno-rtti -w -pthread
+   LLVM_HOST_CXXFLAGS := -std=c++17 -O2 -DNDEBUG -fno-exceptions -fno-rtti -w -pthread $(LLVM_LRC_INC)
    LLVM_HOST_LIBS := $(if $(filter windows,$(HOST_OS)),-lpsapi -lshell32 -lole32 -luuid -ladvapi32 -lws2_32 -lntdll,$(if $(filter darwin,$(HOST_OS)),,-lpthread -ldl -lm))
 
    $(LLVM_MIN_OBJS) $(LLVM_TBLGEN_OBJS): LLVM_CONFIG_INC = $(LLVM_HOST_CONFIG_INC)

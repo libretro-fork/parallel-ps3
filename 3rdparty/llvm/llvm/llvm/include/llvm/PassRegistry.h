@@ -17,10 +17,10 @@
 #define LLVM_PASSREGISTRY_H
 
 #include "llvm/ADT/DenseMap.h"
+#include <retro_atomic.h>
 #include "llvm/ADT/StringMap.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/Support/Compiler.h"
-#include "llvm/Support/RWMutex.h"
 #include <memory>
 #include <vector>
 
@@ -36,20 +36,26 @@ struct PassRegistrationListener;
 /// threads simultaneously, you will need to use a separate PassRegistry on
 /// each thread.
 class PassRegistry {
-  mutable sys::SmartRWMutex<true> Lock;
+  // libretro: no lock. Passes are registered from whichever thread first
+  // makes one, while other threads look passes up, so both tables are
+  // open-addressed arrays of pointers that are only ever added to: a slot
+  // is taken with one compare-and-swap and never changes again, and a
+  // lookup is a walk from the key's slot to the first empty one. A pass
+  // registered while a lookup for it walks is found or not, as with the
+  // lock; what is found is whole.
+  enum { TableSize = 4096, MaxListeners = 16 };
 
-  /// PassInfoMap - Keep track of the PassInfo object for each registered pass.
-  using MapType = DenseMap<const void *, const PassInfo *>;
-  MapType PassInfoMap;
+  /// The PassInfo of each registered pass, by its type identifier. The low
+  /// bit of an entry says the registry frees it.
+  mutable retro_atomic_ptr_t ByID[TableSize];
 
-  using StringMapType = StringMap<const PassInfo *>;
-  StringMapType PassInfoStringMap;
+  /// The same, by argument string: the first pass registered with one.
+  mutable retro_atomic_ptr_t ByArg[TableSize];
 
-  std::vector<std::unique_ptr<const PassInfo>> ToFree;
-  std::vector<PassRegistrationListener *> Listeners;
+  retro_atomic_ptr_t Listeners[MaxListeners];
 
 public:
-  PassRegistry() = default;
+  LLVM_ABI PassRegistry();
   LLVM_ABI ~PassRegistry();
 
   /// getPassRegistry - Access the global registry object, which is

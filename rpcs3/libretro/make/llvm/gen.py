@@ -237,7 +237,11 @@ def main():
     w("")
     for out, (tool, args, td) in sorted(tblgens.items()):
         exe = "$(LLVM_MIN_TBLGEN)" if tool == "llvm-min-tblgen" else "$(LLVM_TBLGEN)"
-        w("%s: %s | %s" % (rw.path(out), exe, td))
+        # What TableGen writes is made again when a .td or TableGen's own
+        # source changes (LLVM_TD_DEPS, the Makefile's), not when the tool
+        # was only linked again: it shares LLVM's Support files, and a
+        # change to one of those used to rebuild every file of LLVM's
+        w("%s: %s $(LLVM_TD_DEPS) | %s" % (rw.path(out), td, exe))
         w("\t@mkdir -p $(@D)")
         w("\t$(SAY) TBLGEN $@")
         w("\t$(Q)%s %s -o $@" % (exe, " ".join(args)))

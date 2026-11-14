@@ -15,6 +15,7 @@
 
 #include "llvm/Support/Compiler.h"
 #include <atomic>
+#include <retro_atomic.h>
 #include <cstddef>
 
 namespace llvm {
@@ -53,12 +54,16 @@ protected:
   mutable std::atomic<void *> Ptr{};
   mutable void (*DeleterFn)(void *) = nullptr;
   mutable const ManagedStaticBase *Next = nullptr;
+  // libretro: which thread makes the object is decided here, with one
+  // compare-and-swap, not under a lock shared by every ManagedStatic
+  mutable retro_atomic_int_t Claimed{0};
 #else
   // This should only be used as a static variable, which guarantees that this
   // will be zero initialized.
   mutable std::atomic<void *> Ptr;
   mutable void (*DeleterFn)(void *);
   mutable const ManagedStaticBase *Next;
+  mutable retro_atomic_int_t Claimed;
 #endif
 
   LLVM_ABI void RegisterManagedStatic(void *(*creator)(),

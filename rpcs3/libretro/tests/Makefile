@@ -537,6 +537,12 @@ test_dma_views_tsan: $(DMA_VIEWS_DEPS)
 
 # Directories of the emulator with no atomic_t left: it is being replaced
 # by direct retro_atomic calls, a directory at a time, and none comes back
+# Files of LLVM's (3rdparty/llvm) with no lock left: its locks are being
+# taken out for retro_atomic, the ones recompiler threads share first
+LLVM_LOCK_FREE := lib/IR/PassRegistry.cpp include/llvm/PassRegistry.h lib/Support/ManagedStatic.cpp include/llvm/Support/ManagedStatic.h \
+	lib/Support/DynamicLibrary.cpp lib/Support/Unix/DynamicLibrary.inc lib/Support/Windows/DynamicLibrary.inc lib/Support/ErrorHandling.cpp \
+	include/llvm/Support/Threading.h
+
 ATOMIC_T_FREE := ../../Crypto ../../Loader ../../Emu/Audio ../../Emu/Io ../../Input
 
 GUEST_FAULTS_DEPS := test_guest_faults.c ../../Emu/RSX/Common/guest_faults.c ../../Emu/RSX/Common/guest_faults.h
@@ -725,6 +731,7 @@ check: all
 	@if grep -n "reader_lock lock(lv2_obj::g_mutex)" ../../Emu/Cell/lv2/sys_ppu_thread.cpp || awk '/^bool lv2_obj::is_scheduler_ready/{f=1} f&&/g_mutex/{bad=1} f&&/^}/{exit} END{exit !bad}' ../../Emu/Cell/lv2/lv2.cpp; then echo "scheduler: reading a priority, or asking whether the scheduler is ready, takes the scheduler's lock again (CHANGELOG)"; exit 1; else echo "scheduler: readers take no lock"; fi
 	@if grep -rn --include=*.cpp --include=*.h --include=*.hpp "atomic_t<\|atomic_be_t<\|atomic_le_t<\|util/atomic.hpp" $(ATOMIC_T_FREE); then echo "atomic_t: back in a directory that was moved to retro_atomic - new code calls retro_atomic directly (AGENTS.md)"; exit 1; else echo "atomic_t: gone from $(words $(ATOMIC_T_FREE)) directories"; fi
 	@bad=0; for s in $$(grep -oh "g_cfg\.[a-z_]*\.[a-z_0-9]*" ../../Emu/Cell/SPULLVMRecompiler.cpp ../../Emu/Cell/SPUCommonRecompiler.cpp ../../Emu/CPU/CPUTranslator.cpp ../../Emu/CPU/CPUTranslator.h | sort -u); do grep -q "put($$s" ../../Emu/Cell/SPULLVMRecompiler.cpp || { echo "SPU notes: $$s is read by the recompiler and is not part of a note's name (note_name in SPULLVMRecompiler.cpp): an object noted with one value of it would be loaded for another"; bad=1; }; done; if [ $$bad = 1 ]; then exit 1; else echo "SPU notes: named by every setting the recompiler reads"; fi
+	@if grep -nE "std::mutex|sys::Mutex|SmartMutex|recursive_mutex|RWMutex|lock_guard|unique_lock|ScopedLock|ScopedReader|ScopedWriter|condition_variable|shared_mutex|scoped_lock|std::call_once\(|pthread_mutex|<mutex>" $(addprefix ../../../3rdparty/llvm/llvm/llvm/,$(LLVM_LOCK_FREE)); then echo "llvm: a lock is back in a file of LLVM's that was made lock-free - recompiler threads share these (CHANGELOG)"; exit 1; else echo "llvm: no lock in $(words $(LLVM_LOCK_FREE)) of its files"; fi
 	@if grep -n "Passes/PassBuilder.h\|PassBuilder pb\|PassBuilder(" ../../Emu/Cell/PPUThread.cpp ../../Emu/Cell/SPULLVMRecompiler.cpp ../../../Utilities/JITLLVM.cpp; then echo "llvm: PassBuilder is used again - it brings every pass LLVM has into the core; register what a pass needs in jit_register_analyses (CHANGELOG)"; exit 1; else echo "llvm: only the analyses the recompilers use"; fi
 	@# Nor do the mice: no lock in the handler, none taken by those that read them
 	@if grep -n "shared_mutex\|std::mutex\|lock_guard\|scoped_lock" ../../Emu/Io/MouseHandler.h ../../Emu/Io/MouseHandler.cpp ../libretro_mouse_handler.h ../libretro_mouse_handler.cpp || grep -rn "handler\.mutex\|take_pending()" ../../Emu/Cell/Modules/cellMouse.cpp ../../Emu/Cell/Modules/cellGem.cpp ../../Emu/Io/usio.cpp ../../Emu/Io/GunCon3.cpp ../../Emu/Io/TopShotElite.cpp ../../Emu/Io/TopShotFearmaster.cpp ../../Emu/Io/GameTablet.cpp; then echo "mice: the mouse handler's lock is back - a mouse is a record read whole (AGENTS.md)"; exit 1; else echo "mice: no mouse lock"; fi

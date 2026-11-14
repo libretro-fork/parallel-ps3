@@ -15,30 +15,52 @@
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/StringMap.h"
 #include "llvm/Config/config.h"
-#include "llvm/Support/Mutex.h"
+#include "llvm/Support/ErrorHandling.h"
+#include <retro_atomic.h>
+#include <string>
 #include <vector>
 
 using namespace llvm;
 using namespace llvm::sys;
 
-// All methods for HandleSet should be used holding SymbolsMutex.
+// libretro: no lock. The handles are a fixed array of slots, each taken and
+// given up with one compare-and-swap; the process handle is one word; the
+// symbols given by hand are a list that is only ever added to at its head.
+// Lookups walk them from any thread while others add.
 class DynamicLibrary::HandleSet {
-  using HandleList = std::vector<void *>;
-  HandleList Handles;
-  void *Process = &Invalid;
+  enum { MaxHandles = 64 };
+  retro_atomic_ptr_t Handles[MaxHandles];
+  retro_atomic_ptr_t Process;
 
 public:
   static void *DLOpen(const char *Filename, std::string *Err);
   static void DLClose(void *Handle);
   static void *DLSym(void *Handle, const char *Symbol);
 
-  HandleSet() = default;
+  HandleSet() {
+    for (auto &H : Handles)
+      retro_atomic_store_relaxed_ptr(&H, nullptr);
+    retro_atomic_store_relaxed_ptr(&Process, &Invalid);
+  }
   ~HandleSet();
 
-  HandleList::iterator Find(void *Handle) { return find(Handles, Handle); }
+  void *process() { return retro_atomic_load_acquire_ptr(&Process); }
+  void dropProcess() { retro_atomic_store_release_ptr(&Process, &Invalid); }
+
+  // Every handle, in the order of their slots or the other way round
+  template <typename F> void *eachHandle(bool Reverse, F &&Fn) {
+    for (int N = 0; N != MaxHandles; ++N) {
+      int I = Reverse ? MaxHandles - 1 - N : N;
+      if (void *Handle = retro_atomic_load_acquire_ptr(&Handles[I]))
+        if (void *Ptr = Fn(Handle))
+          return Ptr;
+    }
+    return nullptr;
+  }
 
   bool Contains(void *Handle) {
-    return Handle == Process || Find(Handle) != Handles.end();
+    return Handle == process() ||
+           eachHandle(false, [&](void *H) { return H == Handle ? H : nullptr; });
   }
 
   bool AddLibrary(void *Handle, bool IsProcess = false, bool CanClose = true,
@@ -50,60 +72,58 @@ public:
            "CanClose must be false if AllowDuplicates is true.");
 
     if (LLVM_LIKELY(!IsProcess)) {
-      if (!AllowDuplicates && Find(Handle) != Handles.end()) {
+      if (!AllowDuplicates && Contains(Handle)) {
         if (CanClose)
           DLClose(Handle);
         return false;
       }
-      Handles.push_back(Handle);
+      for (auto &Slot : Handles)
+        if (!retro_atomic_load_acquire_ptr(&Slot) &&
+            retro_atomic_cas_ptr(&Slot, nullptr, Handle))
+          return true;
+      report_fatal_error("DynamicLibrary: more libraries than it holds");
     } else {
+      void *Old = retro_atomic_exchange_ptr(&Process, Handle);
 #ifndef _WIN32
-      if (Process != &Invalid) {
+      if (Old != &Invalid) {
         if (CanClose)
-          DLClose(Process);
-        if (Process == Handle)
+          DLClose(Old);
+        if (Old == Handle)
           return false;
       }
+#else
+      (void)Old;
 #endif
-      Process = Handle;
     }
     return true;
   }
 
   void CloseLibrary(void *Handle) {
     DLClose(Handle);
-    HandleList::iterator it = Find(Handle);
-    if (it != Handles.end()) {
-      Handles.erase(it);
-    }
+    for (auto &Slot : Handles)
+      if (retro_atomic_load_acquire_ptr(&Slot) == Handle &&
+          retro_atomic_cas_ptr(&Slot, Handle, nullptr))
+        return;
   }
 
   void *LibLookup(const char *Symbol, DynamicLibrary::SearchOrdering Order) {
-    if (Order & SO_LoadOrder) {
-      for (void *Handle : Handles) {
-        if (void *Ptr = DLSym(Handle, Symbol))
-          return Ptr;
-      }
-    } else {
-      for (void *Handle : llvm::reverse(Handles)) {
-        if (void *Ptr = DLSym(Handle, Symbol))
-          return Ptr;
-      }
-    }
-    return nullptr;
+    return eachHandle(!(Order & SO_LoadOrder),
+                      [&](void *Handle) { return DLSym(Handle, Symbol); });
   }
 
   void *Lookup(const char *Symbol, DynamicLibrary::SearchOrdering Order) {
     assert(!((Order & SO_LoadedFirst) && (Order & SO_LoadedLast)) &&
            "Invalid Ordering");
 
-    if (Process == &Invalid || (Order & SO_LoadedFirst)) {
+    void *Proc = process();
+
+    if (Proc == &Invalid || (Order & SO_LoadedFirst)) {
       if (void *Ptr = LibLookup(Symbol, Order))
         return Ptr;
     }
-    if (Process != &Invalid) {
+    if (Proc != &Invalid) {
       // Use OS facilities to search the current binary and all loaded libs.
-      if (void *Ptr = DLSym(Process, Symbol))
+      if (void *Ptr = DLSym(Proc, Symbol))
         return Ptr;
 
       // Search any libs that might have been skipped because of RTLD_LOCAL.
@@ -118,15 +138,19 @@ public:
 
 namespace {
 
+// A symbol given by hand (AddSymbol). The newest of a name is at the front.
+struct ExplicitSymbol {
+  std::string Name;
+  void *Value;
+  ExplicitSymbol *Next;
+};
+
 struct Globals {
-  // Collection of symbol name/value pairs to be searched prior to any
-  // libraries.
-  llvm::StringMap<void *> ExplicitSymbols;
-  // Collections of known library handles.
+  retro_atomic_ptr_t ExplicitSymbols;
   DynamicLibrary::HandleSet OpenedHandles;
   DynamicLibrary::HandleSet OpenedTemporaryHandles;
-  // Lock for ExplicitSymbols, OpenedHandles, and OpenedTemporaryHandles.
-  llvm::sys::SmartMutex<true> SymbolsMutex;
+
+  Globals() { retro_atomic_store_relaxed_ptr(&ExplicitSymbols, nullptr); }
 };
 
 Globals &getGlobals() {
@@ -158,18 +182,22 @@ void *SearchForAddressOfSpecialSymbol(const char *SymbolName) {
 
 void DynamicLibrary::AddSymbol(StringRef SymbolName, void *SymbolValue) {
   auto &G = getGlobals();
-  SmartScopedLock<true> Lock(G.SymbolsMutex);
-  G.ExplicitSymbols[SymbolName] = SymbolValue;
+  auto *Added = new ExplicitSymbol{SymbolName.str(), SymbolValue, nullptr};
+
+  for (;;) {
+    void *Head = retro_atomic_load_acquire_ptr(&G.ExplicitSymbols);
+    Added->Next = static_cast<ExplicitSymbol *>(Head);
+    if (retro_atomic_cas_ptr(&G.ExplicitSymbols, Head, Added))
+      break;
+  }
 }
 
 DynamicLibrary DynamicLibrary::getPermanentLibrary(const char *FileName,
                                                    std::string *Err) {
   auto &G = getGlobals();
   void *Handle = HandleSet::DLOpen(FileName, Err);
-  if (Handle != &Invalid) {
-    SmartScopedLock<true> Lock(G.SymbolsMutex);
+  if (Handle != &Invalid)
     G.OpenedHandles.AddLibrary(Handle, /*IsProcess*/ FileName == nullptr);
-  }
 
   return DynamicLibrary(Handle);
 }
@@ -177,7 +205,6 @@ DynamicLibrary DynamicLibrary::getPermanentLibrary(const char *FileName,
 DynamicLibrary DynamicLibrary::addPermanentLibrary(void *Handle,
                                                    std::string *Err) {
   auto &G = getGlobals();
-  SmartScopedLock<true> Lock(G.SymbolsMutex);
   // If we've already loaded this library, tell the caller.
   if (!G.OpenedHandles.AddLibrary(Handle, /*IsProcess*/ false,
                                   /*CanClose*/ false))
@@ -192,7 +219,6 @@ DynamicLibrary DynamicLibrary::getLibrary(const char *FileName,
   void *Handle = HandleSet::DLOpen(FileName, Err);
   if (Handle != &Invalid) {
     auto &G = getGlobals();
-    SmartScopedLock<true> Lock(G.SymbolsMutex);
     G.OpenedTemporaryHandles.AddLibrary(Handle, /*IsProcess*/ false,
                                         /*CanClose*/ false,
                                         /*AllowDuplicates*/ true);
@@ -202,7 +228,6 @@ DynamicLibrary DynamicLibrary::getLibrary(const char *FileName,
 
 void DynamicLibrary::closeLibrary(DynamicLibrary &Lib) {
   auto &G = getGlobals();
-  SmartScopedLock<true> Lock(G.SymbolsMutex);
   if (Lib.isValid()) {
     G.OpenedTemporaryHandles.CloseLibrary(Lib.Data);
     Lib.Data = &Invalid;
@@ -218,13 +243,13 @@ void *DynamicLibrary::getAddressOfSymbol(const char *SymbolName) {
 void *DynamicLibrary::SearchForAddressOfSymbol(const char *SymbolName) {
   {
     auto &G = getGlobals();
-    SmartScopedLock<true> Lock(G.SymbolsMutex);
 
     // First check symbols added via AddSymbol().
-    StringMap<void *>::iterator i = G.ExplicitSymbols.find(SymbolName);
-
-    if (i != G.ExplicitSymbols.end())
-      return i->second;
+    for (auto *S = static_cast<ExplicitSymbol *>(
+             retro_atomic_load_acquire_ptr(&G.ExplicitSymbols));
+         S; S = S->Next)
+      if (S->Name == SymbolName)
+        return S->Value;
 
     // Now search the libraries.
     if (void *Ptr = G.OpenedHandles.Lookup(SymbolName, SearchOrder))

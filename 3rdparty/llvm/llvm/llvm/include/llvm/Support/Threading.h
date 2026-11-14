@@ -38,11 +38,8 @@
 #define LLVM_THREADING_USE_STD_CALL_ONCE 0
 #endif
 
-#if LLVM_THREADING_USE_STD_CALL_ONCE
-#include <mutex>
-#else
-#include "llvm/Support/Atomic.h"
-#endif
+#include <retro_atomic.h>
+#include <thread>
 
 namespace llvm {
 class Twine;
@@ -51,12 +48,10 @@ class Twine;
 /// false otherwise.
 constexpr bool llvm_is_multithreaded() { return LLVM_ENABLE_THREADS; }
 
-#if LLVM_THREADING_USE_STD_CALL_ONCE
-
-using once_flag = std::once_flag;
-
-#else
-
+  // libretro: one flag word and a compare-and-swap, on every system, in
+  // place of std::call_once and its lock. The thread that takes the flag
+  // makes the call; one that finds it taken has nothing to go on with
+  // until the call is done, and yields until it is.
   enum InitStatus { Uninitialized = 0, Wait = 1, Done = 2 };
 
   /// The llvm::once_flag structure
@@ -65,10 +60,8 @@ using once_flag = std::once_flag;
   /// This structure must be used as an opaque object. It is a struct to force
   /// autoinitialization and behave like std::once_flag.
   struct once_flag {
-    volatile sys::cas_flag status = Uninitialized;
+    retro_atomic_int_t status{Uninitialized};
   };
-
-#endif
 
   /// Execute the function specified as a parameter once.
   ///
@@ -84,31 +77,17 @@ using once_flag = std::once_flag;
   /// \param F Function to call once.
   template <typename Function, typename... Args>
   void call_once(once_flag &flag, Function &&F, Args &&... ArgList) {
-#if LLVM_THREADING_USE_STD_CALL_ONCE
-    std::call_once(flag, std::forward<Function>(F),
-                   std::forward<Args>(ArgList)...);
-#else
-    // For other platforms we use a generic (if brittle) version based on our
-    // atomics.
-    sys::cas_flag old_val = sys::CompareAndSwap(&flag.status, Wait, Uninitialized);
-    if (old_val == Uninitialized) {
+    if (retro_atomic_load_acquire_int(&flag.status) == Done)
+      return;
+
+    if (retro_atomic_cas_int(&flag.status, Uninitialized, Wait)) {
       std::forward<Function>(F)(std::forward<Args>(ArgList)...);
-      sys::MemoryFence();
-      TsanIgnoreWritesBegin();
-      TsanHappensBefore(&flag.status);
-      flag.status = Done;
-      TsanIgnoreWritesEnd();
-    } else {
-      // Wait until any thread doing the call has finished.
-      sys::cas_flag tmp = flag.status;
-      sys::MemoryFence();
-      while (tmp != Done) {
-        tmp = flag.status;
-        sys::MemoryFence();
-      }
+      retro_atomic_store_release_int(&flag.status, Done);
+      return;
     }
-    TsanHappensAfter(&flag.status);
-#endif
+
+    while (retro_atomic_load_acquire_int(&flag.status) != Done)
+      std::this_thread::yield();
   }
 
   /// This tells how a thread pool will be used

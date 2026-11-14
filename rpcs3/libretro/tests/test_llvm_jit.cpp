@@ -45,6 +45,11 @@
 #include <llvm/IR/IRBuilder.h>
 #include <llvm/IR/Module.h>
 #include <llvm/IR/Verifier.h>
+#include <llvm/PassInfo.h>
+#include <llvm/PassRegistry.h>
+#include <llvm/Support/DynamicLibrary.h>
+
+#include <thread>
 #ifdef _MSC_VER
 #pragma warning(pop)
 #else
@@ -245,8 +250,148 @@ static usz pack_records(const std::string& pack)
 	return count;
 }
 
+// LLVM's process-wide tables have no lock (3rdparty/llvm: the pass
+// registry, the statics made on first use, call_once, the symbols and
+// libraries of DynamicLibrary), so that recompiler threads never wait on
+// each other in them. Each is gone through here from several threads at
+// once, the first time anything in the process uses LLVM.
+
+// Compiles the module and runs it, a few times over, as a recompiler thread
+// does with its own compiler. Returns how many answers were wrong.
+static int compile_and_run(int rounds)
+{
+	int wrong = 0;
+
+	for (int i = 0; i < rounds; i++)
+	{
+		jit_compiler jit({}, jit_compiler::cpu(""));
+		jit.add(make_module(jit.get_context()));
+		jit.fin();
+
+		const auto f_mul_add = reinterpret_cast<s64 (*)(s64, s64)>(jit.get("mul_add"));
+		const auto f_sum = reinterpret_cast<s64 (*)(s64)>(jit.get("sum_mul_add"));
+		wrong += !f_mul_add || !f_sum || f_mul_add(3, 4) != 19 || f_sum(10) != 355;
+	}
+
+	return wrong;
+}
+
+static char s_pass_ids[4][400];
+
+static void threads_in_llvm()
+{
+	constexpr int count = 4;
+	std::thread threads[count];
+	int wrong[count]{};
+	retro_atomic_int_t go{};
+
+	// 1. The first compiles of the process, all at once: every pass is
+	// registered and every static made by whichever thread gets there
+	for (int t = 0; t < count; t++)
+	{
+		threads[t] = std::thread([&, t]()
+		{
+			while (!retro_atomic_load_acquire_int(&go))
+				std::this_thread::yield();
+			wrong[t] = compile_and_run(6);
+		});
+	}
+	retro_atomic_store_release_int(&go, 1);
+	for (auto& th : threads)
+		th.join();
+	for (int t = 0; t < count; t++)
+		CHECK(wrong[t] == 0);
+
+	// 2. The pass registry alone: each thread registers passes of its own
+	// while it looks up everybody's. What a lookup gives is the pass asked
+	// for or nothing; afterwards every one is there, by identifier and by
+	// argument.
+	static std::string names[count][400];
+	for (int t = 0; t < count; t++)
+		for (int i = 0; i < 400; i++)
+			names[t][i] = fmt::format("libretro-test-pass-%d-%d", t, i);
+
+	llvm::PassRegistry& registry = *llvm::PassRegistry::getPassRegistry();
+	retro_atomic_store_release_int(&go, 0);
+	for (int t = 0; t < count; t++)
+	{
+		wrong[t] = 0;
+		threads[t] = std::thread([&, t]()
+		{
+			while (!retro_atomic_load_acquire_int(&go))
+				std::this_thread::yield();
+
+			for (int i = 0; i < 400; i++)
+			{
+				registry.registerPass(*new llvm::PassInfo(names[t][i], names[t][i], &s_pass_ids[t][i], nullptr, false, false), true);
+
+				for (int o = 0; o < count; o++)
+				{
+					const llvm::PassInfo* by_id = registry.getPassInfo(&s_pass_ids[o][i]);
+					const llvm::PassInfo* by_arg = registry.getPassInfo(llvm::StringRef(names[o][i]));
+					wrong[t] += by_id && by_id->getTypeInfo() != &s_pass_ids[o][i];
+					wrong[t] += by_arg && by_arg->getPassArgument() != names[o][i];
+				}
+
+				wrong[t] += registry.getPassInfo(&s_pass_ids[t][i]) == nullptr;
+			}
+		});
+	}
+	retro_atomic_store_release_int(&go, 1);
+	for (auto& th : threads)
+		th.join();
+	for (int t = 0; t < count; t++)
+	{
+		CHECK(wrong[t] == 0);
+		for (int i = 0; i < 400; i++)
+		{
+			const llvm::PassInfo* by_id = registry.getPassInfo(&s_pass_ids[t][i]);
+			const llvm::PassInfo* by_arg = registry.getPassInfo(llvm::StringRef(names[t][i]));
+			CHECK(by_id && by_id == by_arg && by_id->getPassName() == names[t][i]);
+		}
+	}
+	CHECK(registry.getPassInfo(&go) == nullptr && registry.getPassInfo(llvm::StringRef("libretro-test-pass-none")) == nullptr);
+
+	// 3. Symbols given by hand, added by every thread while all look them
+	// up; a name given again is the newer one
+	retro_atomic_store_release_int(&go, 0);
+	for (int t = 0; t < count; t++)
+	{
+		wrong[t] = 0;
+		threads[t] = std::thread([&, t]()
+		{
+			while (!retro_atomic_load_acquire_int(&go))
+				std::this_thread::yield();
+
+			for (int i = 0; i < 100; i++)
+			{
+				llvm::sys::DynamicLibrary::AddSymbol(names[t][i], &s_pass_ids[t][i]);
+
+				for (int o = 0; o < count; o++)
+				{
+					void* found = llvm::sys::DynamicLibrary::SearchForAddressOfSymbol(names[o][i].c_str());
+					wrong[t] += found && found != &s_pass_ids[o][i];
+				}
+
+				wrong[t] += llvm::sys::DynamicLibrary::SearchForAddressOfSymbol(names[t][i].c_str()) != &s_pass_ids[t][i];
+			}
+		});
+	}
+	retro_atomic_store_release_int(&go, 1);
+	for (auto& th : threads)
+		th.join();
+	for (int t = 0; t < count; t++)
+		CHECK(wrong[t] == 0);
+	llvm::sys::DynamicLibrary::AddSymbol(names[0][0], &s_pass_ids[3][399]);
+	CHECK(llvm::sys::DynamicLibrary::SearchForAddressOfSymbol(names[0][0].c_str()) == &s_pass_ids[3][399]);
+	// And what the process itself has is still found
+	CHECK(llvm::sys::DynamicLibrary::SearchForAddressOfSymbol("memcpy") != nullptr);
+}
+
 int main()
 {
+	threads_in_llvm();
+
 	jit_compiler jit({}, jit_compiler::cpu(""));
 	auto mod = make_module(jit.get_context());
 

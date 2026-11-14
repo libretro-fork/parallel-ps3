@@ -2464,342 +2464,342 @@ LLVM_TBLGEN_TOOL := \
 	$(LLVM_GEN)/include/llvm/IR/IntrinsicsXCore.h \
 	$(LLVM_GEN)/include/llvm/IR/RuntimeLibcalls.inc \
 
-$(LLVM_GEN)/include/llvm/Analysis/TargetLibraryInfo.inc: $(LLVM_MIN_TBLGEN) | $(LLVM_SRC)/include/llvm/Analysis/TargetLibraryInfo.td
+$(LLVM_GEN)/include/llvm/Analysis/TargetLibraryInfo.inc: $(LLVM_SRC)/include/llvm/Analysis/TargetLibraryInfo.td $(LLVM_TD_DEPS) | $(LLVM_MIN_TBLGEN)
 	@mkdir -p $(@D)
 	$(SAY) TBLGEN $@
 	$(Q)$(LLVM_MIN_TBLGEN) -gen-target-library-info -I$(LLVM_SRC)/include/llvm/Analysis -I$(LLVM_GEN)/include -I$(LLVM_SRC)/include $(LLVM_SRC)/include/llvm/Analysis/TargetLibraryInfo.td -o $@
 
-$(LLVM_GEN)/include/llvm/CodeGen/GenVT.inc: $(LLVM_MIN_TBLGEN) | $(LLVM_SRC)/include/llvm/CodeGen/ValueTypes.td
+$(LLVM_GEN)/include/llvm/CodeGen/GenVT.inc: $(LLVM_SRC)/include/llvm/CodeGen/ValueTypes.td $(LLVM_TD_DEPS) | $(LLVM_MIN_TBLGEN)
 	@mkdir -p $(@D)
 	$(SAY) TBLGEN $@
 	$(Q)$(LLVM_MIN_TBLGEN) -gen-vt -I$(LLVM_SRC)/include/llvm/CodeGen -I$(LLVM_GEN)/include -I$(LLVM_SRC)/include $(LLVM_SRC)/include/llvm/CodeGen/ValueTypes.td -o $@
 
-$(LLVM_GEN)/include/llvm/Frontend/OpenMP/OMP.h.inc: $(LLVM_MIN_TBLGEN) | $(LLVM_SRC)/include/llvm/Frontend/OpenMP/OMP.td
+$(LLVM_GEN)/include/llvm/Frontend/OpenMP/OMP.h.inc: $(LLVM_SRC)/include/llvm/Frontend/OpenMP/OMP.td $(LLVM_TD_DEPS) | $(LLVM_MIN_TBLGEN)
 	@mkdir -p $(@D)
 	$(SAY) TBLGEN $@
 	$(Q)$(LLVM_MIN_TBLGEN) --gen-directive-decl -I$(LLVM_SRC)/include/llvm/Frontend/OpenMP -I$(LLVM_GEN)/include -I$(LLVM_SRC)/include $(LLVM_SRC)/include/llvm/Frontend/OpenMP/OMP.td -o $@
 
-$(LLVM_GEN)/include/llvm/Frontend/OpenMP/OMP.inc: $(LLVM_MIN_TBLGEN) | $(LLVM_SRC)/include/llvm/Frontend/OpenMP/OMP.td
+$(LLVM_GEN)/include/llvm/Frontend/OpenMP/OMP.inc: $(LLVM_SRC)/include/llvm/Frontend/OpenMP/OMP.td $(LLVM_TD_DEPS) | $(LLVM_MIN_TBLGEN)
 	@mkdir -p $(@D)
 	$(SAY) TBLGEN $@
 	$(Q)$(LLVM_MIN_TBLGEN) --gen-directive-impl -I$(LLVM_SRC)/include/llvm/Frontend/OpenMP -I$(LLVM_GEN)/include -I$(LLVM_SRC)/include $(LLVM_SRC)/include/llvm/Frontend/OpenMP/OMP.td -o $@
 
-$(LLVM_GEN)/include/llvm/IR/Attributes.inc: $(LLVM_MIN_TBLGEN) | $(LLVM_SRC)/include/llvm/IR/Attributes.td
+$(LLVM_GEN)/include/llvm/IR/Attributes.inc: $(LLVM_SRC)/include/llvm/IR/Attributes.td $(LLVM_TD_DEPS) | $(LLVM_MIN_TBLGEN)
 	@mkdir -p $(@D)
 	$(SAY) TBLGEN $@
 	$(Q)$(LLVM_MIN_TBLGEN) -gen-attrs -I$(LLVM_SRC)/include/llvm/IR -I$(LLVM_GEN)/include -I$(LLVM_SRC)/include $(LLVM_SRC)/include/llvm/IR/Attributes.td -o $@
 
-$(LLVM_GEN)/include/llvm/IR/IntrinsicEnums.inc: $(LLVM_MIN_TBLGEN) | $(LLVM_SRC)/include/llvm/IR/Intrinsics.td
+$(LLVM_GEN)/include/llvm/IR/IntrinsicEnums.inc: $(LLVM_SRC)/include/llvm/IR/Intrinsics.td $(LLVM_TD_DEPS) | $(LLVM_MIN_TBLGEN)
 	@mkdir -p $(@D)
 	$(SAY) TBLGEN $@
 	$(Q)$(LLVM_MIN_TBLGEN) -gen-intrinsic-enums -I$(LLVM_SRC)/include/llvm/IR -I$(LLVM_GEN)/include -I$(LLVM_SRC)/include $(LLVM_SRC)/include/llvm/IR/Intrinsics.td -o $@
 
-$(LLVM_GEN)/include/llvm/IR/IntrinsicImpl.inc: $(LLVM_MIN_TBLGEN) | $(LLVM_SRC)/include/llvm/IR/Intrinsics.td
+$(LLVM_GEN)/include/llvm/IR/IntrinsicImpl.inc: $(LLVM_SRC)/include/llvm/IR/Intrinsics.td $(LLVM_TD_DEPS) | $(LLVM_MIN_TBLGEN)
 	@mkdir -p $(@D)
 	$(SAY) TBLGEN $@
 	$(Q)$(LLVM_MIN_TBLGEN) -gen-intrinsic-impl -I$(LLVM_SRC)/include/llvm/IR -I$(LLVM_GEN)/include -I$(LLVM_SRC)/include $(LLVM_SRC)/include/llvm/IR/Intrinsics.td -o $@
 
-$(LLVM_GEN)/include/llvm/IR/IntrinsicsAArch64.h: $(LLVM_MIN_TBLGEN) | $(LLVM_SRC)/include/llvm/IR/Intrinsics.td
+$(LLVM_GEN)/include/llvm/IR/IntrinsicsAArch64.h: $(LLVM_SRC)/include/llvm/IR/Intrinsics.td $(LLVM_TD_DEPS) | $(LLVM_MIN_TBLGEN)
 	@mkdir -p $(@D)
 	$(SAY) TBLGEN $@
 	$(Q)$(LLVM_MIN_TBLGEN) -gen-intrinsic-enums -intrinsic-prefix=aarch64 -I$(LLVM_SRC)/include/llvm/IR -I$(LLVM_GEN)/include -I$(LLVM_SRC)/include $(LLVM_SRC)/include/llvm/IR/Intrinsics.td -o $@
 
-$(LLVM_GEN)/include/llvm/IR/IntrinsicsAMDGPU.h: $(LLVM_MIN_TBLGEN) | $(LLVM_SRC)/include/llvm/IR/Intrinsics.td
+$(LLVM_GEN)/include/llvm/IR/IntrinsicsAMDGPU.h: $(LLVM_SRC)/include/llvm/IR/Intrinsics.td $(LLVM_TD_DEPS) | $(LLVM_MIN_TBLGEN)
 	@mkdir -p $(@D)
 	$(SAY) TBLGEN $@
 	$(Q)$(LLVM_MIN_TBLGEN) -gen-intrinsic-enums -intrinsic-prefix=amdgcn -I$(LLVM_SRC)/include/llvm/IR -I$(LLVM_GEN)/include -I$(LLVM_SRC)/include $(LLVM_SRC)/include/llvm/IR/Intrinsics.td -o $@
 
-$(LLVM_GEN)/include/llvm/IR/IntrinsicsARM.h: $(LLVM_MIN_TBLGEN) | $(LLVM_SRC)/include/llvm/IR/Intrinsics.td
+$(LLVM_GEN)/include/llvm/IR/IntrinsicsARM.h: $(LLVM_SRC)/include/llvm/IR/Intrinsics.td $(LLVM_TD_DEPS) | $(LLVM_MIN_TBLGEN)
 	@mkdir -p $(@D)
 	$(SAY) TBLGEN $@
 	$(Q)$(LLVM_MIN_TBLGEN) -gen-intrinsic-enums -intrinsic-prefix=arm -I$(LLVM_SRC)/include/llvm/IR -I$(LLVM_GEN)/include -I$(LLVM_SRC)/include $(LLVM_SRC)/include/llvm/IR/Intrinsics.td -o $@
 
-$(LLVM_GEN)/include/llvm/IR/IntrinsicsBPF.h: $(LLVM_MIN_TBLGEN) | $(LLVM_SRC)/include/llvm/IR/Intrinsics.td
+$(LLVM_GEN)/include/llvm/IR/IntrinsicsBPF.h: $(LLVM_SRC)/include/llvm/IR/Intrinsics.td $(LLVM_TD_DEPS) | $(LLVM_MIN_TBLGEN)
 	@mkdir -p $(@D)
 	$(SAY) TBLGEN $@
 	$(Q)$(LLVM_MIN_TBLGEN) -gen-intrinsic-enums -intrinsic-prefix=bpf -I$(LLVM_SRC)/include/llvm/IR -I$(LLVM_GEN)/include -I$(LLVM_SRC)/include $(LLVM_SRC)/include/llvm/IR/Intrinsics.td -o $@
 
-$(LLVM_GEN)/include/llvm/IR/IntrinsicsDirectX.h: $(LLVM_MIN_TBLGEN) | $(LLVM_SRC)/include/llvm/IR/Intrinsics.td
+$(LLVM_GEN)/include/llvm/IR/IntrinsicsDirectX.h: $(LLVM_SRC)/include/llvm/IR/Intrinsics.td $(LLVM_TD_DEPS) | $(LLVM_MIN_TBLGEN)
 	@mkdir -p $(@D)
 	$(SAY) TBLGEN $@
 	$(Q)$(LLVM_MIN_TBLGEN) -gen-intrinsic-enums -intrinsic-prefix=dx -I$(LLVM_SRC)/include/llvm/IR -I$(LLVM_GEN)/include -I$(LLVM_SRC)/include $(LLVM_SRC)/include/llvm/IR/Intrinsics.td -o $@
 
-$(LLVM_GEN)/include/llvm/IR/IntrinsicsHexagon.h: $(LLVM_MIN_TBLGEN) | $(LLVM_SRC)/include/llvm/IR/Intrinsics.td
+$(LLVM_GEN)/include/llvm/IR/IntrinsicsHexagon.h: $(LLVM_SRC)/include/llvm/IR/Intrinsics.td $(LLVM_TD_DEPS) | $(LLVM_MIN_TBLGEN)
 	@mkdir -p $(@D)
 	$(SAY) TBLGEN $@
 	$(Q)$(LLVM_MIN_TBLGEN) -gen-intrinsic-enums -intrinsic-prefix=hexagon -I$(LLVM_SRC)/include/llvm/IR -I$(LLVM_GEN)/include -I$(LLVM_SRC)/include $(LLVM_SRC)/include/llvm/IR/Intrinsics.td -o $@
 
-$(LLVM_GEN)/include/llvm/IR/IntrinsicsLoongArch.h: $(LLVM_MIN_TBLGEN) | $(LLVM_SRC)/include/llvm/IR/Intrinsics.td
+$(LLVM_GEN)/include/llvm/IR/IntrinsicsLoongArch.h: $(LLVM_SRC)/include/llvm/IR/Intrinsics.td $(LLVM_TD_DEPS) | $(LLVM_MIN_TBLGEN)
 	@mkdir -p $(@D)
 	$(SAY) TBLGEN $@
 	$(Q)$(LLVM_MIN_TBLGEN) -gen-intrinsic-enums -intrinsic-prefix=loongarch -I$(LLVM_SRC)/include/llvm/IR -I$(LLVM_GEN)/include -I$(LLVM_SRC)/include $(LLVM_SRC)/include/llvm/IR/Intrinsics.td -o $@
 
-$(LLVM_GEN)/include/llvm/IR/IntrinsicsMips.h: $(LLVM_MIN_TBLGEN) | $(LLVM_SRC)/include/llvm/IR/Intrinsics.td
+$(LLVM_GEN)/include/llvm/IR/IntrinsicsMips.h: $(LLVM_SRC)/include/llvm/IR/Intrinsics.td $(LLVM_TD_DEPS) | $(LLVM_MIN_TBLGEN)
 	@mkdir -p $(@D)
 	$(SAY) TBLGEN $@
 	$(Q)$(LLVM_MIN_TBLGEN) -gen-intrinsic-enums -intrinsic-prefix=mips -I$(LLVM_SRC)/include/llvm/IR -I$(LLVM_GEN)/include -I$(LLVM_SRC)/include $(LLVM_SRC)/include/llvm/IR/Intrinsics.td -o $@
 
-$(LLVM_GEN)/include/llvm/IR/IntrinsicsNVPTX.h: $(LLVM_MIN_TBLGEN) | $(LLVM_SRC)/include/llvm/IR/Intrinsics.td
+$(LLVM_GEN)/include/llvm/IR/IntrinsicsNVPTX.h: $(LLVM_SRC)/include/llvm/IR/Intrinsics.td $(LLVM_TD_DEPS) | $(LLVM_MIN_TBLGEN)
 	@mkdir -p $(@D)
 	$(SAY) TBLGEN $@
 	$(Q)$(LLVM_MIN_TBLGEN) -gen-intrinsic-enums -intrinsic-prefix=nvvm -I$(LLVM_SRC)/include/llvm/IR -I$(LLVM_GEN)/include -I$(LLVM_SRC)/include $(LLVM_SRC)/include/llvm/IR/Intrinsics.td -o $@
 
-$(LLVM_GEN)/include/llvm/IR/IntrinsicsPowerPC.h: $(LLVM_MIN_TBLGEN) | $(LLVM_SRC)/include/llvm/IR/Intrinsics.td
+$(LLVM_GEN)/include/llvm/IR/IntrinsicsPowerPC.h: $(LLVM_SRC)/include/llvm/IR/Intrinsics.td $(LLVM_TD_DEPS) | $(LLVM_MIN_TBLGEN)
 	@mkdir -p $(@D)
 	$(SAY) TBLGEN $@
 	$(Q)$(LLVM_MIN_TBLGEN) -gen-intrinsic-enums -intrinsic-prefix=ppc -I$(LLVM_SRC)/include/llvm/IR -I$(LLVM_GEN)/include -I$(LLVM_SRC)/include $(LLVM_SRC)/include/llvm/IR/Intrinsics.td -o $@
 
-$(LLVM_GEN)/include/llvm/IR/IntrinsicsR600.h: $(LLVM_MIN_TBLGEN) | $(LLVM_SRC)/include/llvm/IR/Intrinsics.td
+$(LLVM_GEN)/include/llvm/IR/IntrinsicsR600.h: $(LLVM_SRC)/include/llvm/IR/Intrinsics.td $(LLVM_TD_DEPS) | $(LLVM_MIN_TBLGEN)
 	@mkdir -p $(@D)
 	$(SAY) TBLGEN $@
 	$(Q)$(LLVM_MIN_TBLGEN) -gen-intrinsic-enums -intrinsic-prefix=r600 -I$(LLVM_SRC)/include/llvm/IR -I$(LLVM_GEN)/include -I$(LLVM_SRC)/include $(LLVM_SRC)/include/llvm/IR/Intrinsics.td -o $@
 
-$(LLVM_GEN)/include/llvm/IR/IntrinsicsRISCV.h: $(LLVM_MIN_TBLGEN) | $(LLVM_SRC)/include/llvm/IR/Intrinsics.td
+$(LLVM_GEN)/include/llvm/IR/IntrinsicsRISCV.h: $(LLVM_SRC)/include/llvm/IR/Intrinsics.td $(LLVM_TD_DEPS) | $(LLVM_MIN_TBLGEN)
 	@mkdir -p $(@D)
 	$(SAY) TBLGEN $@
 	$(Q)$(LLVM_MIN_TBLGEN) -gen-intrinsic-enums -intrinsic-prefix=riscv -I$(LLVM_SRC)/include/llvm/IR -I$(LLVM_GEN)/include -I$(LLVM_SRC)/include $(LLVM_SRC)/include/llvm/IR/Intrinsics.td -o $@
 
-$(LLVM_GEN)/include/llvm/IR/IntrinsicsS390.h: $(LLVM_MIN_TBLGEN) | $(LLVM_SRC)/include/llvm/IR/Intrinsics.td
+$(LLVM_GEN)/include/llvm/IR/IntrinsicsS390.h: $(LLVM_SRC)/include/llvm/IR/Intrinsics.td $(LLVM_TD_DEPS) | $(LLVM_MIN_TBLGEN)
 	@mkdir -p $(@D)
 	$(SAY) TBLGEN $@
 	$(Q)$(LLVM_MIN_TBLGEN) -gen-intrinsic-enums -intrinsic-prefix=s390 -I$(LLVM_SRC)/include/llvm/IR -I$(LLVM_GEN)/include -I$(LLVM_SRC)/include $(LLVM_SRC)/include/llvm/IR/Intrinsics.td -o $@
 
-$(LLVM_GEN)/include/llvm/IR/IntrinsicsSPIRV.h: $(LLVM_MIN_TBLGEN) | $(LLVM_SRC)/include/llvm/IR/Intrinsics.td
+$(LLVM_GEN)/include/llvm/IR/IntrinsicsSPIRV.h: $(LLVM_SRC)/include/llvm/IR/Intrinsics.td $(LLVM_TD_DEPS) | $(LLVM_MIN_TBLGEN)
 	@mkdir -p $(@D)
 	$(SAY) TBLGEN $@
 	$(Q)$(LLVM_MIN_TBLGEN) -gen-intrinsic-enums -intrinsic-prefix=spv -I$(LLVM_SRC)/include/llvm/IR -I$(LLVM_GEN)/include -I$(LLVM_SRC)/include $(LLVM_SRC)/include/llvm/IR/Intrinsics.td -o $@
 
-$(LLVM_GEN)/include/llvm/IR/IntrinsicsVE.h: $(LLVM_MIN_TBLGEN) | $(LLVM_SRC)/include/llvm/IR/Intrinsics.td
+$(LLVM_GEN)/include/llvm/IR/IntrinsicsVE.h: $(LLVM_SRC)/include/llvm/IR/Intrinsics.td $(LLVM_TD_DEPS) | $(LLVM_MIN_TBLGEN)
 	@mkdir -p $(@D)
 	$(SAY) TBLGEN $@
 	$(Q)$(LLVM_MIN_TBLGEN) -gen-intrinsic-enums -intrinsic-prefix=ve -I$(LLVM_SRC)/include/llvm/IR -I$(LLVM_GEN)/include -I$(LLVM_SRC)/include $(LLVM_SRC)/include/llvm/IR/Intrinsics.td -o $@
 
-$(LLVM_GEN)/include/llvm/IR/IntrinsicsWebAssembly.h: $(LLVM_MIN_TBLGEN) | $(LLVM_SRC)/include/llvm/IR/Intrinsics.td
+$(LLVM_GEN)/include/llvm/IR/IntrinsicsWebAssembly.h: $(LLVM_SRC)/include/llvm/IR/Intrinsics.td $(LLVM_TD_DEPS) | $(LLVM_MIN_TBLGEN)
 	@mkdir -p $(@D)
 	$(SAY) TBLGEN $@
 	$(Q)$(LLVM_MIN_TBLGEN) -gen-intrinsic-enums -intrinsic-prefix=wasm -I$(LLVM_SRC)/include/llvm/IR -I$(LLVM_GEN)/include -I$(LLVM_SRC)/include $(LLVM_SRC)/include/llvm/IR/Intrinsics.td -o $@
 
-$(LLVM_GEN)/include/llvm/IR/IntrinsicsX86.h: $(LLVM_MIN_TBLGEN) | $(LLVM_SRC)/include/llvm/IR/Intrinsics.td
+$(LLVM_GEN)/include/llvm/IR/IntrinsicsX86.h: $(LLVM_SRC)/include/llvm/IR/Intrinsics.td $(LLVM_TD_DEPS) | $(LLVM_MIN_TBLGEN)
 	@mkdir -p $(@D)
 	$(SAY) TBLGEN $@
 	$(Q)$(LLVM_MIN_TBLGEN) -gen-intrinsic-enums -intrinsic-prefix=x86 -I$(LLVM_SRC)/include/llvm/IR -I$(LLVM_GEN)/include -I$(LLVM_SRC)/include $(LLVM_SRC)/include/llvm/IR/Intrinsics.td -o $@
 
-$(LLVM_GEN)/include/llvm/IR/IntrinsicsXCore.h: $(LLVM_MIN_TBLGEN) | $(LLVM_SRC)/include/llvm/IR/Intrinsics.td
+$(LLVM_GEN)/include/llvm/IR/IntrinsicsXCore.h: $(LLVM_SRC)/include/llvm/IR/Intrinsics.td $(LLVM_TD_DEPS) | $(LLVM_MIN_TBLGEN)
 	@mkdir -p $(@D)
 	$(SAY) TBLGEN $@
 	$(Q)$(LLVM_MIN_TBLGEN) -gen-intrinsic-enums -intrinsic-prefix=xcore -I$(LLVM_SRC)/include/llvm/IR -I$(LLVM_GEN)/include -I$(LLVM_SRC)/include $(LLVM_SRC)/include/llvm/IR/Intrinsics.td -o $@
 
-$(LLVM_GEN)/include/llvm/IR/RuntimeLibcalls.inc: $(LLVM_MIN_TBLGEN) | $(LLVM_SRC)/include/llvm/IR/RuntimeLibcalls.td
+$(LLVM_GEN)/include/llvm/IR/RuntimeLibcalls.inc: $(LLVM_SRC)/include/llvm/IR/RuntimeLibcalls.td $(LLVM_TD_DEPS) | $(LLVM_MIN_TBLGEN)
 	@mkdir -p $(@D)
 	$(SAY) TBLGEN $@
 	$(Q)$(LLVM_MIN_TBLGEN) -gen-runtime-libcalls -I$(LLVM_SRC)/include/llvm/IR -I$(LLVM_GEN)/include -I$(LLVM_SRC)/include $(LLVM_SRC)/include/llvm/IR/RuntimeLibcalls.td -o $@
 
-$(LLVM_GEN)/include/llvm/TargetParser/AArch64TargetParserDef.inc: $(LLVM_MIN_TBLGEN) | $(LLVM_SRC)/lib/Target/AArch64/AArch64.td
+$(LLVM_GEN)/include/llvm/TargetParser/AArch64TargetParserDef.inc: $(LLVM_SRC)/lib/Target/AArch64/AArch64.td $(LLVM_TD_DEPS) | $(LLVM_MIN_TBLGEN)
 	@mkdir -p $(@D)
 	$(SAY) TBLGEN $@
 	$(Q)$(LLVM_MIN_TBLGEN) -gen-arm-target-def -I$(LLVM_SRC)/include/llvm/TargetParser -I$(LLVM_SRC)/lib/Target/AArch64 -I$(LLVM_GEN)/include -I$(LLVM_SRC)/include $(LLVM_SRC)/lib/Target/AArch64/AArch64.td -o $@
 
-$(LLVM_GEN)/include/llvm/TargetParser/ARMTargetParserDef.inc: $(LLVM_MIN_TBLGEN) | $(LLVM_SRC)/lib/Target/ARM/ARM.td
+$(LLVM_GEN)/include/llvm/TargetParser/ARMTargetParserDef.inc: $(LLVM_SRC)/lib/Target/ARM/ARM.td $(LLVM_TD_DEPS) | $(LLVM_MIN_TBLGEN)
 	@mkdir -p $(@D)
 	$(SAY) TBLGEN $@
 	$(Q)$(LLVM_MIN_TBLGEN) -gen-arm-target-def -I$(LLVM_SRC)/include/llvm/TargetParser -I$(LLVM_SRC)/lib/Target/ARM -I$(LLVM_GEN)/include -I$(LLVM_SRC)/include $(LLVM_SRC)/lib/Target/ARM/ARM.td -o $@
 
-$(LLVM_GEN)/include/llvm/TargetParser/PPCGenTargetFeatures.inc: $(LLVM_MIN_TBLGEN) | $(LLVM_SRC)/lib/Target/PowerPC/PPC.td
+$(LLVM_GEN)/include/llvm/TargetParser/PPCGenTargetFeatures.inc: $(LLVM_SRC)/lib/Target/PowerPC/PPC.td $(LLVM_TD_DEPS) | $(LLVM_MIN_TBLGEN)
 	@mkdir -p $(@D)
 	$(SAY) TBLGEN $@
 	$(Q)$(LLVM_MIN_TBLGEN) -gen-target-features -I$(LLVM_SRC)/lib/Target/PowerPC -I$(LLVM_SRC)/include/llvm/TargetParser -I$(LLVM_GEN)/include -I$(LLVM_SRC)/include $(LLVM_SRC)/lib/Target/PowerPC/PPC.td -o $@
 
-$(LLVM_GEN)/include/llvm/TargetParser/RISCVTargetParserDef.inc: $(LLVM_MIN_TBLGEN) | $(LLVM_SRC)/lib/Target/RISCV/RISCV.td
+$(LLVM_GEN)/include/llvm/TargetParser/RISCVTargetParserDef.inc: $(LLVM_SRC)/lib/Target/RISCV/RISCV.td $(LLVM_TD_DEPS) | $(LLVM_MIN_TBLGEN)
 	@mkdir -p $(@D)
 	$(SAY) TBLGEN $@
 	$(Q)$(LLVM_MIN_TBLGEN) -gen-riscv-target-def -I$(LLVM_SRC)/include/llvm/TargetParser -I$(LLVM_SRC)/lib/Target/RISCV -I$(LLVM_GEN)/include -I$(LLVM_SRC)/include $(LLVM_SRC)/lib/Target/RISCV/RISCV.td -o $@
 
-$(LLVM_GEN)/lib/Target/AArch64/AArch64GenAsmMatcher.inc: $(LLVM_TBLGEN) | $(LLVM_SRC)/lib/Target/AArch64/AArch64.td
+$(LLVM_GEN)/lib/Target/AArch64/AArch64GenAsmMatcher.inc: $(LLVM_SRC)/lib/Target/AArch64/AArch64.td $(LLVM_TD_DEPS) | $(LLVM_TBLGEN)
 	@mkdir -p $(@D)
 	$(SAY) TBLGEN $@
 	$(Q)$(LLVM_TBLGEN) -gen-asm-matcher -I$(LLVM_SRC)/lib/Target/AArch64 -I$(LLVM_GEN)/include -I$(LLVM_SRC)/include -I $(LLVM_SRC)/lib/Target $(LLVM_SRC)/lib/Target/AArch64/AArch64.td -o $@
 
-$(LLVM_GEN)/lib/Target/AArch64/AArch64GenAsmWriter.inc: $(LLVM_TBLGEN) | $(LLVM_SRC)/lib/Target/AArch64/AArch64.td
+$(LLVM_GEN)/lib/Target/AArch64/AArch64GenAsmWriter.inc: $(LLVM_SRC)/lib/Target/AArch64/AArch64.td $(LLVM_TD_DEPS) | $(LLVM_TBLGEN)
 	@mkdir -p $(@D)
 	$(SAY) TBLGEN $@
 	$(Q)$(LLVM_TBLGEN) -gen-asm-writer -I$(LLVM_SRC)/lib/Target/AArch64 -I$(LLVM_GEN)/include -I$(LLVM_SRC)/include -I $(LLVM_SRC)/lib/Target $(LLVM_SRC)/lib/Target/AArch64/AArch64.td -o $@
 
-$(LLVM_GEN)/lib/Target/AArch64/AArch64GenAsmWriter1.inc: $(LLVM_TBLGEN) | $(LLVM_SRC)/lib/Target/AArch64/AArch64.td
+$(LLVM_GEN)/lib/Target/AArch64/AArch64GenAsmWriter1.inc: $(LLVM_SRC)/lib/Target/AArch64/AArch64.td $(LLVM_TD_DEPS) | $(LLVM_TBLGEN)
 	@mkdir -p $(@D)
 	$(SAY) TBLGEN $@
 	$(Q)$(LLVM_TBLGEN) -gen-asm-writer -asmwriternum=1 -I$(LLVM_SRC)/lib/Target/AArch64 -I$(LLVM_GEN)/include -I$(LLVM_SRC)/include -I $(LLVM_SRC)/lib/Target $(LLVM_SRC)/lib/Target/AArch64/AArch64.td -o $@
 
-$(LLVM_GEN)/lib/Target/AArch64/AArch64GenCallingConv.inc: $(LLVM_TBLGEN) | $(LLVM_SRC)/lib/Target/AArch64/AArch64.td
+$(LLVM_GEN)/lib/Target/AArch64/AArch64GenCallingConv.inc: $(LLVM_SRC)/lib/Target/AArch64/AArch64.td $(LLVM_TD_DEPS) | $(LLVM_TBLGEN)
 	@mkdir -p $(@D)
 	$(SAY) TBLGEN $@
 	$(Q)$(LLVM_TBLGEN) -gen-callingconv -I$(LLVM_SRC)/lib/Target/AArch64 -I$(LLVM_GEN)/include -I$(LLVM_SRC)/include -I $(LLVM_SRC)/lib/Target $(LLVM_SRC)/lib/Target/AArch64/AArch64.td -o $@
 
-$(LLVM_GEN)/lib/Target/AArch64/AArch64GenDAGISel.inc: $(LLVM_TBLGEN) | $(LLVM_SRC)/lib/Target/AArch64/AArch64.td
+$(LLVM_GEN)/lib/Target/AArch64/AArch64GenDAGISel.inc: $(LLVM_SRC)/lib/Target/AArch64/AArch64.td $(LLVM_TD_DEPS) | $(LLVM_TBLGEN)
 	@mkdir -p $(@D)
 	$(SAY) TBLGEN $@
 	$(Q)$(LLVM_TBLGEN) -gen-dag-isel -I$(LLVM_SRC)/lib/Target/AArch64 -I$(LLVM_GEN)/include -I$(LLVM_SRC)/include -I $(LLVM_SRC)/lib/Target -omit-comments $(LLVM_SRC)/lib/Target/AArch64/AArch64.td -o $@
 
-$(LLVM_GEN)/lib/Target/AArch64/AArch64GenDisassemblerTables.inc: $(LLVM_TBLGEN) | $(LLVM_SRC)/lib/Target/AArch64/AArch64.td
+$(LLVM_GEN)/lib/Target/AArch64/AArch64GenDisassemblerTables.inc: $(LLVM_SRC)/lib/Target/AArch64/AArch64.td $(LLVM_TD_DEPS) | $(LLVM_TBLGEN)
 	@mkdir -p $(@D)
 	$(SAY) TBLGEN $@
 	$(Q)$(LLVM_TBLGEN) -gen-disassembler -I$(LLVM_SRC)/lib/Target/AArch64 -I$(LLVM_GEN)/include -I$(LLVM_SRC)/include -I $(LLVM_SRC)/lib/Target $(LLVM_SRC)/lib/Target/AArch64/AArch64.td -o $@
 
-$(LLVM_GEN)/lib/Target/AArch64/AArch64GenExegesis.inc: $(LLVM_TBLGEN) | $(LLVM_SRC)/lib/Target/AArch64/AArch64.td
+$(LLVM_GEN)/lib/Target/AArch64/AArch64GenExegesis.inc: $(LLVM_SRC)/lib/Target/AArch64/AArch64.td $(LLVM_TD_DEPS) | $(LLVM_TBLGEN)
 	@mkdir -p $(@D)
 	$(SAY) TBLGEN $@
 	$(Q)$(LLVM_TBLGEN) -gen-exegesis -I$(LLVM_SRC)/lib/Target/AArch64 -I$(LLVM_GEN)/include -I$(LLVM_SRC)/include -I $(LLVM_SRC)/lib/Target $(LLVM_SRC)/lib/Target/AArch64/AArch64.td -o $@
 
-$(LLVM_GEN)/lib/Target/AArch64/AArch64GenFastISel.inc: $(LLVM_TBLGEN) | $(LLVM_SRC)/lib/Target/AArch64/AArch64.td
+$(LLVM_GEN)/lib/Target/AArch64/AArch64GenFastISel.inc: $(LLVM_SRC)/lib/Target/AArch64/AArch64.td $(LLVM_TD_DEPS) | $(LLVM_TBLGEN)
 	@mkdir -p $(@D)
 	$(SAY) TBLGEN $@
 	$(Q)$(LLVM_TBLGEN) -gen-fast-isel -I$(LLVM_SRC)/lib/Target/AArch64 -I$(LLVM_GEN)/include -I$(LLVM_SRC)/include -I $(LLVM_SRC)/lib/Target $(LLVM_SRC)/lib/Target/AArch64/AArch64.td -o $@
 
-$(LLVM_GEN)/lib/Target/AArch64/AArch64GenGlobalISel.inc: $(LLVM_TBLGEN) | $(LLVM_SRC)/lib/Target/AArch64/AArch64.td
+$(LLVM_GEN)/lib/Target/AArch64/AArch64GenGlobalISel.inc: $(LLVM_SRC)/lib/Target/AArch64/AArch64.td $(LLVM_TD_DEPS) | $(LLVM_TBLGEN)
 	@mkdir -p $(@D)
 	$(SAY) TBLGEN $@
 	$(Q)$(LLVM_TBLGEN) -gen-global-isel -I$(LLVM_SRC)/lib/Target/AArch64 -I$(LLVM_GEN)/include -I$(LLVM_SRC)/include -I $(LLVM_SRC)/lib/Target $(LLVM_SRC)/lib/Target/AArch64/AArch64.td -o $@
 
-$(LLVM_GEN)/lib/Target/AArch64/AArch64GenInstrInfo.inc: $(LLVM_TBLGEN) | $(LLVM_SRC)/lib/Target/AArch64/AArch64.td
+$(LLVM_GEN)/lib/Target/AArch64/AArch64GenInstrInfo.inc: $(LLVM_SRC)/lib/Target/AArch64/AArch64.td $(LLVM_TD_DEPS) | $(LLVM_TBLGEN)
 	@mkdir -p $(@D)
 	$(SAY) TBLGEN $@
 	$(Q)$(LLVM_TBLGEN) -gen-instr-info -I$(LLVM_SRC)/lib/Target/AArch64 -I$(LLVM_GEN)/include -I$(LLVM_SRC)/include -I $(LLVM_SRC)/lib/Target $(LLVM_SRC)/lib/Target/AArch64/AArch64.td -o $@
 
-$(LLVM_GEN)/lib/Target/AArch64/AArch64GenMCCodeEmitter.inc: $(LLVM_TBLGEN) | $(LLVM_SRC)/lib/Target/AArch64/AArch64.td
+$(LLVM_GEN)/lib/Target/AArch64/AArch64GenMCCodeEmitter.inc: $(LLVM_SRC)/lib/Target/AArch64/AArch64.td $(LLVM_TD_DEPS) | $(LLVM_TBLGEN)
 	@mkdir -p $(@D)
 	$(SAY) TBLGEN $@
 	$(Q)$(LLVM_TBLGEN) -gen-emitter -I$(LLVM_SRC)/lib/Target/AArch64 -I$(LLVM_GEN)/include -I$(LLVM_SRC)/include -I $(LLVM_SRC)/lib/Target $(LLVM_SRC)/lib/Target/AArch64/AArch64.td -o $@
 
-$(LLVM_GEN)/lib/Target/AArch64/AArch64GenMCPseudoLowering.inc: $(LLVM_TBLGEN) | $(LLVM_SRC)/lib/Target/AArch64/AArch64.td
+$(LLVM_GEN)/lib/Target/AArch64/AArch64GenMCPseudoLowering.inc: $(LLVM_SRC)/lib/Target/AArch64/AArch64.td $(LLVM_TD_DEPS) | $(LLVM_TBLGEN)
 	@mkdir -p $(@D)
 	$(SAY) TBLGEN $@
 	$(Q)$(LLVM_TBLGEN) -gen-pseudo-lowering -I$(LLVM_SRC)/lib/Target/AArch64 -I$(LLVM_GEN)/include -I$(LLVM_SRC)/include -I $(LLVM_SRC)/lib/Target $(LLVM_SRC)/lib/Target/AArch64/AArch64.td -o $@
 
-$(LLVM_GEN)/lib/Target/AArch64/AArch64GenO0PreLegalizeGICombiner.inc: $(LLVM_TBLGEN) | $(LLVM_SRC)/lib/Target/AArch64/AArch64.td
+$(LLVM_GEN)/lib/Target/AArch64/AArch64GenO0PreLegalizeGICombiner.inc: $(LLVM_SRC)/lib/Target/AArch64/AArch64.td $(LLVM_TD_DEPS) | $(LLVM_TBLGEN)
 	@mkdir -p $(@D)
 	$(SAY) TBLGEN $@
 	$(Q)$(LLVM_TBLGEN) -gen-global-isel-combiner -combiners=AArch64O0PreLegalizerCombiner -I$(LLVM_SRC)/lib/Target/AArch64 -I$(LLVM_GEN)/include -I$(LLVM_SRC)/include -I $(LLVM_SRC)/lib/Target $(LLVM_SRC)/lib/Target/AArch64/AArch64.td -o $@
 
-$(LLVM_GEN)/lib/Target/AArch64/AArch64GenPostLegalizeGICombiner.inc: $(LLVM_TBLGEN) | $(LLVM_SRC)/lib/Target/AArch64/AArch64.td
+$(LLVM_GEN)/lib/Target/AArch64/AArch64GenPostLegalizeGICombiner.inc: $(LLVM_SRC)/lib/Target/AArch64/AArch64.td $(LLVM_TD_DEPS) | $(LLVM_TBLGEN)
 	@mkdir -p $(@D)
 	$(SAY) TBLGEN $@
 	$(Q)$(LLVM_TBLGEN) -gen-global-isel-combiner -combiners=AArch64PostLegalizerCombiner -I$(LLVM_SRC)/lib/Target/AArch64 -I$(LLVM_GEN)/include -I$(LLVM_SRC)/include -I $(LLVM_SRC)/lib/Target $(LLVM_SRC)/lib/Target/AArch64/AArch64.td -o $@
 
-$(LLVM_GEN)/lib/Target/AArch64/AArch64GenPostLegalizeGILowering.inc: $(LLVM_TBLGEN) | $(LLVM_SRC)/lib/Target/AArch64/AArch64.td
+$(LLVM_GEN)/lib/Target/AArch64/AArch64GenPostLegalizeGILowering.inc: $(LLVM_SRC)/lib/Target/AArch64/AArch64.td $(LLVM_TD_DEPS) | $(LLVM_TBLGEN)
 	@mkdir -p $(@D)
 	$(SAY) TBLGEN $@
 	$(Q)$(LLVM_TBLGEN) -gen-global-isel-combiner -combiners=AArch64PostLegalizerLowering -I$(LLVM_SRC)/lib/Target/AArch64 -I$(LLVM_GEN)/include -I$(LLVM_SRC)/include -I $(LLVM_SRC)/lib/Target $(LLVM_SRC)/lib/Target/AArch64/AArch64.td -o $@
 
-$(LLVM_GEN)/lib/Target/AArch64/AArch64GenPreLegalizeGICombiner.inc: $(LLVM_TBLGEN) | $(LLVM_SRC)/lib/Target/AArch64/AArch64.td
+$(LLVM_GEN)/lib/Target/AArch64/AArch64GenPreLegalizeGICombiner.inc: $(LLVM_SRC)/lib/Target/AArch64/AArch64.td $(LLVM_TD_DEPS) | $(LLVM_TBLGEN)
 	@mkdir -p $(@D)
 	$(SAY) TBLGEN $@
 	$(Q)$(LLVM_TBLGEN) -gen-global-isel-combiner -combiners=AArch64PreLegalizerCombiner -I$(LLVM_SRC)/lib/Target/AArch64 -I$(LLVM_GEN)/include -I$(LLVM_SRC)/include -I $(LLVM_SRC)/lib/Target $(LLVM_SRC)/lib/Target/AArch64/AArch64.td -o $@
 
-$(LLVM_GEN)/lib/Target/AArch64/AArch64GenRegisterBank.inc: $(LLVM_TBLGEN) | $(LLVM_SRC)/lib/Target/AArch64/AArch64.td
+$(LLVM_GEN)/lib/Target/AArch64/AArch64GenRegisterBank.inc: $(LLVM_SRC)/lib/Target/AArch64/AArch64.td $(LLVM_TD_DEPS) | $(LLVM_TBLGEN)
 	@mkdir -p $(@D)
 	$(SAY) TBLGEN $@
 	$(Q)$(LLVM_TBLGEN) -gen-register-bank -I$(LLVM_SRC)/lib/Target/AArch64 -I$(LLVM_GEN)/include -I$(LLVM_SRC)/include -I $(LLVM_SRC)/lib/Target $(LLVM_SRC)/lib/Target/AArch64/AArch64.td -o $@
 
-$(LLVM_GEN)/lib/Target/AArch64/AArch64GenRegisterInfo.inc: $(LLVM_TBLGEN) | $(LLVM_SRC)/lib/Target/AArch64/AArch64.td
+$(LLVM_GEN)/lib/Target/AArch64/AArch64GenRegisterInfo.inc: $(LLVM_SRC)/lib/Target/AArch64/AArch64.td $(LLVM_TD_DEPS) | $(LLVM_TBLGEN)
 	@mkdir -p $(@D)
 	$(SAY) TBLGEN $@
 	$(Q)$(LLVM_TBLGEN) -gen-register-info -I$(LLVM_SRC)/lib/Target/AArch64 -I$(LLVM_GEN)/include -I$(LLVM_SRC)/include -I $(LLVM_SRC)/lib/Target $(LLVM_SRC)/lib/Target/AArch64/AArch64.td -o $@
 
-$(LLVM_GEN)/lib/Target/AArch64/AArch64GenSDNodeInfo.inc: $(LLVM_TBLGEN) | $(LLVM_SRC)/lib/Target/AArch64/AArch64.td
+$(LLVM_GEN)/lib/Target/AArch64/AArch64GenSDNodeInfo.inc: $(LLVM_SRC)/lib/Target/AArch64/AArch64.td $(LLVM_TD_DEPS) | $(LLVM_TBLGEN)
 	@mkdir -p $(@D)
 	$(SAY) TBLGEN $@
 	$(Q)$(LLVM_TBLGEN) -gen-sd-node-info -I$(LLVM_SRC)/lib/Target/AArch64 -I$(LLVM_GEN)/include -I$(LLVM_SRC)/include -I $(LLVM_SRC)/lib/Target $(LLVM_SRC)/lib/Target/AArch64/AArch64.td -o $@
 
-$(LLVM_GEN)/lib/Target/AArch64/AArch64GenSubtargetInfo.inc: $(LLVM_TBLGEN) | $(LLVM_SRC)/lib/Target/AArch64/AArch64.td
+$(LLVM_GEN)/lib/Target/AArch64/AArch64GenSubtargetInfo.inc: $(LLVM_SRC)/lib/Target/AArch64/AArch64.td $(LLVM_TD_DEPS) | $(LLVM_TBLGEN)
 	@mkdir -p $(@D)
 	$(SAY) TBLGEN $@
 	$(Q)$(LLVM_TBLGEN) -gen-subtarget -I$(LLVM_SRC)/lib/Target/AArch64 -I$(LLVM_GEN)/include -I$(LLVM_SRC)/include -I $(LLVM_SRC)/lib/Target $(LLVM_SRC)/lib/Target/AArch64/AArch64.td -o $@
 
-$(LLVM_GEN)/lib/Target/AArch64/AArch64GenSystemOperands.inc: $(LLVM_TBLGEN) | $(LLVM_SRC)/lib/Target/AArch64/AArch64.td
+$(LLVM_GEN)/lib/Target/AArch64/AArch64GenSystemOperands.inc: $(LLVM_SRC)/lib/Target/AArch64/AArch64.td $(LLVM_TD_DEPS) | $(LLVM_TBLGEN)
 	@mkdir -p $(@D)
 	$(SAY) TBLGEN $@
 	$(Q)$(LLVM_TBLGEN) -gen-searchable-tables -I$(LLVM_SRC)/lib/Target/AArch64 -I$(LLVM_GEN)/include -I$(LLVM_SRC)/include -I $(LLVM_SRC)/lib/Target $(LLVM_SRC)/lib/Target/AArch64/AArch64.td -o $@
 
-$(LLVM_GEN)/lib/Target/X86/X86GenAsmMatcher.inc: $(LLVM_TBLGEN) | $(LLVM_SRC)/lib/Target/X86/X86.td
+$(LLVM_GEN)/lib/Target/X86/X86GenAsmMatcher.inc: $(LLVM_SRC)/lib/Target/X86/X86.td $(LLVM_TD_DEPS) | $(LLVM_TBLGEN)
 	@mkdir -p $(@D)
 	$(SAY) TBLGEN $@
 	$(Q)$(LLVM_TBLGEN) -gen-asm-matcher -I$(LLVM_SRC)/lib/Target/X86 -I$(LLVM_GEN)/include -I$(LLVM_SRC)/include -I $(LLVM_SRC)/lib/Target $(LLVM_SRC)/lib/Target/X86/X86.td -o $@
 
-$(LLVM_GEN)/lib/Target/X86/X86GenAsmWriter.inc: $(LLVM_TBLGEN) | $(LLVM_SRC)/lib/Target/X86/X86.td
+$(LLVM_GEN)/lib/Target/X86/X86GenAsmWriter.inc: $(LLVM_SRC)/lib/Target/X86/X86.td $(LLVM_TD_DEPS) | $(LLVM_TBLGEN)
 	@mkdir -p $(@D)
 	$(SAY) TBLGEN $@
 	$(Q)$(LLVM_TBLGEN) -gen-asm-writer -I$(LLVM_SRC)/lib/Target/X86 -I$(LLVM_GEN)/include -I$(LLVM_SRC)/include -I $(LLVM_SRC)/lib/Target $(LLVM_SRC)/lib/Target/X86/X86.td -o $@
 
-$(LLVM_GEN)/lib/Target/X86/X86GenAsmWriter1.inc: $(LLVM_TBLGEN) | $(LLVM_SRC)/lib/Target/X86/X86.td
+$(LLVM_GEN)/lib/Target/X86/X86GenAsmWriter1.inc: $(LLVM_SRC)/lib/Target/X86/X86.td $(LLVM_TD_DEPS) | $(LLVM_TBLGEN)
 	@mkdir -p $(@D)
 	$(SAY) TBLGEN $@
 	$(Q)$(LLVM_TBLGEN) -gen-asm-writer -asmwriternum=1 -I$(LLVM_SRC)/lib/Target/X86 -I$(LLVM_GEN)/include -I$(LLVM_SRC)/include -I $(LLVM_SRC)/lib/Target $(LLVM_SRC)/lib/Target/X86/X86.td -o $@
 
-$(LLVM_GEN)/lib/Target/X86/X86GenCallingConv.inc: $(LLVM_TBLGEN) | $(LLVM_SRC)/lib/Target/X86/X86.td
+$(LLVM_GEN)/lib/Target/X86/X86GenCallingConv.inc: $(LLVM_SRC)/lib/Target/X86/X86.td $(LLVM_TD_DEPS) | $(LLVM_TBLGEN)
 	@mkdir -p $(@D)
 	$(SAY) TBLGEN $@
 	$(Q)$(LLVM_TBLGEN) -gen-callingconv -I$(LLVM_SRC)/lib/Target/X86 -I$(LLVM_GEN)/include -I$(LLVM_SRC)/include -I $(LLVM_SRC)/lib/Target $(LLVM_SRC)/lib/Target/X86/X86.td -o $@
 
-$(LLVM_GEN)/lib/Target/X86/X86GenDAGISel.inc: $(LLVM_TBLGEN) | $(LLVM_SRC)/lib/Target/X86/X86.td
+$(LLVM_GEN)/lib/Target/X86/X86GenDAGISel.inc: $(LLVM_SRC)/lib/Target/X86/X86.td $(LLVM_TD_DEPS) | $(LLVM_TBLGEN)
 	@mkdir -p $(@D)
 	$(SAY) TBLGEN $@
 	$(Q)$(LLVM_TBLGEN) -gen-dag-isel -I$(LLVM_SRC)/lib/Target/X86 -I$(LLVM_GEN)/include -I$(LLVM_SRC)/include -I $(LLVM_SRC)/lib/Target -omit-comments $(LLVM_SRC)/lib/Target/X86/X86.td -o $@
 
-$(LLVM_GEN)/lib/Target/X86/X86GenDisassemblerTables.inc: $(LLVM_TBLGEN) | $(LLVM_SRC)/lib/Target/X86/X86.td
+$(LLVM_GEN)/lib/Target/X86/X86GenDisassemblerTables.inc: $(LLVM_SRC)/lib/Target/X86/X86.td $(LLVM_TD_DEPS) | $(LLVM_TBLGEN)
 	@mkdir -p $(@D)
 	$(SAY) TBLGEN $@
 	$(Q)$(LLVM_TBLGEN) -gen-disassembler -I$(LLVM_SRC)/lib/Target/X86 -I$(LLVM_GEN)/include -I$(LLVM_SRC)/include -I $(LLVM_SRC)/lib/Target $(LLVM_SRC)/lib/Target/X86/X86.td -o $@
 
-$(LLVM_GEN)/lib/Target/X86/X86GenExegesis.inc: $(LLVM_TBLGEN) | $(LLVM_SRC)/lib/Target/X86/X86.td
+$(LLVM_GEN)/lib/Target/X86/X86GenExegesis.inc: $(LLVM_SRC)/lib/Target/X86/X86.td $(LLVM_TD_DEPS) | $(LLVM_TBLGEN)
 	@mkdir -p $(@D)
 	$(SAY) TBLGEN $@
 	$(Q)$(LLVM_TBLGEN) -gen-exegesis -I$(LLVM_SRC)/lib/Target/X86 -I$(LLVM_GEN)/include -I$(LLVM_SRC)/include -I $(LLVM_SRC)/lib/Target $(LLVM_SRC)/lib/Target/X86/X86.td -o $@
 
-$(LLVM_GEN)/lib/Target/X86/X86GenFastISel.inc: $(LLVM_TBLGEN) | $(LLVM_SRC)/lib/Target/X86/X86.td
+$(LLVM_GEN)/lib/Target/X86/X86GenFastISel.inc: $(LLVM_SRC)/lib/Target/X86/X86.td $(LLVM_TD_DEPS) | $(LLVM_TBLGEN)
 	@mkdir -p $(@D)
 	$(SAY) TBLGEN $@
 	$(Q)$(LLVM_TBLGEN) -gen-fast-isel -I$(LLVM_SRC)/lib/Target/X86 -I$(LLVM_GEN)/include -I$(LLVM_SRC)/include -I $(LLVM_SRC)/lib/Target $(LLVM_SRC)/lib/Target/X86/X86.td -o $@
 
-$(LLVM_GEN)/lib/Target/X86/X86GenFoldTables.inc: $(LLVM_TBLGEN) | $(LLVM_SRC)/lib/Target/X86/X86.td
+$(LLVM_GEN)/lib/Target/X86/X86GenFoldTables.inc: $(LLVM_SRC)/lib/Target/X86/X86.td $(LLVM_TD_DEPS) | $(LLVM_TBLGEN)
 	@mkdir -p $(@D)
 	$(SAY) TBLGEN $@
 	$(Q)$(LLVM_TBLGEN) -gen-x86-fold-tables -asmwriternum=1 -I$(LLVM_SRC)/lib/Target/X86 -I$(LLVM_GEN)/include -I$(LLVM_SRC)/include -I $(LLVM_SRC)/lib/Target $(LLVM_SRC)/lib/Target/X86/X86.td -o $@
 
-$(LLVM_GEN)/lib/Target/X86/X86GenGlobalISel.inc: $(LLVM_TBLGEN) | $(LLVM_SRC)/lib/Target/X86/X86.td
+$(LLVM_GEN)/lib/Target/X86/X86GenGlobalISel.inc: $(LLVM_SRC)/lib/Target/X86/X86.td $(LLVM_TD_DEPS) | $(LLVM_TBLGEN)
 	@mkdir -p $(@D)
 	$(SAY) TBLGEN $@
 	$(Q)$(LLVM_TBLGEN) -gen-global-isel -I$(LLVM_SRC)/lib/Target/X86 -I$(LLVM_GEN)/include -I$(LLVM_SRC)/include -I $(LLVM_SRC)/lib/Target $(LLVM_SRC)/lib/Target/X86/X86.td -o $@
 
-$(LLVM_GEN)/lib/Target/X86/X86GenInstrInfo.inc: $(LLVM_TBLGEN) | $(LLVM_SRC)/lib/Target/X86/X86.td
+$(LLVM_GEN)/lib/Target/X86/X86GenInstrInfo.inc: $(LLVM_SRC)/lib/Target/X86/X86.td $(LLVM_TD_DEPS) | $(LLVM_TBLGEN)
 	@mkdir -p $(@D)
 	$(SAY) TBLGEN $@
 	$(Q)$(LLVM_TBLGEN) -gen-instr-info -instr-info-expand-mi-operand-info=0 -I$(LLVM_SRC)/lib/Target/X86 -I$(LLVM_GEN)/include -I$(LLVM_SRC)/include -I $(LLVM_SRC)/lib/Target $(LLVM_SRC)/lib/Target/X86/X86.td -o $@
 
-$(LLVM_GEN)/lib/Target/X86/X86GenInstrMapping.inc: $(LLVM_TBLGEN) | $(LLVM_SRC)/lib/Target/X86/X86.td
+$(LLVM_GEN)/lib/Target/X86/X86GenInstrMapping.inc: $(LLVM_SRC)/lib/Target/X86/X86.td $(LLVM_TD_DEPS) | $(LLVM_TBLGEN)
 	@mkdir -p $(@D)
 	$(SAY) TBLGEN $@
 	$(Q)$(LLVM_TBLGEN) -gen-x86-instr-mapping -I$(LLVM_SRC)/lib/Target/X86 -I$(LLVM_GEN)/include -I$(LLVM_SRC)/include -I $(LLVM_SRC)/lib/Target $(LLVM_SRC)/lib/Target/X86/X86.td -o $@
 
-$(LLVM_GEN)/lib/Target/X86/X86GenMnemonicTables.inc: $(LLVM_TBLGEN) | $(LLVM_SRC)/lib/Target/X86/X86.td
+$(LLVM_GEN)/lib/Target/X86/X86GenMnemonicTables.inc: $(LLVM_SRC)/lib/Target/X86/X86.td $(LLVM_TD_DEPS) | $(LLVM_TBLGEN)
 	@mkdir -p $(@D)
 	$(SAY) TBLGEN $@
 	$(Q)$(LLVM_TBLGEN) -gen-x86-mnemonic-tables -asmwriternum=1 -I$(LLVM_SRC)/lib/Target/X86 -I$(LLVM_GEN)/include -I$(LLVM_SRC)/include -I $(LLVM_SRC)/lib/Target $(LLVM_SRC)/lib/Target/X86/X86.td -o $@
 
-$(LLVM_GEN)/lib/Target/X86/X86GenPreLegalizeGICombiner.inc: $(LLVM_TBLGEN) | $(LLVM_SRC)/lib/Target/X86/X86.td
+$(LLVM_GEN)/lib/Target/X86/X86GenPreLegalizeGICombiner.inc: $(LLVM_SRC)/lib/Target/X86/X86.td $(LLVM_TD_DEPS) | $(LLVM_TBLGEN)
 	@mkdir -p $(@D)
 	$(SAY) TBLGEN $@
 	$(Q)$(LLVM_TBLGEN) -gen-global-isel-combiner -combiners=X86PreLegalizerCombiner -I$(LLVM_SRC)/lib/Target/X86 -I$(LLVM_GEN)/include -I$(LLVM_SRC)/include -I $(LLVM_SRC)/lib/Target $(LLVM_SRC)/lib/Target/X86/X86.td -o $@
 
-$(LLVM_GEN)/lib/Target/X86/X86GenRegisterBank.inc: $(LLVM_TBLGEN) | $(LLVM_SRC)/lib/Target/X86/X86.td
+$(LLVM_GEN)/lib/Target/X86/X86GenRegisterBank.inc: $(LLVM_SRC)/lib/Target/X86/X86.td $(LLVM_TD_DEPS) | $(LLVM_TBLGEN)
 	@mkdir -p $(@D)
 	$(SAY) TBLGEN $@
 	$(Q)$(LLVM_TBLGEN) -gen-register-bank -I$(LLVM_SRC)/lib/Target/X86 -I$(LLVM_GEN)/include -I$(LLVM_SRC)/include -I $(LLVM_SRC)/lib/Target $(LLVM_SRC)/lib/Target/X86/X86.td -o $@
 
-$(LLVM_GEN)/lib/Target/X86/X86GenRegisterInfo.inc: $(LLVM_TBLGEN) | $(LLVM_SRC)/lib/Target/X86/X86.td
+$(LLVM_GEN)/lib/Target/X86/X86GenRegisterInfo.inc: $(LLVM_SRC)/lib/Target/X86/X86.td $(LLVM_TD_DEPS) | $(LLVM_TBLGEN)
 	@mkdir -p $(@D)
 	$(SAY) TBLGEN $@
 	$(Q)$(LLVM_TBLGEN) -gen-register-info -I$(LLVM_SRC)/lib/Target/X86 -I$(LLVM_GEN)/include -I$(LLVM_SRC)/include -I $(LLVM_SRC)/lib/Target $(LLVM_SRC)/lib/Target/X86/X86.td -o $@
 
-$(LLVM_GEN)/lib/Target/X86/X86GenSubtargetInfo.inc: $(LLVM_TBLGEN) | $(LLVM_SRC)/lib/Target/X86/X86.td
+$(LLVM_GEN)/lib/Target/X86/X86GenSubtargetInfo.inc: $(LLVM_SRC)/lib/Target/X86/X86.td $(LLVM_TD_DEPS) | $(LLVM_TBLGEN)
 	@mkdir -p $(@D)
 	$(SAY) TBLGEN $@
 	$(Q)$(LLVM_TBLGEN) -gen-subtarget -I$(LLVM_SRC)/lib/Target/X86 -I$(LLVM_GEN)/include -I$(LLVM_SRC)/include -I $(LLVM_SRC)/lib/Target $(LLVM_SRC)/lib/Target/X86/X86.td -o $@
