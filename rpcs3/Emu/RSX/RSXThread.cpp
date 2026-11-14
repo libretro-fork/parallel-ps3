@@ -1051,7 +1051,7 @@ namespace rsx
 		}
 	}
 
-	void thread::post_vblank_event(u64 post_event_time)
+	void thread::post_vblank_event()
 	{
 		vblank_count++;
 
@@ -1204,7 +1204,7 @@ namespace rsx
 					else
 					{
 						frontend_vblanks++;
-						post_vblank_event(get_system_time());
+						post_vblank_event();
 					}
 				}
 

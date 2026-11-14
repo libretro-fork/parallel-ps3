@@ -326,7 +326,7 @@ namespace rsx
 
 		u64 vblank_at_flip = umax;
 		u64 flip_notification_count = 0;
-		void post_vblank_event(u64 post_event_time);
+		void post_vblank_event();
 
 	public:
 		atomic_t<bool> sync_point_request = false;

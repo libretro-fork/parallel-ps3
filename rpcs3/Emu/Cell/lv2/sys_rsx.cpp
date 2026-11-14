@@ -767,14 +767,10 @@ error_code sys_rsx_context_attribute(u32 context_id, u32 package_id, u64 a3, u64
 
 		render->on_frame_end(static_cast<u32>(a4));
 		if (!render->send_event(0, SYS_RSX_EVENT_QUEUE_BASE << a3, 0))
-		{
 			break;
-		}
 
 		if (g_cfg.video.frame_limit == frame_limit_type::infinite)
-		{
-			render->post_vblank_event(get_system_time());
-		}
+			render->post_vblank_event();
 		break;
 	}
 	case 0x104: // Display buffer
