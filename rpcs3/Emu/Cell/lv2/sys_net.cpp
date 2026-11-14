@@ -1299,7 +1299,12 @@ error_code sys_net_bnet_poll(ppu_thread& ppu, vm::ptr<sys_net_pollfd> fds, s32 n
 
 		std::unique_lock nw_lock(g_fxo->get<network_context>().mutex_thread_loop);
 		std::unique_lock p2p_lock(g_fxo->get<p2p_context>().mutex_thread_loop);
-		std::shared_lock lock(id_manager::g_mutex);
+
+		// The sockets are found with no lock over the IDs: the thread counts
+		// itself in on each one's own word, which keeps that socket from
+		// being closed until the thread is done here, as the lock did
+		std::vector<idm::entered> inside(nfds);
+		std::vector<lv2_socket*> socks(nfds);
 
 		std::vector<::pollfd> _fds(nfds);
 #ifdef _WIN32
@@ -1316,7 +1321,7 @@ error_code sys_net_bnet_poll(ppu_thread& ppu, vm::ptr<sys_net_pollfd> fds, s32 n
 				continue;
 			}
 
-			if (auto sock = idm::check_unlocked<lv2_socket>(fds_buf[i].fd))
+			if (auto sock = socks[i] = idm::find_entered<lv2_socket>(fds_buf[i].fd, inside[i]))
 			{
 				has_sockets = true;
 				sock->poll(fds_buf[i], _fds[i]);
@@ -1352,7 +1357,7 @@ error_code sys_net_bnet_poll(ppu_thread& ppu, vm::ptr<sys_net_pollfd> fds, s32 n
 
 		if (ms == 0 || signaled)
 		{
-			lock.unlock();
+			inside.clear();
 			p2p_lock.unlock();
 			nw_lock.unlock();
 			std::memcpy(fds.get_ptr(), fds_buf.data(), nfds * sizeof(sys_net_pollfd));
@@ -1366,7 +1371,7 @@ error_code sys_net_bnet_poll(ppu_thread& ppu, vm::ptr<sys_net_pollfd> fds, s32 n
 				continue;
 			}
 
-			if (auto sock = idm::check_unlocked<lv2_socket>(fds_buf[i].fd))
+			if (auto sock = socks[i])
 			{
 				auto lock = sock->lock();
 
@@ -1492,7 +1497,10 @@ error_code sys_net_bnet_select(ppu_thread& ppu, s32 nfds, vm::ptr<sys_net_fd_set
 
 		std::lock_guard nw_lock(g_fxo->get<network_context>().mutex_thread_loop);
 		std::lock_guard p2p_lock(g_fxo->get<p2p_context>().mutex_thread_loop);
-		reader_lock lock(id_manager::g_mutex);
+
+		// As sys_net_bnet_poll
+		std::vector<idm::entered> inside(nfds);
+		std::vector<lv2_socket*> socks(nfds);
 
 		std::vector<::pollfd> _fds(nfds);
 #ifdef _WIN32
@@ -1521,7 +1529,7 @@ error_code sys_net_bnet_select(ppu_thread& ppu, s32 nfds, vm::ptr<sys_net_fd_set
 				continue;
 			}
 
-			if (auto sock = idm::check_unlocked<lv2_socket>((lv2_socket::id_base & -1024) + i))
+			if (auto sock = socks[i] = idm::find_entered<lv2_socket>((lv2_socket::id_base & -1024) + i, inside[i]))
 			{
 				auto [read_set, write_set, except_set] = sock->select(selected, _fds[i]);
 
@@ -1605,7 +1613,7 @@ error_code sys_net_bnet_select(ppu_thread& ppu, s32 nfds, vm::ptr<sys_net_fd_set
 				continue;
 			}
 
-			if (auto sock = idm::check_unlocked<lv2_socket>((lv2_socket::id_base & -1024) + i))
+			if (auto sock = socks[i])
 			{
 				auto lock = sock->lock();
 #ifdef _WIN32
