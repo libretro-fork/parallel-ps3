@@ -191,7 +191,7 @@ error_code sys_ppu_thread_join(ppu_thread& ppu, u32 thread_id, vm::ptr<u64> vptr
 		return CELL_EDEADLK;
 	}
 
-	auto thread = idm::get<named_thread<ppu_thread>>(thread_id, [&, notify = lv2_obj::notify_all_t()](ppu_thread& thread) -> CellError
+	auto thread = idm::get_entered<named_thread<ppu_thread>>(thread_id, [&, notify = lv2_obj::notify_all_t()](ppu_thread& thread) -> CellError
 	{
 		CellError result = thread.joiner.atomic_op([&](ppu_join_status& value) -> CellError
 		{
@@ -350,7 +350,7 @@ error_code sys_ppu_thread_set_priority(ppu_thread& ppu, u32 thread_id, s32 prio)
 		return CELL_OK;
 	}
 
-	const auto thread = idm::check<named_thread<ppu_thread>>(thread_id, [&, notify = lv2_obj::notify_all_t()](ppu_thread& thread)
+	const auto thread = idm::check_entered<named_thread<ppu_thread>>(thread_id, [&, notify = lv2_obj::notify_all_t()](ppu_thread& thread)
 	{
 		lv2_obj::set_priority(thread, prio);
 	});
@@ -393,7 +393,7 @@ error_code sys_ppu_thread_get_priority(ppu_thread& ppu, u32 thread_id, vm::ptr<s
 	for (; !ppu.is_stopped(); std::this_thread::yield())
 	{
 		bool check_state = false;
-		const auto thread = idm::check<named_thread<ppu_thread>>(thread_id, [&](ppu_thread& thread)
+		const auto thread = idm::check_entered<named_thread<ppu_thread>>(thread_id, [&](ppu_thread& thread)
 		{
 			if (reader_lock lock(lv2_obj::g_mutex); cpu_flag::suspend - ppu.state)
 			{
@@ -446,7 +446,7 @@ error_code sys_ppu_thread_stop(ppu_thread& ppu, u32 thread_id)
 		return CELL_ENOSYS;
 	}
 
-	const auto thread = idm::check<named_thread<ppu_thread>>(thread_id, [](named_thread<ppu_thread>&) {});
+	const auto thread = idm::check_entered<named_thread<ppu_thread>>(thread_id, [](named_thread<ppu_thread>&) {});
 
 	if (!thread)
 	{
@@ -567,7 +567,7 @@ error_code sys_ppu_thread_start(ppu_thread& ppu, u32 thread_id)
 
 	bool is_lower_prio = false;
 
-	const auto thread = idm::get<named_thread<ppu_thread>>(thread_id, [&, notify = lv2_obj::notify_all_t()](ppu_thread& thread) -> CellError
+	const auto thread = idm::get_entered<named_thread<ppu_thread>>(thread_id, [&, notify = lv2_obj::notify_all_t()](ppu_thread& thread) -> CellError
 	{
 		if (!thread.state.test_and_reset(cpu_flag::stop))
 		{

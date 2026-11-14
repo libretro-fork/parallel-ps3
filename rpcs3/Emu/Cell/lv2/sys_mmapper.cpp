@@ -738,7 +738,7 @@ error_code sys_mmapper_map_shared_memory(ppu_thread& ppu, u32 addr, u32 mem_id, 
 		return CELL_EINVAL;
 	}
 
-	const auto mem = idm::get<lv2_obj, lv2_memory>(mem_id, [&](lv2_memory& mem) -> CellError
+	const auto mem = idm::get_entered<lv2_obj, lv2_memory>(mem_id, [&](lv2_memory& mem) -> CellError
 	{
 		if (mem_id == mem.system_handle)
 		{
@@ -818,7 +818,7 @@ error_code sys_mmapper_search_and_map(ppu_thread& ppu, u32 start_addr, u32 mem_i
 		return {CELL_EINVAL, start_addr};
 	}
 
-	const auto mem = idm::get<lv2_obj, lv2_memory>(mem_id, [&](lv2_memory& mem) -> CellError
+	const auto mem = idm::get_entered<lv2_obj, lv2_memory>(mem_id, [&](lv2_memory& mem) -> CellError
 	{
 		if (mem_id == mem.system_handle)
 		{

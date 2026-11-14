@@ -253,7 +253,7 @@ error_code sys_memory_allocate_from_container(cpu_thread& cpu, u64 size, u32 cid
 		return {CELL_EALIGN, size};
 	}
 
-	const auto ct = idm::get<lv2_memory_container>(cid, [&](lv2_memory_container& ct) -> CellError
+	const auto ct = idm::get_entered<lv2_memory_container>(cid, [&](lv2_memory_container& ct) -> CellError
 	{
 		// Try to get "physical memory"
 		if (!ct.take(size))

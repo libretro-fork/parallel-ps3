@@ -168,7 +168,7 @@ error_code sys_vm_append_memory(ppu_thread& ppu, u32 addr, u64 size)
 		return CELL_EINVAL;
 	}
 
-	const auto block = idm::check<sys_vm_t>(sys_vm_t::find_id(addr), [&](sys_vm_t& vmo) -> CellError
+	const auto block = idm::check_entered<sys_vm_t>(sys_vm_t::find_id(addr), [&](sys_vm_t& vmo) -> CellError
 	{
 		if (vmo.addr != addr)
 		{
@@ -208,7 +208,7 @@ error_code sys_vm_return_memory(ppu_thread& ppu, u32 addr, u64 size)
 		return CELL_EINVAL;
 	}
 
-	const auto block = idm::check<sys_vm_t>(sys_vm_t::find_id(addr), [&](sys_vm_t& vmo) -> CellError
+	const auto block = idm::check_entered<sys_vm_t>(sys_vm_t::find_id(addr), [&](sys_vm_t& vmo) -> CellError
 	{
 		if (vmo.addr != addr)
 		{

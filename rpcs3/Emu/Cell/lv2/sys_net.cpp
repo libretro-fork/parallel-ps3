@@ -362,7 +362,10 @@ error_code sys_net_bnet_accept(ppu_thread& ppu, s32 s, vm::ptr<sys_net_sockaddr>
 	sys_net_sockaddr sn_addr{};
 	shared_ptr<lv2_socket> new_socket{};
 
-	const auto sock = idm::check<lv2_socket>(s, [&, notify = lv2_obj::notify_all_t()](lv2_socket& sock)
+	// The socket is found with no lock over the IDs, here and in the calls
+	// below: the thread counts itself in on the socket's own word, which
+	// keeps the socket from being closed under it (idm::check_entered)
+	const auto sock = idm::check_entered<lv2_socket>(s, [&, notify = lv2_obj::notify_all_t()](lv2_socket& sock)
 		{
 			auto [success, res, res_socket, res_addr] = sock.accept();
 
@@ -487,7 +490,7 @@ error_code sys_net_bnet_bind(ppu_thread& ppu, s32 s, vm::cptr<sys_net_sockaddr> 
 		return -SYS_NET_EAFNOSUPPORT;
 	}
 
-	const auto sock = idm::check<lv2_socket>(s, [&, notify = lv2_obj::notify_all_t()](lv2_socket& sock) -> s32
+	const auto sock = idm::check_entered<lv2_socket>(s, [&, notify = lv2_obj::notify_all_t()](lv2_socket& sock) -> s32
 		{
 			return sock.bind(sn_addr);
 		});
@@ -530,7 +533,7 @@ error_code sys_net_bnet_connect(ppu_thread& ppu, s32 s, vm::ptr<sys_net_sockaddr
 	s32 result               = 0;
 	sys_net_sockaddr sn_addr = *addr;
 
-	const auto sock = idm::check<lv2_socket>(s, [&, notify = lv2_obj::notify_all_t()](lv2_socket& sock)
+	const auto sock = idm::check_entered<lv2_socket>(s, [&, notify = lv2_obj::notify_all_t()](lv2_socket& sock)
 		{
 			const auto success = sock.connect(sn_addr);
 
@@ -620,7 +623,7 @@ error_code sys_net_bnet_getpeername(ppu_thread& ppu, s32 s, vm::ptr<sys_net_sock
 		return -SYS_NET_EINVAL;
 	}
 
-	const auto sock = idm::check<lv2_socket>(s, [&, notify = lv2_obj::notify_all_t()](lv2_socket& sock) -> s32
+	const auto sock = idm::check_entered<lv2_socket>(s, [&, notify = lv2_obj::notify_all_t()](lv2_socket& sock) -> s32
 		{
 			auto [res, sn_addr] = sock.getpeername();
 
@@ -658,7 +661,7 @@ error_code sys_net_bnet_getsockname(ppu_thread& ppu, s32 s, vm::ptr<sys_net_sock
 		return -SYS_NET_EINVAL;
 	}
 
-	const auto sock = idm::check<lv2_socket>(s, [&, notify = lv2_obj::notify_all_t()](lv2_socket& sock) -> s32
+	const auto sock = idm::check_entered<lv2_socket>(s, [&, notify = lv2_obj::notify_all_t()](lv2_socket& sock) -> s32
 		{
 			auto [res, sn_addr] = sock.getsockname();
 
@@ -716,7 +719,7 @@ error_code sys_net_bnet_getsockopt(ppu_thread& ppu, s32 s, s32 level, s32 optnam
 		return -SYS_NET_EINVAL;
 	}
 
-	const auto sock = idm::check<lv2_socket>(s, [&, notify = lv2_obj::notify_all_t()](lv2_socket& sock) -> s32
+	const auto sock = idm::check_entered<lv2_socket>(s, [&, notify = lv2_obj::notify_all_t()](lv2_socket& sock) -> s32
 		{
 			if (len < sizeof(s32))
 			{
@@ -758,7 +761,7 @@ error_code sys_net_bnet_listen(ppu_thread& ppu, s32 s, s32 backlog)
 		return -SYS_NET_EINVAL;
 	}
 
-	const auto sock = idm::check<lv2_socket>(s, [&, notify = lv2_obj::notify_all_t()](lv2_socket& sock) -> s32
+	const auto sock = idm::check_entered<lv2_socket>(s, [&, notify = lv2_obj::notify_all_t()](lv2_socket& sock) -> s32
 		{
 			return sock.listen(backlog);
 		});
@@ -796,7 +799,7 @@ error_code sys_net_bnet_recvfrom(ppu_thread& ppu, s32 s, vm::ptr<void> buf, u32 
 	s32 result = 0;
 	sys_net_sockaddr sn_addr{};
 
-	const auto sock = idm::check<lv2_socket>(s, [&, notify = lv2_obj::notify_all_t()](lv2_socket& sock)
+	const auto sock = idm::check_entered<lv2_socket>(s, [&, notify = lv2_obj::notify_all_t()](lv2_socket& sock)
 		{
 			auto lock = sock.lock();
 
@@ -924,7 +927,7 @@ error_code sys_net_bnet_sendmsg(ppu_thread& ppu, s32 s, vm::cptr<sys_net_msghdr>
 
 	s32 result{};
 
-	const auto sock = idm::check<lv2_socket>(s, [&, notify = lv2_obj::notify_all_t()](lv2_socket& sock)
+	const auto sock = idm::check_entered<lv2_socket>(s, [&, notify = lv2_obj::notify_all_t()](lv2_socket& sock)
 		{
 			auto netmsg = msg.get_ptr();
 			const auto success = sock.sendmsg(flags, *netmsg);
@@ -1029,7 +1032,7 @@ error_code sys_net_bnet_sendto(ppu_thread& ppu, s32 s, vm::cptr<void> buf, u32 l
 	const std::vector<u8> buf_copy(vm::_ptr<const char>(buf.addr()), vm::_ptr<const char>(buf.addr()) + len);
 	s32 result{};
 
-	const auto sock = idm::check<lv2_socket>(s, [&, notify = lv2_obj::notify_all_t()](lv2_socket& sock)
+	const auto sock = idm::check_entered<lv2_socket>(s, [&, notify = lv2_obj::notify_all_t()](lv2_socket& sock)
 		{
 			auto success = sock.sendto(flags, buf_copy, sn_addr);
 
@@ -1145,7 +1148,7 @@ error_code sys_net_bnet_setsockopt(ppu_thread& ppu, s32 s, s32 level, s32 optnam
 
 	std::vector<u8> optval_copy(vm::_ptr<u8>(optval.addr()), vm::_ptr<u8>(optval.addr() + optlen));
 
-	const auto sock = idm::check<lv2_socket>(s, [&, notify = lv2_obj::notify_all_t()](lv2_socket& sock) -> s32
+	const auto sock = idm::check_entered<lv2_socket>(s, [&, notify = lv2_obj::notify_all_t()](lv2_socket& sock) -> s32
 		{
 			return sock.setsockopt(level, optname, optval_copy);
 		});
@@ -1174,7 +1177,7 @@ error_code sys_net_bnet_shutdown(ppu_thread& ppu, s32 s, s32 how)
 		return -SYS_NET_EINVAL;
 	}
 
-	const auto sock = idm::check<lv2_socket>(s, [&, notify = lv2_obj::notify_all_t()](lv2_socket& sock) -> s32
+	const auto sock = idm::check_entered<lv2_socket>(s, [&, notify = lv2_obj::notify_all_t()](lv2_socket& sock) -> s32
 		{
 			return sock.shutdown(how);
 		});
@@ -1969,7 +1972,7 @@ error_code sys_net_infoctl(ppu_thread& ppu, s32 cmd, vm::ptr<void> arg)
 			return -SYS_NET_EINVAL;
 		}
 
-		const auto sock = idm::check<lv2_socket>(sock_id, [&](lv2_socket& sock)
+		const auto sock = idm::check_entered<lv2_socket>(sock_id, [&](lv2_socket& sock)
 			{
 				net_write_sockinfo(sock_id, sock, sock_info[0]);
 			});

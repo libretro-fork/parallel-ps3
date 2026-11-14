@@ -2571,7 +2571,7 @@ error_code raw_spu_destroy(ppu_thread& ppu, u32 id)
 {
 	const u32 idm_id = spu_thread::find_raw_spu(id);
 
-	auto thread = idm::get<named_thread<spu_thread>>(idm_id, [](named_thread<spu_thread>& thread)
+	auto thread = idm::get_entered<named_thread<spu_thread>>(idm_id, [](named_thread<spu_thread>& thread)
 	{
 		if (thread.get_type() != (isolated ? spu_type::isolated : spu_type::raw))
 		{

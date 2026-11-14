@@ -2810,7 +2810,7 @@ error_code sys_fs_fcntl(ppu_thread& ppu, u32 fd, u32 op, vm::ptr<void> _arg, u32
 			return CELL_ENOMEM;
 		}
 
-		const auto ct = idm::get<lv2_memory_container>(new_container_id, [&](lv2_memory_container& ct) -> CellError
+		const auto ct = idm::get_entered<lv2_memory_container>(new_container_id, [&](lv2_memory_container& ct) -> CellError
 			{
 				if (!ct.take(actual_size))
 				{
