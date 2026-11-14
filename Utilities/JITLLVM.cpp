@@ -954,6 +954,17 @@ jit_compiler::jit_compiler(const std::unordered_map<std::string, u64>& _link, st
 			.create());
 	}
 
+	if (m_engine)
+	{
+		// MCJIT puts itself on the debugger's list (the GDB JIT interface) as it
+		// is made. For every object then loaded, compiled or lent from the
+		// pack, that makes a second copy of the whole object (ELF hosts),
+		// allocates an entry and a map node and keeps all three until the
+		// engine goes, under a lock every compiling thread shares. Nothing
+		// reads the list unless a debugger is attached to the frontend.
+		m_engine->UnregisterJITEventListener(llvm::JITEventListener::createGDBRegistrationListener());
+	}
+
 	if (!_link.empty())
 	{
 		for (auto&& [name, addr] : _link)

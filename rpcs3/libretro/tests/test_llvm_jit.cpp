@@ -46,6 +46,23 @@
 #pragma GCC diagnostic pop
 #endif
 
+// The debugger's list of JIT-compiled objects (the GDB JIT interface, in
+// LLVM's GDBRegistrationListener.cpp). MCJIT puts every object it loads on
+// it, each as a second copy of the whole object kept for as long as its
+// engine lives, under one lock for the process. The core takes itself off.
+extern "C"
+{
+	struct test_jit_descriptor
+	{
+		u32 version;
+		u32 action_flag;
+		void* relevant_entry;
+		void* first_entry;
+	};
+
+	extern test_jit_descriptor __jit_debug_descriptor;
+}
+
 static int failures = 0;
 
 #define CHECK(cond) do { if (!(cond)) { std::fprintf(stderr, "%s:%d: check failed: %s\n", __FILE__, __LINE__, #cond); failures++; } } while (0)
@@ -203,6 +220,10 @@ int main()
 	const auto f_sum = reinterpret_cast<s64 (*)(s64)>(jit.get("sum_mul_add"));
 	const auto f_add4 = reinterpret_cast<void (*)(f32*, const f32*, const f32*)>(jit.get("add4"));
 	CHECK(f_mul_add && f_sum && f_add4);
+
+	// Compiled and loaded, and not registered with a debugger: no copy of
+	// the object was made for one
+	CHECK(__jit_debug_descriptor.first_entry == nullptr);
 
 	if (f_mul_add && f_sum && f_add4)
 	{
@@ -376,6 +397,9 @@ int main()
 		g_cfg.core.spu_xfloat_accuracy.set(accuracy);
 
 		std::printf("test_llvm_jit: 200 SPU functions compiled in %.0f ms, loaded from their objects in %.0f ms\n", first, second);
+		// Nor were the objects loaded from the pack
+		CHECK(__jit_debug_descriptor.first_entry == nullptr);
+
 		g_fxo->clear();
 		std::filesystem::remove_all(dir);
 	}
