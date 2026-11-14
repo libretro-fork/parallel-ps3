@@ -46,6 +46,10 @@ namespace id_manager
 
 	// The calling thread's record of hazard cells (Utilities/lf_hazard.h):
 	// -2 until the thread first asks, -1 when there was none left for it
+	// In an ID's closing word: a withdrawal is deciding. Below it, the
+	// number of threads inside idm::enter's protection.
+	constexpr int id_deciding = 0x40000000;
+
 	extern thread_local int g_hazard_record;
 	int claim_hazard_record();
 
@@ -316,8 +320,9 @@ namespace id_manager
 		std::array<id_key, T::id_count> vec_keys{};
 		u32 highest_index = 0;
 
-		// Nonzero while a withdrawal is asking its question about the ID's
-		// object and has not yet decided: see idm::still_named()
+		// id_deciding while a withdrawal is asking its question about the
+		// ID's object and has not yet decided (see idm::still_named()),
+		// plus the number of threads it waits for first (idm::enter())
 		std::array<retro_atomic_int_t, T::id_count> closing{};
 
 		shared_mutex mutex{}; // TODO: Use this instead of global mutex
@@ -962,14 +967,21 @@ public:
 			// An exchange, for the barrier: what such a thread did before it
 			// looks at this is seen by func.
 			retro_atomic_int_t& closing = g_fxo->get<id_manager::id_map<T>>().closing[index];
-			(void)retro_atomic_exchange_int(&closing, 1);
+			(void)retro_atomic_fetch_add_seq_cst_int(&closing, id_manager::id_deciding);
+
+			// Threads that are making themselves known to func right now
+			// (idm::enter) finish first: a few instructions each
+			while (retro_atomic_load_seq_cst_int(&closing) & (id_manager::id_deciding - 1)) [[unlikely]]
+			{
+				std::this_thread::yield();
+			}
 
 			if constexpr (std::is_void_v<FRT>)
 			{
 				func(*_ptr);
 				found.second->clear();
 				auto result = static_cast<stx::shared_ptr<Get>>(found.first->exchange(null_ptr));
-				retro_atomic_store_release_int(&closing, 0);
+				(void)retro_atomic_fetch_sub_int(&closing, id_manager::id_deciding);
 				id_manager::wait_unpinned(removed);
 				return result;
 			}
@@ -980,13 +992,13 @@ public:
 				if (ret)
 				{
 					// If return value evaluates to true, don't delete the object (error code)
-					retro_atomic_store_release_int(&closing, 0);
+					(void)retro_atomic_fetch_sub_int(&closing, id_manager::id_deciding);
 					return {static_cast<stx::shared_ptr<Get>>(found.first->load()), std::move(ret)};
 				}
 
 				found.second->clear();
 				auto result = static_cast<stx::shared_ptr<Get>>(found.first->exchange(null_ptr));
-				retro_atomic_store_release_int(&closing, 0);
+				(void)retro_atomic_fetch_sub_int(&closing, id_manager::id_deciding);
 				id_manager::wait_unpinned(removed);
 				return {std::move(result), std::move(ret)};
 			}
@@ -1171,6 +1183,91 @@ public:
 		return result;
 	}
 
+	// What idm::enter gives: while it is alive, a withdrawal that asks a
+	// question about the object (withdraw with a function) waits before
+	// asking. To be alive for a few instructions only: no sleeping, no
+	// taking of id_manager::g_mutex.
+	struct entered
+	{
+		retro_atomic_int_t* word = nullptr;
+
+		entered() = default;
+		entered(const entered&) = delete;
+		entered& operator=(const entered&) = delete;
+
+		entered(entered&& other) noexcept
+			: word(std::exchange(other.word, nullptr))
+		{
+		}
+
+		~entered()
+		{
+			if (word)
+			{
+				(void)retro_atomic_fetch_sub_int(word, 1);
+			}
+		}
+
+		explicit operator bool() const noexcept
+		{
+			return word != nullptr;
+		}
+	};
+
+	// For a thread that found @object under @id without the lock and is
+	// about to do what a withdrawal asks about - make itself a waiter, as a
+	// rule. What the lock over all IDs gave, that the withdrawal cannot
+	// decide between the object being found and the thread being there to
+	// be seen, is kept for this one ID: the thread counts itself in and
+	// then looks whether the ID still names the object and no withdrawal
+	// is deciding; the withdrawal marks the ID, waits for the count to
+	// drain, and then asks. Either the thread saw the mark (and waits for
+	// the answer, then looks again), or the withdrawal waits for the
+	// thread and sees what it did.
+	//
+	// False if the ID no longer names the object. Unlike still_named()
+	// this comes before the act, so there is nothing to undo.
+	//
+	// One kind of object uses this or still_named(), not both: a thread
+	// in still_named() may hold the object's own lock while it waits for
+	// the withdrawal, which would then wait for a thread in here that
+	// waits for that lock.
+	template <typename T, typename Get = T>
+		requires IdmTypesCompatible<T, Get>
+	static inline entered enter(u32 id, const Get* object)
+	{
+		const u32 index = get_index<Get>(id);
+		auto& map = g_fxo->get<id_manager::id_map<T>>();
+		retro_atomic_int_t& word = map.closing[index];
+
+		entered result;
+
+		while (true)
+		{
+			if (retro_atomic_fetch_add_seq_cst_int(&word, 1) & id_manager::id_deciding) [[unlikely]]
+			{
+				// Out of the withdrawal's way until it has its answer
+				(void)retro_atomic_fetch_sub_int(&word, 1);
+
+				while (retro_atomic_load_acquire_int(&word) & id_manager::id_deciding)
+				{
+					std::this_thread::yield();
+				}
+
+				continue;
+			}
+
+			if (map.vec_data[index].observe() != static_cast<const T*>(object)) [[unlikely]]
+			{
+				(void)retro_atomic_fetch_sub_int(&word, 1);
+				return result;
+			}
+
+			result.word = &word;
+			return result;
+		}
+	}
+
 	// For a thread that found @object under @id without the lock and has
 	// acted on it: true if the ID still names the object. If a withdrawal
 	// is asking its question about the object right now, this waits for
@@ -1187,7 +1284,7 @@ public:
 		// mark comes before its question
 		retro_atomic_thread_fence_seq_cst();
 
-		while (retro_atomic_load_acquire_int(&map.closing[index])) [[unlikely]]
+		while (retro_atomic_load_acquire_int(&map.closing[index]) & id_manager::id_deciding) [[unlikely]]
 		{
 			std::this_thread::yield();
 		}

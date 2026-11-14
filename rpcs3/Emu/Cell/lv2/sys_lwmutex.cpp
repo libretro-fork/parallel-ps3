@@ -140,7 +140,7 @@ error_code _sys_lwmutex_lock(ppu_thread& ppu, u32 lwmutex_id, u64 timeout)
 
 	ppu.gpr[3] = CELL_OK;
 
-	const auto mutex = idm::get<lv2_obj, lv2_lwmutex>(lwmutex_id, [&, notify = lv2_obj::notify_all_t()](lv2_lwmutex& mutex)
+	const auto take_signal = [&](lv2_lwmutex& mutex) -> bool
 	{
 		if (s32 signal = mutex.lv2_control.fetch_op([](lv2_lwmutex::control_data_t& data)
 		{
@@ -161,25 +161,77 @@ error_code _sys_lwmutex_lock(ppu_thread& ppu, u32 lwmutex_id, u64 timeout)
 			return true;
 		}
 
-		lv2_obj::prepare_for_sleep(ppu);
+		return false;
+	};
 
-		ppu.cancel_sleep = 1;
+	// Free, or just given up: found and taken with no lock over the IDs and
+	// no reference counted. That makes no waiter, which is what
+	// _sys_lwmutex_destroy asks about, so it is as if it came before a
+	// destroy that ran meanwhile.
+	bool found = false;
 
-		if (s32 signal = mutex.try_own(&ppu))
+	if (const auto pinned = idm::pin<lv2_obj, lv2_lwmutex>(lwmutex_id))
+	{
+		found = true;
+
+		if (take_signal(*pinned))
 		{
-			if (~signal & 1)
-			{
-				ppu.gpr[3] = CELL_EBUSY;
-			}
-
-			ppu.cancel_sleep = 0;
-			return true;
+			return not_an_error(ppu.gpr[3]);
 		}
+	}
 
-		const bool finished = !mutex.sleep(ppu, timeout);
-		notify.cleanup();
-		return finished;
-	});
+	// The thread may sleep on it, so it keeps a reference
+	struct
+	{
+		stx::shared_ptr<lv2_lwmutex> ptr;
+		bool ret = false;
+
+		explicit operator bool() const { return !!ptr; }
+		lv2_lwmutex* operator->() const { return ptr.get(); }
+	}
+	mutex{found ? idm::hold<lv2_obj, lv2_lwmutex>(lwmutex_id) : null_ptr};
+
+	if (mutex)
+	{
+		// The lock over all IDs kept a destroy from coming between the
+		// lwmutex being found and the thread being in its queue. idm::enter
+		// keeps that for this ID alone: the destroy waits for the thread to
+		// be done here before it looks at the queue, or the thread is told
+		// that the ID is gone before it has done anything.
+		if (const auto entered = idm::enter<lv2_obj, lv2_lwmutex>(lwmutex_id, mutex.ptr.get()))
+		{
+			mutex.ret = [&, notify = lv2_obj::notify_all_t()](lv2_lwmutex& mutex)
+			{
+				if (take_signal(mutex))
+				{
+					return true;
+				}
+
+				lv2_obj::prepare_for_sleep(ppu);
+
+				ppu.cancel_sleep = 1;
+
+				if (s32 signal = mutex.try_own(&ppu))
+				{
+					if (~signal & 1)
+					{
+						ppu.gpr[3] = CELL_EBUSY;
+					}
+
+					ppu.cancel_sleep = 0;
+					return true;
+				}
+
+				const bool finished = !mutex.sleep(ppu, timeout);
+				notify.cleanup();
+				return finished;
+			}(*mutex.ptr);
+		}
+		else
+		{
+			mutex.ptr = null_ptr;
+		}
+	}
 
 	if (!mutex)
 	{
@@ -300,9 +352,20 @@ error_code _sys_lwmutex_trylock(ppu_thread& ppu, u32 lwmutex_id)
 
 	sys_lwmutex.trace("_sys_lwmutex_trylock(lwmutex_id=0x%x)", lwmutex_id);
 
-	const auto mutex = idm::check<lv2_obj, lv2_lwmutex>(lwmutex_id, [&](lv2_lwmutex& mutex)
+	// Found with no lock; makes no waiter (see _sys_lwmutex_lock)
+	struct
 	{
-		auto [_, ok] = mutex.lv2_control.fetch_op([](lv2_lwmutex::control_data_t& data)
+		bool found = false;
+		bool ret = false;
+
+		explicit operator bool() const { return found; }
+	}
+	mutex;
+
+	if (const auto pinned = idm::pin<lv2_obj, lv2_lwmutex>(lwmutex_id))
+	{
+		mutex.found = true;
+		mutex.ret = pinned->lv2_control.fetch_op([](lv2_lwmutex::control_data_t& data)
 		{
 			if (data.signaled & 1)
 			{
@@ -311,10 +374,8 @@ error_code _sys_lwmutex_trylock(ppu_thread& ppu, u32 lwmutex_id)
 			}
 
 			return false;
-		});
-
-		return ok;
-	});
+		}).second;
+	}
 
 	if (!mutex)
 	{
@@ -340,7 +401,26 @@ error_code _sys_lwmutex_unlock(ppu_thread& ppu, u32 lwmutex_id)
 
 	sys_lwmutex.trace("_sys_lwmutex_unlock(lwmutex_id=0x%x)", lwmutex_id);
 
-	const auto mutex = idm::check<lv2_obj, lv2_lwmutex>(lwmutex_id, [&, notify = lv2_obj::notify_all_t()](lv2_lwmutex& mutex)
+	// Nobody waits, as mostly: found and given up with no lock over the IDs
+	// and no reference counted
+	if (const auto pinned = idm::pin<lv2_obj, lv2_lwmutex>(lwmutex_id))
+	{
+		if (pinned->try_unlock(false))
+		{
+			return CELL_OK;
+		}
+	}
+	else
+	{
+		return CELL_ESRCH;
+	}
+
+	// A thread to wake: with a reference
+	const auto mutex = idm::hold<lv2_obj, lv2_lwmutex>(lwmutex_id);
+
+	if (mutex)
+	{
+		[&, notify = lv2_obj::notify_all_t()](lv2_lwmutex& mutex)
 	{
 		if (mutex.try_unlock(false))
 		{
@@ -360,7 +440,8 @@ error_code _sys_lwmutex_unlock(ppu_thread& ppu, u32 lwmutex_id)
 			mutex.awake(cpu);
 			notify.cleanup(); // lv2_lwmutex::mutex is not really active 99% of the time, can be ignored
 		}
-	});
+	}(*mutex);
+	}
 
 	if (!mutex)
 	{
@@ -376,7 +457,23 @@ error_code _sys_lwmutex_unlock2(ppu_thread& ppu, u32 lwmutex_id)
 
 	sys_lwmutex.warning("_sys_lwmutex_unlock2(lwmutex_id=0x%x)", lwmutex_id);
 
-	const auto mutex = idm::check<lv2_obj, lv2_lwmutex>(lwmutex_id, [&, notify = lv2_obj::notify_all_t()](lv2_lwmutex& mutex)
+	if (const auto pinned = idm::pin<lv2_obj, lv2_lwmutex>(lwmutex_id))
+	{
+		if (pinned->try_unlock(true))
+		{
+			return CELL_OK;
+		}
+	}
+	else
+	{
+		return CELL_ESRCH;
+	}
+
+	const auto mutex = idm::hold<lv2_obj, lv2_lwmutex>(lwmutex_id);
+
+	if (mutex)
+	{
+		[&, notify = lv2_obj::notify_all_t()](lv2_lwmutex& mutex)
 	{
 		if (mutex.try_unlock(true))
 		{
@@ -397,7 +494,8 @@ error_code _sys_lwmutex_unlock2(ppu_thread& ppu, u32 lwmutex_id)
 			mutex.awake(cpu);
 			notify.cleanup(); // lv2_lwmutex::mutex is not really active 99% of the time, can be ignored
 		}
-	});
+	}(*mutex);
+	}
 
 	if (!mutex)
 	{
