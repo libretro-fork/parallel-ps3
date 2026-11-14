@@ -232,6 +232,7 @@ protected:
 	void do_local_task(rsx::FIFO::state state) override;
 
 	bool on_access_violation(u32 address, bool is_writing) override;
+	void serve_guest_faults() override;
 	void on_invalidate_memory_range(const utils::address_range32 &range, rsx::invalidation_cause cause) override;
 	void notify_tile_unbound(u32 tile) override;
 	void on_semaphore_acquire_wait() override;

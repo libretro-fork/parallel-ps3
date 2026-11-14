@@ -18,6 +18,7 @@
 
 #include "Emu/RSX/rsx_methods.h"
 #include "Emu/RSX/Host/MM.h"
+#include "Emu/RSX/Common/guest_faults.h"
 #include "Emu/RSX/Host/RSXDMAWriter.h"
 #include "Emu/RSX/NV47/HW/context_accessors.define.h"
 #include "Emu/Memory/vm_locking.h"
@@ -941,28 +942,20 @@ bool VKGSRender::on_access_violation(u32 address, bool is_writing)
 		return true;
 	}
 
-	vk::texture_cache::thrashed_set result;
+	if (!is_current_thread())
 	{
-		const rsx::invalidation_cause cause = is_writing ? rsx::invalidation_cause::deferred_write : rsx::invalidation_cause::deferred_read;
-		result = m_texture_cache.invalidate_address(*m_secondary_cb_list.get(), address, cause);
-	}
+		// Only the renderer enters the texture cache. Whether the fault is
+		// the cache's at all is read from the table of locked pages.
+		if (!m_texture_cache.page_is_locked(address))
+		{
+			return zcull_ctrl->on_access_violation(address);
+		}
 
-	if (result.invalidate_samplers)
-	{
-		std::lock_guard lock(m_sampler_mutex);
-		m_samplers_dirty.store(true);
-	}
-
-	if (!result.violation_handled)
-	{
-		return zcull_ctrl->on_access_violation(address);
-	}
-
-	if (result.num_flushable > 0)
-	{
 		if (g_fxo->get<rsx::dma_manager>().is_current_thread())
 		{
-			// The offloader thread cannot handle flush requests
+			// The renderer may be waiting for the offloader, which this is:
+			// it is told of the range the offloader is working on, and
+			// invalidates and flushes that itself (do_local_task)
 			ensure(!(m_queue_status & flush_queue_state::deadlock));
 
 			m_offloader_fault_range = g_fxo->get<rsx::dma_manager>().get_fault_range(is_writing);
@@ -982,6 +975,39 @@ bool VKGSRender::on_access_violation(u32 address, bool is_writing)
 			return true;
 		}
 
+		// Any other thread hands the fault to the renderer and waits for
+		// its answer (serve_guest_faults). Not posted only when the
+		// renderer is gone: then nobody else is in the cache, and the
+		// fault is handled here as it used to be.
+		rsx_guest_fault_t fault;
+
+		if (rsx_guest_faults_post(&fault, address, is_writing))
+		{
+			m_eng_interrupt_mask |= rsx::backend_interrupt;
+			vm::temporary_unlock();
+			return !!rsx_guest_fault_wait(&fault);
+		}
+	}
+
+	vk::texture_cache::thrashed_set result;
+	{
+		const rsx::invalidation_cause cause = is_writing ? rsx::invalidation_cause::deferred_write : rsx::invalidation_cause::deferred_read;
+		result = m_texture_cache.invalidate_address(*m_secondary_cb_list.get(), address, cause);
+	}
+
+	if (result.invalidate_samplers)
+	{
+		std::lock_guard lock(m_sampler_mutex);
+		m_samplers_dirty.store(true);
+	}
+
+	if (!result.violation_handled)
+	{
+		return zcull_ctrl->on_access_violation(address);
+	}
+
+	if (result.num_flushable > 0)
+	{
 		bool has_queue_ref = false;
 		std::function<void()> data_transfer_completed_callback{};
 
@@ -1053,9 +1079,26 @@ void VKGSRender::on_invalidate_memory_range(const utils::address_range32 &range,
 	}
 }
 
+void VKGSRender::serve_guest_faults()
+{
+	if (!rsx_guest_faults_pending())
+	{
+		return;
+	}
+
+	for (rsx_guest_fault_t* fault = rsx_guest_faults_take(); fault;)
+	{
+		// The record is the waiting thread's again once it is finished
+		rsx_guest_fault_t* next = fault->next;
+		rsx_guest_fault_finish(fault, on_access_violation(fault->address, !!fault->writing));
+		fault = next;
+	}
+}
+
 void VKGSRender::on_semaphore_acquire_wait()
 {
 	if (m_flush_requests.pending() ||
+		rsx_guest_faults_pending() ||
 		(async_flip_requested & flip_request::emu_requested) ||
 		(m_queue_status & flush_queue_state::deadlock))
 	{
@@ -1284,6 +1327,9 @@ void VKGSRender::on_init_thread()
 	GSRender::on_init_thread();
 	zcull_ctrl.reset(static_cast<::rsx::reports::ZCULL_control*>(this));
 
+	// This thread answers other threads' faults from here on
+	rsx_guest_faults_open();
+
 	if (g_cfg.video.shadermode == shader_mode::async_with_interpreter ||
 		g_cfg.video.shadermode == shader_mode::interpreter_only)
 	{
@@ -1320,6 +1366,12 @@ void VKGSRender::on_init_thread()
 
 void VKGSRender::on_exit()
 {
+	// No thread is left waiting for an answer, and none posts from here on
+	while (!rsx_guest_faults_close())
+	{
+		serve_guest_faults();
+	}
+
 	GSRender::on_exit();
 	vk::destroy_pipe_compiler(); // Ensure no pending shaders being compiled
 	zcull_ctrl.release();
@@ -1786,7 +1838,11 @@ void VKGSRender::do_local_task(rsx::FIFO::state state)
 		// When flushing flag is already set, only deadlock events may be processed.
 		return;
 	}
-	else if (m_flush_requests.pending())
+
+	// Faults other threads are waiting on
+	serve_guest_faults();
+
+	if (m_flush_requests.pending())
 	{
 		if (m_flush_queue_mutex.try_lock())
 		{
@@ -1811,6 +1867,13 @@ void VKGSRender::do_local_task(rsx::FIFO::state state)
 	}
 
 	rsx::thread::do_local_task(state);
+
+	if (rsx_guest_faults_pending())
+	{
+		// Posted after the look above, and its interrupt may just have been
+		// cleared: come back
+		m_eng_interrupt_mask |= rsx::backend_interrupt;
+	}
 
 	switch (state)
 	{

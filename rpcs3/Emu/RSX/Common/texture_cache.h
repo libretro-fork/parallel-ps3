@@ -2137,6 +2137,28 @@ namespace rsx
 
 	public:
 
+		// Whether a section of the cache has the host page of @address locked,
+		// from the table of locked pages: no lock, for any thread. A fault on
+		// a page that is not is not the cache's.
+		bool page_is_locked(u32 address) const
+		{
+			const u32 size = std::max<u32>(4096, static_cast<u32>(utils::get_page_size()));
+			const u32 first = address & ~(size - 1);
+
+			for (u32 offset = 0; offset < size; offset += 4096)
+			{
+				u32 read_only, no_access;
+				rsx_page_locks_get(first + offset, &read_only, &no_access);
+
+				if (read_only | no_access)
+				{
+					return true;
+				}
+			}
+
+			return false;
+		}
+
 		// For a guest thread that faulted writing to @address. True when the page
 		// was locked for textures only - nothing on it has to be written back
 		// first - and has been dealt with: the page is writable again and a note

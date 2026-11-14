@@ -488,6 +488,7 @@ target_sources(rpcs3_emu PRIVATE
     RSX/Common/TextureUtils.cpp
     RSX/Common/dma_views.c
     RSX/Common/guest_page_locks.c
+    RSX/Common/guest_faults.c
     RSX/Common/texture_cache.cpp
     RSX/Common/texture_cache_types.cpp
     RSX/Core/RSXContext.cpp

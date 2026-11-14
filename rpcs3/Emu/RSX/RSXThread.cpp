@@ -1,5 +1,6 @@
 #include "stdafx.h"
 #include "RSXThread.h"
+#include "Common/guest_faults.h"
 
 #include "Capture/rsx_capture.h"
 #include "Common/surface_store.h"
@@ -3332,6 +3333,13 @@ namespace rsx
 
 			while (external_interrupt_lock && (cpu_flag::ret - state))
 			{
+				// The thread that asked for the pause, or any other, may be
+				// waiting on this one for a fault of its own
+				if (rsx_guest_faults_pending())
+				{
+					serve_guest_faults();
+				}
+
 				// TODO: Investigate non busy-spinning method
 				utils::pause();
 			}

@@ -2,6 +2,7 @@
 #include "../Overlays/overlay_compile_notification.h"
 #include "../Overlays/Shaders/shader_loading_dialog_native.h"
 #include "GLGSRender.h"
+#include "Emu/RSX/Common/guest_faults.h"
 #include "GLCompute.h"
 #include "GLDMA.h"
 #include "GLResolveHelper.h"
@@ -521,11 +522,20 @@ void GLGSRender::on_init_thread()
 			m_shaders_cache->load(&dlg);
 		}
 	}
+	// This thread answers other threads' faults from here on
+	rsx_guest_faults_open();
+
 	LRGL_GLGS_NOTICE("on_init_thread EXIT SUCCESS");
 }
 
 void GLGSRender::on_exit()
 {
+	// No thread is left waiting for an answer, and none posts from here on
+	while (!rsx_guest_faults_close())
+	{
+		serve_guest_faults();
+	}
+
 	// Destroy internal RSX state, may call upon this->do_local_task
 	GSRender::on_exit();
 
@@ -1334,6 +1344,29 @@ bool GLGSRender::on_access_violation(u32 address, bool is_writing)
 {
 	rsx::mm_flush(address);
 
+	if (!is_current_thread())
+	{
+		// Only the renderer enters the texture cache. Whether the fault is
+		// the cache's at all is read from the table of locked pages; if it
+		// is, it is handed to the renderer, which handles it as one of its
+		// own and wakes this thread (serve_guest_faults). Not posted only
+		// when the renderer is gone: then nobody else is in the cache, and
+		// the fault is handled here as it used to be.
+		if (!m_gl_texture_cache.page_is_locked(address))
+		{
+			return zcull_ctrl->on_access_violation(address);
+		}
+
+		rsx_guest_fault_t fault;
+
+		if (rsx_guest_faults_post(&fault, address, is_writing))
+		{
+			m_eng_interrupt_mask |= rsx::backend_interrupt;
+			vm::temporary_unlock();
+			return !!rsx_guest_fault_wait(&fault);
+		}
+	}
+
 	const bool can_flush = is_current_thread();
 	const rsx::invalidation_cause cause = is_writing
 		? (can_flush ? rsx::invalidation_cause::write : rsx::invalidation_cause::deferred_write)
@@ -1381,9 +1414,26 @@ void GLGSRender::on_invalidate_memory_range(const utils::address_range32 &range,
 	}
 }
 
+void GLGSRender::serve_guest_faults()
+{
+	if (!rsx_guest_faults_pending())
+	{
+		return;
+	}
+
+	for (rsx_guest_fault_t* fault = rsx_guest_faults_take(); fault;)
+	{
+		// The record is the waiting thread's again once it is finished
+		rsx_guest_fault_t* next = fault->next;
+		rsx_guest_fault_finish(fault, on_access_violation(fault->address, !!fault->writing));
+		fault = next;
+	}
+}
+
 void GLGSRender::on_semaphore_acquire_wait()
 {
 	if (!work_queue.empty() ||
+		rsx_guest_faults_pending() ||
 		(async_flip_requested & flip_request::emu_requested))
 	{
 		do_local_task(rsx::FIFO::state::lock_wait);
@@ -1392,6 +1442,9 @@ void GLGSRender::on_semaphore_acquire_wait()
 
 void GLGSRender::do_local_task(rsx::FIFO::state state)
 {
+	// Faults other threads are waiting on
+	serve_guest_faults();
+
 	if (!work_queue.empty())
 	{
 		std::lock_guard lock(queue_guard);
@@ -1419,6 +1472,13 @@ void GLGSRender::do_local_task(rsx::FIFO::state state)
 	}
 
 	rsx::thread::do_local_task(state);
+
+	if (rsx_guest_faults_pending())
+	{
+		// Posted after the look above, and its interrupt may just have been
+		// cleared: come back
+		m_eng_interrupt_mask |= rsx::backend_interrupt;
+	}
 
 	if (state == rsx::FIFO::state::lock_wait)
 	{

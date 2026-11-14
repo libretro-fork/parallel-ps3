@@ -450,6 +450,10 @@ namespace rsx
 		 */
 		virtual void on_semaphore_acquire_wait() {}
 
+		// Handles the faults other threads have handed to this one and are
+		// waiting on (Common/guest_faults.h)
+		virtual void serve_guest_faults() {}
+
 		/**
 		 * Load an image from memory with optional scaling and rotation.
 		 * Returns false to tell the HW decoder to perform the operation on the CPU as a fallback when the operation cannot be safely accelerated.
