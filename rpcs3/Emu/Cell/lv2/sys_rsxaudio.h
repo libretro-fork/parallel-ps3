@@ -11,16 +11,7 @@
 #include "Emu/Audio/AudioDumper.h"
 #include "Emu/Audio/AudioBackend.h"
 
-#if defined(unix) || defined(__unix) || defined(__unix__)
-// For BSD detection
-#include <sys/param.h>
-#endif
-
-#ifdef _WIN32
-#include <windows.h>
-#elif defined(BSD) || defined(__APPLE__)
-#include <sys/event.h>
-#endif
+#include <retro_atomic.h>
 
 enum : u32
 {
@@ -197,8 +188,7 @@ public:
 		TIMER_CANCELED,
 	};
 
-	rsxaudio_periodic_tmr();
-	~rsxaudio_periodic_tmr();
+	rsxaudio_periodic_tmr() = default;
 
 	rsxaudio_periodic_tmr(const rsxaudio_periodic_tmr&) = delete;
 	rsxaudio_periodic_tmr& operator=(const rsxaudio_periodic_tmr&) = delete;
@@ -216,9 +206,8 @@ public:
 		std::lock_guard lock(mutex);
 		std::invoke(func);
 
-		// Adjust timer expiration
-		cancel_timer_unlocked();
-		sched_timer();
+		// The waiter works out when the next period is again
+		wake_waiter();
 	}
 
 	void enable_vtimer(u32 vtimer_id, u32 rate, u64 crnt_time);
@@ -251,28 +240,12 @@ private:
 
 	shared_mutex mutex{};
 	bool in_wait = false;
-	bool zero_period = false;
 
-#if defined(_WIN32)
-	HANDLE cancel_event{};
-	HANDLE timer_handle{};
-#elif defined(__linux__)
-	int cancel_event{};
-	int timer_handle{};
-	int epoll_fd{};
-#elif defined(BSD) || defined(__APPLE__)
-	static constexpr u64 TIMER_ID = 0;
-	static constexpr u64 CANCEL_ID = 1;
+	// Changed (and notified through retro_waitaddr) whenever the timers
+	// change or the wait is cancelled: the waiter wakes and looks again
+	retro_atomic_int_t wake_word{};
 
-	int kq{};
-	struct kevent handle[2]{};
-#else
-#error "Implement"
-#endif
-
-	void sched_timer();
-	void cancel_timer_unlocked();
-	void reset_cancel_flag();
+	void wake_waiter();
 
 	bool is_vtimer_behind(const vtimer& vtimer, u64 crnt_time) const;
 

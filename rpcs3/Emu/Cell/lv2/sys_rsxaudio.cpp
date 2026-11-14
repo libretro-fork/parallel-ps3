@@ -14,14 +14,8 @@
 #include <cmath>
 #include <optional>
 
-#ifdef __linux__
-#include <sys/epoll.h>
-#include <sys/timerfd.h>
-#include <sys/eventfd.h>
-#include <unistd.h>
-#elif defined(BSD) || defined(__APPLE__)
-#include <unistd.h>
-#endif
+#include <retro_atomic.h>
+#include <rthreads/retro_waitaddr.h>
 
 LOG_CHANNEL(sys_rsxaudio);
 
@@ -2015,151 +2009,19 @@ void rsxaudio_backend_thread::reset_service_time()
 	time_period_idx = 1;
 }
 
-void rsxaudio_periodic_tmr::sched_timer()
+// The RSX audio periods are the guest's: they come as the guest's clock,
+// slaved to retro_run, passes. The data thread waits for the next with
+// retro_waitaddr, on its own word (the timers changed, or the wait was
+// cancelled) and on the guest clock's (retro_run granted another frame),
+// for as long of the host's time as the guest's should take to get there;
+// then it looks at the guest's clock again, and pulls audio only when a
+// period is due. No timer of the system's: no timerfd and epoll, no
+// waitable timer, no kqueue - nothing per system, nothing to implement for
+// a system that has none of those.
+void rsxaudio_periodic_tmr::wake_waiter()
 {
-	u64 interval = get_rel_next_time();
-	// The guest's time until the next period: waited for at the pace
-	// retro_run comes
-	if (interval != 0 && interval != UINT64_MAX)
-		interval = libretro_guest_wait_as_host(interval);
-
-	if (interval == 0)
-		zero_period = true;
-	else if (interval == UINT64_MAX)
-	{
-		interval = 0;
-		zero_period = false;
-	}
-	else
-		zero_period = false;
-
-#if defined(_WIN32)
-	if (interval)
-	{
-		LARGE_INTEGER due_time{};
-		due_time.QuadPart = -static_cast<s64>(interval * 10);
-		ensure(SetWaitableTimerEx(timer_handle, &due_time, 0, nullptr, nullptr, nullptr, 0));
-	}
-	else
-	{
-		ensure(CancelWaitableTimer(timer_handle));
-	}
-#elif defined(__linux__)
-	const time_t secs = interval / 1'000'000;
-	const long nsecs = (interval - secs * 1'000'000) * 1000;
-	const itimerspec tspec = {{}, { secs, nsecs }};
-	ensure(timerfd_settime(timer_handle, 0, &tspec, nullptr) == 0);
-#elif defined(BSD) || defined(__APPLE__)
-	handle[TIMER_ID].data = interval * 1000;
-	if (interval)
-	{
-		handle[TIMER_ID].flags = (handle[TIMER_ID].flags & ~EV_DISABLE) | EV_ENABLE;
-	}
-	else
-	{
-		handle[TIMER_ID].flags = (handle[TIMER_ID].flags & ~EV_ENABLE) | EV_DISABLE;
-	}
-	ensure(kevent(kq, &handle[TIMER_ID], 1, nullptr, 0, nullptr) >= 0);
-#else
-#error "Implement"
-#endif
-}
-
-void rsxaudio_periodic_tmr::cancel_timer_unlocked()
-{
-	zero_period = false;
-
-#if defined(_WIN32)
-	ensure(CancelWaitableTimer(timer_handle));
-	if (in_wait)
-	{
-		ensure(SetEvent(cancel_event));
-	}
-#elif defined(__linux__)
-	const itimerspec tspec{};
-	ensure(timerfd_settime(timer_handle, 0, &tspec, nullptr) == 0);
-	if (in_wait)
-	{
-		const u64 flag = 1;
-		const auto wr_res = write(cancel_event, &flag, sizeof(flag));
-		ensure(wr_res == sizeof(flag) || errno == EAGAIN);
-	}
-#elif defined(BSD) || defined(__APPLE__)
-	handle[TIMER_ID].flags = (handle[TIMER_ID].flags & ~EV_ENABLE) | EV_DISABLE;
-	handle[TIMER_ID].data = 0;
-	if (in_wait)
-	{
-		ensure(kevent(kq, handle, 2, nullptr, 0, nullptr) >= 0);
-	}
-	else
-	{
-		ensure(kevent(kq, &handle[TIMER_ID], 1, nullptr, 0, nullptr) >= 0);
-	}
-#else
-#error "Implement"
-#endif
-}
-
-void rsxaudio_periodic_tmr::reset_cancel_flag()
-{
-#if defined(_WIN32)
-	ensure(ResetEvent(cancel_event));
-#elif defined(__linux__)
-	u64 tmp_buf{};
-	[[maybe_unused]] const auto nread = read(cancel_event, &tmp_buf, sizeof(tmp_buf));
-#elif defined(BSD) || defined(__APPLE__)
-	// Cancel event is reset automatically
-#else
-#error "Implement"
-#endif
-}
-
-rsxaudio_periodic_tmr::rsxaudio_periodic_tmr()
-{
-#if defined(_WIN32)
-	ensure(cancel_event = CreateEvent(nullptr, false, false, nullptr));
-	ensure(timer_handle = CreateWaitableTimer(nullptr, false, nullptr));
-#elif defined(__linux__)
-	timer_handle = timerfd_create(CLOCK_MONOTONIC, 0);
-	ensure((epoll_fd = epoll_create(2)) >= 0);
-	epoll_event evnt{ EPOLLIN, {} };
-	evnt.data.fd = timer_handle;
-	ensure(timer_handle >= 0 && epoll_ctl(epoll_fd, EPOLL_CTL_ADD, timer_handle, &evnt) == 0);
-	cancel_event = eventfd(0, EFD_NONBLOCK);
-	evnt.data.fd = cancel_event;
-	ensure(cancel_event >= 0 && epoll_ctl(epoll_fd, EPOLL_CTL_ADD, cancel_event, &evnt) == 0);
-#elif defined(BSD) || defined(__APPLE__)
-
-#if defined(__APPLE__)
-	static constexpr unsigned int TMR_CFG = NOTE_NSECONDS | NOTE_CRITICAL;
-#else
-	static constexpr unsigned int TMR_CFG = NOTE_NSECONDS;
-#endif
-
-	ensure((kq = kqueue()) >= 0);
-	EV_SET(&handle[TIMER_ID], TIMER_ID, EVFILT_TIMER, EV_ADD | EV_ENABLE | EV_ONESHOT, TMR_CFG, 0, nullptr);
-	EV_SET(&handle[CANCEL_ID], CANCEL_ID, EVFILT_USER, EV_ADD | EV_ENABLE | EV_CLEAR, NOTE_FFNOP, 0, nullptr);
-	ensure(kevent(kq, &handle[CANCEL_ID], 1, nullptr, 0, nullptr) >= 0);
-	handle[CANCEL_ID].fflags |= NOTE_TRIGGER;
-#else
-#error "Implement"
-#endif
-}
-
-rsxaudio_periodic_tmr::~rsxaudio_periodic_tmr()
-{
-#if defined(_WIN32)
-	CloseHandle(timer_handle);
-	CloseHandle(cancel_event);
-#elif defined(__linux__)
-	close(epoll_fd);
-	close(timer_handle);
-	close(cancel_event);
-#elif defined(BSD) || defined(__APPLE__)
-	close(kq);
-#else
-#error "Implement"
-#endif
+	retro_atomic_fetch_add_int(&wake_word, 1);
+	retro_waitaddr_notify_all(&wake_word);
 }
 
 rsxaudio_periodic_tmr::wait_result rsxaudio_periodic_tmr::wait(const std::function<void()> &callback)
@@ -2171,124 +2033,39 @@ rsxaudio_periodic_tmr::wait_result rsxaudio_periodic_tmr::wait(const std::functi
 		return wait_result::INVALID_PARAM;
 	}
 
-	in_wait = true;
+	const int wake = retro_atomic_load_acquire_int(&wake_word);
 
-	bool tmr_error     = false;
-	bool timeout       = false;
-	bool wait_canceled = false;
-
-	if (!zero_period)
+	if (const u64 next = get_rel_next_time(); next != 0)
 	{
+		in_wait = true;
 		lock.unlock();
-		constexpr u8 obj_wait_cnt = 2;
 
-#if defined(_WIN32)
-		const HANDLE wait_arr[obj_wait_cnt] = { timer_handle, cancel_event };
-		const auto wait_status = WaitForMultipleObjects(obj_wait_cnt, wait_arr, false, INFINITE);
+		const retro_atomic_int_t* clock_word = static_cast<const retro_atomic_int_t*>(libretro_guest_clock_word());
+		const retro_waitaddr_t list[2] =
+		{
+			{&wake_word, static_cast<u32>(wake)},
+			{clock_word, static_cast<u32>(retro_atomic_load_acquire_int(const_cast<retro_atomic_int_t*>(clock_word)))},
+		};
 
-		if (wait_status == WAIT_FAILED || (wait_status >= WAIT_ABANDONED_0 && wait_status < WAIT_ABANDONED_0 + obj_wait_cnt))
-		{
-			tmr_error = true;
-		}
-		else if (wait_status == WAIT_TIMEOUT)
-		{
-			timeout = true;
-		}
-		else if (wait_status == WAIT_OBJECT_0 + 1)
-		{
-			wait_canceled = true;
-		}
-#elif defined(__linux__)
-		epoll_event event[obj_wait_cnt]{};
-		int wait_status = 0;
-		do
-		{
-			wait_status = epoll_wait(epoll_fd, event, obj_wait_cnt, -1);
-		}
-		while (wait_status == -1 && errno == EINTR);
+		// No period at all (no timer active): until the timers change
+		retro_waitaddr_wait(list, 2, next == umax ? -1 : static_cast<s64>(libretro_guest_wait_as_host(next)));
 
-		if (wait_status < 0 || wait_status > obj_wait_cnt)
-		{
-			tmr_error = true;
-		}
-		else if (wait_status == 0)
-		{
-			timeout = true;
-		}
-		else
-		{
-			for (int i = 0; i < wait_status; i++)
-			{
-				if (event[i].data.fd == cancel_event)
-				{
-					wait_canceled = true;
-					break;
-				}
-			}
-		}
-#elif defined(BSD) || defined(__APPLE__)
-		struct kevent event[obj_wait_cnt]{};
-		int wait_status = 0;
-		do
-		{
-			wait_status = kevent(kq, nullptr, 0, event, obj_wait_cnt, nullptr);
-		}
-		while (wait_status == -1 && errno == EINTR);
-
-		if (wait_status < 0 || wait_status > obj_wait_cnt)
-		{
-			tmr_error = true;
-		}
-		else if (wait_status == 0)
-		{
-			timeout = true;
-		}
-		else
-		{
-			for (int i = 0; i < wait_status; i++)
-			{
-				if (event[i].ident == CANCEL_ID)
-				{
-					wait_canceled = true;
-					break;
-				}
-			}
-		}
-#else
-#error "Implement"
-#endif
 		lock.lock();
-	}
-	else
-	{
-		zero_period = false;
-	}
+		in_wait = false;
 
-	in_wait = false;
+		if (retro_atomic_load_acquire_int(&wake_word) != wake)
+		{
+			return wait_result::TIMER_CANCELED;
+		}
 
-	if (wait_canceled)
-	{
-		reset_cancel_flag();
-	}
-
-	if (tmr_error)
-	{
-		return wait_result::TIMER_ERROR;
-	}
-
-	if (timeout)
-	{
-		return wait_result::TIMEOUT;
-	}
-
-	if (wait_canceled)
-	{
-		sched_timer();
-		return wait_result::TIMER_CANCELED;
+		if (get_rel_next_time() != 0)
+		{
+			// Not there yet in the guest's time
+			return wait_result::TIMEOUT;
+		}
 	}
 
 	callback();
-	sched_timer();
 	return wait_result::SUCCESS;
 }
 
@@ -2329,8 +2106,7 @@ u64 rsxaudio_periodic_tmr::get_rel_next_time()
 
 void rsxaudio_periodic_tmr::cancel_wait()
 {
-	std::lock_guard lock(mutex);
-	cancel_timer_unlocked();
+	wake_waiter();
 }
 
 void rsxaudio_periodic_tmr::enable_vtimer(u32 vtimer_id, u32 rate, u64 crnt_time)

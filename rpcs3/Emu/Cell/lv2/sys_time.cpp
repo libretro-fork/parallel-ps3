@@ -14,6 +14,7 @@ static u64 systemtime_offset;
 
 #include <algorithm>
 #include <retro_atomic.h>
+#include <rthreads/retro_waitaddr.h>
 
 // The guest's clock, slaved to retro_run. Each retro_run grants the guest one
 // frame of time (libretro_guest_clock_grant). Within it the clock runs at the
@@ -110,6 +111,14 @@ void libretro_guest_clock_grant(double frame_seconds)
 	retro_atomic_store_relaxed_size(&s_clock_floor, floor);
 	retro_atomic_store_relaxed_size(&s_clock_grant, grant);
 	retro_atomic_store_release_int(&s_clock_seq, seq + 2);
+
+	// Threads waiting for the guest's time to pass
+	retro_waitaddr_notify_all(&s_clock_seq);
+}
+
+const void* libretro_guest_clock_word()
+{
+	return &s_clock_seq;
 }
 
 // How long of the host's time to wait for @guest_us of the guest's to pass,

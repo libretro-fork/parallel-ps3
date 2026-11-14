@@ -32,6 +32,7 @@
 #include "stdafx.h"
 #include "Emu/Cell/timers.hpp"
 #include "Emu/Cell/lv2/sys_sync.h"
+#include "Emu/Cell/lv2/sys_rsxaudio.h"
 #include "Utilities/Thread.h"
 
 #include <algorithm>
@@ -232,6 +233,76 @@ int main()
 				"20 ms waits took %.1f ms of the guest's time, %u wrong; %u of 200 hardware timestamps off the timebase\n",
 				pace.name, expired_at_once, wrong_left, waited_sum / 20000.0, wrong_wait, wrong_stamps);
 		}
+	}
+
+	// The RSX audio path's periods (rsxaudio_periodic_tmr): its thread waits
+	// for the next on the guest's clock, with no timer of the system's. A
+	// period comes as the guest's time passes - one for each period of it,
+	// with retro_run at the declared rate - and none while retro_run does
+	// not come: before, a timer of the host's fired and the period's work
+	// ran whether the guest's clock had got there or not. And a waiter with
+	// no period to wait for wakes when it is cancelled (the thread stopped).
+	{
+		rsxaudio_periodic_tmr timer;
+		std::atomic<u32> periods{0};
+		std::atomic<bool> stop{false};
+		constexpr u32 rate = 48000; // a period of 1024 bytes: 21.3 ms
+
+		std::atomic<bool> run{true};
+		std::thread frontend([&]
+		{
+			while (run)
+			{
+				libretro_guest_clock_grant(kFrame);
+				std::this_thread::sleep_for(std::chrono::microseconds(16667));
+			}
+		});
+		sleep_ms(50);
+
+		timer.vtimer_access_sec([&] { timer.enable_vtimer(0, rate, get_hw_clock_time()); });
+
+		std::thread audio([&]
+		{
+			while (!stop)
+			{
+				timer.wait([&]
+				{
+					periods++;
+					timer.vtimer_incr(0, get_hw_clock_time());
+				});
+			}
+		});
+
+		const u64 from = get_hw_clock_time();
+		const u32 periods_from = periods;
+		sleep_ms(640);
+		const u64 guest_us = get_hw_clock_time() - from;
+		const u32 had = periods - periods_from;
+		const double expected = guest_us / (1024.0 * 1000000.0 / rate);
+		CHECK(had + 2 >= expected && had <= expected + 2);
+
+		// The frontend paused: no retro_run, so no guest time, so no period
+		// past the one under way
+		run = false;
+		frontend.join();
+		sleep_ms(30);
+		const u32 paused_from = periods;
+		sleep_ms(200);
+		const u32 while_paused = periods - paused_from;
+		CHECK(while_paused <= 1);
+
+		// No period at all to wait for: the wait ends when cancelled
+		timer.vtimer_access_sec([&] { timer.disable_vtimer(0); });
+		sleep_ms(20);
+		stop = true;
+		const auto t0 = std::chrono::steady_clock::now();
+		timer.cancel_wait();
+		audio.join();
+		const auto took_ms = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - t0).count();
+		CHECK(took_ms < 100);
+
+		std::printf("test_guest_clock: RSX audio periods: %u in %.1f ms of the guest's time (%.1f due), %u while paused 200 ms; a cancelled wait ended in %lld ms\n",
+			had, guest_us / 1000.0, expected, while_paused, static_cast<long long>(took_ms));
 	}
 
 	std::printf("test_guest_clock: paused 120 ms, guest moved %.1f ms; 10 frames at once, %.1f had; "
