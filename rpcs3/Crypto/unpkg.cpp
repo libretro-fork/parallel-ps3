@@ -973,8 +973,8 @@ bool package_reader::fill_data(std::map<std::string, install_entry*>& all_instal
 
 	m_install_entries.clear();
 	m_bootable_file_path.clear();
-	m_entry_indexer = 0;
-	m_written_bytes = 0;
+	retro_atomic_store_release_64(&m_entry_indexer, 0);
+	retro_atomic_store_release_size(&m_written_bytes, 0);
 
 	usz num_failures = 0;
 
@@ -1131,19 +1131,15 @@ void package_reader::extract_worker()
 {
 	std::vector<u8> read_cache;
 
-	while (m_num_failures == 0 && !m_aborted)
+	while (retro_atomic_load_acquire_size(&m_num_failures) == 0 && !retro_atomic_load_acquire_int(&m_aborted))
 	{
 		// Make sure m_entry_indexer does not exceed m_install_entries
-		const usz index = m_entry_indexer.fetch_op([this](usz& v)
-		{
-			if (v < m_install_entries.size())
-			{
-				v++;
-				return true;
-			}
+		usz index = static_cast<usz>(retro_atomic_load_acquire_64(&m_entry_indexer));
 
-			return false;
-		}).first;
+		while (index < m_install_entries.size() && !retro_atomic_cas_64(&m_entry_indexer, static_cast<s64>(index), static_cast<s64>(index + 1)))
+		{
+			index = static_cast<usz>(retro_atomic_load_acquire_64(&m_entry_indexer));
+		}
 
 		if (index >= m_install_entries.size())
 		{
@@ -1155,7 +1151,7 @@ void package_reader::extract_worker()
 		if (!entry.is_dominating())
 		{
 			// Overwritten by another entry
-			m_written_bytes += entry.file_size;
+			retro_atomic_fetch_add_size(&m_written_bytes, entry.file_size);
 			continue;
 		}
 
@@ -1388,7 +1384,7 @@ void package_reader::extract_worker()
 
 				if (!final_data)
 				{
-					m_num_failures++;
+					retro_atomic_inc_size(&m_num_failures);
 					pkg_log.error("Failed to decrypt EDAT file %s (error=%s)", path, fs::g_tls_error);
 					break;
 				}
@@ -1396,7 +1392,7 @@ void package_reader::extract_worker()
 				while (usz read_size = final_data.read(buffer.data(), buffer.size() - BUF_PADDING))
 				{
 					out.write(buffer.data(), read_size);
-					m_written_bytes += read_size;
+					retro_atomic_fetch_add_size(&m_written_bytes, read_size);
 				}
 
 				final_data.close();
@@ -1421,12 +1417,12 @@ void package_reader::extract_worker()
 				}
 				else
 				{
-					m_num_failures++;
+					retro_atomic_inc_size(&m_num_failures);
 				}
 			}
 			else
 			{
-				m_num_failures++;
+				retro_atomic_inc_size(&m_num_failures);
 				pkg_log.error("Failed to create file %s (is_buffered=%d, did_overwrite=%d, error=%s)", path, is_buffered, did_overwrite, fs::g_tls_error);
 			}
 
@@ -1434,7 +1430,7 @@ void package_reader::extract_worker()
 		}
 		default:
 		{
-			m_num_failures++;
+			retro_atomic_inc_size(&m_num_failures);
 			pkg_log.error("Unknown PKG entry type (0x%x) %s", entry.type, name);
 			break;
 		}
@@ -1490,9 +1486,9 @@ package_install_result package_reader::extract_data(std::span<package_reader> re
 			// Do not return yet. We may need to clean up down below.
 		}
 
-		reader.m_num_failures = error == package_install_result::error_type::no_error ? 0 : 1;
+		retro_atomic_store_release_size(&reader.m_num_failures, error == package_install_result::error_type::no_error ? 0 : 1);
 
-		if (reader.m_num_failures == 0)
+		if (retro_atomic_load_acquire_size(&reader.m_num_failures) == 0)
 		{
 			// Disc archives don't like multithreaded file reads, so let's just use a single thread here
 			const usz thread_count = from_optical_drive ? 1 : std::min<usz>(utils::get_thread_count(), reader.m_install_entries.size());
@@ -1504,14 +1500,14 @@ package_install_result package_reader::extract_data(std::span<package_reader> re
 			if (thread_count != num_threads_succeeded)
 			{
 				pkg_log.error("%d thread(s) failed with an exception!", thread_count - num_threads_succeeded);
-				reader.m_num_failures++;
+				retro_atomic_inc_size(&reader.m_num_failures);
 			}
 		}
 
-		num_failures += reader.m_num_failures;
+		num_failures += retro_atomic_load_acquire_size(&reader.m_num_failures);
 
 		// We don't count this package as aborted if all entries were processed.
-		if (reader.m_num_failures || (reader.m_aborted && reader.m_entry_indexer < reader.m_install_entries.size()))
+		if (retro_atomic_load_acquire_size(&reader.m_num_failures) || (retro_atomic_load_acquire_int(&reader.m_aborted) && static_cast<usz>(retro_atomic_load_acquire_64(&reader.m_entry_indexer)) < reader.m_install_entries.size()))
 		{
 			// Clear boot path. We don't want to propagate potentially broken paths to the caller.
 			reader.m_bootable_file_path.clear();
@@ -1529,7 +1525,7 @@ package_install_result package_reader::extract_data(std::span<package_reader> re
 				}
 			}
 
-			if (reader.m_num_failures)
+			if (retro_atomic_load_acquire_size(&reader.m_num_failures))
 			{
 				pkg_log.error("Package failed to install ('%s')", reader.m_install_path);
 				reader.m_result = cleaned ? result::error : result::error_dirty;
@@ -1547,8 +1543,8 @@ package_install_result package_reader::extract_data(std::span<package_reader> re
 
 		if (reader.get_progress(1) != 1)
 		{
-			pkg_log.warning("Missing %d bytes from PKG total files size.", reader.m_header.data_size - reader.m_written_bytes);
-			reader.m_written_bytes = reader.m_header.data_size; // Mark as completed anyway
+			pkg_log.warning("Missing %d bytes from PKG total files size.", reader.m_header.data_size - retro_atomic_load_acquire_size(&reader.m_written_bytes));
+			retro_atomic_store_release_size(&reader.m_written_bytes, reader.m_header.data_size); // Mark as completed anyway
 		}
 
 		// May be empty
@@ -1686,12 +1682,12 @@ usz package_reader::decrypt(u64 offset, u64 size, const uchar* key, std::span<u8
 
 int package_reader::get_progress(int maximum) const
 {
-	const usz wr = m_written_bytes;
+	const usz wr = retro_atomic_load_acquire_size(&m_written_bytes);
 
 	return wr >= m_header.data_size ? maximum : ::narrow<int>(wr * maximum / m_header.data_size);
 }
 
 void package_reader::abort_extract()
 {
-	m_aborted = true;
+	retro_atomic_store_release_int(&m_aborted, 1);
 }

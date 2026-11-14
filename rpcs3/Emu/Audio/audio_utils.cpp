@@ -10,22 +10,24 @@ namespace audio
 {
 	f32 get_volume()
 	{
-		return g_fxo->get<audio_fxo>().audio_muted ? 0.0f : g_cfg.audio.volume / 100.0f;
+		return retro_atomic_load_acquire_int(&g_fxo->get<audio_fxo>().audio_muted) ? 0.0f : g_cfg.audio.volume / 100.0f;
 	}
 
 	void toggle_mute()
 	{
 		audio_fxo& fxo = g_fxo->get<audio_fxo>();
-		fxo.audio_muted = !fxo.audio_muted;
+		// One thread toggles it (the hotkey's); the others read
+		const int muted = !retro_atomic_load_acquire_int(&fxo.audio_muted);
+		retro_atomic_store_release_int(&fxo.audio_muted, muted);
 		g_emu_callbacks.update_emu_settings();
 
-		rsx::overlays::queue_message(fxo.audio_muted ? localized_string_id::AUDIO_MUTED : localized_string_id::AUDIO_UNMUTED, 3'000'000);
+		rsx::overlays::queue_message(muted ? localized_string_id::AUDIO_MUTED : localized_string_id::AUDIO_UNMUTED, 3'000'000);
 	}
 
 	void change_volume(s32 delta)
 	{
 		// Ignore if muted
-		if (g_fxo->get<audio_fxo>().audio_muted)
+		if (retro_atomic_load_acquire_int(&g_fxo->get<audio_fxo>().audio_muted))
 			return;
 
 		const s32 old_volume = g_cfg.audio.volume;

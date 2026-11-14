@@ -1,10 +1,12 @@
 #pragma once
 
+#include <retro_atomic.h>
+
 namespace audio
 {
 	struct audio_fxo
 	{
-		atomic_t<bool> audio_muted {false};
+		retro_atomic_int_t audio_muted{};
 	};
 
 	f32 get_volume();

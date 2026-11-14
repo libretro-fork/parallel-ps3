@@ -850,7 +850,7 @@ lv2_file::lv2_file(utils::serial& ar)
 	file = std::move(res.file);
 	real_path = std::move(res.real_path);
 
-	g_fxo->get<loaded_npdrm_keys>().npdrm_fds.raw() += type != lv2_file_type::regular;
+	retro_atomic_fetch_add_int(&g_fxo->get<loaded_npdrm_keys>().npdrm_fds, type != lv2_file_type::regular);
 	g_fxo->get<loaded_npdrm_keys>().one_time_key = {};
 
 	if (ar.pop<bool>()) // see lv2_file::save in_mem
@@ -1007,13 +1007,27 @@ void lv2_dir::save(utils::serial& ar)
 
 loaded_npdrm_keys::loaded_npdrm_keys(utils::serial& ar)
 {
+	retro_cas_record_init(&m_ring, m_ring_slots, sizeof(key_ring));
 	save(ar);
 }
 
 void loaded_npdrm_keys::save(utils::serial& ar)
 {
-	ar(dec_keys_pos);
-	ar(std::span(dec_keys, std::min<usz>(std::size(dec_keys), dec_keys_pos)));
+	// As it always was in a savestate: how many, then the keys there are
+	key_ring ring = keys();
+
+	ar(ring.pos);
+	ar(std::span(ring.keys, std::min<usz>(std::size(ring.keys), ring.pos)));
+
+	if (!ar.is_writing())
+	{
+		retro_cas_record_txn_t txn;
+		do
+		{
+			*static_cast<key_ring*>(retro_cas_record_begin(&m_ring, &txn)) = ring;
+		}
+		while (!retro_cas_record_commit(&m_ring, &txn));
+	}
 }
 
 struct lv2_file::file_view : fs::file_base
@@ -1358,8 +1372,9 @@ lv2_file::open_raw_result_t lv2_file::open_raw(const std::string& local_path, s3
 			{
 				auto& edatkeys = g_fxo->get<loaded_npdrm_keys>();
 
-				const u64 init_pos = edatkeys.dec_keys_pos;
-				const auto& dec_keys = edatkeys.dec_keys;
+				const loaded_npdrm_keys::key_ring ring = edatkeys.keys();
+				const u64 init_pos = ring.pos;
+				const auto& dec_keys = ring.keys;
 				const u64 max_i = std::min<u64>(std::size(dec_keys), init_pos);
 
 				if (edatkeys.one_time_key)
@@ -1388,7 +1403,7 @@ lv2_file::open_raw_result_t lv2_file::open_raw(const std::string& local_path, s3
 					}
 
 					// Try all registered keys, quietly: the ones that do not fit are what the loop is looking for
-					auto edata_file = std::make_unique<EDATADecrypter>(std::move(file), dec_keys[(init_pos - i - 1) % std::size(dec_keys)].load());
+					auto edata_file = std::make_unique<EDATADecrypter>(std::move(file), dec_keys[(init_pos - i - 1) % std::size(dec_keys)]);
 					if (!edata_file->ReadHeader(false))
 					{
 						// Prepare file for the next iteration
@@ -1481,7 +1496,7 @@ error_code sys_fs_open(ppu_thread& ppu, vm::cptr<char> path, s32 flags, vm::ptr<
 	{
 		shared_ptr<lv2_file> result;
 
-		if (type >= lv2_file_type::sdata && !g_fxo->get<loaded_npdrm_keys>().npdrm_fds.try_inc(16))
+		if (type >= lv2_file_type::sdata && !g_fxo->get<loaded_npdrm_keys>().take_fd())
 		{
 			return result;
 		}
@@ -1739,7 +1754,7 @@ error_code sys_fs_close(ppu_thread& ppu, u32 fd)
 	{
 		if (_file.type >= lv2_file_type::sdata)
 		{
-			g_fxo->get<loaded_npdrm_keys>().npdrm_fds--;
+			retro_atomic_dec_int(&g_fxo->get<loaded_npdrm_keys>().npdrm_fds);
 		}
 
 		return {};
@@ -2663,7 +2678,7 @@ error_code sys_fs_fcntl(ppu_thread& ppu, u32 fd, u32 op, vm::ptr<void> _arg, u32
 		stream.reset(std::move(sdata_file));
 		if (const u32 id = idm::import<lv2_fs_object, lv2_file>([&file = *file, &stream = stream]() -> shared_ptr<lv2_file>
 		{
-			if (!g_fxo->get<loaded_npdrm_keys>().npdrm_fds.try_inc(16))
+			if (!g_fxo->get<loaded_npdrm_keys>().take_fd())
 			{
 				return null_ptr;
 			}
@@ -3143,7 +3158,7 @@ error_code sys_fs_fcntl(ppu_thread& ppu, u32 fd, u32 op, vm::ptr<void> _arg, u32
 
 		if (const u32 id = idm::import<lv2_fs_object, lv2_file>([&]() -> shared_ptr<lv2_file>
 		{
-			if (!g_fxo->get<loaded_npdrm_keys>().npdrm_fds.try_inc(16))
+			if (!g_fxo->get<loaded_npdrm_keys>().take_fd())
 			{
 				return null_ptr;
 			}

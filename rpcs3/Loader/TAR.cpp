@@ -1,5 +1,7 @@
 #include "stdafx.h"
 
+#include <retro_atomic.h>
+
 #include "Emu/VFS.h"
 #include "Emu/System.h"
 #include "Emu/Cell/timers.hpp"
@@ -327,7 +329,9 @@ bool tar_object::extract(const std::string& prefix_path, bool is_vfs)
 			{
 				std::unique_ptr<named_thread<std::function<void()>>> async_reader;
 
-				atomic_t<usz> filedata_read_pos = 0, filedata_write_pos = 0;
+				// One thread reads the archive ahead and counts read_pos up, this
+				// one writes the file and counts write_pos up
+				retro_atomic_size_t filedata_read_pos{}, filedata_write_pos{};
 
 				while (!should_ignore && filesize)
 				{
@@ -340,8 +344,8 @@ bool tar_object::extract(const std::string& prefix_path, bool is_vfs)
 					// Feed itself if smaller than one chunk
 					if (filedata_buffers.size() == 1)
 					{
-						file_data->try_read(get_span_at(filedata_read_pos));
-						filedata_read_pos++;
+						file_data->try_read(get_span_at(retro_atomic_load_relaxed_size(&filedata_read_pos)));
+						retro_atomic_inc_size(&filedata_read_pos);
 					}
 					else if (!async_reader)
 					{
@@ -349,35 +353,36 @@ bool tar_object::extract(const std::string& prefix_path, bool is_vfs)
 						{
 							while (true)
 							{
-								while (filedata_read_pos - filedata_write_pos == filedata_buffers.size())
+								while (retro_atomic_load_relaxed_size(&filedata_read_pos) - retro_atomic_load_acquire_size(&filedata_write_pos) == filedata_buffers.size())
 								{
 									thread_ctrl::wait_for(1000);
 								}
 
-								const usz unread_size = file_data->try_read(get_span_at(filedata_read_pos));
+								const usz read_pos = retro_atomic_load_relaxed_size(&filedata_read_pos);
+								const usz unread_size = file_data->try_read(get_span_at(read_pos));
 
 								if (unread_size)
 								{
-									ensure(unread_size == filedata_buffers[filedata_read_pos.load() % filedata_buffers.size()].size());
+									ensure(unread_size == filedata_buffers[read_pos % filedata_buffers.size()].size());
 									break;
 								}
 
-								filedata_read_pos++;
+								retro_atomic_inc_size(&filedata_read_pos);
 							}
 						});
 					}
 
-					while (filedata_read_pos == filedata_write_pos)
+					while (retro_atomic_load_acquire_size(&filedata_read_pos) == retro_atomic_load_relaxed_size(&filedata_write_pos))
 					{
 						std::this_thread::yield();
 					}
 
-					const auto data_span = get_span_at(filedata_write_pos);
+					const auto data_span = get_span_at(retro_atomic_load_relaxed_size(&filedata_write_pos));
 
 					file.write(data_span.data(), data_span.size());
-					filedata_write_pos++;
+					retro_atomic_inc_size(&filedata_write_pos);
 
-					if (filedata_write_pos == utils::aligned_div<usz>(filesize, filedata_buffers[0].size()))
+					if (retro_atomic_load_relaxed_size(&filedata_write_pos) == utils::aligned_div<usz>(filesize, filedata_buffers[0].size()))
 					{
 						if (async_reader)
 						{

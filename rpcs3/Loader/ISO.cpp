@@ -1,5 +1,7 @@
 #include "stdafx.h"
 
+#include <retro_atomic.h>
+
 #include "ISO.h"
 #include "Emu/VFS.h"
 #include "Emu/system_utils.hpp"
@@ -1962,7 +1964,7 @@ std::unique_ptr<fs::dir_base> iso_device::open_dir(const std::string& path)
 }
 
 // Set while an image is loaded, so that a boot failing over its decryption key can be told apart
-static atomic_t<iso_key_status> s_iso_key_status = iso_key_status::OK;
+static retro_atomic_int_t s_iso_key_status{static_cast<int>(iso_key_status::OK)};
 
 void load_iso(const std::string& path)
 {
@@ -1970,7 +1972,7 @@ void load_iso(const std::string& path)
 
 	stx::shared_ptr<iso_device> device = stx::make_shared<iso_device>(path);
 
-	s_iso_key_status = device->get_key_status();
+	retro_atomic_store_release_int(&s_iso_key_status, static_cast<int>(device->get_key_status()));
 
 	fs::set_virtual_device("iso_overlay_fs_dev", std::move(device));
 
@@ -1981,12 +1983,12 @@ void unload_iso()
 {
 	sys_log.notice("Unloading ISO");
 
-	s_iso_key_status = iso_key_status::OK;
+	retro_atomic_store_release_int(&s_iso_key_status, static_cast<int>(iso_key_status::OK));
 
 	fs::set_virtual_device("iso_overlay_fs_dev", stx::shared_ptr<iso_device>());
 }
 
 iso_key_status get_iso_key_status()
 {
-	return s_iso_key_status;
+	return static_cast<iso_key_status>(retro_atomic_load_acquire_int(&s_iso_key_status));
 }

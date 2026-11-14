@@ -8,6 +8,7 @@
 #include <iomanip>
 #include <span>
 #include <deque>
+#include <retro_atomic.h>
 
 // Constants
 enum : u32
@@ -402,10 +403,10 @@ private:
 
 	std::vector<install_entry> m_install_entries; // reserved for every entry before any is added: the map points into it
 	std::string m_install_path;
-	atomic_t<bool> m_aborted = false;
-	atomic_t<usz> m_num_failures = 0;
-	atomic_t<usz> m_entry_indexer = 0;
-	atomic_t<usz> m_written_bytes = 0;
+	retro_atomic_int_t m_aborted{};
+	retro_atomic_size_t m_num_failures{};
+	retro_atomic_64_t m_entry_indexer{}; // 64 bits: taken with a compare-and-swap
+	retro_atomic_size_t m_written_bytes{};
 	bool m_was_null = false;
 
 	static constexpr usz BUF_SIZE = 8192 * 1024; // 8 MB

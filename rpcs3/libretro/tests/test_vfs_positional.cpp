@@ -32,6 +32,8 @@
 #include "Emu/system_utils.hpp"
 #include "Emu/RSX/Overlays/overlay_controls.h"
 #include "Utilities/lf_u64_map.h"
+#include "Crypto/unedat.h"
+#include "util/serialization.hpp"
 
 #include <malloc.h>
 
@@ -1694,6 +1696,97 @@ int main()
 		}
 
 		fs::remove_all(root);
+	}
+
+	// The licence keys a game registers (loaded_npdrm_keys): a ring of
+	// sixteen and a count in one record. The newest key is the last, the
+	// ring forgets the oldest, a savestate has them as it always had, and
+	// keys registered by several threads at once are all there, whole.
+	{
+		auto ring = std::make_unique<loaded_npdrm_keys>();
+		CHECK(ring->last_key() == u128{});
+
+		for (u32 i = 1; i <= 20; i++)
+		{
+			ring->install_decryption_key((u128{i} << 64) | i);
+		}
+
+		CHECK(ring->keys().pos == 20);
+		CHECK(ring->last_key() == ((u128{20} << 64) | 20));
+		CHECK(ring->last_key(3) == ((u128{17} << 64) | 17));
+		CHECK(ring->keys().keys[0] == ((u128{17} << 64) | 17)); // 1 was forgotten for 17
+
+		// Byte for byte what the sixteen atomics and their count wrote
+		{
+			u64 pos = 20;
+			u128 keys[16];
+			for (u32 i = 5; i <= 20; i++) keys[(i - 1) % 16] = (u128{i} << 64) | i;
+
+			utils::serial expect;
+			expect(pos);
+			expect(std::span(keys, 16));
+
+			utils::serial got;
+			ring->save(got);
+			CHECK(got.data.size() == expect.data.size() && !std::memcmp(got.data.data(), expect.data.data(), got.data.size()));
+
+			got.set_reading_state();
+			loaded_npdrm_keys back(got);
+			CHECK(back.keys().pos == 20 && back.last_key(15) == ((u128{5} << 64) | 5) && back.last_key() == ring->last_key());
+		}
+
+		// Fewer than sixteen: only those are written
+		{
+			loaded_npdrm_keys few;
+			few.install_decryption_key(7);
+			few.install_decryption_key(9);
+			utils::serial got;
+			few.save(got);
+			CHECK(got.data.size() == sizeof(u64) + 2 * sizeof(u128));
+			CHECK(few.last_key(1) == 7 && few.last_key(2) == u128{});
+		}
+
+		// Four threads registering: every key lands once and whole
+		{
+			loaded_npdrm_keys shared;
+			std::thread writers[4];
+			for (u32 t = 0; t < 4; t++)
+				writers[t] = std::thread([&shared, t]
+				{
+					for (u32 i = 0; i < 4; i++)
+						shared.install_decryption_key((u128{t + 1} << 64) | (t + 1) * 100 + i);
+				});
+			for (std::thread& w : writers) w.join();
+
+			const auto all = shared.keys();
+			u32 seen[4]{};
+			bool whole = true;
+			for (const u128 k : all.keys)
+			{
+				const u64 hi = static_cast<u64>(k >> 64), lo = static_cast<u64>(k);
+				if (hi < 1 || hi > 4 || lo / 100 != hi || lo % 100 > 3) whole = false;
+				else seen[hi - 1] |= 1u << (lo % 100);
+			}
+			CHECK(all.pos == 16 && whole && seen[0] == 15 && seen[1] == 15 && seen[2] == 15 && seen[3] == 15);
+		}
+
+		// Sixteen EDAT or SDATA files open at once and not one more, however
+		// many threads ask
+		{
+			loaded_npdrm_keys fds;
+			std::atomic<u32> taken{0};
+			std::thread askers[4];
+			for (std::thread& a : askers)
+				a = std::thread([&]
+				{
+					for (u32 i = 0; i < 100; i++)
+						if (fds.take_fd()) taken++;
+				});
+			for (std::thread& a : askers) a.join();
+			CHECK(taken == 16 && retro_atomic_load_acquire_int(&fds.npdrm_fds) == 16 && !fds.take_fd());
+			retro_atomic_dec_int(&fds.npdrm_fds);
+			CHECK(fds.take_fd() && !fds.take_fd());
+		}
 	}
 
 	std::printf("test_vfs_positional: %s\n", failures ? "FAIL" : "ok");

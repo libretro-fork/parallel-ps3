@@ -2,6 +2,15 @@
 
 #include <array>
 #include "Utilities/File.h"
+#include <retro_atomic.h>
+#ifndef _MSC_VER
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wold-style-cast"
+#endif
+#include <rthreads/retro_cas_record.h>
+#ifndef _MSC_VER
+#pragma GCC diagnostic pop
+#endif
 
 constexpr u32 SDAT_FLAG = 0x01000000;
 constexpr u32 EDAT_COMPRESSED_FLAG = 0x00000001;
@@ -13,27 +22,82 @@ constexpr u32 EDAT_DEBUG_DATA_FLAG = 0x80000000;
 
 struct loaded_npdrm_keys
 {
-	atomic_t<u128> dec_keys[16]{};
-	atomic_t<u64> dec_keys_pos = 0;
+	// The licence keys a game registered, in a ring, and how many it ever
+	// registered: one record, read whole and changed whole with no lock
+	// (it was sixteen 128-bit atomics and a count beside them)
+	struct key_ring
+	{
+		u128 keys[16];
+		u64 pos;
+	};
+
 	u128 one_time_key{}; // For savestates
-	atomic_t<u32> npdrm_fds{0};
+
+	// EDAT and SDATA files open at once: 16 at most
+	retro_atomic_int_t npdrm_fds{};
 
 	void install_decryption_key(u128 key)
 	{
-		dec_keys_pos.atomic_op([&](u64& pos) { dec_keys[pos++ % std::size(dec_keys)] = key; });
+		retro_cas_record_txn_t txn;
+		do
+		{
+			key_ring* now = static_cast<key_ring*>(retro_cas_record_begin(&m_ring, &txn));
+			now->keys[now->pos++ % std::size(now->keys)] = key;
+		}
+		while (!retro_cas_record_commit(&m_ring, &txn));
+	}
+
+	key_ring keys() const
+	{
+		key_ring now;
+		retro_cas_record_read(&m_ring, &now);
+		return now;
 	}
 
 	// TODO: Check if correct for ELF files usage
 	u128 last_key(usz backwards = 0) const
 	{
 		backwards++;
-		const usz pos = dec_keys_pos;
-		return pos >= backwards ? dec_keys[(pos - backwards) % std::size(dec_keys)].load() : u128{};
+		const key_ring now = keys();
+		return now.pos >= backwards ? now.keys[(now.pos - backwards) % std::size(now.keys)] : u128{};
+	}
+
+	// Counts an EDAT or SDATA file in, unless 16 are open
+	bool take_fd()
+	{
+		for (;;)
+		{
+			const int fds = retro_atomic_load_acquire_int(&npdrm_fds);
+
+			if (fds >= 16)
+			{
+				return false;
+			}
+
+			if (retro_atomic_cas_int(&npdrm_fds, fds, fds + 1))
+			{
+				return true;
+			}
+		}
 	}
 
 	SAVESTATE_INIT_POS(2);
-	loaded_npdrm_keys() = default;
+
+	loaded_npdrm_keys()
+	{
+		retro_cas_record_init(&m_ring, m_ring_slots, sizeof(key_ring));
+	}
+
+	loaded_npdrm_keys(const loaded_npdrm_keys&) = delete;
+	loaded_npdrm_keys& operator=(const loaded_npdrm_keys&) = delete;
+
 	loaded_npdrm_keys(utils::serial& ar);
+
+private:
+	mutable retro_cas_record_t m_ring;
+	key_ring m_ring_slots[RETRO_CAS_RECORD_SLOTS]{};
+
+public:
 	void save(utils::serial& ar);
 };
 
