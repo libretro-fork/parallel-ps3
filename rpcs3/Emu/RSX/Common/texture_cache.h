@@ -650,7 +650,22 @@ namespace rsx
 		 * Variable declarations
 		 */
 
-		shared_mutex m_cache_mutex;
+		// Only the renderer is ever inside the cache (guest threads hand
+		// their faults over, Common/guest_faults.h), so there is no lock:
+		// this counts how deep the renderer is inside, for the two things
+		// that must not run from within - evicting and trimming when the
+		// cache's own allocation runs out of memory.
+		u32 m_cache_depth = 0;
+
+		struct cache_scope
+		{
+			u32& depth;
+			cache_scope(u32& d) : depth(d) { depth++; }
+			~cache_scope() { depth--; }
+			cache_scope(const cache_scope&) = delete;
+			cache_scope& operator=(const cache_scope&) = delete;
+		};
+
 		ranged_storage m_storage;
 		std::unordered_multimap<u32, std::pair<deferred_subresource, image_view_type>> m_temporary_subresource_cache;
 		std::vector<image_view_type> m_uncached_subresources;
@@ -778,7 +793,7 @@ namespace rsx
 			}
 
 			// Check that there is at least one valid (locked) section in the test_range
-			reader_lock lock(m_cache_mutex);
+			cache_scope in_cache(m_cache_depth);
 			if (m_storage.range_begin(test_range, locked_range, true) == m_storage.range_end())
 				return false;
 
@@ -1550,7 +1565,6 @@ namespace rsx
 				/*out*/ section_storage_type*& cached_src,
 				/*out*/ image_resource_type& vram_texture,
 				/*out*/ typeless_xfer& typeless_info,
-				reader_lock& lock,
 				Args&&... extras)
 			{
 				// NOTE: Src address already takes into account the flipped nature of the overlap!
@@ -1641,8 +1655,6 @@ namespace rsx
 					const u32 gcm_format = helpers::get_sized_blit_format(src_is_argb8, dst_is_depth_surface, is_format_convert);
 					const auto rsx_range = address_range32::start_length(image_base, src.pitch * image_height);
 
-					lock.upgrade();
-
 					cache->invalidate_range_impl_base(cmd, rsx_range, invalidation_cause::read, {}, std::forward<Args>(extras)...);
 
 					cached_src = cache->upload_image_from_cpu(cmd, rsx_range, image_width, image_height, 1, 1, src.pitch, gcm_format, texture_upload_context::blit_engine_src,
@@ -1687,7 +1699,6 @@ namespace rsx
 				/*out*/ bool& dst_is_render_target,
 				/*out*/ image_resource_type& dest_texture,
 				/*out*/ typeless_xfer& typeless_info,
-				reader_lock& lock,
 				Args&&... extras)
 			{
 				ensure(!dest_texture);
@@ -1726,8 +1737,6 @@ namespace rsx
 
 				const u32 full_section_length = ((dst_dimensions.height - 1) * dst.pitch) + (dst_dimensions.width * dst_bpp);
 				const auto rsx_range = address_range32::start_length(dst_base_address, full_section_length);
-
-				lock.upgrade();
 
 				if (use_null_region) [[likely]]
 				{
@@ -2037,7 +2046,7 @@ namespace rsx
 			// (The extras here describe the region; a flush takes none)
 			sync_guest_writes(cmd);
 
-			std::lock_guard lock(m_cache_mutex);
+			cache_scope in_cache(m_cache_depth);
 
 			lock_memory_region_impl(cmd, image, rsx_range, is_active_surface, width, height, pitch, std::forward<Args>(extras)...);
 		}
@@ -2052,7 +2061,7 @@ namespace rsx
 			if (!region_intersects_cache(rsx_range, true))
 				return;
 
-			std::lock_guard lock(m_cache_mutex);
+			cache_scope in_cache(m_cache_depth);
 			invalidate_range_impl_base(cmd, rsx_range, invalidation_cause::committed_as_fbo, {}, std::forward<Args>(extras)...);
 		}
 
@@ -2069,7 +2078,7 @@ namespace rsx
 
 		void set_memory_read_flags(const address_range32 &memory_range, memory_read_flags flags)
 		{
-			std::lock_guard lock(m_cache_mutex);
+			cache_scope in_cache(m_cache_depth);
 
 			auto* region_ptr = find_cached_texture(memory_range, { .gcm_format = RSX_GCM_FORMAT_IGNORED }, false, false, true);
 			if (region_ptr == nullptr)
@@ -2216,7 +2225,7 @@ namespace rsx
 				return;
 			}
 
-			std::lock_guard lock(m_cache_mutex);
+			cache_scope in_cache(m_cache_depth);
 
 			u32 page_address;
 			while (rsx_page_locks_take(&page_address))
@@ -2240,7 +2249,7 @@ namespace rsx
 			if (!region_intersects_cache(range, !cause.is_read()))
 				return{};
 
-			std::lock_guard lock(m_cache_mutex);
+			cache_scope in_cache(m_cache_depth);
 			return invalidate_range_impl_base(cmd, range, cause, on_data_transfer_completed, std::forward<Args>(extras)...);
 		}
 
@@ -2258,14 +2267,14 @@ namespace rsx
 			if (!region_intersects_cache(range, !cause.is_read()))
 				return {};
 
-			std::lock_guard lock(m_cache_mutex);
+			cache_scope in_cache(m_cache_depth);
 			return invalidate_range_impl_base(cmd, range, cause, on_data_transfer_completed, std::forward<Args>(extras)...);
 		}
 
 		template <typename ...Args>
 		bool flush_all(commandbuffer_type& cmd, thrashed_set& data, std::function<void()> on_data_transfer_completed = {}, Args&&... extras)
 		{
-			std::lock_guard lock(m_cache_mutex);
+			cache_scope in_cache(m_cache_depth);
 
 			AUDIT(data.cause.deferred_flush());
 			AUDIT(!data.flushed);
@@ -2301,7 +2310,7 @@ namespace rsx
 			if (block.empty())
 				return false;
 
-			reader_lock lock(m_cache_mutex);
+			cache_scope in_cache(m_cache_depth);
 
 			// Try to find matching regions
 			bool result = false;
@@ -2319,8 +2328,6 @@ namespace rsx
 				if (!m_predictor.predict(region))
 					continue;
 
-				lock.upgrade();
-
 				region.copy_texture(cmd, false, std::forward<Args>(extras)...);
 				result = true;
 
@@ -2334,7 +2341,7 @@ namespace rsx
 
 		void purge_unreleased_sections()
 		{
-			std::lock_guard lock(m_cache_mutex);
+			cache_scope in_cache(m_cache_depth);
 
 			m_storage.purge_unreleased_sections();
 		}
@@ -2358,7 +2365,7 @@ namespace rsx
 
 		void trim_sections()
 		{
-			std::lock_guard lock(m_cache_mutex);
+			cache_scope in_cache(m_cache_depth);
 
 			m_storage.trim_sections();
 		}
@@ -2367,13 +2374,13 @@ namespace rsx
 		{
 			// Some sanity checks. Do not evict if the cache is currently in use.
 			ensure(rsx::get_current_renderer()->is_current_thread());
-			std::unique_lock lock(m_cache_mutex, std::defer_lock);
-
-			if (!lock.try_lock())
+			if (m_cache_depth)
 			{
 				rsx_log.warning("Unable to evict the texture cache because we're faulting from within in the texture cache!");
 				return false;
 			}
+
+			cache_scope in_cache(m_cache_depth);
 
 			rsx_log.warning("[PERFORMANCE WARNING] Texture cache is running eviction routine. This will affect performance.");
 
@@ -2506,7 +2513,7 @@ namespace rsx
 				}
 			}
 
-			std::lock_guard lock(m_cache_mutex);
+			cache_scope in_cache(m_cache_depth);
 			image_view_type result = 0;
 
 			switch (desc.op)
@@ -3283,7 +3290,7 @@ namespace rsx
 			}
 
 			const auto lookup_range = utils::address_range32::start_length(attributes.address, attributes.pitch * required_surface_height);
-			reader_lock lock(m_cache_mutex);
+			cache_scope in_cache(m_cache_depth);
 
 			auto result = fast_texture_search(cmd, attributes, scale, tex.decoded_remap(),
 				options, lookup_range, extended_dimension, m_rtts,
@@ -3428,8 +3435,6 @@ namespace rsx
 			{
 				tex_size = static_cast<u32>(get_texture_size(tex));
 			}
-
-			lock.upgrade();
 
 			// Invalidate
 			const address_range32 tex_range = address_range32::start_length(attributes.address, tex_size);
@@ -3644,7 +3649,7 @@ namespace rsx
 				}
 			}
 
-			reader_lock lock(m_cache_mutex);
+			cache_scope in_cache(m_cache_depth);
 
 			if (dst_is_render_target)
 			{
@@ -3713,7 +3718,6 @@ namespace rsx
 					cached_src,
 					vram_texture,
 					typeless_info,
-					lock,
 					std::forward<Args>(extras)...);
 
 				// Disable interpolation if we're doing a simple copy
@@ -3761,7 +3765,6 @@ namespace rsx
 					dst_is_render_target,
 					dest_texture,
 					typeless_info,
-					lock,
 					std::forward<Args>(extras)...);
 			}
 
@@ -3779,8 +3782,6 @@ namespace rsx
 				u32 mem_offset = dst_address - cached_dest->get_section_base();
 				ensure((mem_offset + dst_payload_length) <= cached_dest->get_section_size());
 
-				lock.upgrade();
-
 				cached_dest->reprotect(utils::protection::no, { mem_offset, dst_payload_length });
 				cached_dest->touch(m_cache_update_tag);
 				update_cache_tag();
@@ -3791,8 +3792,6 @@ namespace rsx
 			else
 			{
 				// Reset this object's synchronization status if it is locked
-				lock.upgrade();
-
 				// We also want to grab the section alias while we're at it to make sure the memory is sane
 				section_storage_type* dest_section = nullptr;
 
@@ -3962,7 +3961,7 @@ namespace rsx
 				return;
 			}
 
-			std::lock_guard lock(m_cache_mutex);
+			cache_scope in_cache(m_cache_depth);
 			bool update_tag = false;
 
 			for (const auto &It : m_flush_always_cache)
@@ -4001,7 +4000,7 @@ namespace rsx
 
 		bool is_protected(u32 section_base_address, const address_range32& test_range, rsx::texture_upload_context context)
 		{
-			reader_lock lock(m_cache_mutex);
+			cache_scope in_cache(m_cache_depth);
 
 			const auto& block = m_storage.block_for(section_base_address);
 			for (const auto& tex : block)

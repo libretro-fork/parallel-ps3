@@ -934,7 +934,7 @@ namespace gl
 
 		bool is_depth_texture(u32 rsx_address, u32 rsx_size) override
 		{
-			reader_lock lock(m_cache_mutex);
+			cache_scope in_cache(m_cache_depth);
 
 			auto &block = m_storage.block_for(rsx_address);
 

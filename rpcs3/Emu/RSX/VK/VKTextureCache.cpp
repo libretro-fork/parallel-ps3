@@ -1487,7 +1487,7 @@ namespace vk
 
 	bool texture_cache::is_depth_texture(u32 rsx_address, u32 rsx_size)
 	{
-		reader_lock lock(m_cache_mutex);
+		cache_scope in_cache(m_cache_depth);
 
 		auto& block = m_storage.block_for(rsx_address);
 
@@ -1539,12 +1539,13 @@ namespace vk
 			return any_released;
 		}
 
-		std::unique_lock lock(m_cache_mutex, std::defer_lock);
-		if (!lock.try_lock())
+		if (m_cache_depth)
 		{
 			rsx_log.warning("Unable to remove temporary resources because we're already in the texture cache!");
 			return any_released;
 		}
+
+		cache_scope in_cache(m_cache_depth);
 
 		// Nuke temporary resources. They will still be visible to the GPU.
 		auto gc = vk::get_resource_manager();
