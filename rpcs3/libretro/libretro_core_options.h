@@ -367,7 +367,7 @@ struct retro_core_option_v2_definition option_defs_us[] = {
     },
     {
         "rpcs3_vblank_rate", "VBlank Frequency", NULL,
-        "The PS3's refresh rate in Hz. It is also the frame rate the core asks RetroArch for, which takes effect when content is loaded; games that can run above 60 FPS need a display that refreshes that fast. \"From List\" doubles Vblank rate for supported games listed in vblank_unlock.txt found in system/rpcs3. You may need to apply per-game patches.",
+        "The PS3's refresh rate in Hz. It is also the frame rate the core asks RetroArch for, which takes effect when content is loaded; games that can run above 60 FPS need a display that refreshes that fast. \"From List\" doubles Vblank rate for supported games listed in vblank_unlock.txt found in system/parallel-ps3. You may need to apply per-game patches.",
         NULL, "gpu",
         { {"50", "50 Hz (PAL)"}, {"60", "60 Hz (NTSC)"}, {"120", "120 Hz"}, {"144", "144 Hz"}, {"240", "240 Hz"}, {"list", "From List"}, {NULL, NULL} },
         "60"
@@ -439,7 +439,7 @@ struct retro_core_option_v2_definition option_defs_us[] = {
     },
     {
         "rpcs3_psn_status", "PSN Status", NULL,
-        "What games see of the PlayStation Network. Simulated makes them believe they are signed in, which some need to get past their menus; RPCN connects to RPCS3's own server and needs Network Enabled and an RPCN account: the core cannot create one, so set it up in standalone RPCS3 and copy its rpcn.yml into system/rpcs3/ (system/rpcs3/config/ on Windows). Takes effect when content is loaded.",
+        "What games see of the PlayStation Network. Simulated makes them believe they are signed in, which some need to get past their menus; RPCN connects to RPCS3's own server and needs Network Enabled and an RPCN account: the core cannot create one, so set it up in standalone RPCS3 and copy its rpcn.yml into system/parallel-ps3/ (system/parallel-ps3/config/ on Windows). Takes effect when content is loaded.",
         NULL, "network",
         { {"disabled", NULL}, {"simulated", "Simulated"}, {"rpcn", "RPCN"}, {NULL, NULL} },
         "disabled"

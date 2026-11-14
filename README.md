@@ -8,7 +8,7 @@ This repository builds the core and nothing else. The standalone Qt application,
 
 The core is built by libretro's buildbot for Linux (x86_64 and aarch64), Windows x64, macOS (Apple Silicon and Intel) and Android (arm64 and x86_64), and is installed from RetroArch: Online Updater > Core Downloader. Test builds of other branches are artifacts of the [Build libretro core](https://github.com/WizzardSK/rpcs3-libretro/actions/workflows/libretro.yml) workflow; their core goes into RetroArch's `cores` directory, together with `parallel_ps3_libretro.info` in its `info` directory.
 
-The PS3 firmware (`PS3UPDAT.PUP`, from playstation.com) goes into RetroArch's system directory as `system/rpcs3/PS3UPDAT.PUP`; the core installs it on first start. Disc keys for redump ISOs go into `system/rpcs3/data/redump/`, named like the ISO with a `.key` or `.dkey` extension.
+The PS3 firmware (`PS3UPDAT.PUP`, from playstation.com) goes into RetroArch's system directory as `system/parallel-ps3/PS3UPDAT.PUP`; the core installs it on first start. Disc keys for redump ISOs go into `system/parallel-ps3/data/redump/`, named like the ISO with a `.key` or `.dkey` extension.
 
 ## Loading games
 

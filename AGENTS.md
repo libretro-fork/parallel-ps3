@@ -227,7 +227,7 @@ Not there yet, in the core's own glue. These are debts, not precedent:
 ## Measuring honestly
 
 - **Clean runs.** Time on an idle machine, with nothing else building and no other emulator running, alternating parent and candidate (ABBA) with reverse-order repeats. Timing runs take no screenshots, picture hashes, readbacks or GPU query polling; picture checks are separate runs. Report medians, p95, p99 and max with frame numbers, never a single run and never a best of several.
-- **Record the controls.** Revisions, driver, GPU, OS, the extensions actually enabled, compiler flags, cache state and the core options go with every result. Use private copies of `system/parallel-ps3/` and `system/rpcs3/`; never empty a user's caches or replace an installed core to make a cold run.
+- **Record the controls.** Revisions, driver, GPU, OS, the extensions actually enabled, compiler flags, cache state and the core options go with every result. Use private copies of `system/parallel-ps3/`; never empty a user's caches or replace an installed core to make a cold run.
 - **Explain hitches with counters.** Don't diagnose a hitch by how it looks. A long frame is a compile only when the compile counters put one at that frame; PPU/SPU recompilation, readbacks, the game's own CPU work, disc reads and page faults look the same.
 - **Counters cost nothing in release builds.** They exist only in an opt-in build: one atomic add where the event happens, no logging, no wall clocks, no extra work.
 - **Keep work and time apart.** Fewer compiles, fewer bytes copied and fewer allocations are work results. They are not frame-time results until timing shows it.
@@ -245,7 +245,7 @@ Not there yet, in the core's own glue. These are debts, not precedent:
 
 Each of these was a bug in at least one of the other cores (cemu, dolphin, flycast, pcsx2, rpcs3, shadps4, vita3k, xenia, xemu). Check new code against them before asking testers.
 
-- Files: the core's own config, caches and log go under `system/parallel-ps3/`; the firmware and the emulated drives (installed games, saves) under `system/rpcs3/`, which the RPCS3 core shares; nothing else outside saves/, and nothing next to the RetroArch executable. The emulator's own log goes there too, and its warnings and errors also go to RetroArch's log.
+- Files: everything the core writes goes under `system/parallel-ps3/` (or saves/); nothing in `system/rpcs3/`, which is the RPCS3 core's folder, and nothing next to the RetroArch executable. The emulator's own log goes there too, and its warnings and errors also go to RetroArch's log.
 - No window: the standalone's UI (on-screen keyboard, notifications, message boxes, profile dialogs) has no window in a core. Every path that reaches for the window or its UI thread needs a headless branch that answers the way the user most likely would.
 - Unload: never end the process (no exit, no TerminateTitle-style shutdown). Stop and join every thread in upstream's order, and never wait without a timeout on a fence, event or thread the frontend has to drive. No `vkQueueWaitIdle`/`vkDeviceWaitIdle` while RetroArch holds its queue lock.
 - Libraries that pin themselves (statically linked OpenSSL and the like) keep the core loaded after `dlclose`; build them so they do not. No `thread_local` objects with destructors, and no static TLS, in what the frontend loads with `dlopen`.

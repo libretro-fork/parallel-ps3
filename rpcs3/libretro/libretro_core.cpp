@@ -247,7 +247,7 @@ static bool is_pkg_file(const std::string& path)
 static void install_rap_files(const std::string& pkg_path)
 {
     const std::string pkg_dir = fs::get_parent_dir(pkg_path);
-    const std::string exdata = g_cfg_vfs.get(g_cfg_vfs.dev_hdd0, system_dir + "/rpcs3/") + "home/00000001/exdata/";
+    const std::string exdata = g_cfg_vfs.get(g_cfg_vfs.dev_hdd0, system_dir + "/parallel-ps3/") + "home/00000001/exdata/";
     fs::dir dir(pkg_dir);
     if (!dir)
         return;
@@ -277,7 +277,7 @@ static bool install_pkg_file(const std::string& pkg_path, std::string& eboot_pat
 
     libretro_show_message("Installing PKG file...", 300);
 
-    // Determine install directory - use content_dir if available, otherwise system/rpcs3/dev_hdd0/game
+    // Determine install directory - use content_dir if available, otherwise system/parallel-ps3/dev_hdd0/game
     std::string install_base;
     if (!content_dir.empty())
     {
@@ -286,10 +286,10 @@ static bool install_pkg_file(const std::string& pkg_path, std::string& eboot_pat
     else if (!system_dir.empty())
     {
         // dev_hdd0 where vfs.yml puts it, which may be outside RetroArch's
-        // folders (NNshi); system/rpcs3/dev_hdd0/ unless it says otherwise.
+        // folders (NNshi); system/parallel-ps3/dev_hdd0/ unless it says otherwise.
         g_cfg_vfs.load();
-        g_cfg_vfs.emulator_dir.from_string(system_dir + "/rpcs3/");
-        install_base = g_cfg_vfs.get(g_cfg_vfs.dev_hdd0, system_dir + "/rpcs3/") + "game/";
+        g_cfg_vfs.emulator_dir.from_string(system_dir + "/parallel-ps3/");
+        install_base = g_cfg_vfs.get(g_cfg_vfs.dev_hdd0, system_dir + "/parallel-ps3/") + "game/";
     }
     else
     {
@@ -395,51 +395,23 @@ static std::string game_serial(const std::string& path);
 // 30 fps game of the list, whose VBlank runs at 120. 0: the VBlank Frequency.
 static u32 s_output_hz = 0;
 
-// Where the core keeps things under the frontend's system directory.
-//
-// Its config, caches and log go under <system>/parallel-ps3/ (see
-// g_libretro_config_dir in File.cpp). They are this core's own:
-// <system>/rpcs3/, where they were, is also where the RPCS3 core keeps its
-// config, caches and log, and the two cores cannot read each other's caches
-// (the RPCS3 core deletes this core's shader pack). The firmware, the
-// emulated drives - installed games, saves, trophies - and the disc keys
-// stay in <system>/rpcs3/, shared, so nothing is installed or copied twice.
+// Where the core keeps things under the frontend's system directory:
+// everything in <system>/parallel-ps3/ - the firmware, the emulated drives
+// with installed games, saves and trophies, the disc keys, and the core's
+// config, caches and log (see g_libretro_config_dir in File.cpp). Nothing in
+// <system>/rpcs3/, where it all was: that is the RPCS3 core's folder, and the
+// two cores wrote over each other's config and log and cannot read each
+// other's caches (the RPCS3 core deletes this core's shader pack).
 void libretro_use_system_dir(const std::string& dir)
 {
     extern std::string g_libretro_config_dir;
     g_libretro_config_dir = dir + "/parallel-ps3/";
     fs::create_path(g_libretro_config_dir);
-
-    // What the user supplies stays put: disc keys in rpcs3/data/redump/
-    extern std::string g_libretro_data_dir;
-    g_libretro_data_dir = dir + "/rpcs3/data/";
-
-    // vfs.yml moved with the config. One that was edited where it used to be
-    // (to keep dev_hdd0 somewhere else, say) is taken over once.
-    if (!fs::is_file(cfg_vfs::get_path()))
-    {
-#ifdef _WIN32
-        const std::string old_vfs = dir + "/rpcs3/config/vfs.yml";
-#else
-        const std::string old_vfs = dir + "/rpcs3/vfs.yml";
-#endif
-        if (fs::is_file(old_vfs))
-        {
-            fs::create_path(fs::get_parent_dir(cfg_vfs::get_path()));
-            fs::copy_file(old_vfs, cfg_vfs::get_path(), false);
-        }
-    }
 }
 
 static std::string vblank_unlock_path()
 {
-    if (system_dir.empty())
-        return fs::get_config_dir() + "vblank_unlock.txt";
-
-    // With the core's own files; where it used to be if it is only there
-    const std::string path = system_dir + "/parallel-ps3/vblank_unlock.txt";
-    const std::string old_path = system_dir + "/rpcs3/vblank_unlock.txt";
-    return !fs::is_file(path) && fs::is_file(old_path) ? old_path : path;
+    return (system_dir.empty() ? fs::get_config_dir() : system_dir + "/parallel-ps3/") + "vblank_unlock.txt";
 }
 
 static void install_vblank_unlock()
@@ -1310,7 +1282,7 @@ static std::string find_firmware_pup()
     // The name as Sony serves it is PS3UPDAT.PUP, but a copy can come in
     // other case (PS3UPDAT.pup, demifiend9), and Linux and Android file
     // systems tell them apart: any case will do
-    for (const std::string& dir : { system_dir + "/rpcs3", system_dir, system_dir + "/rpcs3/firmware" })
+    for (const std::string& dir : { system_dir + "/parallel-ps3", system_dir, system_dir + "/parallel-ps3/firmware" })
     {
         for (auto&& entry : fs::dir(dir))
         {
@@ -1783,9 +1755,9 @@ void retro_init(void)
     // Initialize locale
     std::setlocale(LC_ALL, "C");
 
-    // Set the emulator directory to RetroArch system/rpcs3/
+    // Set the emulator directory to RetroArch system/parallel-ps3/
     // This is where firmware (dev_flash) and other RPCS3 data should be stored
-    std::string emu_dir = system_dir + "/rpcs3/";
+    std::string emu_dir = system_dir + "/parallel-ps3/";
     g_cfg_vfs.emulator_dir.from_string(emu_dir);
 
     // Ensure RPCS3 can reload the correct EmulatorDir inside Emu.Init()/BootGame.
@@ -2933,10 +2905,10 @@ static bool do_boot_game(const std::string& path)
 {
 
 
-    // Ensure /dev_flash points to RetroArch system/rpcs3/ so the installed firmware is visible during boot
+    // Ensure /dev_flash points to RetroArch system/parallel-ps3/ so the installed firmware is visible during boot
     if (!system_dir.empty())
     {
-        const std::string emu_dir = system_dir + "/rpcs3/";
+        const std::string emu_dir = system_dir + "/parallel-ps3/";
         g_cfg_vfs.emulator_dir.from_string(emu_dir);
         vfs::mount("/dev_flash", g_cfg_vfs.get_dev_flash());
     }

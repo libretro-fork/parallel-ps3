@@ -25,10 +25,6 @@ using namespace std::literals::string_literals;
 // so a call made before the core knows the directory does not pin the old one.
 std::string g_libretro_config_dir;
 
-// Where the user puts what the core is given - disc keys (data/redump/) -
-// when that is not the core's own directory; with a trailing slash
-std::string g_libretro_data_dir;
-
 #ifdef ANDROID
 std::string g_android_executable_dir;
 std::string g_android_config_dir;
