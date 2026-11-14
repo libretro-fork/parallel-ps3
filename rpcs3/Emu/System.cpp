@@ -719,11 +719,20 @@ void Emulator::Init()
 		}
 	}
 
+#ifdef LIBRETRO_CORE
+	// Only shader logging writes here, which the core has no option for: the
+	// folder is made when a config turns it on, not at every start
+	if (g_cfg.video.log_programs || g_cfg.video.debug_program_analyser)
+#endif
 	make_path_verbose(fs::get_cache_dir() + "shaderlog/", false);
 	make_path_verbose(fs::get_cache_dir() + "spu_progs/", false);
 	make_path_verbose(fs::get_cache_dir() + "ppu_progs/", false);
 	make_path_verbose(fs::get_parent_dir(get_savestate_file("NO_ID", "/NO_FILE", -1, -1)), false);
+#ifndef LIBRETRO_CORE
+	// RSX frame captures are asked for from standalone's window; nothing in
+	// the libretro core can ask for one, so it makes no folder for them
 	make_path_verbose(fs::get_config_dir() + "captures/", false);
+#endif
 	make_path_verbose(fs::get_config_dir() + "sounds/", false);
 	make_path_verbose(patch_engine::get_patches_path(), false);
 
