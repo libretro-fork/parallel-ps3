@@ -28,6 +28,9 @@ const extern spu_decoder<spu_iflag> g_spu_iflag;
 #ifdef LLVM_AVAILABLE
 
 #include "Emu/CPU/CPUTranslator.h"
+#include "rpcs3_version.h"
+
+#include <retro_atomic.h>
 
 #ifdef _MSC_VER
 #pragma warning(push, 0)
@@ -77,6 +80,12 @@ void spu_llvm_set_compile_context(spu_llvm_compile_context* context) noexcept
 }
 #endif
 
+extern const char* const g_cpu_translator_built;
+extern const char* const g_spu_recompiler_base_built;
+
+// Functions loaded by their note, with no module built (the tests read it)
+retro_atomic_int_t g_spu_llvm_noted_loads{};
+
 class spu_llvm_recompiler : public spu_recompiler_base, public cpu_translator
 {
 	// JIT Instance
@@ -101,6 +110,11 @@ class spu_llvm_recompiler : public spu_recompiler_base, public cpu_translator
 	// what the name says of the CPU and LLVM
 	llvm::SmallVector<char, 0> m_bitcode;
 	std::string m_object_target;
+
+	// An object's note (see note_name), and what one names as it is read
+	std::string m_note_text;
+	std::vector<std::pair<std::string, u64>> m_note_symbols;
+	std::vector<std::string> m_note_names;
 
 	// Patchpoint unique id
 	u32 m_pp_id = 0;
@@ -1667,6 +1681,296 @@ public:
 		m_spu_frsqest_fraction_lut = new llvm::GlobalVariable(*m_module, llvm::ArrayType::get(GetType<u32>(), 64), true, llvm::GlobalValue::PrivateLinkage, llvm::ConstantDataArray::get(m_context, spu_frsqest_fraction_lut));
 	}
 
+	// A function's object is kept under a name made from its module, which
+	// has to be built to find it: on a boot with everything in the cache
+	// that was most of the time spent on each function. So a note is kept
+	// beside the object, under a name made from what the module is built
+	// from - the SPU code, the settings the recompiler reads, the CPU, and
+	// the build of the recompiler - which says which object it is and the
+	// outside names the object links to. A function with a note is loaded
+	// without its module being built.
+	//
+	// The note is only as good as its name: whatever decides what a module
+	// comes out as has to be in it. A setting read by the recompiler and
+	// missing below fails `make check`. A note that does not fit (another
+	// build, another setting) is just not found, and the function goes the
+	// long way, which finds the object by its module as before and leaves a
+	// note for the next boot.
+	static const std::string& note_stamp()
+	{
+		static const std::string stamp = fmt::format("%s|%s|%s|%s|%s|" LLVM_VERSION_STRING " n1",
+			rpcs3::get_verbose_version(), __DATE__ " " __TIME__, g_cpu_translator_built, g_spu_recompiler_base_built, utils::get_cpu_brand());
+		return stamp;
+	}
+
+	std::string note_name(const spu_program& func)
+	{
+		if (m_object_target.empty())
+		{
+			m_object_target = jit_compiler::cpu(g_cfg.core.llvm_cpu.to_string()) + " " LLVM_VERSION_STRING " v2";
+		}
+
+		sha1_context ctx;
+		u8 output[20];
+		sha1_starts(&ctx);
+
+		const auto put = [&](const auto& value)
+		{
+			const u64 raw = static_cast<u64>(value);
+			sha1_update(&ctx, reinterpret_cast<const u8*>(&raw), sizeof(raw));
+		};
+
+		const std::string& stamp = note_stamp();
+		sha1_update(&ctx, reinterpret_cast<const u8*>(stamp.data()), stamp.size());
+		sha1_update(&ctx, reinterpret_cast<const u8*>(m_object_target.data()), m_object_target.size());
+
+		// Every setting the recompiler, the translator and the analyser read
+		put(g_cfg.core.spu_block_size.get());
+		put(g_cfg.core.spu_xfloat_accuracy.get());
+		put(g_cfg.core.spu_decoder.get());
+		put(g_cfg.core.spu_debug.get());
+		put(g_cfg.core.spu_llvm_upper_bound.get());
+		put(g_cfg.core.spu_llvm_lower_bound.get());
+		put(g_cfg.core.spu_verification.get());
+		put(g_cfg.core.use_accurate_dfma.get());
+		put(g_cfg.core.spu_cache.get());
+		put(g_cfg.savestate.compatible_mode.get());
+		put(g_cfg.core.spu_prof.get());
+		put(g_cfg.core.spu_accurate_reservations.get());
+		put(g_cfg.core.llvm_precompilation.get());
+		put(g_cfg.video.strict_rendering_mode.get());
+		put(g_cfg.core.spu_loop_detection.get());
+		put(g_cfg.core.spu_accurate_dma.get());
+		put(g_cfg.core.rsx_fifo_accuracy.get());
+		put(g_cfg.core.rsx_accurate_res_access.get());
+		put(g_cfg.core.precise_spu_verification.get());
+		put(g_cfg.core.mfc_debug.get());
+		// put(g_cfg.core.llvm_cpu): in m_object_target
+#ifdef ARCH_ARM64
+		put(m_use_tbl2);
+#endif
+		put(func.entry_point);
+		put(func.lower_bound);
+		sha1_update(&ctx, reinterpret_cast<const u8*>(func.data.data()), func.data.size() * 4);
+		sha1_finish(&ctx, output);
+
+		return fmt::format("spu-%s.key", fmt::base57(output));
+	}
+
+	// A patchpoint's name: this function's, with a number
+	bool is_patchpoint_name(std::string_view name) const
+	{
+		return name.size() > m_hash.size() + 4 && name.starts_with(m_hash) && name.substr(m_hash.size(), 4) == "-pp-";
+	}
+
+	// The note for an object in the cache: its name, then every outside name
+	// it links to that the JIT was told the place of while its module was
+	// built. Empty when one of them is a name this process could not place
+	// again without the module (not seen by the table, or not where the
+	// table says). Names the JIT was told nothing about are left out: they
+	// are linked the same way with or without the module.
+	void make_note(const std::string& dir, const std::string& object)
+	{
+		m_note_text.clear();
+
+		if (!jit_compiler::undefined_symbols(dir + object, m_note_names))
+		{
+			return;
+		}
+
+		const char prefix = m_jit.get_engine().getDataLayout().getGlobalPrefix();
+		std::string text = object;
+		text += '\n';
+
+		for (const std::string& symbol : m_note_names)
+		{
+			const std::string_view view = prefix && symbol.starts_with(prefix) ? std::string_view(symbol).substr(1) : std::string_view(symbol);
+			const u64 mapped = m_engine->getAddressToGlobalIfAvailable(llvm::StringRef(view.data(), view.size()));
+
+			if (!mapped)
+			{
+				continue;
+			}
+
+			if (view != "spu_segment_base" && !is_patchpoint_name(view))
+			{
+				if (jit_host_symbol_find(view.data(), view.size()) != mapped || view.find('\n') != umax)
+				{
+					return;
+				}
+			}
+
+			text.append(view);
+			text += '\n';
+		}
+
+		m_note_text = std::move(text);
+	}
+
+	// Reads a function's note: false when there is none, its object is not
+	// there, or it names something this process cannot place yet. With
+	// true, m_note_text is the object's name and m_note_symbols what it
+	// links to (0 for a patchpoint, 1 for the segment base, else where).
+	bool read_note(const std::string& dir, const std::string& name)
+	{
+		if (!jit_compiler::note_get(dir, name, m_note_text))
+		{
+			return false;
+		}
+
+		const usz first = m_note_text.find('\n');
+
+		if (first == umax || first == 0)
+		{
+			return false;
+		}
+
+		m_note_symbols.clear();
+
+		for (usz pos = first + 1; pos < m_note_text.size();)
+		{
+			usz end = m_note_text.find('\n', pos);
+
+			if (end == umax)
+			{
+				end = m_note_text.size();
+			}
+
+			const std::string_view symbol = std::string_view(m_note_text).substr(pos, end - pos);
+			pos = end + 1;
+
+			if (symbol.empty())
+			{
+				continue;
+			}
+
+			u64 where = 0;
+
+			if (symbol == "spu_segment_base")
+			{
+				where = 1;
+			}
+			else if (!is_patchpoint_name(symbol))
+			{
+				where = jit_host_symbol_find(symbol.data(), symbol.size());
+
+				if (where <= 1)
+				{
+					return false;
+				}
+			}
+
+			m_note_symbols.emplace_back(std::string(symbol), where);
+		}
+
+		m_note_text.resize(first);
+		return jit_compiler::check(dir + m_note_text);
+	}
+
+	// Loads the function's object as its note says, with no module built.
+	// `taken` is false when there was no note to go by and nothing was done.
+	spu_function_t compile_noted(const std::string& name, const spu_program& func, auto add_loc, bool add_to_file, usz func_size, bool& taken)
+	{
+		const std::string dir = m_spurt->get_cache_path() + "llvm/";
+		taken = read_note(dir, name);
+
+		if (!taken)
+		{
+			return nullptr;
+		}
+
+		// What building the module would have given the JIT
+		m_engine->clearAllGlobalMappings();
+
+		for (const auto& [symbol, where] : m_note_symbols)
+		{
+			const u64 addr = where == 0 ? reinterpret_cast<u64>(m_spurt->make_branch_patchpoint())
+				: where == 1 ? reinterpret_cast<u64>(jit_runtime::alloc(0, 0))
+				: where;
+			m_engine->updateGlobalMapping(symbol, addr);
+		}
+
+		// An empty module with the object's name: the JIT asks the cache for
+		// its object, finds it, and has nothing to compile
+		std::unique_ptr<llvm::Module> _module = std::make_unique<llvm::Module>(m_note_text, m_context);
+		_module->setTargetTriple(llvm::Triple(jit_compiler::triple2()));
+		_module->setDataLayout(m_jit.get_engine().getTargetMachine()->createDataLayout());
+
+#if defined(__APPLE__)
+		pthread_jit_write_protect_np(false);
+
+		struct jit_write_guard
+		{
+			~jit_write_guard()
+			{
+				pthread_jit_write_protect_np(true);
+			}
+		} _jit_guard;
+#endif
+
+#ifdef ARCH_ARM64
+		if (g_spu_llvm_compile_context)
+		{
+			std::string& llvm_error = g_spu_llvm_compile_context->llvm_error;
+
+			if (!m_jit.try_add(std::move(_module), dir, llvm_error) || !m_jit.try_fin(llvm_error))
+			{
+				if (add_to_file)
+				{
+					add_loc->cached = 0;
+				}
+
+				return nullptr;
+			}
+		}
+		else
+#endif
+		{
+			m_jit.add(std::move(_module), dir);
+			m_jit.fin();
+		}
+
+		const spu_function_t fn = reinterpret_cast<spu_function_t>(ensure(m_jit.get_engine().getFunctionAddress(m_hash)));
+		retro_atomic_fetch_add_int(&g_spu_llvm_noted_loads, 1);
+
+		// Install unconditionally, possibly replacing existing one from spu_fast
+		add_loc->compiled = fn;
+
+		// Rebuild trampoline if necessary
+		if (!m_spurt->rebuild_ubertrampoline(func.data[0]))
+		{
+			if (auto& cache = g_fxo->get<spu_cache>())
+			{
+				if (add_to_file)
+				{
+					cache.add(func);
+				}
+			}
+
+			return nullptr;
+		}
+
+		add_loc->compiled.notify_all();
+
+#if defined(ARCH_ARM64)
+		// Flush all cache lines after potentially writing executable code
+		asm("ISB");
+		asm("DSB ISH");
+#endif
+
+		if (auto& cache = g_fxo->get<spu_cache>())
+		{
+			if (add_to_file)
+			{
+				cache.add(func);
+			}
+
+			spu_log.success("New SPU block compiled successfully (size=%u)", func_size);
+		}
+
+		return fn;
+	}
+
 	virtual spu_function_t compile(spu_program&& _func) override
 	{
 		if (_func.data.empty() && m_interp_magn)
@@ -1784,6 +2088,24 @@ public:
 		}
 
 		using namespace llvm;
+
+		// With a note of the function's object, the object is all there is
+		// to load (see note_name)
+		const bool use_notes = !g_cfg.core.spu_debug && g_cfg.core.spu_cache && !m_spurt->get_cache_path().empty();
+		const std::string note = use_notes ? note_name(func) : std::string();
+
+		if (use_notes)
+		{
+			bool taken = false;
+			const spu_function_t noted = compile_noted(note, func, add_loc, add_to_file, func_size, taken);
+
+			if (taken)
+			{
+				return noted;
+			}
+		}
+
+		std::string note_object;
 
 		m_engine->clearAllGlobalMappings();
 
@@ -2490,6 +2812,7 @@ public:
 
 		const auto dispatcher = llvm::cast<llvm::Function>(m_module->getOrInsertFunction("spu_dispatcher", main_func->getType()).getCallee());
 		m_engine->updateGlobalMapping("spu_dispatcher", reinterpret_cast<u64>(spu_runtime::tr_all));
+		jit_host_symbol_note("spu_dispatcher", 14, reinterpret_cast<uptr>(spu_runtime::tr_all));
 		dispatcher->setCallingConv(main_func->getCallingConv());
 
 		// Proceed to the next code
@@ -3893,6 +4216,9 @@ public:
 
 			_module->setModuleIdentifier(fmt::format("spu-%s.obj", fmt::base57(output)));
 			have_object = jit_compiler::check(m_spurt->get_cache_path() + "llvm/" + _module->getModuleIdentifier());
+
+			// What the next boot loads the object by, once it is in the cache
+			note_object = _module->getModuleIdentifier();
 		}
 
 		if (!have_object)
@@ -4061,6 +4387,22 @@ public:
 
 			m_jit.fin();
 #endif
+		}
+
+		// The object is in the cache now, made or found: its note with it
+		if (!note_object.empty())
+		{
+			const std::string dir = m_spurt->get_cache_path() + "llvm/";
+			make_note(dir, note_object);
+
+			// Not a second time when it is there and only could not be gone
+			// by yet (a name the table had not seen)
+			std::string had;
+
+			if (!m_note_text.empty() && (!jit_compiler::note_get(dir, note, had) || had != m_note_text))
+			{
+				jit_compiler::note_put(dir, note, m_note_text);
+			}
 		}
 
 		// Register function pointer

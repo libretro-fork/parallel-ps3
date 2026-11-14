@@ -584,6 +584,19 @@ public:
 	// Check object file
 	static bool check(const std::string& path);
 
+	// A small record kept in a cache directory's pack beside its objects,
+	// under a name of its own: what a recompiler notes about an object
+	static bool note_get(const std::string& dir, std::string_view name, std::string& text);
+	static bool note_put(const std::string& dir, std::string_view name, std::string_view text);
+
+	// How many names objects asked for that nothing placed, each given a
+	// function that says so when called
+	static u32 null_functions();
+
+	// The names a cached object leaves for the JIT to link, as the object
+	// has them; false when the object is not there or cannot be read
+	static bool undefined_symbols(const std::string& path, std::vector<std::string>& names);
+
 	// Closes the object packs the cache directories were read from (one file
 	// of objects a directory). While nothing is compiling or loading objects;
 	// objects already lent to an engine stay valid.

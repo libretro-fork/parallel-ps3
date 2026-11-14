@@ -400,6 +400,7 @@ endif()
 target_sources(rpcs3_emu PRIVATE
     CPU/CPUThread.cpp
     CPU/CPUTranslator.cpp
+    CPU/jit_host_symbols.c
 )
 
 if(CMAKE_SYSTEM_PROCESSOR MATCHES "ARM64|arm64|aarch64")

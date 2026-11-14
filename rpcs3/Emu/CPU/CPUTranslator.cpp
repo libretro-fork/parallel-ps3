@@ -5,6 +5,12 @@
 #include "util/v128.hpp"
 #include "util/logs.hpp"
 
+// When this file was compiled: part of what an object's note is keyed by
+// (SPULLVMRecompiler.cpp), so that a build with another translator does not
+// take a note of this one's
+extern const char* const g_cpu_translator_built;
+const char* const g_cpu_translator_built = __DATE__ " " __TIME__;
+
 LOG_CHANNEL(llvm_log, "LLVM");
 
 llvm::LLVMContext g_llvm_ctx;

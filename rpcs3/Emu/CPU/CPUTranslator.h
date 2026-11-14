@@ -6,6 +6,7 @@
 #include "util/sysinfo.hpp"
 #include "Utilities/StrFmt.h"
 #include "Utilities/JIT.h"
+#include "jit_host_symbols.h"
 #include "util/v128.hpp"
 
 #ifdef ARCH_X64
@@ -3368,6 +3369,9 @@ public:
 		func->setCallingConv(llvm::CallingConv::Win64);
 #endif
 		m_engine->updateGlobalMapping({lame.data(), lame.size()}, reinterpret_cast<uptr>(_func));
+
+		// And where it is for an object loaded without its module being built
+		jit_host_symbol_note(lame.data(), lame.size(), reinterpret_cast<uptr>(_func));
 
 		const auto inst = m_ir->CreateCall(func, {args...});
 		inst->setTailCallKind(llvm::CallInst::TCK_NoTail);

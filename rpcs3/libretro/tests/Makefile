@@ -18,7 +18,7 @@ LRC_DEFS := -DHAVE_SSL -DHAVE_RETROSSL -DHAVE_CRYPTO \
 	-DHAVE_RWAV -DHAVE_RFLAC -DHAVE_RVORBIS -DHAVE_ROPUS -DHAVE_RMP3 -DHAVE_RAAC \
 	-DHAVE_RMP4 -DHAVE_RAC3 -DHAVE_RWMA -DHAVE_RWEBM -DHAVE_RATRAC3 -DHAVE_RATRAC3P
 
-TESTS := test_zstd test_deflate test_rxml test_png_rows test_images test_jpg_rows test_http test_bcn test_tls_duplex test_yaml test_font test_np2 test_rsx_scale test_vpost test_atracx test_vdec test_media test_record test_config_database test_vblank_list test_video_sink test_video_sink_tsan test_vk_images test_vk_images_tsan test_sw_frames test_sw_frames_tsan test_gl_frames test_gl_fallback test_pad_values test_input_poll test_audio_handover test_audio_ring test_audio_ring_tsan test_audio_mix test_object_pack test_object_pack_tsan test_eeprom_table test_eeprom_table_tsan test_lf_u64_map test_lf_u64_map_tsan test_lf_item_pool test_lf_item_pool_tsan test_lf_sig_table test_lf_sig_table_tsan test_lf_hazard test_lf_hazard_tsan test_dma_views test_dma_views_tsan test_guest_page_locks test_guest_page_locks_tsan test_guest_faults test_guest_faults_tsan
+TESTS := test_zstd test_deflate test_rxml test_png_rows test_images test_jpg_rows test_http test_bcn test_tls_duplex test_yaml test_font test_np2 test_rsx_scale test_vpost test_atracx test_vdec test_media test_record test_config_database test_vblank_list test_video_sink test_video_sink_tsan test_vk_images test_vk_images_tsan test_sw_frames test_sw_frames_tsan test_gl_frames test_gl_fallback test_pad_values test_input_poll test_audio_handover test_audio_ring test_audio_ring_tsan test_audio_mix test_object_pack test_object_pack_tsan test_eeprom_table test_eeprom_table_tsan test_lf_u64_map test_lf_u64_map_tsan test_lf_item_pool test_lf_item_pool_tsan test_lf_sig_table test_lf_sig_table_tsan test_jit_host_symbols test_jit_host_symbols_tsan test_lf_hazard test_lf_hazard_tsan test_dma_views test_dma_views_tsan test_guest_page_locks test_guest_page_locks_tsan test_guest_faults test_guest_faults_tsan
 
 test_zstd_LRC := \
 	$(LRC)/encodings/encoding_rzstd.c \
@@ -479,6 +479,20 @@ test_lf_item_pool_tsan: $(LF_ITEM_POOL_DEPS)
 	$(CC) $(CFLAGS) $(TEST_STD) -fsanitize=thread -c -o obj/lf_item_pool_tsan.o ../../../Utilities/lf_item_pool.c
 	$(CC) $(CFLAGS) -std=gnu99 -fsanitize=thread -o $@ obj/test_lf_item_pool_tsan.o obj/lf_item_pool_tsan.o $(LDFLAGS) $(LDLIBS) -lpthread
 
+JIT_HOST_SYMBOLS_DEPS := test_jit_host_symbols.c test_common.h ../../Emu/CPU/jit_host_symbols.c ../../Emu/CPU/jit_host_symbols.h
+
+test_jit_host_symbols: $(JIT_HOST_SYMBOLS_DEPS)
+	@mkdir -p obj
+	$(CC) $(CFLAGS) $(TEST_STD) $(SANITIZE) -c -o obj/test_jit_host_symbols.o test_jit_host_symbols.c
+	$(CC) $(CFLAGS) $(TEST_STD) $(SANITIZE) -c -o obj/jit_host_symbols.o ../../Emu/CPU/jit_host_symbols.c
+	$(CC) $(CFLAGS) -std=gnu99 $(SANITIZE) -o $@ obj/test_jit_host_symbols.o obj/jit_host_symbols.o $(LDFLAGS) $(LDLIBS) -lpthread
+
+test_jit_host_symbols_tsan: $(JIT_HOST_SYMBOLS_DEPS)
+	@mkdir -p obj
+	$(CC) $(CFLAGS) $(TEST_STD) -fsanitize=thread -c -o obj/test_jit_host_symbols_tsan.o test_jit_host_symbols.c
+	$(CC) $(CFLAGS) $(TEST_STD) -fsanitize=thread -c -o obj/jit_host_symbols_tsan.o ../../Emu/CPU/jit_host_symbols.c
+	$(CC) $(CFLAGS) -std=gnu99 -fsanitize=thread -o $@ obj/test_jit_host_symbols_tsan.o obj/jit_host_symbols_tsan.o $(LDFLAGS) $(LDLIBS) -lpthread
+
 LF_SIG_TABLE_DEPS := test_lf_sig_table.c test_common.h ../../../Utilities/lf_sig_table.c ../../../Utilities/lf_sig_table.h
 
 test_lf_sig_table: $(LF_SIG_TABLE_DEPS)
@@ -643,6 +657,8 @@ check: all
 	./test_lf_item_pool_tsan
 	./test_lf_sig_table
 	./test_lf_sig_table_tsan
+	./test_jit_host_symbols
+	./test_jit_host_symbols_tsan
 	./test_lf_hazard
 	./test_lf_hazard_tsan
 	./test_dma_views
@@ -708,6 +724,7 @@ check: all
 	@if awk '/^void spu_int_ctrl_t::set\(/{f=1} f&&/g_mutex/{bad=1} f&&/^}/{exit} END{exit !bad}' ../../Emu/Cell/SPUThread.cpp || ! grep -q "idm::close<lv2_obj, lv2_int_tag>(intrtag)" ../../Emu/Cell/lv2/sys_interrupt.cpp || grep -n "ctrl\.tag = \|int_ctrl\.tag = " ../../Emu/Cell/SPUThread.cpp ../../Emu/Cell/lv2/sys_spu.cpp; then echo "raw SPU interrupts: spu_int_ctrl_t::set takes the lock over all IDs again, a handler is established without letting it finish, or a tag is set without set_tag (CHANGELOG)"; exit 1; else echo "raw SPU interrupts: no ID lock"; fi
 	@if grep -n "reader_lock lock(lv2_obj::g_mutex)" ../../Emu/Cell/lv2/sys_ppu_thread.cpp || awk '/^bool lv2_obj::is_scheduler_ready/{f=1} f&&/g_mutex/{bad=1} f&&/^}/{exit} END{exit !bad}' ../../Emu/Cell/lv2/lv2.cpp; then echo "scheduler: reading a priority, or asking whether the scheduler is ready, takes the scheduler's lock again (CHANGELOG)"; exit 1; else echo "scheduler: readers take no lock"; fi
 	@if grep -rn --include=*.cpp --include=*.h --include=*.hpp "atomic_t<\|atomic_be_t<\|atomic_le_t<\|util/atomic.hpp" $(ATOMIC_T_FREE); then echo "atomic_t: back in a directory that was moved to retro_atomic - new code calls retro_atomic directly (AGENTS.md)"; exit 1; else echo "atomic_t: gone from $(words $(ATOMIC_T_FREE)) directories"; fi
+	@bad=0; for s in $$(grep -oh "g_cfg\.[a-z_]*\.[a-z_0-9]*" ../../Emu/Cell/SPULLVMRecompiler.cpp ../../Emu/Cell/SPUCommonRecompiler.cpp ../../Emu/CPU/CPUTranslator.cpp ../../Emu/CPU/CPUTranslator.h | sort -u); do grep -q "put($$s" ../../Emu/Cell/SPULLVMRecompiler.cpp || { echo "SPU notes: $$s is read by the recompiler and is not part of a note's name (note_name in SPULLVMRecompiler.cpp): an object noted with one value of it would be loaded for another"; bad=1; }; done; if [ $$bad = 1 ]; then exit 1; else echo "SPU notes: named by every setting the recompiler reads"; fi
 	@if grep -n "Passes/PassBuilder.h\|PassBuilder pb\|PassBuilder(" ../../Emu/Cell/PPUThread.cpp ../../Emu/Cell/SPULLVMRecompiler.cpp ../../../Utilities/JITLLVM.cpp; then echo "llvm: PassBuilder is used again - it brings every pass LLVM has into the core; register what a pass needs in jit_register_analyses (CHANGELOG)"; exit 1; else echo "llvm: only the analyses the recompilers use"; fi
 	@# Nor do the mice: no lock in the handler, none taken by those that read them
 	@if grep -n "shared_mutex\|std::mutex\|lock_guard\|scoped_lock" ../../Emu/Io/MouseHandler.h ../../Emu/Io/MouseHandler.cpp ../libretro_mouse_handler.h ../libretro_mouse_handler.cpp || grep -rn "handler\.mutex\|take_pending()" ../../Emu/Cell/Modules/cellMouse.cpp ../../Emu/Cell/Modules/cellGem.cpp ../../Emu/Io/usio.cpp ../../Emu/Io/GunCon3.cpp ../../Emu/Io/TopShotElite.cpp ../../Emu/Io/TopShotFearmaster.cpp ../../Emu/Io/GameTablet.cpp; then echo "mice: the mouse handler's lock is back - a mouse is a record read whole (AGENTS.md)"; exit 1; else echo "mice: no mouse lock"; fi

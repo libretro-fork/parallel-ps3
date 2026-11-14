@@ -8,6 +8,11 @@
 #include "Emu/cache_utils.hpp"
 #include "Emu/IdManager.h"
 #include "Emu/localized_string.h"
+
+// When this file was compiled: part of what an object's note is keyed by
+// (SPULLVMRecompiler.cpp)
+extern const char* const g_spu_recompiler_base_built;
+const char* const g_spu_recompiler_base_built = __DATE__ " " __TIME__;
 #include "Crypto/sha1.h"
 #include "Utilities/StrUtil.h"
 #include "Utilities/JIT.h"

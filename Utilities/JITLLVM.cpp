@@ -197,6 +197,15 @@ static shared_mutex null_mtx;
 
 static std::unordered_map<std::string, u64> null_funcs;
 
+// How many names were given a null function: names an object asked for that
+// nothing placed
+static retro_atomic_int_t null_funcs_made{};
+
+u32 jit_compiler::null_functions()
+{
+	return static_cast<u32>(retro_atomic_load_acquire_int(&null_funcs_made));
+}
+
 static u64 make_null_function(const std::string& name)
 {
 	if (name.starts_with("__0x"))
@@ -220,6 +229,8 @@ static u64 make_null_function(const std::string& name)
 	else
 	{
 		using namespace asmjit;
+
+		retro_atomic_fetch_add_int(&null_funcs_made, 1);
 
 		// Build a "null" function that contains its name
 		const auto func = build_function_asm<void (*)()>("NULL", [&](native_asm& c, auto& args)
@@ -1201,6 +1212,75 @@ bool jit_compiler::check(const std::string& path)
 	}
 
 	return false;
+}
+
+bool jit_compiler::undefined_symbols(const std::string& path, std::vector<std::string>& names)
+{
+	names.clear();
+
+	const auto cache = ObjectCache::load(path);
+
+	if (!cache)
+	{
+		return false;
+	}
+
+	auto object_file = llvm::object::ObjectFile::createObjectFile(*cache);
+
+	if (!object_file)
+	{
+		llvm::consumeError(object_file.takeError());
+		return false;
+	}
+
+	for (const llvm::object::SymbolRef& symbol : (*object_file)->symbols())
+	{
+		auto flags = symbol.getFlags();
+
+		if (!flags)
+		{
+			llvm::consumeError(flags.takeError());
+			return false;
+		}
+
+		if (!(*flags & llvm::object::SymbolRef::SF_Undefined))
+		{
+			continue;
+		}
+
+		auto name = symbol.getName();
+
+		if (!name)
+		{
+			llvm::consumeError(name.takeError());
+			return false;
+		}
+
+		if (!name->empty())
+		{
+			names.emplace_back(name->str());
+		}
+	}
+
+	return true;
+}
+
+bool jit_compiler::note_get(const std::string& dir, std::string_view name, std::string& text)
+{
+	const auto buf = pack_load(pack_for(dir), name);
+
+	if (!buf)
+	{
+		return false;
+	}
+
+	text.assign(buf->getBufferStart(), buf->getBufferSize());
+	return true;
+}
+
+bool jit_compiler::note_put(const std::string& dir, std::string_view name, std::string_view text)
+{
+	return pack_append(pack_for(dir), name, text.data(), text.size());
 }
 
 void jit_compiler::update_global_mapping(const std::string& name, u64 addr)

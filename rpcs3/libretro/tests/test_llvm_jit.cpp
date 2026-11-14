@@ -21,6 +21,9 @@
 #include "Emu/Cell/PPUAnalyser.h"
 #include "Emu/Cell/lv2/sys_sync.h"
 #include "Emu/Cell/SPURecompiler.h"
+#include "Emu/CPU/jit_host_symbols.h"
+
+#include <retro_atomic.h>
 
 #include <time.h> // not pacing: the benchmark's stopwatch
 
@@ -198,6 +201,38 @@ static double spu_functions(const std::string& cache, bool backwards)
 	CHECK(made == count);
 	return b - a;
 }
+
+// The objects in a directory's pack - how many, their bytes and a checksum
+// of them - and how many notes are kept beside them
+static usz pack_objects(const std::string& pack, usz& notes, usz& size, u32& crc)
+{
+	std::vector<u8> image;
+	if (fs::file f{pack, fs::read})
+		image = f.to_vector<u8>();
+	static object_pack_entry entries[4096];
+	usz count = 0;
+	object_pack_scan(image.data(), image.size(), entries, 4096, &count);
+	CHECK(count <= 4096);
+	usz objects = 0;
+	notes = 0;
+	size = 0;
+	crc = 0;
+	for (usz i = 0; i < count && i < 4096; i++)
+	{
+		const std::string_view name(entries[i].name, entries[i].name_len);
+		if (name.ends_with(".key"))
+		{
+			notes++;
+			continue;
+		}
+		objects++;
+		size += entries[i].size;
+		crc = encoding_crc32(crc, image.data() + entries[i].offset, entries[i].size);
+	}
+	return objects;
+}
+
+extern retro_atomic_int_t g_spu_llvm_noted_loads;
 
 // How many objects a directory's pack holds
 static usz pack_records(const std::string& pack)
@@ -378,37 +413,64 @@ int main()
 		const double first = spu_functions(dir, false);
 		jit_compiler::close_object_packs();
 		const usz made = pack_records(pack);
-		CHECK(made == 200);
+		usz notes = 0, object_bytes = 0;
+		u32 object_crc = 0;
+		// Each with its note: what a later boot loads it by, without
+		// building its module (SPULLVMRecompiler.cpp, note_name)
+		CHECK(pack_objects(pack, notes, object_bytes, object_crc) == 200);
+		CHECK(notes == 200 && made == 400);
+		CHECK(jit_host_symbols_ambiguous() == 0);
+		CHECK(retro_atomic_load_acquire_int(&g_spu_llvm_noted_loads) == 0);
+		// The names the compiled objects were left without, if any: an
+		// object loaded by its note is linked to the same places, so no
+		// name is added to them
+		const u32 unplaced = jit_compiler::null_functions();
 
 		// What was compiled, as one number: the same on the same machine
 		// from run to run, and a change of it between two builds says the
 		// emitted code changed (it is for this CPU, so it is not held to a
 		// value here)
-		{
-			std::vector<u8> bytes;
-			CHECK(fs::file(pack).read(bytes, fs::file(pack).size()));
-			std::printf("test_llvm_jit: the 200 SPU objects are %zu bytes, crc32 %08x\n", bytes.size(), encoding_crc32(0, bytes.data(), bytes.size()));
-		}
+		std::printf("test_llvm_jit: the 200 SPU objects are %zu bytes, crc32 %08x\n", object_bytes, object_crc);
 
+		// A later boot: the process knows none of the host functions the
+		// objects call until a module that calls one has been built. The
+		// first function to need each is built and finds its object by its
+		// module, as before the notes; every other is loaded by its note.
+		// Nothing is compiled and nothing is added to the pack.
+		jit_host_symbols_reset();
 		const double second = spu_functions(dir, true);
 		jit_compiler::close_object_packs();
 		CHECK(pack_records(pack) == made);
+		const int noted_cold = retro_atomic_load_acquire_int(&g_spu_llvm_noted_loads);
+		CHECK(noted_cold >= 150 && noted_cold < 200);
+		CHECK(jit_host_symbols_ambiguous() == 0);
+
+		// And with them known, all 200 by their notes
+		const double third = spu_functions(dir, false);
+		jit_compiler::close_object_packs();
+		CHECK(pack_records(pack) == made);
+		CHECK(retro_atomic_load_acquire_int(&g_spu_llvm_noted_loads) == noted_cold + 200);
+		CHECK(jit_compiler::null_functions() == unplaced);
 		// Loading is many times faster than compiling; twice, to leave a
 		// loaded machine room
 		CHECK(second * 2 < first);
 
 		const auto accuracy = g_cfg.core.spu_xfloat_accuracy.get();
 		g_cfg.core.spu_xfloat_accuracy.set(accuracy == xfloat_accuracy::accurate ? xfloat_accuracy::approximate : xfloat_accuracy::accurate);
+		const int noted_before = retro_atomic_load_acquire_int(&g_spu_llvm_noted_loads);
 		spu_functions(dir, false);
 		jit_compiler::close_object_packs();
 		const usz other = pack_records(pack);
 		CHECK(other > made + 100);
+		// No note of the other setting's was gone by
+		CHECK(retro_atomic_load_acquire_int(&g_spu_llvm_noted_loads) == noted_before);
 		spu_functions(dir, false);
 		jit_compiler::close_object_packs();
 		CHECK(pack_records(pack) == other);
+		CHECK(retro_atomic_load_acquire_int(&g_spu_llvm_noted_loads) == noted_before + 200);
 		g_cfg.core.spu_xfloat_accuracy.set(accuracy);
 
-		std::printf("test_llvm_jit: 200 SPU functions compiled in %.0f ms, loaded from their objects in %.0f ms\n", first, second);
+		std::printf("test_llvm_jit: 200 SPU functions compiled in %.0f ms, loaded from their objects in %.0f ms (%d by their notes), all by their notes in %.0f ms\n", first, second, noted_cold, third);
 		// Nor were the objects loaded from the pack
 		CHECK(__jit_debug_descriptor.first_entry == nullptr);
 
