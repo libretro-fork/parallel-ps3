@@ -2026,7 +2026,7 @@ static void ds3_input_to_pad(const u32 gem_num, be_t<u16>& digital_buttons, be_t
 	digital_buttons = 0;
 	analog_t = 0;
 
-	if (!is_input_allowed() || input::g_pads_intercepted) // Let's intercept the PS Move just like a pad
+	if (!is_input_allowed() || retro_atomic_load_acquire_int(&input::g_pads_intercepted)) // Let's intercept the PS Move just like a pad
 	{
 		return;
 	}
@@ -2109,7 +2109,7 @@ static inline void ds3_get_stick_values(u32 gem_num, const std::shared_ptr<Pad>&
 template <typename T>
 static void ds3_pos_to_gem_state(u32 gem_num, gem_config::gem_controller& controller, T& gem_state)
 {
-	if (!gem_state || !is_input_allowed() || input::g_pads_intercepted) // Let's intercept the PS Move just like a pad
+	if (!gem_state || !is_input_allowed() || retro_atomic_load_acquire_int(&input::g_pads_intercepted)) // Let's intercept the PS Move just like a pad
 	{
 		return;
 	}
@@ -2138,7 +2138,7 @@ static void ds3_pos_to_gem_state(u32 gem_num, gem_config::gem_controller& contro
 template <typename T>
 static void ps_move_pos_to_gem_state(u32 gem_num, gem_config::gem_controller& controller, T& gem_state)
 {
-	if (!gem_state || !is_input_allowed() || input::g_pads_intercepted) // Let's intercept the PS Move just like a pad
+	if (!gem_state || !is_input_allowed() || retro_atomic_load_acquire_int(&input::g_pads_intercepted)) // Let's intercept the PS Move just like a pad
 	{
 		return;
 	}
@@ -2521,7 +2521,7 @@ static void get_external_device_input(u32 gem_num, gem_config::gem_controller& c
 {
 	ext = {};
 
-	if (!is_input_allowed() || input::g_pads_intercepted) // Let's intercept the PS Move just like a pad
+	if (!is_input_allowed() || retro_atomic_load_acquire_int(&input::g_pads_intercepted)) // Let's intercept the PS Move just like a pad
 	{
 		return;
 	}
@@ -2569,7 +2569,7 @@ static bool mouse_input_to_pad(u32 mouse_no, be_t<u16>& digital_buttons, be_t<u1
 	digital_buttons = 0;
 	analog_t = 0;
 
-	if (!is_input_allowed() || input::g_pads_intercepted) // Let's intercept the PS Move just like a pad
+	if (!is_input_allowed() || retro_atomic_load_acquire_int(&input::g_pads_intercepted)) // Let's intercept the PS Move just like a pad
 	{
 		return false;
 	}
@@ -2682,7 +2682,7 @@ static bool mouse_input_to_pad(u32 mouse_no, be_t<u16>& digital_buttons, be_t<u1
 template <typename T>
 static void mouse_pos_to_gem_state(u32 mouse_no, gem_config::gem_controller& controller, T& gem_state)
 {
-	if (!gem_state || !is_input_allowed() || input::g_pads_intercepted) // Let's intercept the PS Move just like a pad
+	if (!gem_state || !is_input_allowed() || retro_atomic_load_acquire_int(&input::g_pads_intercepted)) // Let's intercept the PS Move just like a pad
 	{
 		return;
 	}

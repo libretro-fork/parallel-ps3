@@ -26,7 +26,7 @@ namespace rsx
 				true);
 		}
 
-		std::shared_ptr<atomic_t<u32>> show_ppu_compile_notification()
+		std::shared_ptr<retro_atomic_int_t> show_ppu_compile_notification()
 		{
 			if (!s_ppu_loading_icon24)
 			{
@@ -34,7 +34,7 @@ namespace rsx
 				s_ppu_loading_icon24 = std::make_shared<loading_icon24>();
 			}
 
-			std::shared_ptr<atomic_t<u32>> refs = std::make_shared<atomic_t<u32>>(1);
+			std::shared_ptr<retro_atomic_int_t> refs = std::make_shared<retro_atomic_int_t>(1);
 
 			queue_message(
 				localized_string_id::RSX_OVERLAYS_COMPILING_PPU_MODULES,

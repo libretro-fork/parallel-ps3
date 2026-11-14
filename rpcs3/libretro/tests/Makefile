@@ -523,7 +523,7 @@ test_dma_views_tsan: $(DMA_VIEWS_DEPS)
 
 # Directories of the emulator with no atomic_t left: it is being replaced
 # by direct retro_atomic calls, a directory at a time, and none comes back
-ATOMIC_T_FREE := ../../Crypto ../../Loader ../../Emu/Audio
+ATOMIC_T_FREE := ../../Crypto ../../Loader ../../Emu/Audio ../../Emu/Io ../../Input
 
 GUEST_FAULTS_DEPS := test_guest_faults.c ../../Emu/RSX/Common/guest_faults.c ../../Emu/RSX/Common/guest_faults.h
 GUEST_FAULTS_SRC  := ../../Emu/RSX/Common/guest_faults.c $(LRC)/rthreads/retro_waitaddr.c $(LRC)/rthreads/retro_eventcount.c $(LRC)/rthreads/rthreads.c
@@ -707,7 +707,7 @@ check: all
 	@if awk '/^error_code sys_memory_free/{f=1} f&&/g_mutex\}|g_mutex\)/{bad=1} f&&/^}/{exit} END{exit !bad}' ../../Emu/Cell/lv2/sys_memory.cpp; then echo "sys_memory_free: takes the lock over all IDs again (CHANGELOG)"; exit 1; else echo "sys_memory_free: no ID lock"; fi
 	@if awk '/^void spu_int_ctrl_t::set\(/{f=1} f&&/g_mutex/{bad=1} f&&/^}/{exit} END{exit !bad}' ../../Emu/Cell/SPUThread.cpp || ! grep -q "idm::close<lv2_obj, lv2_int_tag>(intrtag)" ../../Emu/Cell/lv2/sys_interrupt.cpp || grep -n "ctrl\.tag = \|int_ctrl\.tag = " ../../Emu/Cell/SPUThread.cpp ../../Emu/Cell/lv2/sys_spu.cpp; then echo "raw SPU interrupts: spu_int_ctrl_t::set takes the lock over all IDs again, a handler is established without letting it finish, or a tag is set without set_tag (CHANGELOG)"; exit 1; else echo "raw SPU interrupts: no ID lock"; fi
 	@if grep -n "reader_lock lock(lv2_obj::g_mutex)" ../../Emu/Cell/lv2/sys_ppu_thread.cpp || awk '/^bool lv2_obj::is_scheduler_ready/{f=1} f&&/g_mutex/{bad=1} f&&/^}/{exit} END{exit !bad}' ../../Emu/Cell/lv2/lv2.cpp; then echo "scheduler: reading a priority, or asking whether the scheduler is ready, takes the scheduler's lock again (CHANGELOG)"; exit 1; else echo "scheduler: readers take no lock"; fi
-	@if grep -rn "atomic_t<\|atomic_be_t<\|atomic_le_t<" $(ATOMIC_T_FREE); then echo "atomic_t: back in a directory that was moved to retro_atomic - new code calls retro_atomic directly (AGENTS.md)"; exit 1; else echo "atomic_t: gone from $(words $(ATOMIC_T_FREE)) directories"; fi
+	@if grep -rn --include=*.cpp --include=*.h --include=*.hpp "atomic_t<\|atomic_be_t<\|atomic_le_t<\|util/atomic.hpp" $(ATOMIC_T_FREE); then echo "atomic_t: back in a directory that was moved to retro_atomic - new code calls retro_atomic directly (AGENTS.md)"; exit 1; else echo "atomic_t: gone from $(words $(ATOMIC_T_FREE)) directories"; fi
 	@if grep -n "Passes/PassBuilder.h\|PassBuilder pb\|PassBuilder(" ../../Emu/Cell/PPUThread.cpp ../../Emu/Cell/SPULLVMRecompiler.cpp ../../../Utilities/JITLLVM.cpp; then echo "llvm: PassBuilder is used again - it brings every pass LLVM has into the core; register what a pass needs in jit_register_analyses (CHANGELOG)"; exit 1; else echo "llvm: only the analyses the recompilers use"; fi
 	@# Nor do the mice: no lock in the handler, none taken by those that read them
 	@if grep -n "shared_mutex\|std::mutex\|lock_guard\|scoped_lock" ../../Emu/Io/MouseHandler.h ../../Emu/Io/MouseHandler.cpp ../libretro_mouse_handler.h ../libretro_mouse_handler.cpp || grep -rn "handler\.mutex\|take_pending()" ../../Emu/Cell/Modules/cellMouse.cpp ../../Emu/Cell/Modules/cellGem.cpp ../../Emu/Io/usio.cpp ../../Emu/Io/GunCon3.cpp ../../Emu/Io/TopShotElite.cpp ../../Emu/Io/TopShotFearmaster.cpp ../../Emu/Io/GameTablet.cpp; then echo "mice: the mouse handler's lock is back - a mouse is a record read whole (AGENTS.md)"; exit 1; else echo "mice: no mouse lock"; fi

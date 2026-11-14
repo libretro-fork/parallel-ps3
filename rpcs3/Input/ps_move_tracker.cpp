@@ -140,8 +140,13 @@ void ps_move_tracker<DiagnosticsEnabled>::init_worker(u32 index)
 		while (thread_ctrl::state() != thread_state::aborting)
 		{
 			// Wait for work
-			m_wake_up_workers[index].wait(0);
-			m_wake_up_workers[index].release(0);
+			while (!retro_atomic_load_acquire_int(&m_wake_up_workers[index]))
+			{
+				const retro_waitaddr_t w{&m_wake_up_workers[index], 0};
+				retro_waitaddr_wait(&w, 1, -1);
+			}
+
+			retro_atomic_store_release_int(&m_wake_up_workers[index], 0);
 
 			if (thread_ctrl::state() == thread_state::aborting)
 			{
@@ -163,13 +168,13 @@ void ps_move_tracker<DiagnosticsEnabled>::init_worker(u32 index)
 			}
 
 			// Notify that all work is done
-			m_workers_finished[index].release(1);
-			m_workers_finished[index].notify_one();
+			retro_atomic_store_release_int(&m_workers_finished[index], 1);
+			retro_waitaddr_notify_one(&m_workers_finished[index]);
 		}
 
 		// Notify one last time that all work is done
-		m_workers_finished[index].release(1);
-		m_workers_finished[index].notify_one();
+		retro_atomic_store_release_int(&m_workers_finished[index], 1);
+		retro_waitaddr_notify_one(&m_workers_finished[index]);
 	});
 }
 
@@ -181,8 +186,8 @@ void ps_move_tracker<DiagnosticsEnabled>::join_worker(u32 index)
 
 	auto& thread = *worker;
 	thread = thread_state::aborting;
-	m_wake_up_workers[index].release(1);
-	m_wake_up_workers[index].notify_one();
+	retro_atomic_store_release_int(&m_wake_up_workers[index], 1);
+	retro_waitaddr_notify_one(&m_wake_up_workers[index]);
 	thread();
 	worker.reset();
 }
@@ -220,19 +225,24 @@ void ps_move_tracker<DiagnosticsEnabled>::process_image()
 	for (u32 index : active_devices)
 	{
 		// Clear old state
-		m_workers_finished[index].release(0);
+		retro_atomic_store_release_int(&m_workers_finished[index], 0);
 
 		// Wake up worker
-		m_wake_up_workers[index].release(1);
-		m_wake_up_workers[index].notify_one();
+		retro_atomic_store_release_int(&m_wake_up_workers[index], 1);
+		retro_waitaddr_notify_one(&m_wake_up_workers[index]);
 	}
 
 	// Wait for worker threads (a couple of seconds so we don't deadlock)
 	for (u32 index : active_devices)
 	{
 		// Wait for worker
-		m_workers_finished[index].wait(0, atomic_wait_timeout{5000000000});
-		m_workers_finished[index].release(0);
+		if (!retro_atomic_load_acquire_int(&m_workers_finished[index]))
+		{
+			const retro_waitaddr_t w{&m_workers_finished[index], 0};
+			retro_waitaddr_wait(&w, 1, 5000000);
+		}
+
+		retro_atomic_store_release_int(&m_workers_finished[index], 0);
 	}
 }
 

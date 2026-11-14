@@ -1,6 +1,6 @@
 #pragma once
 
-#include "util/atomic.hpp"
+#include <retro_atomic.h>
 #include "util/types.hpp"
 
 #include <mutex>
@@ -30,11 +30,15 @@ public:
 	virtual u64 frame_number() const = 0; // Convenience function to check if there's a new frame.
 	virtual camera_handler_state get_image(u8* buf, u64 size, u32& width, u32& height, u64& frame_number, u64& bytes_read) = 0;
 
-	camera_handler_state get_state() const { return m_state.load(); }
-	void set_state(camera_handler_state state) { m_state = m_state_expected = state; }
+	camera_handler_state get_state() const { return static_cast<camera_handler_state>(retro_atomic_load_acquire_int(&m_state)); }
+	void set_state(camera_handler_state state)
+	{
+		retro_atomic_store_release_int(&m_state_expected, static_cast<int>(state));
+		retro_atomic_store_release_int(&m_state, static_cast<int>(state));
+	}
 
-	camera_handler_state get_expected_state() const { return m_state_expected.load(); }
-	void set_expected_state(camera_handler_state state) { m_state_expected = state; }
+	camera_handler_state get_expected_state() const { return static_cast<camera_handler_state>(retro_atomic_load_acquire_int(&m_state_expected)); }
+	void set_expected_state(camera_handler_state state) { retro_atomic_store_release_int(&m_state_expected, static_cast<int>(state)); }
 
 	bool mirrored() const { return m_mirrored; }
 	s32 format() const { return m_format; }
@@ -53,6 +57,6 @@ protected:
 	u32 m_frame_rate = 30;
 
 private:
-	atomic_t<camera_handler_state> m_state = camera_handler_state::closed;
-	atomic_t<camera_handler_state> m_state_expected = camera_handler_state::closed;
+	mutable retro_atomic_int_t m_state{static_cast<int>(camera_handler_state::closed)};
+	mutable retro_atomic_int_t m_state_expected{static_cast<int>(camera_handler_state::closed)};
 };

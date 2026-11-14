@@ -186,7 +186,7 @@ void progress_dialog_server::operator()()
 		const u64 start_time = get_system_time();
 		u64 wait_no_update_count = 0;
 
-		std::shared_ptr<atomic_t<u32>> ppu_cue_refs;
+		std::shared_ptr<retro_atomic_int_t> ppu_cue_refs;
 
 		std::vector<std::pair<u64, u64>> time_left_queue(1024);
 		usz time_left_queue_idx = 0;
@@ -234,7 +234,7 @@ void progress_dialog_server::operator()()
 						// Only show compile notification if we estimate at least 100ms
 						if (remaining_usec >= 100'000ULL)
 						{
-							if (!ppu_cue_refs || !*ppu_cue_refs)
+							if (!ppu_cue_refs || !retro_atomic_load_acquire_int(ppu_cue_refs.get()))
 							{
 								ppu_cue_refs = rsx::overlays::show_ppu_compile_notification();
 							}
@@ -248,7 +248,7 @@ void progress_dialog_server::operator()()
 					{
 						if (ppu_cue_refs)
 						{
-							*ppu_cue_refs = 0;
+							retro_atomic_store_release_int(ppu_cue_refs.get(), 0);
 							ppu_cue_refs.reset();
 
 							rsx::overlays::refresh_message_queue();
@@ -392,7 +392,7 @@ void progress_dialog_server::operator()()
 
 		if (ppu_cue_refs)
 		{
-			*ppu_cue_refs = 0;
+			retro_atomic_store_release_int(ppu_cue_refs.get(), 0);
 		}
 
 		if (g_system_progress_stopping || thread_ctrl::state() == thread_state::aborting)

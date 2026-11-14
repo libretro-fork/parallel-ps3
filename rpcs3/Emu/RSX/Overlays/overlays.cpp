@@ -181,7 +181,7 @@ namespace rsx
 
 				// Get keyboard input if supported by the overlay and activated by the game.
 				// Ignored if a keyboard pad handler is active in order to prevent double input.
-				if (m_keyboard_input_enabled && !m_keyboard_pad_handler_active && input::g_keyboards_intercepted)
+				if (m_keyboard_input_enabled && !m_keyboard_pad_handler_active && retro_atomic_load_acquire_int(&input::g_keyboards_intercepted))
 				{
 					auto& kb_handler = g_fxo->get<KeyboardHandlerBase>();
 					std::lock_guard<std::mutex> lock(kb_handler.m_mutex);
@@ -223,7 +223,7 @@ namespace rsx
 				const auto handler = pad::get_pad_thread();
 				const PadInfo& rinfo = handler->GetInfo();
 
-				const bool ignore_gamepad_input = (!rinfo.now_connect() || !input::g_pads_intercepted);
+				const bool ignore_gamepad_input = (!rinfo.now_connect() || !retro_atomic_load_acquire_int(&input::g_pads_intercepted));
 
 				const pad_button cross_button  = g_cfg.sys.enter_button_assignment == enter_button_assign::circle ? pad_button::circle : pad_button::cross;
 				const pad_button circle_button = g_cfg.sys.enter_button_assignment == enter_button_assign::circle ? pad_button::cross : pad_button::circle;

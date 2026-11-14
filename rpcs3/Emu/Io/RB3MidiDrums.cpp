@@ -525,7 +525,7 @@ void usb_device_rb3_midi_drums::interrupt_transfer(u32 buf_size, u8* buf, u32 /*
 	}
 	memcpy(buf, bytes.data(), bytes.size());
 
-	if (g_cfg_rb3drums.reload_requested)
+	if (retro_atomic_load_acquire_int(&g_cfg_rb3drums.reload_requested))
 	{
 		m_id_to_note_mapping = midi::create_id_to_note_mapping();
 		combo.reload_definitions();

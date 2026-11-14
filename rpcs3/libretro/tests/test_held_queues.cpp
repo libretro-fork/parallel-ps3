@@ -320,10 +320,10 @@ int main()
 		// No font to find here: the text is measured with none
 		g_emu_callbacks.get_font_dirs = []() -> std::vector<std::string> { return {}; };
 
-		typedef std::shared_ptr<atomic_t<u32>> counter;
+		typedef std::shared_ptr<retro_atomic_int_t> counter;
 		std::vector<counter> refs;
 		for (u32 i = 0; i < 6; i++)
-			refs.emplace_back(std::make_shared<atomic_t<u32>>(1));
+			refs.emplace_back(std::make_shared<retro_atomic_int_t>(1));
 
 		{
 			rsx::overlays::message overlay;
@@ -344,18 +344,18 @@ int main()
 
 			// One on screen is done with (its counter at 0): it goes, the
 			// rest stay, and its text can be queued again
-			*refs[1] = 0;
+			retro_atomic_store_release_int(refs[1].get(), 0);
 			overlay.update(0);
 			CHECK(refs[1].use_count() == 1);
 			CHECK(refs[0].use_count() == 2 && refs[2].use_count() == 2 && refs[3].use_count() == 2 && refs[4].use_count() == 2);
-			*refs[5] = 1;
+			retro_atomic_store_release_int(refs[5].get(), 1);
 			overlay.queue_message(std::string("message 1"), umax, refs[5]);
 			CHECK(refs[5].use_count() == 2);
 
 			// All done with: each update lets the visible ones go and
 			// brings the waiting ones on, until none is left
 			for (auto& ref : refs)
-				*ref = 0;
+				retro_atomic_store_release_int(ref.get(), 0);
 			for (u32 i = 0; i < 4; i++)
 				overlay.update(0);
 			usz alive = 0;
@@ -366,7 +366,7 @@ int main()
 			// Left queued and on screen when the overlay goes: freed with it
 			for (u32 i = 0; i < 5; i++)
 			{
-				*refs[i] = 1;
+				retro_atomic_store_release_int(refs[i].get(), 1);
 				overlay.queue_message(fmt::format("last %u", i), umax, refs[i]);
 			}
 			overlay.update(0);

@@ -17,7 +17,7 @@ namespace rsx
 		}
 
 		template <typename T>
-		message_item::message_item(const T& msg_id, u64 expiration, std::shared_ptr<atomic_t<u32>> refs, std::shared_ptr<overlay_element> icon)
+		message_item::message_item(const T& msg_id, u64 expiration, std::shared_ptr<retro_atomic_int_t> refs, std::shared_ptr<overlay_element> icon)
 		{
 			if constexpr (std::is_same_v<T, localized_string_id>)
 			{
@@ -61,9 +61,9 @@ namespace rsx
 				set_size(m_text.w + m_margin + m_margin, m_text.h + m_margin + m_margin);
 			}
 		}
-		template message_item::message_item(const std::string& msg_id, u64, std::shared_ptr<atomic_t<u32>>, std::shared_ptr<overlay_element>);
-		template message_item::message_item(const localized_string_id& msg_id, u64, std::shared_ptr<atomic_t<u32>>, std::shared_ptr<overlay_element>);
-		template message_item::message_item(const localized_string& msg_id, u64, std::shared_ptr<atomic_t<u32>>, std::shared_ptr<overlay_element>);
+		template message_item::message_item(const std::string& msg_id, u64, std::shared_ptr<retro_atomic_int_t>, std::shared_ptr<overlay_element>);
+		template message_item::message_item(const localized_string_id& msg_id, u64, std::shared_ptr<retro_atomic_int_t>, std::shared_ptr<overlay_element>);
+		template message_item::message_item(const localized_string& msg_id, u64, std::shared_ptr<retro_atomic_int_t>, std::shared_ptr<overlay_element>);
 
 		void message_item::reset_expiration()
 		{
@@ -73,7 +73,7 @@ namespace rsx
 		u64 message_item::get_expiration() const
 		{
 			// If reference counting is enabled and reached 0 consider it expired
-			return m_refs && *m_refs == 0 ? 0 : m_expiration_time;
+			return m_refs && retro_atomic_load_acquire_int(m_refs.get()) == 0 ? 0 : m_expiration_time;
 		}
 
 		void message_item::ensure_expired()
@@ -81,7 +81,7 @@ namespace rsx
 			// If reference counting is enabled and reached 0 consider it expired
 			if (m_refs)
 			{
-				*m_refs = 0;
+				retro_atomic_store_release_int(m_refs.get(), 0);
 			}
 		}
 

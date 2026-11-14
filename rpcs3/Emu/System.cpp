@@ -3129,7 +3129,7 @@ bool Emulator::Pause(bool freeze_emulation, bool show_resume_message)
 			for (auto& ref : m_pause_msgs_refs)
 			{
 				// Delete the message queued on pause
-				*ref = 0;
+				retro_atomic_store_release_int(ref.get(), 0);
 			}
 
 			m_pause_msgs_refs.clear();
@@ -3170,7 +3170,7 @@ bool Emulator::Pause(bool freeze_emulation, bool show_resume_message)
 			return;
 		}
 
-		auto msg_ref = std::make_shared<atomic_t<u32>>(1);
+		auto msg_ref = std::make_shared<retro_atomic_int_t>(1);
 
 		// No timeout
 		rsx::overlays::queue_message(status == system_state::paused ? localized_string_id::EMULATION_PAUSED_RESUME_WITH_START : localized_string_id::EMULATION_FROZEN, umax, msg_ref);
@@ -3178,14 +3178,14 @@ bool Emulator::Pause(bool freeze_emulation, bool show_resume_message)
 
 		auto refresh_l = [this, msg_ref, status]()
 		{
-			while (*msg_ref && GetStatus(false) == status)
+			while (retro_atomic_load_acquire_int(msg_ref.get()) && GetStatus(false) == status)
 			{
 				// Refresh Native UI
 				rsx::set_native_ui_flip();
 				thread_ctrl::wait_for(33'000);
 			}
 
-			msg_ref->release(0);
+			retro_atomic_store_release_int(msg_ref.get(), 0);
 		};
 
 		struct thread_t
@@ -3307,7 +3307,7 @@ void Emulator::Resume()
 		for (auto& ref : m_pause_msgs_refs)
 		{
 			// Delete the message queued on pause
-			*ref = 0;
+			retro_atomic_store_release_int(ref.get(), 0);
 		}
 
 		m_pause_msgs_refs.clear();

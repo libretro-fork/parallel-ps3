@@ -2,6 +2,8 @@
 
 #include "util/types.hpp"
 #include "util/atomic.hpp"
+
+#include <retro_atomic.h>
 #include "util/shared_ptr.hpp"
 #include "Utilities/bit_set.h"
 #include "config_mode.h"
@@ -138,7 +140,7 @@ class Emulator final
 	bool m_state_inspection_savestate = false;
 
 
-	std::vector<std::shared_ptr<atomic_t<u32>>> m_pause_msgs_refs;
+	std::vector<std::shared_ptr<retro_atomic_int_t>> m_pause_msgs_refs;
 
 	std::vector<std::function<void()>> m_postponed_init_code;
 

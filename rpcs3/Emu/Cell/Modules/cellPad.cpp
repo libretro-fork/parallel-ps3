@@ -97,7 +97,7 @@ pad_info::pad_info(utils::serial& ar)
 	const auto port_setting = ar.pop<std::array<u32, CELL_PAD_MAX_PORT_NUM>>();
 	const auto reported_info = ar.pop<std::array<pad_data_internal, CELL_PAD_MAX_PORT_NUM>>();
 
-	if (const auto handler = pad::g_pad_thread.load())
+	if (const auto handler = pad::get_pad_thread(true))
 	{
 		for (u32 i = 0; i < CELL_PAD_MAX_PORT_NUM; i++)
 		{
@@ -127,7 +127,7 @@ void pad_info::save(utils::serial& ar)
 	std::array<u32, CELL_PAD_MAX_PORT_NUM> port_setting{};
 	std::array<pad_data_internal, CELL_PAD_MAX_PORT_NUM> reported_info{};
 
-	if (const auto handler = pad::g_pad_thread.load())
+	if (const auto handler = pad::get_pad_thread(true))
 	{
 		for (u32 i = 0; i < CELL_PAD_MAX_PORT_NUM; i++)
 		{

@@ -4,6 +4,7 @@
 #include "overlay_manager.h"
 
 #include <queues/retro_deque.h>
+#include <retro_atomic.h>
 
 namespace rsx
 {
@@ -21,7 +22,7 @@ namespace rsx
 		{
 		public:
 			template <typename T>
-			message_item(const T& msg_id, u64 expiration, std::shared_ptr<atomic_t<u32>> refs, std::shared_ptr<overlay_element> icon = {});
+			message_item(const T& msg_id, u64 expiration, std::shared_ptr<retro_atomic_int_t> refs, std::shared_ptr<overlay_element> icon = {});
 			void update(usz index, u64 timestamp_us, s16 x_offset, s16 y_offset);
 			void set_pos(s16 _x, s16 _y) override;
 
@@ -44,7 +45,7 @@ namespace rsx
 
 			u64 m_expiration_time = 0;
 			u64 m_visible_duration = 0;
-			std::shared_ptr<atomic_t<u32>> m_refs;
+			std::shared_ptr<retro_atomic_int_t> m_refs;
 			bool m_processed = false;
 			usz m_cur_pos = umax;
 			static constexpr u16 m_margin = 6;
@@ -66,7 +67,7 @@ namespace rsx
 			void queue_message(
 				T msg_id,
 				u64 expiration,
-				std::shared_ptr<atomic_t<u32>> refs,
+				std::shared_ptr<retro_atomic_int_t> refs,
 				message_pin_location location = message_pin_location::top_left,
 				std::shared_ptr<overlay_element> icon = {},
 				bool allow_refresh = false,
@@ -148,7 +149,7 @@ namespace rsx
 		void queue_message(
 			T msg_id,
 			u64 expiration = 5'000'000,
-			std::shared_ptr<atomic_t<u32>> refs = {},
+			std::shared_ptr<retro_atomic_int_t> refs = {},
 			message_pin_location location = message_pin_location::top_left,
 			std::shared_ptr<overlay_element> icon = {},
 			bool allow_refresh = false,

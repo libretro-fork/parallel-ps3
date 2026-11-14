@@ -26,18 +26,23 @@ void fmt_class_string<input::active_mouse_and_keyboard>::format(std::string& out
 
 namespace input
 {
-	atomic_t<active_mouse_and_keyboard> g_active_mouse_and_keyboard{active_mouse_and_keyboard::emulated};
-	atomic_t<bool> g_pads_intercepted{false};
-	atomic_t<bool> g_keyboards_intercepted{false};
-	atomic_t<bool> g_mice_intercepted{false};
+	retro_atomic_int_t g_active_mouse_and_keyboard{static_cast<int>(active_mouse_and_keyboard::emulated)};
+	retro_atomic_int_t g_pads_intercepted{};
+	retro_atomic_int_t g_keyboards_intercepted{};
+	retro_atomic_int_t g_mice_intercepted{};
+
+	static active_mouse_and_keyboard active_device()
+	{
+		return static_cast<active_mouse_and_keyboard>(retro_atomic_load_acquire_int(&g_active_mouse_and_keyboard));
+	}
 
 	void SetIntercepted(bool pads_intercepted, bool keyboards_intercepted, bool mice_intercepted, const char* func)
 	{
 		input_log.notice("SetIntercepted: pads=%d, keyboards=%d, mice=%d, src=%s)", pads_intercepted, keyboards_intercepted, mice_intercepted, func);
 
-		g_pads_intercepted = pads_intercepted;
-		g_keyboards_intercepted = keyboards_intercepted;
-		g_mice_intercepted = mice_intercepted;
+		retro_atomic_store_release_int(&g_pads_intercepted, pads_intercepted);
+		retro_atomic_store_release_int(&g_keyboards_intercepted, keyboards_intercepted);
+		retro_atomic_store_release_int(&g_mice_intercepted, mice_intercepted);
 
 		pad::SetIntercepted(pads_intercepted);
 
@@ -62,7 +67,7 @@ namespace input
 		if (!g_cfg.misc.show_mouse_and_keyboard_toggle_hint)
 			return;
 
-		const localized_string_id id = g_active_mouse_and_keyboard == active_mouse_and_keyboard::emulated
+		const localized_string_id id = active_device() == active_mouse_and_keyboard::emulated
 			? localized_string_id::RSX_OVERLAYS_MOUSE_AND_KEYBOARD_EMULATED
 			: localized_string_id::RSX_OVERLAYS_MOUSE_AND_KEYBOARD_PAD;
 		rsx::overlays::queue_message(get_localized_string(id), 3'000'000);
@@ -73,17 +78,18 @@ namespace input
 		// Always log
 		input_log.notice("set_mouse_and_keyboard: device=%s", device);
 
-		if (g_active_mouse_and_keyboard != device)
+		if (active_device() != device)
 		{
-			g_active_mouse_and_keyboard = device;
+			retro_atomic_store_release_int(&g_active_mouse_and_keyboard, static_cast<int>(device));
 			show_mouse_and_keyboard_overlay();
 		}
 	}
 
 	void toggle_mouse_and_keyboard()
 	{
-		g_active_mouse_and_keyboard = g_active_mouse_and_keyboard == active_mouse_and_keyboard::emulated ? active_mouse_and_keyboard::pad : active_mouse_and_keyboard::emulated;
-		input_log.notice("toggle_mouse_and_keyboard: device=%s", g_active_mouse_and_keyboard.load());
+		const active_mouse_and_keyboard device = active_device() == active_mouse_and_keyboard::emulated ? active_mouse_and_keyboard::pad : active_mouse_and_keyboard::emulated;
+		retro_atomic_store_release_int(&g_active_mouse_and_keyboard, static_cast<int>(device));
+		input_log.notice("toggle_mouse_and_keyboard: device=%s", device);
 		show_mouse_and_keyboard_overlay();
 	}
 }

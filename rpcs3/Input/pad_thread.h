@@ -1,7 +1,7 @@
 #pragma once
 
 #include "util/types.hpp"
-#include "util/atomic.hpp"
+#include <retro_atomic.h>
 #include "Emu/Io/pad_types.h"
 #include "Emu/Io/pad_config.h"
 #include "Emu/Io/pad_config_types.h"
@@ -78,37 +78,34 @@ private:
 	u64 m_track_start_press_begin_timestamp = 0;
 	bool m_resume_emulation_flag = false;
 	bool m_ps_button_pressed = false;
-	atomic_t<bool> m_home_menu_open = false;
+	retro_atomic_int_t m_home_menu_open{};
 };
 
 namespace pad
 {
-	extern atomic_t<pad_thread*> g_pad_thread;
+	extern retro_atomic_ptr_t g_pad_thread; // a pad_thread*
 	extern std::string g_title_id;
-	extern atomic_t<bool> g_enabled;
-	extern atomic_t<bool> g_reset;
-	extern atomic_t<bool> g_started;
-	extern atomic_t<bool> g_home_menu_requested;
+	extern retro_atomic_int_t g_enabled;
+	extern retro_atomic_int_t g_reset;
+	extern retro_atomic_int_t g_started;
+	extern retro_atomic_int_t g_home_menu_requested;
 
 	static inline class pad_thread* get_pad_thread(bool relaxed = false)
 	{
-		if (relaxed)
-		{
-			return g_pad_thread.observe();
-		}
+		const auto handler = static_cast<pad_thread*>(retro_atomic_load_acquire_ptr(&g_pad_thread));
 
-		return ensure(g_pad_thread.load());
+		return relaxed ? handler : ensure(handler);
 	}
 
 	static inline void set_enabled(bool enabled)
 	{
-		g_enabled = enabled;
+		retro_atomic_store_release_int(&g_enabled, enabled);
 	}
 
 	static inline void reset(std::string_view title_id)
 	{
 		g_title_id = title_id;
-		g_reset = true;
+		retro_atomic_store_release_int(&g_reset, 1);
 	}
 
 	static inline void SetIntercepted(bool intercepted)

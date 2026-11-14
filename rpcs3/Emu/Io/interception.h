@@ -1,6 +1,8 @@
 #pragma once
 
-#include "util/atomic.hpp"
+#include "util/types.hpp"
+
+#include <retro_atomic.h>
 
 namespace input
 {
@@ -9,11 +11,12 @@ namespace input
 		pad,
 		emulated
 	};
-	extern atomic_t<active_mouse_and_keyboard> g_active_mouse_and_keyboard;
+	// An active_mouse_and_keyboard
+	extern retro_atomic_int_t g_active_mouse_and_keyboard;
 
-	extern atomic_t<bool> g_pads_intercepted;
-	extern atomic_t<bool> g_keyboards_intercepted;
-	extern atomic_t<bool> g_mice_intercepted;
+	extern retro_atomic_int_t g_pads_intercepted;
+	extern retro_atomic_int_t g_keyboards_intercepted;
+	extern retro_atomic_int_t g_mice_intercepted;
 
 	void SetIntercepted(bool pads_intercepted, bool keyboards_intercepted, bool mice_intercepted, const char* func = __builtin_FUNCTION());
 	void SetIntercepted(bool all_intercepted, const char* func = __builtin_FUNCTION());

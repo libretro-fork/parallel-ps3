@@ -2,6 +2,9 @@
 
 #include "Emu/Cell/Modules/cellGem.h"
 
+#include <retro_atomic.h>
+#include <rthreads/retro_waitaddr.h>
+
 #ifdef HAVE_OPENCV
 	constexpr bool g_ps_move_tracking_supported = true;
 #else
@@ -105,6 +108,7 @@ private:
 	std::array<ps_move_config, CELL_GEM_MAX_NUM> m_config{};
 
 	std::array<std::unique_ptr<named_thread<std::function<void()>>>, CELL_GEM_MAX_NUM> m_workers{};
-	std::array<atomic_t<u32>, CELL_GEM_MAX_NUM> m_wake_up_workers{};
-	std::array<atomic_t<u32>, CELL_GEM_MAX_NUM> m_workers_finished{};
+	// Words waited on with retro_waitaddr
+	std::array<retro_atomic_int_t, CELL_GEM_MAX_NUM> m_wake_up_workers{};
+	std::array<retro_atomic_int_t, CELL_GEM_MAX_NUM> m_workers_finished{};
 };

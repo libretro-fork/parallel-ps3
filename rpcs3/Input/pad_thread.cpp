@@ -14,7 +14,6 @@
 #include "Emu/Cell/Modules/cellGem.h"
 #include "Emu/Cell/timers.hpp"
 #include "Utilities/Thread.h"
-#include "util/atomic.hpp"
 
 LOG_CHANNEL(sys_log, "SYS");
 
@@ -24,12 +23,12 @@ extern std::string g_input_config_override;
 
 namespace pad
 {
-	atomic_t<pad_thread*> g_pad_thread = nullptr;
+	retro_atomic_ptr_t g_pad_thread{};
 	std::string g_title_id;
-	atomic_t<bool> g_started{false};
-	atomic_t<bool> g_reset{false};
-	atomic_t<bool> g_enabled{true};
-	atomic_t<bool> g_home_menu_requested{false};
+	retro_atomic_int_t g_started{};
+	retro_atomic_int_t g_reset{};
+	retro_atomic_int_t g_enabled{1};
+	retro_atomic_int_t g_home_menu_requested{};
 }
 
 namespace rsx
@@ -52,13 +51,13 @@ pad_thread::pad_thread(void* curthread, void* curwindow, std::string_view title_
 {
 	retro_atomic_int_init(&num_ldd_pad, 0);
 	pad::g_title_id = title_id;
-	pad::g_pad_thread = this;
-	pad::g_started = false;
+	retro_atomic_store_release_int(&pad::g_started, 0);
+	retro_atomic_store_release_ptr(&pad::g_pad_thread, this);
 }
 
 pad_thread::~pad_thread()
 {
-	pad::g_pad_thread = nullptr;
+	retro_atomic_store_release_ptr(&pad::g_pad_thread, nullptr);
 }
 
 void pad_thread::Init()
@@ -477,12 +476,12 @@ void pad_thread::operator()()
 
 	const bool is_vsh = Emu.IsVsh();
 
-	pad::g_reset = false;
-	pad::g_started = true;
+	retro_atomic_store_release_int(&pad::g_reset, 0);
+	retro_atomic_store_release_int(&pad::g_started, 1);
 
 	bool mode_changed = true;
 
-	atomic_t<pad_handler_mode> pad_mode{g_cfg.io.pad_mode.get()};
+	pad_handler_mode pad_mode{g_cfg.io.pad_mode.get()};
 	std::vector<std::unique_ptr<named_thread<std::function<void()>>>> threads;
 
 	const auto stop_threads = [&threads]()
@@ -539,7 +538,7 @@ void pad_thread::operator()()
 			{
 				while (thread_ctrl::state() != thread_state::aborting)
 				{
-					if (!pad::g_enabled || !is_input_allowed())
+					if (!retro_atomic_load_acquire_int(&pad::g_enabled) || !is_input_allowed())
 					{
 						thread_ctrl::wait_for(30'000);
 						continue;
@@ -573,7 +572,7 @@ void pad_thread::operator()()
 			{
 				while (thread_ctrl::state() != thread_state::aborting)
 				{
-					if (!pad::g_enabled || !is_input_allowed())
+					if (!retro_atomic_load_acquire_int(&pad::g_enabled) || !is_input_allowed())
 					{
 						thread_ctrl::wait_for(30'000);
 						continue;
@@ -598,7 +597,7 @@ void pad_thread::operator()()
 
 	while (thread_ctrl::state() != thread_state::aborting)
 	{
-		if (!pad::g_enabled || !is_input_allowed())
+		if (!retro_atomic_load_acquire_int(&pad::g_enabled) || !is_input_allowed())
 		{
 			m_resume_emulation_flag = false;
 			m_mask_start_press_to_resume = 0;
@@ -607,9 +606,9 @@ void pad_thread::operator()()
 		}
 
 		// Update variables
-		const bool needs_reset = pad::g_reset && pad::g_reset.exchange(false);
+		const bool needs_reset = retro_atomic_load_acquire_int(&pad::g_reset) && retro_atomic_exchange_int(&pad::g_reset, 0);
 		const pad_handler_mode new_pad_mode = g_cfg.io.pad_mode.get();
-		mode_changed |= new_pad_mode != pad_mode.exchange(new_pad_mode);
+		mode_changed |= new_pad_mode != std::exchange(pad_mode, new_pad_mode);
 
 		// Reset pad handlers if necessary
 		if (needs_reset || mode_changed)
@@ -624,7 +623,7 @@ void pad_thread::operator()()
 			}
 			else
 			{
-				input_log.success("The pad mode was changed to %s", pad_mode.load());
+				input_log.success("The pad mode was changed to %s", pad_mode);
 			}
 
 			start_threads();
@@ -660,7 +659,7 @@ void pad_thread::operator()()
 		update_ignore_input();
 
 		// Handle home menu if requested
-		if (!is_vsh && !m_home_menu_open && Emu.IsRunning())
+		if (!is_vsh && !retro_atomic_load_acquire_int(&m_home_menu_open) && Emu.IsRunning())
 		{
 			bool ps_button_pressed = false;
 
@@ -696,7 +695,7 @@ void pad_thread::operator()()
 			}
 
 			// Make sure we call this function only once per button press
-			if ((ps_button_pressed && !m_ps_button_pressed) || pad::g_home_menu_requested.exchange(false))
+			if ((ps_button_pressed && !m_ps_button_pressed) || retro_atomic_exchange_int(&pad::g_home_menu_requested, 0))
 			{
 				open_home_menu();
 			}
@@ -705,7 +704,7 @@ void pad_thread::operator()()
 		}
 
 		// Handle paused emulation (if triggered by home menu).
-		if (m_home_menu_open && g_cfg.misc.pause_during_home_menu)
+		if (retro_atomic_load_acquire_int(&m_home_menu_open) && g_cfg.misc.pause_during_home_menu)
 		{
 			// Reset resume control if the home menu is open
 			m_resume_emulation_flag = false;
@@ -767,7 +766,7 @@ void pad_thread::operator()()
 
 					sys_log.success("Resuming emulation using the START button in a few seconds...");
 
-					auto msg_ref = std::make_shared<atomic_t<u32>>(1);
+					auto msg_ref = std::make_shared<retro_atomic_int_t>(1);
 					rsx::overlays::queue_message(localized_string_id::EMULATION_RESUMING, 2'000'000, msg_ref);
 
 					m_resume_emulation_flag = true;
@@ -778,7 +777,7 @@ void pad_thread::operator()()
 						{
 							// Abort if emulation has been resumed by other means
 							m_resume_emulation_flag = false;
-							msg_ref->release(0);
+							retro_atomic_store_release_int(msg_ref.get(), 0);
 							break;
 						}
 
@@ -994,14 +993,14 @@ void pad_thread::open_home_menu()
 
 	if (auto manager = g_fxo->try_get<rsx::overlays::display_manager>())
 	{
-		if (m_home_menu_open.exchange(true))
+		if (retro_atomic_exchange_int(&m_home_menu_open, 1))
 		{
 			return;
 		}
 
 		if (!send_open_home_menu_cmds())
 		{
-			m_home_menu_open = false;
+			retro_atomic_store_release_int(&m_home_menu_open, 0);
 			return;
 		}
 
@@ -1011,7 +1010,7 @@ void pad_thread::open_home_menu()
 		{
 			input_log.notice("closing home menu with status %d", status);
 
-			m_home_menu_open = false;
+			retro_atomic_store_release_int(&m_home_menu_open, 0);
 
 			send_close_home_menu_cmds();
 		});

@@ -37,8 +37,6 @@ void mouse_config::save()
 		file.file.write(to_string());
 		file.commit();
 	}
-
-	reload_requested = true;
 }
 
 cfg::string& mouse_config::get_button(int code)

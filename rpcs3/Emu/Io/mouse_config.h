@@ -18,8 +18,6 @@ struct mouse_config final : cfg::node
 	cfg::string mouse_button_7{ this, "Button 7", "", true };
 	cfg::string mouse_button_8{ this, "Button 8", "", true };
 
-	atomic_t<bool> reload_requested = true;
-
 	bool exist() const;
 	bool load();
 	void save();

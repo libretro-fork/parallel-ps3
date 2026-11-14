@@ -1,7 +1,7 @@
 #pragma once
 
 #include "util/types.hpp"
-#include "util/atomic.hpp"
+#include <retro_atomic.h>
 
 class music_handler_base
 {
@@ -23,7 +23,7 @@ public:
 
 	void set_state(u32 state, bool automatic = false)
 	{
-		const bool changed = m_state.exchange(state) != state;
+		const bool changed = static_cast<u32>(retro_atomic_exchange_int(&m_state, static_cast<int>(state))) != state;
 
 		if (m_event_status_callback && (changed || !automatic))
 		{
@@ -33,7 +33,7 @@ public:
 
 	u32 get_state() const
 	{
-		return m_state;
+		return static_cast<u32>(retro_atomic_load_acquire_int(&m_state));
 	}
 
 	void set_event_status_callback(std::function<void(u32)> status_callback)
@@ -47,7 +47,7 @@ public:
 	}
 
 private:
-	atomic_t<u32> m_state{0};
+	mutable retro_atomic_int_t m_state{};
 	std::function<void(u32)> m_event_status_callback;
 
 protected:

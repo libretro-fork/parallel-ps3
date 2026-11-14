@@ -35,5 +35,5 @@ void cfg_rb3drums::save()
 		cfg_log.error("Failed to save rb3drums config to '%s' (error=%s)", path, fs::g_tls_error);
 	}
 
-	reload_requested = true;
+	retro_atomic_store_release_int(&reload_requested, 1);
 }

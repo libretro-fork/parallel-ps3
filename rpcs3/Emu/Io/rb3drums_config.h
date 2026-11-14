@@ -2,6 +2,8 @@
 
 #include "Utilities/Config.h"
 
+#include <retro_atomic.h>
+
 struct cfg_rb3drums final : cfg::node
 {
 	cfg_rb3drums();
@@ -23,7 +25,7 @@ struct cfg_rb3drums final : cfg::node
 
 	const std::string path;
 
-	atomic_t<bool> reload_requested = false;
+	retro_atomic_int_t reload_requested{};
 };
 
 extern cfg_rb3drums g_cfg_rb3drums;
