@@ -223,6 +223,28 @@ int main()
 		const move_handler was = g_cfg.io.move;
 		g_cfg.io.move.set(move_handler::real); // the hues are only looked at with a real PS Move
 
+		std::array<u32, 360> hues{};
+		std::array<ps_move_info, CELL_GEM_MAX_NUM> info{};
+		const auto publish = [&](u32 n)
+		{
+			for (u32 gem_num = 0; gem_num < CELL_GEM_MAX_NUM; gem_num++)
+			{
+				info[gem_num].valid = true;
+				info[gem_num].radius = static_cast<f32>(n);
+				info[gem_num].distance_mm = static_cast<f32>(n) * 3.0f;
+				info[gem_num].x_pos = static_cast<f32>(n) + gem_num;
+			}
+			hues.fill(n % 40);
+			tracker.publish(hues, info);
+		};
+
+		// A first result before anybody reads: the record the tracker starts
+		// with is all zeroes, which is whole but not of the shape the readers
+		// check for (a sphere's x goes with its number). On a runner with
+		// more cores the readers got to it before the first publish and
+		// counted it as torn.
+		publish(1);
+
 		std::atomic<bool> stop{false};
 		std::atomic<u64> reads{0}, torn{0};
 		std::thread readers[3];
@@ -241,19 +263,9 @@ int main()
 				}
 			});
 
-		std::array<u32, 360> hues{};
-		std::array<ps_move_info, CELL_GEM_MAX_NUM> info{};
 		for (u32 n = 1; n <= 200000; n++)
 		{
-			for (u32 gem_num = 0; gem_num < CELL_GEM_MAX_NUM; gem_num++)
-			{
-				info[gem_num].valid = true;
-				info[gem_num].radius = static_cast<f32>(n);
-				info[gem_num].distance_mm = static_cast<f32>(n) * 3.0f;
-				info[gem_num].x_pos = static_cast<f32>(n) + gem_num;
-			}
-			hues.fill(n % 40);
-			tracker.publish(hues, info);
+			publish(n);
 		}
 		stop = true;
 		for (std::thread& t : readers)
