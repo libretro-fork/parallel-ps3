@@ -1316,6 +1316,10 @@ static lv2_deadlines_t g_waiting;
 // Threads which must call lv2_obj::sleep before the scheduler starts
 static lv2_threads_t g_to_sleep;
 
+// How many threads g_to_sleep holds, kept beside it for is_scheduler_ready,
+// which asks with no lock
+static retro_atomic_int_t g_to_sleep_count;
+
 static const bool g_lists_made = lv2_deadlines_init(&g_waiting, g_max_cpu_threads) && lv2_threads_init(&g_to_sleep, g_max_cpu_threads);
 
 // Where @cpu is in g_to_sleep, or its count
@@ -1564,6 +1568,7 @@ bool lv2_obj::sleep_unlocked(cpu_thread& thread, u64 timeout, u64 current_time)
 			if (const usz at = to_sleep_index(ppu); at != lv2_threads_count(&g_to_sleep))
 			{
 				lv2_threads_erase(&g_to_sleep, at);
+				retro_atomic_store_release_int(&g_to_sleep_count, static_cast<int>(lv2_threads_count(&g_to_sleep)));
 				ppu->start_time = start_time;
 				on_to_sleep_update();
 				return true;
@@ -1583,6 +1588,7 @@ bool lv2_obj::sleep_unlocked(cpu_thread& thread, u64 timeout, u64 current_time)
 		if (const usz at = to_sleep_index(spu); at != lv2_threads_count(&g_to_sleep))
 		{
 			lv2_threads_erase(&g_to_sleep, at);
+			retro_atomic_store_release_int(&g_to_sleep_count, static_cast<int>(lv2_threads_count(&g_to_sleep)));
 			on_to_sleep_update();
 			return true;
 		}
@@ -1865,6 +1871,7 @@ void lv2_obj::cleanup()
 	g_ppu = nullptr;
 	g_scheduler_ready = false;
 	lv2_threads_clear(&g_to_sleep);
+	retro_atomic_store_release_int(&g_to_sleep_count, 0);
 	lv2_deadlines_clear(&g_waiting);
 	g_pending = 0;
 	s_yield_frequency = 0;
@@ -2064,12 +2071,13 @@ std::pair<ppu_thread_status, u32> lv2_obj::ppu_state(ppu_thread* ppu, bool lock_
 void lv2_obj::set_future_sleep(cpu_thread* cpu)
 {
 	ensure(lv2_threads_push_back(&g_to_sleep, &cpu));
+	retro_atomic_store_release_int(&g_to_sleep_count, static_cast<int>(lv2_threads_count(&g_to_sleep)));
 }
 
 bool lv2_obj::is_scheduler_ready()
 {
-	reader_lock lock(g_mutex);
-	return lv2_threads_empty(&g_to_sleep);
+	// One load: the list itself is only touched under the scheduler's lock
+	return !retro_atomic_load_acquire_int(&g_to_sleep_count);
 }
 
 ppu_non_sleeping_count_t lv2_obj::count_non_sleeping_threads()

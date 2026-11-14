@@ -384,10 +384,18 @@ error_code sys_ppu_thread_get_priority(ppu_thread& ppu, u32 thread_id, vm::ptr<s
 		// Fast path for self
 		for (; !ppu.is_stopped(); std::this_thread::yield())
 		{
-			if (reader_lock lock(lv2_obj::g_mutex); cpu_flag::suspend - ppu.state)
+			// No scheduler lock: the priority is one word, read between two
+			// looks at this thread's own state. Not suspended before and
+			// after is what the lock held still.
+			if (cpu_flag::suspend - ppu.state)
 			{
-				prio = ppu.prio.load().prio;
-				break;
+				const u32 seen = ppu.prio.load().prio;
+
+				if (cpu_flag::suspend - ppu.state)
+				{
+					prio = seen;
+					break;
+				}
 			}
 
 			ppu.check_state();
@@ -404,13 +412,18 @@ error_code sys_ppu_thread_get_priority(ppu_thread& ppu, u32 thread_id, vm::ptr<s
 		bool check_state = false;
 		const auto thread = idm::check_entered<named_thread<ppu_thread>>(thread_id, [&](ppu_thread& thread)
 		{
-			if (reader_lock lock(lv2_obj::g_mutex); cpu_flag::suspend - ppu.state)
+			// As above
+			check_state = true;
+
+			if (cpu_flag::suspend - ppu.state)
 			{
-				prio = thread.prio.load().prio;
-			}
-			else
-			{
-				check_state = true;
+				const u32 seen = thread.prio.load().prio;
+
+				if (cpu_flag::suspend - ppu.state)
+				{
+					prio = seen;
+					check_state = false;
+				}
 			}
 		});
 
