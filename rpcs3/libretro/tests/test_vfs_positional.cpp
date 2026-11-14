@@ -24,6 +24,7 @@
 #include "Emu/Cell/lv2/sys_event_flag.h"
 #include "Emu/Cell/lv2/sys_lwmutex.h"
 #include "Emu/Cell/lv2/sys_lwcond.h"
+#include "Emu/Cell/lv2/sys_event.h"
 #include "Emu/Cell/lv2/sys_cond.h"
 #include "Emu/IdManager.h"
 #include "Emu/VFS.h"
@@ -1402,6 +1403,124 @@ int main()
 				retro_atomic_load_acquire_int(&s_refused5), retro_atomic_load_acquire_int(&s_destroyed5));
 		}
 
+		// Event ports: threads read a port's queue by ID the way
+		// sys_event_port_send now does - inside idm::check_entered, with no
+		// lock, no pin and no reference - while another thread connects
+		// and disconnects the queue the way sys_event_port_connect_local
+		// and _disconnect do (idm::close, then the change) and removes and
+		// recreates the port with a plain idm::remove. No thread is inside
+		// its function when the queue changes or once the port is removed.
+		{
+			const auto make_port = []
+			{
+				return idm::make<lv2_obj, lv2_event_port>(s32{SYS_EVENT_PORT_LOCAL}, u64{0});
+			};
+
+			static retro_atomic_int_t s_stop6, s_bad6, s_sent, s_changed, s_removed6;
+			static retro_atomic_int_t s_pids[slots];
+			static retro_atomic_int_t s_inside6[8192]; // By the ID's place, as s_held
+
+			for (u32 i = 0; i < slots; i++)
+				retro_atomic_store_release_int(&s_pids[i], static_cast<int>(make_port()));
+
+			const auto queue = idm::hold<lv2_obj, lv2_event_queue>(idm::make<lv2_obj, lv2_event_queue>(u32{SYS_SYNC_FIFO}, s32{SYS_PPU_QUEUE}, s32{1}, u64{0x1234}, u64{0}));
+			CHECK(!!queue);
+
+			// check_entered finds what check finds
+			{
+				const u32 id = static_cast<u32>(retro_atomic_load_acquire_int(&s_pids[0]));
+				int ran = 0;
+				const auto found = idm::check_entered<lv2_obj, lv2_event_port>(id, [&](lv2_event_port& port) { ran++; return port.type; });
+				CHECK((found && found.ret == SYS_EVENT_PORT_LOCAL && found.ptr == idm::check_unlocked<lv2_obj, lv2_event_port>(id)));
+				CHECK((!idm::check_entered<lv2_obj, lv2_event_port>(id + 0x100 * 5000, [&](lv2_event_port&) { ran++; return 1; })));
+				CHECK((!idm::check_entered<lv2_obj, lv2_event_queue>(id, [&](lv2_event_queue&) { ran++; return 1; })));
+				CHECK(ran == 1);
+			}
+
+			std::thread senders[4];
+			for (u32 t = 0; t < 4; t++)
+			{
+				senders[t] = std::thread([t]
+				{
+					u32 x = t * 2654435761u + 19;
+
+					while (!retro_atomic_load_acquire_int(&s_stop6))
+					{
+						x = x * 1664525u + 1013904223u;
+						const u32 id = static_cast<u32>(retro_atomic_load_acquire_int(&s_pids[(x >> 16) % slots]));
+
+						const auto port = idm::check_entered<lv2_obj, lv2_event_port>(id, [&](lv2_event_port& port)
+						{
+							retro_atomic_fetch_add_int(&s_inside6[(id >> 8) & 8191], 1);
+
+							// The queue, as the send reads it: a plain member
+							u64 name = 0;
+							if (lv2_obj::check(port.queue))
+								name = port.queue->name;
+
+							if (x & 0x100)
+								std::this_thread::yield();
+
+							if (name != 0 && name != 0x1234)
+								retro_atomic_fetch_add_int(&s_bad6, 1);
+
+							retro_atomic_fetch_sub_int(&s_inside6[(id >> 8) & 8191], 1);
+							return name;
+						});
+
+						if (port)
+							retro_atomic_fetch_add_int(&s_sent, 1);
+					}
+				});
+			}
+
+			for (u32 n = 0; n < 60000 || (n < 60000000 && retro_atomic_load_acquire_int(&s_sent) <= 1000); n++)
+			{
+				const u32 slot = n % slots;
+				const u32 id = static_cast<u32>(retro_atomic_load_acquire_int(&s_pids[slot]));
+
+				if (n % 3)
+				{
+					std::lock_guard lock(id_manager::g_mutex);
+
+					if (const auto port = idm::check_unlocked<lv2_obj, lv2_event_port>(id))
+					{
+						const auto closed = idm::close<lv2_obj, lv2_event_port>(id);
+
+						if (retro_atomic_load_acquire_int(&s_inside6[place(id)]))
+							retro_atomic_fetch_add_int(&s_bad6, 1);
+
+						if (lv2_obj::check(port->queue))
+							port->queue.reset();
+						else
+							port->queue = queue;
+
+						retro_atomic_fetch_add_int(&s_changed, 1);
+					}
+				}
+				else if (idm::remove<lv2_obj, lv2_event_port>(id))
+				{
+					// Removed, and nobody is still in there
+					if (retro_atomic_load_acquire_int(&s_inside6[place(id)]))
+						retro_atomic_fetch_add_int(&s_bad6, 1);
+
+					retro_atomic_fetch_add_int(&s_removed6, 1);
+					retro_atomic_store_release_int(&s_pids[slot], static_cast<int>(make_port()));
+				}
+			}
+
+			retro_atomic_store_release_int(&s_stop6, 1);
+			for (auto& t : senders)
+				t.join();
+
+			CHECK(retro_atomic_load_acquire_int(&s_bad6) == 0);
+			CHECK(retro_atomic_load_acquire_int(&s_removed6) > 100);
+			CHECK(retro_atomic_load_acquire_int(&s_changed) > 100);
+			CHECK(retro_atomic_load_acquire_int(&s_sent) > 100);
+			std::printf("  ids: %d event port reads entered, %d queue changes, %d removals\n", retro_atomic_load_acquire_int(&s_sent),
+				retro_atomic_load_acquire_int(&s_changed), retro_atomic_load_acquire_int(&s_removed6));
+		}
+
 		// What a lookup costs one thread: the reader lock, and the pin
 		{
 			const u32 id = make_mutex();
@@ -1452,6 +1571,16 @@ int main()
 			}
 			clock_gettime(CLOCK_MONOTONIC, &t6);
 			std::printf("  id lookup keeping the object, one thread: %.1f ns under the reader lock, %.1f ns held, %.1f ns entered (%llu)\n", ns(t3, t4), ns(t4, t5), ns(t5, t6), static_cast<unsigned long long>(sink));
+
+			// And idm::check's replacement, which keeps nothing
+			timespec t7;
+			for (int i = 0; i < rounds; i++)
+			{
+				const auto found = idm::check_entered<lv2_obj, lv2_mutex>(id, [&](lv2_mutex& mutex) { return mutex.recursive; });
+				sink += found.ret;
+			}
+			clock_gettime(CLOCK_MONOTONIC, &t7);
+			std::printf("  id lookup, one thread: %.1f ns entered (%llu)\n", ns(t6, t7), static_cast<unsigned long long>(sink));
 		}
 
 		g_fxo->clear();

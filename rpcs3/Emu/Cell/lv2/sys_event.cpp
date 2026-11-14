@@ -466,7 +466,8 @@ error_code sys_event_queue_tryreceive(ppu_thread& ppu, u32 equeue_id, vm::ptr<sy
 
 	sys_event.trace("sys_event_queue_tryreceive(equeue_id=0x%x, event_array=*0x%x, size=%d, number=*0x%x)", equeue_id, event_array, size, number);
 
-	const auto queue = idm::get_unlocked<lv2_obj, lv2_event_queue>(equeue_id);
+	// The ID's own queue, not a new object in a destroyed one's place (idm::hold)
+	const auto queue = idm::hold<lv2_obj, lv2_event_queue>(equeue_id);
 
 	if (!queue)
 	{
@@ -513,7 +514,10 @@ error_code sys_event_queue_receive(ppu_thread& ppu, u32 equeue_id, vm::ptr<sys_e
 
 	ppu.gpr[3] = CELL_OK;
 
-	const auto queue = idm::get<lv2_obj, lv2_event_queue>(equeue_id, [&, notify = lv2_obj::notify_all_t()](lv2_event_queue& queue) -> CellError
+	// Found with no lock over the IDs. The thread may make itself a waiter,
+	// which sys_event_queue_destroy asks about: a destroy waits for this
+	// to be done before it looks (idm::get_entered).
+	const auto queue = idm::get_entered<lv2_obj, lv2_event_queue>(equeue_id, [&, notify = lv2_obj::notify_all_t()](lv2_event_queue& queue) -> CellError
 	{
 		if (queue.type != SYS_PPU_QUEUE)
 		{
@@ -640,7 +644,7 @@ error_code sys_event_queue_drain(ppu_thread& ppu, u32 equeue_id)
 
 	sys_event.trace("sys_event_queue_drain(equeue_id=0x%x)", equeue_id);
 
-	const auto queue = idm::check<lv2_obj, lv2_event_queue>(equeue_id, [&](lv2_event_queue& queue)
+	const auto queue = idm::check_entered<lv2_obj, lv2_event_queue>(equeue_id, [&](lv2_event_queue& queue)
 	{
 		std::lock_guard lock(queue.mutex);
 
@@ -722,6 +726,11 @@ error_code sys_event_port_connect_local(cpu_thread& cpu, u32 eport_id, u32 equeu
 		return CELL_ESRCH;
 	}
 
+	// sys_event_port_send reads the port's queue with no lock over the IDs,
+	// inside the port's entered function: it is let finish, and kept out,
+	// while the queue is changed
+	const auto closed = idm::close<lv2_obj, lv2_event_port>(eport_id);
+
 	if (port->type != SYS_EVENT_PORT_LOCAL)
 	{
 		return CELL_EINVAL;
@@ -759,6 +768,9 @@ error_code sys_event_port_connect_ipc(ppu_thread& ppu, u32 eport_id, u64 ipc_key
 		return CELL_ESRCH;
 	}
 
+	// As sys_event_port_connect_local
+	const auto closed = idm::close<lv2_obj, lv2_event_port>(eport_id);
+
 	if (port->type != SYS_EVENT_PORT_IPC)
 	{
 		return CELL_EINVAL;
@@ -789,6 +801,9 @@ error_code sys_event_port_disconnect(ppu_thread& ppu, u32 eport_id)
 		return CELL_ESRCH;
 	}
 
+	// As sys_event_port_connect_local
+	const auto closed = idm::close<lv2_obj, lv2_event_port>(eport_id);
+
 	if (!lv2_obj::check(port->queue))
 	{
 		return CELL_ENOTCONN;
@@ -818,7 +833,11 @@ error_code sys_event_port_send(u32 eport_id, u64 data1, u64 data2, u64 data3)
 
 	bool notified_thread = false;
 
-	const auto port = idm::check<lv2_obj, lv2_event_port>(eport_id, [&, notify = lv2_obj::notify_all_t()](lv2_event_port& port) -> CellError
+	// Found with no lock over the IDs: one count on the port's own word and
+	// one off it, where the reader lock over all IDs was taken and given
+	// up. While the count stands the port is not destroyed and its queue
+	// is not connected or disconnected (idm::check_entered, idm::close).
+	const auto port = idm::check_entered<lv2_obj, lv2_event_port>(eport_id, [&, notify = lv2_obj::notify_all_t()](lv2_event_port& port) -> CellError
 	{
 		if (ppu && ppu->loaded_from_savestate)
 		{

@@ -50,6 +50,18 @@ namespace id_manager
 	// number of threads inside idm::enter's protection.
 	constexpr int id_deciding = 0x40000000;
 
+	// Waits until no thread is inside idm::enter's protection for the ID
+	// of this word: for whoever has just taken the ID's object away, or
+	// has marked the word and is about to ask or change something those
+	// threads go by. They are there for a few instructions each.
+	inline void wait_unentered(retro_atomic_int_t& word)
+	{
+		while (retro_atomic_load_seq_cst_int(&word) & (id_deciding - 1)) [[unlikely]]
+		{
+			std::this_thread::yield();
+		}
+	}
+
 	extern thread_local int g_hazard_record;
 	int claim_hazard_record();
 
@@ -611,10 +623,13 @@ public:
 	{
 		std::lock_guard lock(id_manager::g_mutex);
 
-		for (auto& ptr : g_fxo->get<id_manager::id_map<T>>().vec_data)
+		auto& map = g_fxo->get<id_manager::id_map<T>>();
+
+		for (usz i = 0; i < map.vec_data.size(); i++)
 		{
-			if (auto removed = ptr.exchange(null_ptr))
+			if (auto removed = map.vec_data[i].exchange(null_ptr))
 			{
+				id_manager::wait_unentered(map.closing[i]);
 				id_manager::wait_unpinned(removed.get());
 			}
 		}
@@ -862,6 +877,7 @@ public:
 			{
 				ptr = found.first->exchange(null_ptr);
 				found.second->clear();
+				id_manager::wait_unentered(g_fxo->get<id_manager::id_map<T>>().closing[index]);
 				id_manager::wait_unpinned(ptr.get());
 			}
 			else
@@ -902,6 +918,7 @@ public:
 			{
 				ptr = found.first->exchange(null_ptr);
 				found.second->clear();
+				id_manager::wait_unentered(g_fxo->get<id_manager::id_map<T>>().closing[index]);
 				id_manager::wait_unpinned(ptr.get());
 			}
 			else
@@ -943,6 +960,7 @@ public:
 				const T* removed = found.first->observe();
 				ptr = static_cast<stx::shared_ptr<Get>>(found.first->exchange(null_ptr));
 				found.second->clear();
+				id_manager::wait_unentered(g_fxo->get<id_manager::id_map<T>>().closing[index]);
 				id_manager::wait_unpinned(removed);
 			}
 		}
@@ -978,10 +996,7 @@ public:
 
 			// Threads that are making themselves known to func right now
 			// (idm::enter) finish first: a few instructions each
-			while (retro_atomic_load_seq_cst_int(&closing) & (id_manager::id_deciding - 1)) [[unlikely]]
-			{
-				std::this_thread::yield();
-			}
+			id_manager::wait_unentered(closing);
 
 			if constexpr (std::is_void_v<FRT>)
 			{
@@ -1296,30 +1311,102 @@ public:
 		}
 	}
 
-	// get() without the lock, for a function that may make the thread
-	// something a withdrawal asks about - a waiter, as a rule: the
-	// function runs inside enter(), so a withdrawal with a question waits
-	// for it before asking, as it waited for the reader lock. The function
-	// is to be short: it queues the thread, it does not wait.
+	// Finds the object of an ID and enters it in one step: the count on
+	// the ID's word comes first, and whoever takes the object away waits
+	// for that count, so the object needs no pin and no reference to stay
+	// alive while @in is. Two interlocked steps for the lookup and its
+	// end, as the reader lock took, on a word of this ID's own.
+	template <typename T, typename Get = T>
+		requires IdmTypesCompatible<T, Get>
+	static inline Get* find_entered(u32 id, entered& in)
+	{
+		const u32 index = get_index<Get>(id);
+
+		if (index >= id_manager::id_traits<Get>::count)
+		{
+			return nullptr;
+		}
+
+		auto& map = g_fxo->get<id_manager::id_map<T>>();
+		retro_atomic_int_t& word = map.closing[index];
+
+		while (true)
+		{
+			if (retro_atomic_fetch_add_seq_cst_int(&word, 1) & id_manager::id_deciding) [[unlikely]]
+			{
+				// Out of the withdrawal's way until it has its answer
+				(void)retro_atomic_fetch_sub_int(&word, 1);
+
+				while (retro_atomic_load_acquire_int(&word) & id_manager::id_deciding)
+				{
+					std::this_thread::yield();
+				}
+
+				continue;
+			}
+
+			// Counted in: the place is not emptied and filled again while
+			// this looks, so the key is the object's own, or cleared
+			T* const object = map.vec_data[index].observe();
+			const auto& key = map.vec_keys[index];
+
+			if (object && (std::is_same_v<T, Get> || key.type() == get_type<Get>()) &&
+				(!id_manager::id_traits<Get>::invl_range.second || key.value() == id))
+			{
+				in.word = &word;
+				return static_cast<Get*>(object);
+			}
+
+			(void)retro_atomic_fetch_sub_int(&word, 1);
+			return nullptr;
+		}
+	}
+
+	// check() without the lock: the function runs with the ID entered, so
+	// the object stays, and a withdrawal that asks a question waits for
+	// the function before asking - what the reader lock gave, for this ID
+	// alone. The function is to be short: no sleeping, no taking of
+	// id_manager::g_mutex. As with check(), the pointer returned is not a
+	// reference.
+	template <typename T, typename Get = T, typename F, typename FRT = std::invoke_result_t<F, Get&>>
+		requires IdmTypesCompatible<T, Get>
+	static inline std::conditional_t<std::is_void_v<FRT>, Get*, return_pair<Get*, FRT>> check_entered(u32 id, F&& func)
+	{
+		entered in;
+		Get* const obj_ptr = find_entered<T, Get>(id, in);
+
+		if (!obj_ptr) [[unlikely]]
+		{
+			return {};
+		}
+
+		if constexpr (std::is_void_v<FRT>)
+		{
+			func(*obj_ptr);
+			return obj_ptr;
+		}
+		else
+		{
+			return {obj_ptr, func(*obj_ptr)};
+		}
+	}
+
+	// get() without the lock: as check_entered(), and the object is
+	// returned with a reference, taken from it directly while it is
+	// entered - for a function that may leave the thread waiting on it.
 	template <typename T, typename Get = T, typename F, typename FRT = std::invoke_result_t<F, Get&>>
 		requires IdmTypesCompatible<T, Get>
 	static inline std::conditional_t<std::is_void_v<FRT>, stx::shared_ptr<Get>, return_pair<stx::shared_ptr<Get>, FRT>> get_entered(u32 id, F&& func)
 	{
-		auto ptr = hold<T, Get>(id);
+		entered in;
+		Get* const obj_ptr = find_entered<T, Get>(id, in);
 
-		if (!ptr) [[unlikely]]
+		if (!obj_ptr) [[unlikely]]
 		{
 			return {};
 		}
 
-		Get* obj_ptr = ptr.get();
-
-		const auto inside = enter<T, Get>(id, obj_ptr);
-
-		if (!inside) [[unlikely]]
-		{
-			return {};
-		}
+		auto ptr = stx::make_shared_from_this<Get>(obj_ptr);
 
 		if constexpr (std::is_void_v<FRT>)
 		{
@@ -1330,6 +1417,48 @@ public:
 		{
 			return {std::move(ptr), func(*obj_ptr)};
 		}
+	}
+
+	// What idm::close gives: until it goes, no thread is inside the ID's
+	// entered functions and none gets in.
+	struct closed
+	{
+		retro_atomic_int_t* word = nullptr;
+
+		closed() = default;
+		closed(const closed&) = delete;
+		closed& operator=(const closed&) = delete;
+
+		closed(closed&& other) noexcept
+			: word(std::exchange(other.word, nullptr))
+		{
+		}
+
+		~closed()
+		{
+			if (word)
+			{
+				(void)retro_atomic_fetch_sub_int(word, id_manager::id_deciding);
+			}
+		}
+	};
+
+	// For code that holds id_manager::g_mutex and is about to change
+	// something in an ID's object that entered functions read without a
+	// lock of the object's own (an event port's queue, say): the ID is
+	// marked as for a withdrawal and the threads inside are waited for.
+	template <typename T, typename Get = T>
+		requires IdmTypesCompatible<T, Get>
+	static inline closed close(u32 id)
+	{
+		closed result;
+		retro_atomic_int_t& word = g_fxo->get<id_manager::id_map<T>>().closing[get_index<Get>(id)];
+
+		(void)retro_atomic_fetch_add_seq_cst_int(&word, id_manager::id_deciding);
+		id_manager::wait_unentered(word);
+
+		result.word = &word;
+		return result;
 	}
 
 	// For a thread that found @object under @id without the lock and has

@@ -312,7 +312,8 @@ error_code sys_timer_get_information(ppu_thread& ppu, u32 timer_id, vm::ptr<sys_
 	sys_timer_information_t _info{};
 	const u64 now = get_guest_system_time();
 
-	const auto timer = idm::check<lv2_obj, lv2_timer>(timer_id, [&](lv2_timer& timer)
+	// Found with no lock over the IDs (idm::check_entered)
+	const auto timer = idm::check_entered<lv2_obj, lv2_timer>(timer_id, [&](lv2_timer& timer)
 	{
 		std::lock_guard lock(timer.mutex);
 
@@ -344,7 +345,7 @@ error_code _sys_timer_start(ppu_thread& ppu, u32 timer_id, u64 base_time, u64 pe
 		return CELL_EINVAL;
 	}
 
-	const auto timer = idm::check<lv2_obj, lv2_timer>(timer_id, [&](lv2_timer& timer) -> CellError
+	const auto timer = idm::check_entered<lv2_obj, lv2_timer>(timer_id, [&](lv2_timer& timer) -> CellError
 	{
 		std::lock_guard lock(timer.mutex);
 
@@ -415,7 +416,7 @@ error_code sys_timer_stop(ppu_thread& ppu, u32 timer_id)
 
 	sys_timer.trace("sys_timer_stop()");
 
-	const auto timer = idm::check<lv2_obj, lv2_timer>(timer_id, [now = get_guest_system_time(), notify = lv2_obj::notify_all_t()](lv2_timer& timer)
+	const auto timer = idm::check_entered<lv2_obj, lv2_timer>(timer_id, [now = get_guest_system_time(), notify = lv2_obj::notify_all_t()](lv2_timer& timer)
 	{
 		std::lock_guard lock(timer.mutex);
 		timer.check_unlocked(now);
@@ -436,9 +437,9 @@ error_code sys_timer_connect_event_queue(ppu_thread& ppu, u32 timer_id, u32 queu
 
 	sys_timer.warning("sys_timer_connect_event_queue(timer_id=0x%x, queue_id=0x%x, name=0x%llx, data1=0x%llx, data2=0x%llx)", timer_id, queue_id, name, data1, data2);
 
-	const auto timer = idm::check<lv2_obj, lv2_timer>(timer_id, [&](lv2_timer& timer) -> CellError
+	const auto timer = idm::check_entered<lv2_obj, lv2_timer>(timer_id, [&](lv2_timer& timer) -> CellError
 	{
-		auto found = idm::get_unlocked<lv2_obj, lv2_event_queue>(queue_id);
+		auto found = idm::hold<lv2_obj, lv2_event_queue>(queue_id);
 
 		if (!found)
 		{
@@ -479,7 +480,7 @@ error_code sys_timer_disconnect_event_queue(ppu_thread& ppu, u32 timer_id)
 
 	sys_timer.warning("sys_timer_disconnect_event_queue(timer_id=0x%x)", timer_id);
 
-	const auto timer = idm::check<lv2_obj, lv2_timer>(timer_id, [now = get_guest_system_time(), notify = lv2_obj::notify_all_t()](lv2_timer& timer) -> CellError
+	const auto timer = idm::check_entered<lv2_obj, lv2_timer>(timer_id, [now = get_guest_system_time(), notify = lv2_obj::notify_all_t()](lv2_timer& timer) -> CellError
 	{
 		std::lock_guard lock(timer.mutex);
 
