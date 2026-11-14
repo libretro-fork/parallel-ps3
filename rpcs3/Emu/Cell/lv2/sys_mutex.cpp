@@ -20,10 +20,13 @@ lv2_mutex::lv2_mutex(utils::serial& ar)
 	, name(ar)
 {
 	retro_atomic_store_release_int(&lock_count, static_cast<int>(ar.pop<u32>()));
-	ar(control.raw().owner);
+	control_data_t data{};
+	ar(data.owner);
 
 	// For backwards compatibility
-	control.raw().owner >>= 1;
+	data.owner >>= 1;
+	const retro_u128_t word = word_of(data);
+	retro_atomic_128_init(&control, word);
 }
 
 std::function<void(void*)> lv2_mutex::load(utils::serial& ar)
@@ -33,7 +36,7 @@ std::function<void(void*)> lv2_mutex::load(utils::serial& ar)
 
 void lv2_mutex::save(utils::serial& ar)
 {
-	ar(protocol, recursive, adaptive, key, name, static_cast<u32>(retro_atomic_load_acquire_int(&lock_count)), control.raw().owner << 1);
+	ar(protocol, recursive, adaptive, key, name, static_cast<u32>(retro_atomic_load_acquire_int(&lock_count)), control_owner() << 1);
 }
 
 error_code sys_mutex_create(ppu_thread& ppu, vm::ptr<u32> mutex_id, vm::ptr<sys_mutex_attribute_t> attr)
@@ -114,7 +117,7 @@ error_code sys_mutex_destroy(ppu_thread& ppu, u32 mutex_id)
 	{
 		std::lock_guard lock(mutex.mutex);
 
-		if (atomic_storage<u32>::load(mutex.control.raw().owner))
+		if (mutex.control_owner())
 		{
 			return CELL_EBUSY;
 		}
@@ -239,7 +242,7 @@ error_code sys_mutex_lock(ppu_thread& ppu, u32 mutex_id, u64 timeout)
 	{
 		CellError result = mutex.try_lock(ppu);
 
-		if (result == CELL_EBUSY && !atomic_storage<ppu_thread*>::load(mutex.control.raw().sq))
+		if (result == CELL_EBUSY && !mutex.control_sq())
 		{
 			// Try busy waiting a bit if advantageous
 			for (u32 i = 0, end = lv2_obj::has_ppus_in_running_state() ? 3 : 10; i < end; i++)
@@ -247,7 +250,7 @@ error_code sys_mutex_lock(ppu_thread& ppu, u32 mutex_id, u64 timeout)
 				busy_wait(300);
 				result = mutex.try_lock(ppu);
 
-				if (!result || atomic_storage<ppu_thread*>::load(mutex.control.raw().sq))
+				if (!result || mutex.control_sq())
 				{
 					break;
 				}
@@ -318,7 +321,7 @@ error_code sys_mutex_lock(ppu_thread& ppu, u32 mutex_id, u64 timeout)
 		{
 			std::lock_guard lock(mutex->mutex);
 
-			for (auto cpu = atomic_storage<ppu_thread*>::load(mutex->control.raw().sq); cpu; cpu = cpu->next_cpu)
+			for (auto cpu = mutex->control_sq(); cpu; cpu = cpu->next_cpu)
 			{
 				if (cpu == &ppu)
 				{
@@ -352,7 +355,7 @@ error_code sys_mutex_lock(ppu_thread& ppu, u32 mutex_id, u64 timeout)
 
 				ppu.state += cpu_flag::wait;
 
-				if (!atomic_storage<ppu_thread*>::load(mutex->control.raw().sq))
+				if (!mutex->control_sq())
 				{
 					// Waiters queue is empty, so the thread must have been signaled
 					mutex->mutex.lock_unlock();
@@ -363,7 +366,7 @@ error_code sys_mutex_lock(ppu_thread& ppu, u32 mutex_id, u64 timeout)
 
 				bool success = false;
 
-				mutex->control.fetch_op([&](lv2_mutex::control_data_t& data)
+				const auto change = [&](lv2_mutex::control_data_t& data)
 				{
 					success = false;
 
@@ -385,7 +388,18 @@ error_code sys_mutex_lock(ppu_thread& ppu, u32 mutex_id, u64 timeout)
 
 					data.sq = sq;
 					return true;
-				});
+				};
+
+				for (;;)
+				{
+					const retro_u128_t seen = retro_atomic_load_acquire_128(&mutex->control);
+					lv2_mutex::control_data_t data = lv2_mutex::control_of(seen);
+
+					if (!change(data) || retro_atomic_cas_128(&mutex->control, seen, lv2_mutex::word_of(data)))
+					{
+						break;
+					}
+				}
 
 				if (success)
 				{

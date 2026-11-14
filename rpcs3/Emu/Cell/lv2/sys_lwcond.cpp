@@ -637,7 +637,7 @@ error_code _sys_lwcond_queue_wait(ppu_thread& ppu, u32 lwcond_id, u32 lwmutex_id
 
 				bool success = false;
 
-				mutex->lv2_control.fetch_op([&](lv2_lwmutex::control_data_t& data)
+				mutex->change_control([&](lv2_lwmutex::control_data_t& data)
 				{
 					success = false;
 

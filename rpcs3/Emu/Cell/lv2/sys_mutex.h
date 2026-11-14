@@ -46,7 +46,34 @@ struct lv2_mutex final : lv2_obj
 		ppu_thread* sq{};
 	};
 
-	atomic_t<control_data_t> control{};
+	// The owner and the queue, changed together: a 128-bit word. Its low
+	// half's low 32 bits are the owner, its high half the queue's head.
+	retro_atomic_128_t control{};
+
+	static_assert(sizeof(control_data_t) == sizeof(retro_u128_t));
+	static_assert(offsetof(control_data_t, owner) == 0 && offsetof(control_data_t, sq) == 8);
+	static_assert(std::endian::native == std::endian::little, "control_owner() reads the low half's low 32 bits");
+
+	static control_data_t control_of(retro_u128_t word)
+	{
+		return std::bit_cast<control_data_t>(word);
+	}
+
+	static retro_u128_t word_of(const control_data_t& data)
+	{
+		return std::bit_cast<retro_u128_t>(data);
+	}
+
+	// One field alone: a 64-bit load of its half
+	u32 control_owner()
+	{
+		return static_cast<u32>(retro_atomic_load_acquire_128_lo(&control));
+	}
+
+	ppu_thread* control_sq()
+	{
+		return reinterpret_cast<ppu_thread*>(static_cast<uptr>(retro_atomic_load_acquire_128_hi(&control)));
+	}
 
 	lv2_mutex(u32 protocol, u32 recursive,u32 adaptive, u64 key, u64 name) noexcept
 		: protocol{static_cast<u8>(protocol)}
@@ -64,13 +91,14 @@ struct lv2_mutex final : lv2_obj
 	template <typename T>
 	CellError try_lock(T& cpu)
 	{
-		auto it = control.load();
+		const retro_u128_t seen = retro_atomic_load_acquire_128(&control);
+		const control_data_t it = control_of(seen);
 
 		if (!it.owner)
 		{
 			auto store = it;
 			store.owner = cpu.id;
-			if (!control.compare_and_swap_test(it, store))
+			if (!retro_atomic_cas_128(&control, seen, word_of(store)))
 			{
 				return CELL_EBUSY;
 			}
@@ -101,7 +129,7 @@ struct lv2_mutex final : lv2_obj
 	template <typename T>
 	bool try_own(T& cpu)
 	{
-		if (control.atomic_op([&](control_data_t& data)
+		const auto own = [&](control_data_t& data)
 		{
 			if (data.owner)
 			{
@@ -119,19 +147,31 @@ struct lv2_mutex final : lv2_obj
 				data.owner = cpu.id;
 				return true;
 			}
-		}))
-		{
-			cpu.next_cpu = nullptr;
-			return true;
-		}
+		};
 
-		return false;
+		for (;;)
+		{
+			const retro_u128_t seen = retro_atomic_load_acquire_128(&control);
+			control_data_t data = control_of(seen);
+			const bool owned = own(data);
+
+			if (retro_atomic_cas_128(&control, seen, word_of(data)))
+			{
+				if (owned)
+				{
+					cpu.next_cpu = nullptr;
+				}
+
+				return owned;
+			}
+		}
 	}
 
 	template <typename T>
 	CellError try_unlock(T& cpu)
 	{
-		auto it = control.load();
+		const retro_u128_t seen = retro_atomic_load_acquire_128(&control);
+		const control_data_t it = control_of(seen);
 
 		if (it.owner != cpu.id)
 		{
@@ -149,7 +189,7 @@ struct lv2_mutex final : lv2_obj
 			auto store = it;
 			store.owner = 0;
 
-			if (control.compare_and_swap_test(it, store))
+			if (retro_atomic_cas_128(&control, seen, word_of(store)))
 			{
 				return {};
 			}
@@ -163,7 +203,7 @@ struct lv2_mutex final : lv2_obj
 	{
 		T* res{};
 
-		control.fetch_op([&](control_data_t& data)
+		const auto change = [&](control_data_t& data)
 		{
 			res = nullptr;
 
@@ -175,7 +215,17 @@ struct lv2_mutex final : lv2_obj
 				{
 					if (cpu_flag::again - res->state)
 					{
-						atomic_storage<u32>::release(control.raw().owner, res->id);
+						// The owner alone, whatever the queue is now
+						for (retro_u128_t seen = retro_atomic_load_acquire_128(&control);;)
+						{
+							control_data_t owned = control_of(seen);
+							owned.owner = res->id;
+
+							if (retro_atomic_cas_seen_128(&control, &seen, word_of(owned)))
+							{
+								break;
+							}
+						}
 					}
 
 					return false;
@@ -189,7 +239,18 @@ struct lv2_mutex final : lv2_obj
 				data.owner = 0;
 				return true;
 			}
-		});
+		};
+
+		for (;;)
+		{
+			const retro_u128_t seen = retro_atomic_load_acquire_128(&control);
+			control_data_t data = control_of(seen);
+
+			if (!change(data) || retro_atomic_cas_128(&control, seen, word_of(data)))
+			{
+				break;
+			}
+		}
 
 		if (res && cpu_flag::again - res->state)
 		{

@@ -937,7 +937,7 @@ int main()
 					if (!mutex)
 						continue;
 
-					if (atomic_storage<u32>::load(mutex->control.raw().owner) >= scribble)
+					if (mutex->control_owner() >= scribble)
 						retro_atomic_fetch_add_int(&s_bad, 1);
 
 					if (mutex->try_lock(cpu))
@@ -973,7 +973,7 @@ int main()
 			{
 				std::lock_guard lock(mutex.mutex);
 
-				if (atomic_storage<u32>::load(mutex.control.raw().owner))
+				if (mutex.control_owner())
 					return CELL_EBUSY;
 
 				// Nobody may hold it and have been told so
@@ -988,7 +988,9 @@ int main()
 				retro_atomic_fetch_add_int(&s_destroyed, 1);
 
 				// Nobody is looking at it any more: anyone who is sees this
-				atomic_storage<u32>::store(gone->control.raw().owner, scribble + slot);
+				lv2_mutex::control_data_t scribbled{};
+				scribbled.owner = scribble + slot;
+				retro_atomic_store_release_128(&gone->control, lv2_mutex::word_of(scribbled));
 				retro_atomic_store_release_int(&s_ids[slot], static_cast<int>(make_mutex()));
 			}
 		}
@@ -1248,7 +1250,7 @@ int main()
 
 			const auto set_queue = [](lv2_lwmutex& mutex, ppu_thread* to)
 			{
-				mutex.lv2_control.atomic_op([&](lv2_lwmutex::control_data_t& data) { data.sq = to; });
+				mutex.change_control([&](lv2_lwmutex::control_data_t& data) { data.sq = to; });
 			};
 
 			std::thread waiters[4];
@@ -1272,7 +1274,7 @@ int main()
 							if (x & 0x200)
 								std::this_thread::yield();
 
-							return mutex.lv2_control.fetch_op([&](lv2_lwmutex::control_data_t& data)
+							return mutex.change_control([&](lv2_lwmutex::control_data_t& data)
 							{
 								if (data.sq)
 									return false;
@@ -1297,6 +1299,9 @@ int main()
 						for (int spin = 0; spin < 20; spin++)
 							(void)retro_atomic_load_relaxed_int(&s_stop4);
 						if (idm::check_unlocked<lv2_obj, lv2_lwmutex>(id) != mutex.ptr.get())
+							retro_atomic_fetch_add_int(&s_bad4, 1);
+						// Still at the queue's head: nobody else got in meanwhile
+						if (mutex.ptr->load_sq() != self)
 							retro_atomic_fetch_add_int(&s_bad4, 1);
 						retro_atomic_fetch_sub_int(&s_in_queue4[(id >> 8) & 8191], 1);
 						set_queue(*mutex.ptr, nullptr);

@@ -15,12 +15,15 @@ lv2_lwmutex::lv2_lwmutex(utils::serial& ar)
 	, control(ar.pop<decltype(control)>())
 	, name(ar.pop<be_t<u64>>())
 {
-	ar(lv2_control.raw().signaled);
+	control_data_t data{};
+	ar(data.signaled);
+	const retro_u128_t word = word_of(data);
+	retro_atomic_128_init(&lv2_control, word);
 }
 
 void lv2_lwmutex::save(utils::serial& ar)
 {
-	ar(protocol, control, name, lv2_control.raw().signaled);
+	ar(protocol, control, name, load_signaled());
 }
 
 error_code _sys_lwmutex_create(ppu_thread& ppu, vm::ptr<u32> lwmutex_id, u32 protocol, vm::ptr<sys_lwmutex_t> control, s32 has_name, u64 name)
@@ -142,7 +145,7 @@ error_code _sys_lwmutex_lock(ppu_thread& ppu, u32 lwmutex_id, u64 timeout)
 
 	const auto take_signal = [&](lv2_lwmutex& mutex) -> bool
 	{
-		if (s32 signal = mutex.lv2_control.fetch_op([](lv2_lwmutex::control_data_t& data)
+		if (s32 signal = mutex.change_control([](lv2_lwmutex::control_data_t& data)
 		{
 			if (data.signaled)
 			{
@@ -304,7 +307,7 @@ error_code _sys_lwmutex_lock(ppu_thread& ppu, u32 lwmutex_id, u64 timeout)
 
 				bool success = false;
 
-				mutex->lv2_control.fetch_op([&](lv2_lwmutex::control_data_t& data)
+				mutex->change_control([&](lv2_lwmutex::control_data_t& data)
 				{
 					success = false;
 
@@ -365,7 +368,7 @@ error_code _sys_lwmutex_trylock(ppu_thread& ppu, u32 lwmutex_id)
 	if (const auto pinned = idm::pin<lv2_obj, lv2_lwmutex>(lwmutex_id))
 	{
 		mutex.found = true;
-		mutex.ret = pinned->lv2_control.fetch_op([](lv2_lwmutex::control_data_t& data)
+		mutex.ret = pinned->change_control([](lv2_lwmutex::control_data_t& data)
 		{
 			if (data.signaled & 1)
 			{

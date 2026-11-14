@@ -69,7 +69,56 @@ struct lv2_lwmutex final : lv2_obj
 		ppu_thread* sq{};
 	};
 
-	atomic_t<control_data_t> lv2_control{};
+	// The signal and the queue, changed together: a 128-bit word. Its low
+	// half's low 32 bits are the signal, its high half the queue's head.
+	retro_atomic_128_t lv2_control{};
+
+	static_assert(sizeof(control_data_t) == sizeof(retro_u128_t));
+	static_assert(offsetof(control_data_t, signaled) == 0 && offsetof(control_data_t, sq) == 8);
+	static_assert(std::endian::native == std::endian::little, "load_signaled() reads the low half's low 32 bits");
+
+	static control_data_t control_of(retro_u128_t word)
+	{
+		return std::bit_cast<control_data_t>(word);
+	}
+
+	static retro_u128_t word_of(const control_data_t& data)
+	{
+		return std::bit_cast<retro_u128_t>(data);
+	}
+
+	s32 load_signaled() const
+	{
+		return static_cast<s32>(static_cast<u32>(retro_atomic_load_acquire_128_lo(&lv2_control)));
+	}
+
+	// Change the word with a compare-and-swap loop. f gets the word to
+	// change; when it returns false nothing is stored. Gives the word as it
+	// was and whether f's change was stored.
+	template <typename F>
+	std::pair<control_data_t, bool> change_control(F&& f)
+	{
+		for (;;)
+		{
+			const retro_u128_t seen = retro_atomic_load_acquire_128(&lv2_control);
+			const control_data_t old = control_of(seen);
+			control_data_t data = old;
+
+			if constexpr (std::is_void_v<std::invoke_result_t<F&, control_data_t&>>)
+			{
+				f(data);
+			}
+			else if (!f(data))
+			{
+				return {old, false};
+			}
+
+			if (retro_atomic_cas_128(&lv2_control, seen, word_of(data)))
+			{
+				return {old, true};
+			}
+		}
+	}
 
 	lv2_lwmutex(u32 protocol, vm::ptr<sys_lwmutex_t> control, u64 name) noexcept
 		: protocol{static_cast<u8>(protocol)}
@@ -83,13 +132,13 @@ struct lv2_lwmutex final : lv2_obj
 
 	ppu_thread* load_sq() const
 	{
-		return atomic_storage<ppu_thread*>::load(lv2_control.raw().sq);
+		return reinterpret_cast<ppu_thread*>(static_cast<uptr>(retro_atomic_load_acquire_128_hi(&lv2_control)));
 	}
 
 	template <typename T>
 	s32 try_own(T* cpu, bool wait_only = false)
 	{
-		const s32 signal = lv2_control.fetch_op([&](control_data_t& data)
+		const s32 signal = change_control([&](control_data_t& data)
 		{
 			if (!data.signaled)
 			{
@@ -106,7 +155,7 @@ struct lv2_lwmutex final : lv2_obj
 				ensure(!wait_only);
 				data.signaled = 0;
 			}
-		}).signaled;
+		}).first.signaled;
 
 		if (signal)
 		{
@@ -143,11 +192,11 @@ struct lv2_lwmutex final : lv2_obj
 		if (!load_sq())
 		{
 			control_data_t old{};
-			old.signaled = atomic_storage<s32>::load(lv2_control.raw().signaled);
+			old.signaled = load_signaled();
 			control_data_t store = old;
 			store.signaled |= (unlock2 ? s32{smin} : 1);
 
-			if (lv2_control.compare_exchange(old, store))
+			if (retro_atomic_cas_128(&lv2_control, word_of(old), word_of(store)))
 			{
 				return true;
 			}
@@ -161,7 +210,7 @@ struct lv2_lwmutex final : lv2_obj
 	{
 		T* res = nullptr;
 
-		lv2_control.fetch_op([&](control_data_t& data)
+		change_control([&](control_data_t& data)
 		{
 			res = nullptr;
 

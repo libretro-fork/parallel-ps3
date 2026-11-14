@@ -345,9 +345,9 @@ error_code sys_cond_signal_to(ppu_thread& ppu, u32 cond_id, u32 thread_id)
 				return -1;
 			}
 
-			if (!has_lower_prio_or_is_the_mutex_owner && cond.mutex->control.load().owner != ppu.id)
+			if (!has_lower_prio_or_is_the_mutex_owner && cond.mutex->control_owner() != ppu.id)
 			{
-				if (cond.mutex->control.load().owner == thread_id)
+				if (cond.mutex->control_owner() == thread_id)
 				{
 					has_lower_prio_or_is_the_mutex_owner = true;
 				}
@@ -447,7 +447,7 @@ error_code sys_cond_wait(ppu_thread& ppu, u32 cond_id, u64 timeout)
 	// (idm::get_entered).
 	const auto cond = idm::get_entered<lv2_obj, lv2_cond>(cond_id, [&, notify = lv2_obj::notify_all_t()](lv2_cond& cond) -> s64
 	{
-		if (!ppu.loaded_from_savestate && atomic_storage<u32>::load(cond.mutex->control.raw().owner) != ppu.id)
+		if (!ppu.loaded_from_savestate && cond.mutex->control_owner() != ppu.id)
 		{
 			return -1;
 		}
@@ -538,7 +538,7 @@ error_code sys_cond_wait(ppu_thread& ppu, u32 cond_id, u64 timeout)
 				}
 			}
 
-			for (auto cpu = atomic_storage<ppu_thread*>::load(cond->mutex->control.raw().sq); cpu; cpu = cpu->next_cpu)
+			for (auto cpu = cond->mutex->control_sq(); cpu; cpu = cpu->next_cpu)
 			{
 				if (cpu == &ppu)
 				{
@@ -597,7 +597,7 @@ error_code sys_cond_wait(ppu_thread& ppu, u32 cond_id, u64 timeout)
 						break;
 					}
 				}
-				else if (atomic_storage<u32>::load(cond->mutex->control.raw().owner) == ppu.id)
+				else if (cond->mutex->control_owner() == ppu.id)
 				{
 					break;
 				}
@@ -615,7 +615,7 @@ error_code sys_cond_wait(ppu_thread& ppu, u32 cond_id, u64 timeout)
 	}
 
 	// Verify ownership
-	ensure(atomic_storage<u32>::load(cond->mutex->control.raw().owner) == ppu.id);
+	ensure(cond->mutex->control_owner() == ppu.id);
 
 	// Restore the recursive value
 	retro_atomic_store_release_int(&cond->mutex->lock_count, static_cast<int>(cond.ret));
