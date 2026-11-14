@@ -20,7 +20,6 @@
 #include "llvm/Support/Alignment.h"
 #include "llvm/Support/MSVCErrorWorkarounds.h"
 #include "llvm/Support/MathExtras.h"
-#include <mutex>
 
 #include <future>
 
@@ -119,7 +118,6 @@ static void dumpSectionMemory(const SectionEntry &S, StringRef State) {
 
 // Resolve the relocations for all symbols we currently know about.
 void RuntimeDyldImpl::resolveRelocations() {
-  std::lock_guard<sys::Mutex> locked(lock);
 
   // Print out the sections prior to relocation.
   LLVM_DEBUG({
@@ -159,7 +157,6 @@ void RuntimeDyldImpl::resolveLocalRelocations() {
 
 void RuntimeDyldImpl::mapSectionAddress(const void *LocalAddress,
                                         uint64_t TargetAddress) {
-  std::lock_guard<sys::Mutex> locked(lock);
   for (unsigned i = 0, e = Sections.size(); i != e; ++i) {
     if (Sections[i].getAddress() == LocalAddress) {
       reassignSectionAddress(i, TargetAddress);
@@ -180,7 +177,6 @@ static Error getOffset(const SymbolRef &Sym, SectionRef Sec,
 
 Expected<RuntimeDyldImpl::ObjSectionToIDMap>
 RuntimeDyldImpl::loadObjectImpl(const object::ObjectFile &Obj) {
-  std::lock_guard<sys::Mutex> locked(lock);
 
   // Save information about our target
   Arch = Obj.getArch();

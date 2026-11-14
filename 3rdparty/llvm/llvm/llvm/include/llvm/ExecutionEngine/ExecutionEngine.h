@@ -27,7 +27,6 @@
 #include "llvm/Support/CodeGen.h"
 #include "llvm/Support/Compiler.h"
 #include "llvm/Support/ErrorHandling.h"
-#include "llvm/Support/Mutex.h"
 #include "llvm/Target/TargetMachine.h"
 #include "llvm/Target/TargetOptions.h"
 #include <algorithm>
@@ -156,9 +155,14 @@ protected:
   std::string ErrMsg;
 
 public:
-  /// lock - This lock protects the ExecutionEngine and MCJIT classes. It must
-  /// be held while changing the internal state of any of those classes.
-  sys::Mutex lock;
+// What tells this LLVM from one as released: no lock in the engine, and the
+// engine not on the debugger's list
+#define LLVM_LIBRETRO 1
+
+  // libretro: the ExecutionEngine and MCJIT classes have no lock. An engine
+  // is used by one thread at a time; whoever hands one from thread to thread
+  // sees to that (parallel-ps3: each recompiler thread has its own, and a
+  // PPU module's are used by the thread initialising the module).
 
   //===--------------------------------------------------------------------===//
   //  ExecutionEngine Startup

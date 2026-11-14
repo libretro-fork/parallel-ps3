@@ -219,6 +219,7 @@ lib/DebugInfo/Symbolize/Markup.cpp
 lib/DebugInfo/Symbolize/MarkupFilter.cpp
 lib/DebugInfo/Symbolize/SymbolizableObjectFile.cpp
 lib/DebugInfo/Symbolize/Symbolize.cpp
+lib/ExecutionEngine/GDBRegistrationListener.cpp
 lib/ExecutionEngine/Orc/Shared/AllocationActions.cpp
 lib/ExecutionEngine/Orc/Shared/MachOObjectFormat.cpp
 lib/ExecutionEngine/Orc/Shared/ObjectFormats.cpp
@@ -229,6 +230,7 @@ lib/ExecutionEngine/Orc/Shared/SymbolStringPool.cpp
 lib/ExecutionEngine/Orc/TargetProcess/DefaultHostBootstrapValues.cpp
 lib/ExecutionEngine/Orc/TargetProcess/ExecutorResolver.cpp
 lib/ExecutionEngine/Orc/TargetProcess/ExecutorSharedMemoryMapperService.cpp
+lib/ExecutionEngine/Orc/TargetProcess/JITLoaderGDB.cpp
 lib/ExecutionEngine/Orc/TargetProcess/JITLoaderPerf.cpp
 lib/ExecutionEngine/Orc/TargetProcess/JITLoaderVTune.cpp
 lib/ExecutionEngine/Orc/TargetProcess/LibraryResolver.cpp

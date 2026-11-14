@@ -541,7 +541,9 @@ test_dma_views_tsan: $(DMA_VIEWS_DEPS)
 # taken out for retro_atomic, the ones recompiler threads share first
 LLVM_LOCK_FREE := lib/IR/PassRegistry.cpp include/llvm/PassRegistry.h lib/Support/ManagedStatic.cpp include/llvm/Support/ManagedStatic.h \
 	lib/Support/DynamicLibrary.cpp lib/Support/Unix/DynamicLibrary.inc lib/Support/Windows/DynamicLibrary.inc lib/Support/ErrorHandling.cpp \
-	include/llvm/Support/Threading.h
+	include/llvm/Support/Threading.h \
+	lib/ExecutionEngine/ExecutionEngine.cpp include/llvm/ExecutionEngine/ExecutionEngine.h lib/ExecutionEngine/MCJIT/MCJIT.cpp lib/ExecutionEngine/MCJIT/MCJIT.h \
+	lib/ExecutionEngine/RuntimeDyld/RuntimeDyld.cpp lib/ExecutionEngine/RuntimeDyld/RuntimeDyldImpl.h
 
 ATOMIC_T_FREE := ../../Crypto ../../Loader ../../Emu/Audio ../../Emu/Io ../../Input
 
@@ -733,6 +735,7 @@ check: all
 	@bad=0; for s in $$(grep -oh "g_cfg\.[a-z_]*\.[a-z_0-9]*" ../../Emu/Cell/SPULLVMRecompiler.cpp ../../Emu/Cell/SPUCommonRecompiler.cpp ../../Emu/CPU/CPUTranslator.cpp ../../Emu/CPU/CPUTranslator.h | sort -u); do grep -q "put($$s" ../../Emu/Cell/SPULLVMRecompiler.cpp || { echo "SPU notes: $$s is read by the recompiler and is not part of a note's name (note_name in SPULLVMRecompiler.cpp): an object noted with one value of it would be loaded for another"; bad=1; }; done; if [ $$bad = 1 ]; then exit 1; else echo "SPU notes: named by every setting the recompiler reads"; fi
 	@if grep -nE "std::mutex|sys::Mutex|SmartMutex|recursive_mutex|RWMutex|lock_guard|unique_lock|ScopedLock|ScopedReader|ScopedWriter|condition_variable|shared_mutex|scoped_lock|std::call_once\(|pthread_mutex|<mutex>" $(addprefix ../../../3rdparty/llvm/llvm/llvm/,$(LLVM_LOCK_FREE)); then echo "llvm: a lock is back in a file of LLVM's that was made lock-free - recompiler threads share these (CHANGELOG)"; exit 1; else echo "llvm: no lock in $(words $(LLVM_LOCK_FREE)) of its files"; fi
 	@bad=0; for f in $$(grep -v "^#" ../make/llvm/unlinked.txt); do if grep -qF "/$$f " ../make/llvm/llvm.mk || grep -qF "/$$f)" ../make/llvm/llvm.mk; then echo "llvm: $$f is in unlinked.txt and is built all the same (llvm.mk): no link takes anything from it - take it out of one or the other"; bad=1; fi; done; if [ $$bad = 1 ]; then exit 1; else echo "llvm: $$(grep -vc "^#" ../make/llvm/unlinked.txt) files nothing links are not built"; fi
+	@if grep -q "^DEPFLAGS := .*-MD)" ../../../Makefile; then echo "llvm: the core's files follow its headers"; else echo "Makefile: the core's files must be made again when a header of the tree's LLVM changes (DEPFLAGS, -MD): its classes are edited, and a core file compiled against one as it was is linked to it as it is"; exit 1; fi
 	@if grep -n "Passes/PassBuilder.h\|PassBuilder pb\|PassBuilder(" ../../Emu/Cell/PPUThread.cpp ../../Emu/Cell/SPULLVMRecompiler.cpp ../../../Utilities/JITLLVM.cpp; then echo "llvm: PassBuilder is used again - it brings every pass LLVM has into the core; register what a pass needs in jit_register_analyses (CHANGELOG)"; exit 1; else echo "llvm: only the analyses the recompilers use"; fi
 	@# Nor do the mice: no lock in the handler, none taken by those that read them
 	@if grep -n "shared_mutex\|std::mutex\|lock_guard\|scoped_lock" ../../Emu/Io/MouseHandler.h ../../Emu/Io/MouseHandler.cpp ../libretro_mouse_handler.h ../libretro_mouse_handler.cpp || grep -rn "handler\.mutex\|take_pending()" ../../Emu/Cell/Modules/cellMouse.cpp ../../Emu/Cell/Modules/cellGem.cpp ../../Emu/Io/usio.cpp ../../Emu/Io/GunCon3.cpp ../../Emu/Io/TopShotElite.cpp ../../Emu/Io/TopShotFearmaster.cpp ../../Emu/Io/GameTablet.cpp; then echo "mice: the mouse handler's lock is back - a mouse is a record read whole (AGENTS.md)"; exit 1; else echo "mice: no mouse lock"; fi

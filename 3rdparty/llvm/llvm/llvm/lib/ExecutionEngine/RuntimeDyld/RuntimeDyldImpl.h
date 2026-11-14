@@ -23,7 +23,6 @@
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/Format.h"
-#include "llvm/Support/Mutex.h"
 #include "llvm/Support/SwapByteOrder.h"
 #include "llvm/TargetParser/Host.h"
 #include "llvm/TargetParser/Triple.h"
@@ -300,7 +299,9 @@ protected:
   // processRelocations, and that's OK.  The handling of the relocation lists
   // is written in such a way as to work correctly if new elements are added to
   // the end of the list while the list is being processed.
-  sys::Mutex lock;
+  //
+  // libretro: there is no lock. A linker belongs to one engine and an engine
+  // to one thread at a time (ExecutionEngine.h).
 
   using NotifyStubEmittedFunction =
     RuntimeDyld::NotifyStubEmittedFunction;

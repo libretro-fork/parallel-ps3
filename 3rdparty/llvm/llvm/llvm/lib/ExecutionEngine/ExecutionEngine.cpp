@@ -38,7 +38,6 @@
 #include "llvm/TargetParser/Host.h"
 #include <cmath>
 #include <cstring>
-#include <mutex>
 using namespace llvm;
 
 #define DEBUG_TYPE "jit"
@@ -187,7 +186,6 @@ uint64_t ExecutionEngineState::RemoveMapping(StringRef Name) {
 std::string ExecutionEngine::getMangledName(const GlobalValue *GV) {
   assert(GV->hasName() && "Global must have name.");
 
-  std::lock_guard<sys::Mutex> locked(lock);
   SmallString<128> FullName;
 
   const DataLayout &DL =
@@ -200,12 +198,10 @@ std::string ExecutionEngine::getMangledName(const GlobalValue *GV) {
 }
 
 void ExecutionEngine::addGlobalMapping(const GlobalValue *GV, void *Addr) {
-  std::lock_guard<sys::Mutex> locked(lock);
   addGlobalMapping(getMangledName(GV), (uint64_t) Addr);
 }
 
 void ExecutionEngine::addGlobalMapping(StringRef Name, uint64_t Addr) {
-  std::lock_guard<sys::Mutex> locked(lock);
 
   assert(!Name.empty() && "Empty GlobalMapping symbol name!");
 
@@ -224,14 +220,12 @@ void ExecutionEngine::addGlobalMapping(StringRef Name, uint64_t Addr) {
 }
 
 void ExecutionEngine::clearAllGlobalMappings() {
-  std::lock_guard<sys::Mutex> locked(lock);
 
   EEState.getGlobalAddressMap().clear();
   EEState.getGlobalAddressReverseMap().clear();
 }
 
 void ExecutionEngine::clearGlobalMappingsFromModule(Module *M) {
-  std::lock_guard<sys::Mutex> locked(lock);
 
   for (GlobalObject &GO : M->global_objects())
     EEState.RemoveMapping(getMangledName(&GO));
@@ -239,12 +233,10 @@ void ExecutionEngine::clearGlobalMappingsFromModule(Module *M) {
 
 uint64_t ExecutionEngine::updateGlobalMapping(const GlobalValue *GV,
                                               void *Addr) {
-  std::lock_guard<sys::Mutex> locked(lock);
   return updateGlobalMapping(getMangledName(GV), (uint64_t) Addr);
 }
 
 uint64_t ExecutionEngine::updateGlobalMapping(StringRef Name, uint64_t Addr) {
-  std::lock_guard<sys::Mutex> locked(lock);
 
   ExecutionEngineState::GlobalAddressMapTy &Map =
     EEState.getGlobalAddressMap();
@@ -271,7 +263,6 @@ uint64_t ExecutionEngine::updateGlobalMapping(StringRef Name, uint64_t Addr) {
 }
 
 uint64_t ExecutionEngine::getAddressToGlobalIfAvailable(StringRef S) {
-  std::lock_guard<sys::Mutex> locked(lock);
   uint64_t Address = 0;
   ExecutionEngineState::GlobalAddressMapTy::iterator I =
     EEState.getGlobalAddressMap().find(S);
@@ -282,19 +273,16 @@ uint64_t ExecutionEngine::getAddressToGlobalIfAvailable(StringRef S) {
 
 
 void *ExecutionEngine::getPointerToGlobalIfAvailable(StringRef S) {
-  std::lock_guard<sys::Mutex> locked(lock);
   if (void* Address = (void *) getAddressToGlobalIfAvailable(S))
     return Address;
   return nullptr;
 }
 
 void *ExecutionEngine::getPointerToGlobalIfAvailable(const GlobalValue *GV) {
-  std::lock_guard<sys::Mutex> locked(lock);
   return getPointerToGlobalIfAvailable(getMangledName(GV));
 }
 
 const GlobalValue *ExecutionEngine::getGlobalValueAtAddress(void *Addr) {
-  std::lock_guard<sys::Mutex> locked(lock);
 
   // If we haven't computed the reverse mapping yet, do so first.
   if (EEState.getGlobalAddressReverseMap().empty()) {
@@ -565,7 +553,6 @@ void *ExecutionEngine::getPointerToGlobal(const GlobalValue *GV) {
   if (Function *F = const_cast<Function*>(dyn_cast<Function>(GV)))
     return getPointerToFunction(F);
 
-  std::lock_guard<sys::Mutex> locked(lock);
   if (void* P = getPointerToGlobalIfAvailable(GV))
     return P;
 

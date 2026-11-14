@@ -70,7 +70,9 @@ extern "C"
 		void* first_entry;
 	};
 
-	extern test_jit_descriptor __jit_debug_descriptor;
+	// Not there at all with the tree's LLVM, which does not build the file
+	// it is in (unlinked.txt); there and empty with an installed one
+	extern test_jit_descriptor __jit_debug_descriptor __attribute__((weak));
 }
 
 static int failures = 0;
@@ -405,7 +407,7 @@ int main()
 
 	// Compiled and loaded, and not registered with a debugger: no copy of
 	// the object was made for one
-	CHECK(__jit_debug_descriptor.first_entry == nullptr);
+	CHECK(!&__jit_debug_descriptor || __jit_debug_descriptor.first_entry == nullptr);
 
 	if (f_mul_add && f_sum && f_add4)
 	{
@@ -617,7 +619,7 @@ int main()
 
 		std::printf("test_llvm_jit: 200 SPU functions compiled in %.0f ms, loaded from their objects in %.0f ms (%d by their notes), all by their notes in %.0f ms\n", first, second, noted_cold, third);
 		// Nor were the objects loaded from the pack
-		CHECK(__jit_debug_descriptor.first_entry == nullptr);
+		CHECK(!&__jit_debug_descriptor || __jit_debug_descriptor.first_entry == nullptr);
 
 		g_fxo->clear();
 		std::filesystem::remove_all(dir);

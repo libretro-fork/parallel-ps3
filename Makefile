@@ -329,7 +329,13 @@ endif
 ifeq (,$(findstring win,$(platform)))
    VISIBILITY := -fvisibility=hidden
 endif
-COMMON = $(OPT) $(fpic) $(VISIBILITY) -pthread -MMD -MP $(CPPFLAGS)
+# The core's files are made again when a header of LLVM's changes too: the
+# tree's LLVM is edited, its headers come in as system headers (their
+# warnings are not the core's), and -MMD does not list those. A core file
+# compiled against a class of LLVM's as it was would be linked to it as it
+# is. With an installed LLVM, the headers of the system are left out as before.
+DEPFLAGS := $(if $(filter 1,$(HAVE_LLVM)),$(if $(filter 1,$(SYSTEM_LLVM)),-MMD,-MD),-MMD)
+COMMON = $(OPT) $(fpic) $(VISIBILITY) -pthread $(DEPFLAGS) -MP $(CPPFLAGS)
 
 FLAGS_RPCS3 := -std=gnu++23 -fno-exceptions -fstack-protector $(ARCH_FLAGS) \
 	$(DEFINES) $(INCLUDES_RPCS3) $(LLVM_INC) $(WARNINGS_RPCS3)
@@ -400,7 +406,7 @@ REMOVE_OBJECTS = $(if $(wildcard $(OBJ_DIRS)),find $(wildcard $(OBJ_DIRS)) -maxd
 # reads their dependency files. Not for `make clean`, which removes them all.
 # Nor for `make llvm`, which the CMake build runs with its own compilers and
 # its own place for LLVM's objects: it must not clear this build's.
-BUILD_TAG := $(CC)|$(CXX)|$(platform)|$(arch)|$(HAVE_LLVM)|$(SYSTEM_LLVM)|$(if $(filter 1,$(SYSTEM_LLVM)),$(shell $(LLVM_CONFIG) --version))|$(DEBUG)|$(LTO)
+BUILD_TAG := $(CC)|$(CXX)|$(platform)|$(arch)|$(HAVE_LLVM)|$(SYSTEM_LLVM)|$(if $(filter 1,$(SYSTEM_LLVM)),$(shell $(LLVM_CONFIG) --version))|$(DEBUG)|$(LTO)|$(DEPFLAGS)
 ifeq ($(filter clean llvm,$(MAKECMDGOALS)),)
 BUILD_TAG_STATUS := $(shell \
 	if [ ! -f .build-tag ] || [ "`cat .build-tag 2>/dev/null`" != "$(BUILD_TAG)" ]; then \
