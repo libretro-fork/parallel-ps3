@@ -310,7 +310,13 @@ error_code sys_memory_free(cpu_thread& cpu, u32 addr)
 	}
 
 	const auto size = (ensure(vm::dealloc(addr)));
-	reader_lock{id_manager::g_mutex}, ct->free(size);
+
+	// No lock over all IDs: the container cannot go while this memory is
+	// counted in it. sys_memory_container_destroy only takes a container
+	// whose count is zero, in one compare-and-swap that also fills it, and
+	// the count is not zero until this one interlocked step has taken size
+	// off - after which free() touches the container no more.
+	ct->free(size);
 	return CELL_OK;
 }
 
