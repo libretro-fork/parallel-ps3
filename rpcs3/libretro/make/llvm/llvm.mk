@@ -702,26 +702,17 @@ LLVM_LIB_COMMON_SRCS := \
 	$(LLVM_SRC)/lib/TargetParser/TargetDataLayout.cpp \
 	$(LLVM_SRC)/lib/TargetParser/X86TargetParser.cpp \
 	$(LLVM_SRC)/lib/TargetParser/XtensaTargetParser.cpp \
-	$(LLVM_SRC)/lib/BinaryFormat/AMDGPUMetadataVerifier.cpp \
 	$(LLVM_SRC)/lib/BinaryFormat/COFF.cpp \
 	$(LLVM_SRC)/lib/BinaryFormat/Dwarf.cpp \
 	$(LLVM_SRC)/lib/BinaryFormat/DXContainer.cpp \
-	$(LLVM_SRC)/lib/BinaryFormat/ELF.cpp \
 	$(LLVM_SRC)/lib/BinaryFormat/MachO.cpp \
 	$(LLVM_SRC)/lib/BinaryFormat/Magic.cpp \
-	$(LLVM_SRC)/lib/BinaryFormat/MsgPackDocument.cpp \
-	$(LLVM_SRC)/lib/BinaryFormat/MsgPackDocumentYAML.cpp \
-	$(LLVM_SRC)/lib/BinaryFormat/MsgPackReader.cpp \
-	$(LLVM_SRC)/lib/BinaryFormat/MsgPackWriter.cpp \
-	$(LLVM_SRC)/lib/BinaryFormat/SFrame.cpp \
 	$(LLVM_SRC)/lib/BinaryFormat/Wasm.cpp \
 	$(LLVM_SRC)/lib/BinaryFormat/XCOFF.cpp \
 	$(LLVM_SRC)/lib/Bitstream/Reader/BitstreamReader.cpp \
 	$(LLVM_SRC)/lib/Remarks/BitstreamRemarkParser.cpp \
 	$(LLVM_SRC)/lib/Remarks/BitstreamRemarkSerializer.cpp \
-	$(LLVM_SRC)/lib/Remarks/Remark.cpp \
 	$(LLVM_SRC)/lib/Remarks/RemarkFormat.cpp \
-	$(LLVM_SRC)/lib/Remarks/RemarkLinker.cpp \
 	$(LLVM_SRC)/lib/Remarks/RemarkParser.cpp \
 	$(LLVM_SRC)/lib/Remarks/RemarkSerializer.cpp \
 	$(LLVM_SRC)/lib/Remarks/RemarkStreamer.cpp \
@@ -730,7 +721,6 @@ LLVM_LIB_COMMON_SRCS := \
 	$(LLVM_SRC)/lib/Remarks/YAMLRemarkSerializer.cpp \
 	$(LLVM_SRC)/lib/IR/AbstractCallSite.cpp \
 	$(LLVM_SRC)/lib/IR/AsmWriter.cpp \
-	$(LLVM_SRC)/lib/IR/Assumptions.cpp \
 	$(LLVM_SRC)/lib/IR/Attributes.cpp \
 	$(LLVM_SRC)/lib/IR/AutoUpgrade.cpp \
 	$(LLVM_SRC)/lib/IR/BasicBlock.cpp \
@@ -742,7 +732,6 @@ LLVM_LIB_COMMON_SRCS := \
 	$(LLVM_SRC)/lib/IR/ConstantRangeList.cpp \
 	$(LLVM_SRC)/lib/IR/Constants.cpp \
 	$(LLVM_SRC)/lib/IR/ConvergenceVerifier.cpp \
-	$(LLVM_SRC)/lib/IR/Core.cpp \
 	$(LLVM_SRC)/lib/IR/CycleInfo.cpp \
 	$(LLVM_SRC)/lib/IR/DIBuilder.cpp \
 	$(LLVM_SRC)/lib/IR/DataLayout.cpp \
@@ -756,7 +745,6 @@ LLVM_LIB_COMMON_SRCS := \
 	$(LLVM_SRC)/lib/IR/DiagnosticPrinter.cpp \
 	$(LLVM_SRC)/lib/IR/Dominators.cpp \
 	$(LLVM_SRC)/lib/IR/DroppedVariableStats.cpp \
-	$(LLVM_SRC)/lib/IR/DroppedVariableStatsIR.cpp \
 	$(LLVM_SRC)/lib/IR/EHPersonalities.cpp \
 	$(LLVM_SRC)/lib/IR/FPEnv.cpp \
 	$(LLVM_SRC)/lib/IR/Function.cpp \
@@ -791,14 +779,10 @@ LLVM_LIB_COMMON_SRCS := \
 	$(LLVM_SRC)/lib/IR/PassTimingInfo.cpp \
 	$(LLVM_SRC)/lib/IR/PrintPasses.cpp \
 	$(LLVM_SRC)/lib/IR/ProfDataUtils.cpp \
-	$(LLVM_SRC)/lib/IR/SafepointIRVerifier.cpp \
 	$(LLVM_SRC)/lib/IR/ProfileSummary.cpp \
-	$(LLVM_SRC)/lib/IR/PseudoProbe.cpp \
-	$(LLVM_SRC)/lib/IR/ReplaceConstant.cpp \
 	$(LLVM_SRC)/lib/IR/Statepoint.cpp \
 	$(LLVM_SRC)/lib/IR/StructuralHash.cpp \
 	$(LLVM_SRC)/lib/IR/Type.cpp \
-	$(LLVM_SRC)/lib/IR/TypedPointerType.cpp \
 	$(LLVM_SRC)/lib/IR/TypeFinder.cpp \
 	$(LLVM_SRC)/lib/IR/Use.cpp \
 	$(LLVM_SRC)/lib/IR/User.cpp \
@@ -812,8 +796,6 @@ LLVM_LIB_COMMON_SRCS := \
 	$(LLVM_SRC)/lib/DebugInfo/DWARF/LowLevel/DWARFExpression.cpp \
 	$(LLVM_SRC)/lib/DebugInfo/DWARF/LowLevel/DWARFUnwindTable.cpp \
 	$(LLVM_SRC)/lib/MC/ConstantPools.cpp \
-	$(LLVM_SRC)/lib/MC/DXContainerPSVInfo.cpp \
-	$(LLVM_SRC)/lib/MC/DXContainerRootSignature.cpp \
 	$(LLVM_SRC)/lib/MC/ELFObjectWriter.cpp \
 	$(LLVM_SRC)/lib/MC/GOFFObjectWriter.cpp \
 	$(LLVM_SRC)/lib/MC/MCAsmBackend.cpp \
@@ -821,10 +803,7 @@ LLVM_LIB_COMMON_SRCS := \
 	$(LLVM_SRC)/lib/MC/MCAsmInfoCOFF.cpp \
 	$(LLVM_SRC)/lib/MC/MCAsmInfoDarwin.cpp \
 	$(LLVM_SRC)/lib/MC/MCAsmInfoELF.cpp \
-	$(LLVM_SRC)/lib/MC/MCAsmInfoGOFF.cpp \
-	$(LLVM_SRC)/lib/MC/MCAsmInfoWasm.cpp \
 	$(LLVM_SRC)/lib/MC/MCAsmInfoXCOFF.cpp \
-	$(LLVM_SRC)/lib/MC/MCAsmMacro.cpp \
 	$(LLVM_SRC)/lib/MC/MCAsmStreamer.cpp \
 	$(LLVM_SRC)/lib/MC/MCAssembler.cpp \
 	$(LLVM_SRC)/lib/MC/MCCodeEmitter.cpp \
@@ -842,8 +821,6 @@ LLVM_LIB_COMMON_SRCS := \
 	$(LLVM_SRC)/lib/MC/MCInstPrinter.cpp \
 	$(LLVM_SRC)/lib/MC/MCInstrAnalysis.cpp \
 	$(LLVM_SRC)/lib/MC/MCInstrDesc.cpp \
-	$(LLVM_SRC)/lib/MC/MCInstrInfo.cpp \
-	$(LLVM_SRC)/lib/MC/MCLabel.cpp \
 	$(LLVM_SRC)/lib/MC/MCLinkerOptimizationHint.cpp \
 	$(LLVM_SRC)/lib/MC/MCMachOStreamer.cpp \
 	$(LLVM_SRC)/lib/MC/MCMachObjectTargetWriter.cpp \
@@ -865,15 +842,10 @@ LLVM_LIB_COMMON_SRCS := \
 	$(LLVM_SRC)/lib/MC/MCSymbolGOFF.cpp \
 	$(LLVM_SRC)/lib/MC/MCSymbolXCOFF.cpp \
 	$(LLVM_SRC)/lib/MC/MCTargetOptions.cpp \
-	$(LLVM_SRC)/lib/MC/MCTargetOptionsCommandFlags.cpp \
-	$(LLVM_SRC)/lib/MC/MCValue.cpp \
-	$(LLVM_SRC)/lib/MC/MCWasmObjectTargetWriter.cpp \
 	$(LLVM_SRC)/lib/MC/MCWasmStreamer.cpp \
 	$(LLVM_SRC)/lib/MC/MCWin64EH.cpp \
 	$(LLVM_SRC)/lib/MC/MCWinCOFFStreamer.cpp \
 	$(LLVM_SRC)/lib/MC/MCWinEH.cpp \
-	$(LLVM_SRC)/lib/MC/MCXCOFFObjectTargetWriter.cpp \
-	$(LLVM_SRC)/lib/MC/MCXCOFFStreamer.cpp \
 	$(LLVM_SRC)/lib/MC/MachObjectWriter.cpp \
 	$(LLVM_SRC)/lib/MC/SPIRVObjectWriter.cpp \
 	$(LLVM_SRC)/lib/MC/StringTableBuilder.cpp \
@@ -881,8 +853,6 @@ LLVM_LIB_COMMON_SRCS := \
 	$(LLVM_SRC)/lib/MC/WasmObjectWriter.cpp \
 	$(LLVM_SRC)/lib/MC/WinCOFFObjectWriter.cpp \
 	$(LLVM_SRC)/lib/MC/XCOFFObjectWriter.cpp \
-	$(LLVM_SRC)/lib/Bitcode/Reader/BitcodeAnalyzer.cpp \
-	$(LLVM_SRC)/lib/Bitcode/Reader/BitReader.cpp \
 	$(LLVM_SRC)/lib/Bitcode/Reader/BitcodeReader.cpp \
 	$(LLVM_SRC)/lib/Bitcode/Reader/MetadataLoader.cpp \
 	$(LLVM_SRC)/lib/Bitcode/Reader/ValueList.cpp \
@@ -894,14 +864,12 @@ LLVM_LIB_COMMON_SRCS := \
 	$(LLVM_SRC)/lib/MC/MCParser/AsmLexer.cpp \
 	$(LLVM_SRC)/lib/MC/MCParser/AsmParser.cpp \
 	$(LLVM_SRC)/lib/MC/MCParser/COFFAsmParser.cpp \
-	$(LLVM_SRC)/lib/MC/MCParser/COFFMasmParser.cpp \
 	$(LLVM_SRC)/lib/MC/MCParser/GOFFAsmParser.cpp \
 	$(LLVM_SRC)/lib/MC/MCParser/DarwinAsmParser.cpp \
 	$(LLVM_SRC)/lib/MC/MCParser/ELFAsmParser.cpp \
 	$(LLVM_SRC)/lib/MC/MCParser/MCAsmParser.cpp \
 	$(LLVM_SRC)/lib/MC/MCParser/MCAsmParserExtension.cpp \
 	$(LLVM_SRC)/lib/MC/MCParser/MCTargetAsmParser.cpp \
-	$(LLVM_SRC)/lib/MC/MCParser/MasmParser.cpp \
 	$(LLVM_SRC)/lib/MC/MCParser/WasmAsmParser.cpp \
 	$(LLVM_SRC)/lib/MC/MCParser/XCOFFAsmParser.cpp \
 	$(LLVM_SRC)/lib/TextAPI/Architecture.cpp \
@@ -910,73 +878,40 @@ LLVM_LIB_COMMON_SRCS := \
 	$(LLVM_SRC)/lib/TextAPI/TextStubV5.cpp \
 	$(LLVM_SRC)/lib/TextAPI/PackedVersion.cpp \
 	$(LLVM_SRC)/lib/TextAPI/Platform.cpp \
-	$(LLVM_SRC)/lib/TextAPI/RecordsSlice.cpp \
-	$(LLVM_SRC)/lib/TextAPI/RecordVisitor.cpp \
 	$(LLVM_SRC)/lib/TextAPI/Symbol.cpp \
 	$(LLVM_SRC)/lib/TextAPI/SymbolSet.cpp \
 	$(LLVM_SRC)/lib/TextAPI/Target.cpp \
 	$(LLVM_SRC)/lib/TextAPI/TextAPIError.cpp \
 	$(LLVM_SRC)/lib/TextAPI/TextStub.cpp \
 	$(LLVM_SRC)/lib/TextAPI/TextStubCommon.cpp \
-	$(LLVM_SRC)/lib/TextAPI/Utils.cpp \
 	$(LLVM_SRC)/lib/Object/Archive.cpp \
 	$(LLVM_SRC)/lib/Object/ArchiveWriter.cpp \
 	$(LLVM_SRC)/lib/Object/Binary.cpp \
-	$(LLVM_SRC)/lib/Object/BuildID.cpp \
 	$(LLVM_SRC)/lib/Object/COFFImportFile.cpp \
-	$(LLVM_SRC)/lib/Object/COFFModuleDefinition.cpp \
 	$(LLVM_SRC)/lib/Object/COFFObjectFile.cpp \
 	$(LLVM_SRC)/lib/Object/Decompressor.cpp \
 	$(LLVM_SRC)/lib/Object/DXContainer.cpp \
 	$(LLVM_SRC)/lib/Object/ELF.cpp \
 	$(LLVM_SRC)/lib/Object/ELFObjectFile.cpp \
 	$(LLVM_SRC)/lib/Object/Error.cpp \
-	$(LLVM_SRC)/lib/Object/GOFFObjectFile.cpp \
-	$(LLVM_SRC)/lib/Object/FaultMapParser.cpp \
 	$(LLVM_SRC)/lib/Object/IRObjectFile.cpp \
 	$(LLVM_SRC)/lib/Object/IRSymtab.cpp \
 	$(LLVM_SRC)/lib/Object/MachOObjectFile.cpp \
 	$(LLVM_SRC)/lib/Object/MachOUniversal.cpp \
 	$(LLVM_SRC)/lib/Object/Minidump.cpp \
 	$(LLVM_SRC)/lib/Object/ModuleSymbolTable.cpp \
-	$(LLVM_SRC)/lib/Object/Object.cpp \
 	$(LLVM_SRC)/lib/Object/ObjectFile.cpp \
 	$(LLVM_SRC)/lib/Object/OffloadBinary.cpp \
-	$(LLVM_SRC)/lib/Object/OffloadBundle.cpp \
 	$(LLVM_SRC)/lib/Object/RecordStreamer.cpp \
 	$(LLVM_SRC)/lib/Object/RelocationResolver.cpp \
-	$(LLVM_SRC)/lib/Object/SFrameParser.cpp \
 	$(LLVM_SRC)/lib/Object/SymbolicFile.cpp \
 	$(LLVM_SRC)/lib/Object/SymbolSize.cpp \
 	$(LLVM_SRC)/lib/Object/TapiFile.cpp \
 	$(LLVM_SRC)/lib/Object/TapiUniversal.cpp \
-	$(LLVM_SRC)/lib/Object/MachOUniversalWriter.cpp \
 	$(LLVM_SRC)/lib/Object/WasmObjectFile.cpp \
-	$(LLVM_SRC)/lib/Object/WindowsMachineFlag.cpp \
 	$(LLVM_SRC)/lib/Object/WindowsResource.cpp \
 	$(LLVM_SRC)/lib/Object/XCOFFObjectFile.cpp \
-	$(LLVM_SRC)/lib/ExecutionEngine/Orc/Shared/AllocationActions.cpp \
-	$(LLVM_SRC)/lib/ExecutionEngine/Orc/Shared/MachOObjectFormat.cpp \
-	$(LLVM_SRC)/lib/ExecutionEngine/Orc/Shared/ObjectFormats.cpp \
-	$(LLVM_SRC)/lib/ExecutionEngine/Orc/Shared/OrcError.cpp \
-	$(LLVM_SRC)/lib/ExecutionEngine/Orc/Shared/OrcRTBridge.cpp \
-	$(LLVM_SRC)/lib/ExecutionEngine/Orc/Shared/SimpleRemoteEPCUtils.cpp \
-	$(LLVM_SRC)/lib/ExecutionEngine/Orc/Shared/SymbolStringPool.cpp \
-	$(LLVM_SRC)/lib/ExecutionEngine/Orc/TargetProcess/ExecutorSharedMemoryMapperService.cpp \
-	$(LLVM_SRC)/lib/ExecutionEngine/Orc/TargetProcess/DefaultHostBootstrapValues.cpp \
-	$(LLVM_SRC)/lib/ExecutionEngine/Orc/TargetProcess/ExecutorResolver.cpp \
-	$(LLVM_SRC)/lib/ExecutionEngine/Orc/TargetProcess/LibraryResolver.cpp \
 	$(LLVM_SRC)/lib/ExecutionEngine/Orc/TargetProcess/JITLoaderGDB.cpp \
-	$(LLVM_SRC)/lib/ExecutionEngine/Orc/TargetProcess/JITLoaderPerf.cpp \
-	$(LLVM_SRC)/lib/ExecutionEngine/Orc/TargetProcess/JITLoaderVTune.cpp \
-	$(LLVM_SRC)/lib/ExecutionEngine/Orc/TargetProcess/LibraryScanner.cpp \
-	$(LLVM_SRC)/lib/ExecutionEngine/Orc/TargetProcess/OrcRTBootstrap.cpp \
-	$(LLVM_SRC)/lib/ExecutionEngine/Orc/TargetProcess/RegisterEHFrames.cpp \
-	$(LLVM_SRC)/lib/ExecutionEngine/Orc/TargetProcess/SimpleExecutorDylibManager.cpp \
-	$(LLVM_SRC)/lib/ExecutionEngine/Orc/TargetProcess/SimpleExecutorMemoryManager.cpp \
-	$(LLVM_SRC)/lib/ExecutionEngine/Orc/TargetProcess/SimpleRemoteEPCServer.cpp \
-	$(LLVM_SRC)/lib/ExecutionEngine/Orc/TargetProcess/TargetExecutionUtils.cpp \
-	$(LLVM_SRC)/lib/ExecutionEngine/Orc/TargetProcess/UnwindInfoManager.cpp \
 	$(LLVM_SRC)/lib/ExecutionEngine/RuntimeDyld/JITSymbol.cpp \
 	$(LLVM_SRC)/lib/ExecutionEngine/RuntimeDyld/RTDyldMemoryManager.cpp \
 	$(LLVM_SRC)/lib/ExecutionEngine/RuntimeDyld/RuntimeDyld.cpp \
@@ -985,12 +920,6 @@ LLVM_LIB_COMMON_SRCS := \
 	$(LLVM_SRC)/lib/ExecutionEngine/RuntimeDyld/RuntimeDyldELF.cpp \
 	$(LLVM_SRC)/lib/ExecutionEngine/RuntimeDyld/RuntimeDyldMachO.cpp \
 	$(LLVM_SRC)/lib/ExecutionEngine/RuntimeDyld/Targets/RuntimeDyldELFMips.cpp \
-	$(LLVM_SRC)/lib/Frontend/HLSL/CBuffer.cpp \
-	$(LLVM_SRC)/lib/Frontend/HLSL/HLSLBinding.cpp \
-	$(LLVM_SRC)/lib/Frontend/HLSL/HLSLResource.cpp \
-	$(LLVM_SRC)/lib/Frontend/HLSL/HLSLRootSignature.cpp \
-	$(LLVM_SRC)/lib/Frontend/HLSL/RootSignatureMetadata.cpp \
-	$(LLVM_SRC)/lib/Frontend/HLSL/RootSignatureValidations.cpp \
 	$(LLVM_SRC)/lib/DebugInfo/DWARF/DWARFAbbreviationDeclaration.cpp \
 	$(LLVM_SRC)/lib/DebugInfo/DWARF/DWARFAddressRange.cpp \
 	$(LLVM_SRC)/lib/DebugInfo/DWARF/DWARFAcceleratorTable.cpp \
@@ -1014,195 +943,43 @@ LLVM_LIB_COMMON_SRCS := \
 	$(LLVM_SRC)/lib/DebugInfo/DWARF/DWARFFormValue.cpp \
 	$(LLVM_SRC)/lib/DebugInfo/DWARF/DWARFGdbIndex.cpp \
 	$(LLVM_SRC)/lib/DebugInfo/DWARF/DWARFListTable.cpp \
-	$(LLVM_SRC)/lib/DebugInfo/DWARF/DWARFLocationExpression.cpp \
 	$(LLVM_SRC)/lib/DebugInfo/DWARF/DWARFTypeUnit.cpp \
 	$(LLVM_SRC)/lib/DebugInfo/DWARF/DWARFUnitIndex.cpp \
 	$(LLVM_SRC)/lib/DebugInfo/DWARF/DWARFUnit.cpp \
 	$(LLVM_SRC)/lib/DebugInfo/DWARF/DWARFUnwindTablePrinter.cpp \
 	$(LLVM_SRC)/lib/DebugInfo/DWARF/DWARFVerifier.cpp \
-	$(LLVM_SRC)/lib/DebugInfo/GSYM/DwarfTransformer.cpp \
-	$(LLVM_SRC)/lib/DebugInfo/GSYM/Header.cpp \
-	$(LLVM_SRC)/lib/DebugInfo/GSYM/FileWriter.cpp \
-	$(LLVM_SRC)/lib/DebugInfo/GSYM/FunctionInfo.cpp \
-	$(LLVM_SRC)/lib/DebugInfo/GSYM/GsymCreator.cpp \
-	$(LLVM_SRC)/lib/DebugInfo/GSYM/GsymContext.cpp \
-	$(LLVM_SRC)/lib/DebugInfo/GSYM/GsymReader.cpp \
-	$(LLVM_SRC)/lib/DebugInfo/GSYM/InlineInfo.cpp \
-	$(LLVM_SRC)/lib/DebugInfo/GSYM/LineTable.cpp \
-	$(LLVM_SRC)/lib/DebugInfo/GSYM/LookupResult.cpp \
-	$(LLVM_SRC)/lib/DebugInfo/GSYM/CallSiteInfo.cpp \
-	$(LLVM_SRC)/lib/DebugInfo/GSYM/MergedFunctionsInfo.cpp \
-	$(LLVM_SRC)/lib/DebugInfo/GSYM/ObjectFileTransformer.cpp \
-	$(LLVM_SRC)/lib/DebugInfo/GSYM/ExtractRanges.cpp \
-	$(LLVM_SRC)/lib/DebugInfo/CodeView/AppendingTypeTableBuilder.cpp \
 	$(LLVM_SRC)/lib/DebugInfo/CodeView/CodeViewError.cpp \
 	$(LLVM_SRC)/lib/DebugInfo/CodeView/CodeViewRecordIO.cpp \
 	$(LLVM_SRC)/lib/DebugInfo/CodeView/ContinuationRecordBuilder.cpp \
-	$(LLVM_SRC)/lib/DebugInfo/CodeView/CVSymbolVisitor.cpp \
 	$(LLVM_SRC)/lib/DebugInfo/CodeView/CVTypeVisitor.cpp \
-	$(LLVM_SRC)/lib/DebugInfo/CodeView/DebugChecksumsSubsection.cpp \
-	$(LLVM_SRC)/lib/DebugInfo/CodeView/DebugCrossExSubsection.cpp \
-	$(LLVM_SRC)/lib/DebugInfo/CodeView/DebugCrossImpSubsection.cpp \
-	$(LLVM_SRC)/lib/DebugInfo/CodeView/DebugFrameDataSubsection.cpp \
-	$(LLVM_SRC)/lib/DebugInfo/CodeView/DebugInlineeLinesSubsection.cpp \
-	$(LLVM_SRC)/lib/DebugInfo/CodeView/DebugLinesSubsection.cpp \
-	$(LLVM_SRC)/lib/DebugInfo/CodeView/DebugStringTableSubsection.cpp \
-	$(LLVM_SRC)/lib/DebugInfo/CodeView/DebugSubsection.cpp \
-	$(LLVM_SRC)/lib/DebugInfo/CodeView/DebugSubsectionRecord.cpp \
-	$(LLVM_SRC)/lib/DebugInfo/CodeView/DebugSubsectionVisitor.cpp \
-	$(LLVM_SRC)/lib/DebugInfo/CodeView/DebugSymbolRVASubsection.cpp \
-	$(LLVM_SRC)/lib/DebugInfo/CodeView/DebugSymbolsSubsection.cpp \
 	$(LLVM_SRC)/lib/DebugInfo/CodeView/EnumTables.cpp \
-	$(LLVM_SRC)/lib/DebugInfo/CodeView/Formatters.cpp \
 	$(LLVM_SRC)/lib/DebugInfo/CodeView/GlobalTypeTableBuilder.cpp \
-	$(LLVM_SRC)/lib/DebugInfo/CodeView/LazyRandomTypeCollection.cpp \
 	$(LLVM_SRC)/lib/DebugInfo/CodeView/Line.cpp \
-	$(LLVM_SRC)/lib/DebugInfo/CodeView/MergingTypeTableBuilder.cpp \
 	$(LLVM_SRC)/lib/DebugInfo/CodeView/RecordName.cpp \
 	$(LLVM_SRC)/lib/DebugInfo/CodeView/RecordSerialization.cpp \
 	$(LLVM_SRC)/lib/DebugInfo/CodeView/SimpleTypeSerializer.cpp \
-	$(LLVM_SRC)/lib/DebugInfo/CodeView/StringsAndChecksums.cpp \
-	$(LLVM_SRC)/lib/DebugInfo/CodeView/SymbolDumper.cpp \
-	$(LLVM_SRC)/lib/DebugInfo/CodeView/SymbolRecordHelpers.cpp \
 	$(LLVM_SRC)/lib/DebugInfo/CodeView/SymbolRecordMapping.cpp \
-	$(LLVM_SRC)/lib/DebugInfo/CodeView/SymbolSerializer.cpp \
-	$(LLVM_SRC)/lib/DebugInfo/CodeView/TypeDumpVisitor.cpp \
 	$(LLVM_SRC)/lib/DebugInfo/CodeView/TypeIndex.cpp \
 	$(LLVM_SRC)/lib/DebugInfo/CodeView/TypeIndexDiscovery.cpp \
 	$(LLVM_SRC)/lib/DebugInfo/CodeView/TypeHashing.cpp \
-	$(LLVM_SRC)/lib/DebugInfo/CodeView/TypeRecordHelpers.cpp \
 	$(LLVM_SRC)/lib/DebugInfo/CodeView/TypeRecordMapping.cpp \
-	$(LLVM_SRC)/lib/DebugInfo/CodeView/TypeStreamMerger.cpp \
 	$(LLVM_SRC)/lib/DebugInfo/CodeView/TypeTableCollection.cpp \
-	$(LLVM_SRC)/lib/DebugInfo/MSF/MappedBlockStream.cpp \
-	$(LLVM_SRC)/lib/DebugInfo/MSF/MSFBuilder.cpp \
-	$(LLVM_SRC)/lib/DebugInfo/MSF/MSFCommon.cpp \
-	$(LLVM_SRC)/lib/DebugInfo/MSF/MSFError.cpp \
-	$(LLVM_SRC)/lib/DebugInfo/PDB/GenericError.cpp \
-	$(LLVM_SRC)/lib/DebugInfo/PDB/IPDBSourceFile.cpp \
-	$(LLVM_SRC)/lib/DebugInfo/PDB/PDB.cpp \
-	$(LLVM_SRC)/lib/DebugInfo/PDB/PDBContext.cpp \
-	$(LLVM_SRC)/lib/DebugInfo/PDB/PDBExtras.cpp \
-	$(LLVM_SRC)/lib/DebugInfo/PDB/PDBInterfaceAnchors.cpp \
-	$(LLVM_SRC)/lib/DebugInfo/PDB/PDBSymbol.cpp \
-	$(LLVM_SRC)/lib/DebugInfo/PDB/PDBSymbolAnnotation.cpp \
-	$(LLVM_SRC)/lib/DebugInfo/PDB/PDBSymbolBlock.cpp \
-	$(LLVM_SRC)/lib/DebugInfo/PDB/PDBSymbolCompiland.cpp \
-	$(LLVM_SRC)/lib/DebugInfo/PDB/PDBSymbolCompilandDetails.cpp \
-	$(LLVM_SRC)/lib/DebugInfo/PDB/PDBSymbolCompilandEnv.cpp \
-	$(LLVM_SRC)/lib/DebugInfo/PDB/PDBSymbolCustom.cpp \
-	$(LLVM_SRC)/lib/DebugInfo/PDB/PDBSymbolData.cpp \
-	$(LLVM_SRC)/lib/DebugInfo/PDB/PDBSymbolExe.cpp \
-	$(LLVM_SRC)/lib/DebugInfo/PDB/PDBSymbolFunc.cpp \
-	$(LLVM_SRC)/lib/DebugInfo/PDB/PDBSymbolFuncDebugEnd.cpp \
-	$(LLVM_SRC)/lib/DebugInfo/PDB/PDBSymbolFuncDebugStart.cpp \
-	$(LLVM_SRC)/lib/DebugInfo/PDB/PDBSymbolLabel.cpp \
-	$(LLVM_SRC)/lib/DebugInfo/PDB/PDBSymbolPublicSymbol.cpp \
-	$(LLVM_SRC)/lib/DebugInfo/PDB/PDBSymbolThunk.cpp \
-	$(LLVM_SRC)/lib/DebugInfo/PDB/PDBSymbolTypeArray.cpp \
-	$(LLVM_SRC)/lib/DebugInfo/PDB/PDBSymbolTypeBaseClass.cpp \
-	$(LLVM_SRC)/lib/DebugInfo/PDB/PDBSymbolTypeBuiltin.cpp \
-	$(LLVM_SRC)/lib/DebugInfo/PDB/PDBSymbolTypeCustom.cpp \
-	$(LLVM_SRC)/lib/DebugInfo/PDB/PDBSymbolTypeDimension.cpp \
-	$(LLVM_SRC)/lib/DebugInfo/PDB/PDBSymbolTypeEnum.cpp \
-	$(LLVM_SRC)/lib/DebugInfo/PDB/PDBSymbolTypeFriend.cpp \
-	$(LLVM_SRC)/lib/DebugInfo/PDB/PDBSymbolTypeFunctionArg.cpp \
-	$(LLVM_SRC)/lib/DebugInfo/PDB/PDBSymbolTypeFunctionSig.cpp \
-	$(LLVM_SRC)/lib/DebugInfo/PDB/PDBSymbolTypeManaged.cpp \
-	$(LLVM_SRC)/lib/DebugInfo/PDB/PDBSymbolTypePointer.cpp \
-	$(LLVM_SRC)/lib/DebugInfo/PDB/PDBSymbolTypeTypedef.cpp \
-	$(LLVM_SRC)/lib/DebugInfo/PDB/PDBSymbolTypeUDT.cpp \
-	$(LLVM_SRC)/lib/DebugInfo/PDB/PDBSymbolTypeVTable.cpp \
-	$(LLVM_SRC)/lib/DebugInfo/PDB/PDBSymbolTypeVTableShape.cpp \
-	$(LLVM_SRC)/lib/DebugInfo/PDB/PDBSymbolUnknown.cpp \
-	$(LLVM_SRC)/lib/DebugInfo/PDB/PDBSymbolUsingNamespace.cpp \
-	$(LLVM_SRC)/lib/DebugInfo/PDB/PDBSymDumper.cpp \
-	$(LLVM_SRC)/lib/DebugInfo/PDB/UDTLayout.cpp \
-	$(LLVM_SRC)/lib/DebugInfo/PDB/Native/DbiModuleDescriptor.cpp \
-	$(LLVM_SRC)/lib/DebugInfo/PDB/Native/DbiModuleDescriptorBuilder.cpp \
-	$(LLVM_SRC)/lib/DebugInfo/PDB/Native/DbiModuleList.cpp \
-	$(LLVM_SRC)/lib/DebugInfo/PDB/Native/DbiStream.cpp \
-	$(LLVM_SRC)/lib/DebugInfo/PDB/Native/DbiStreamBuilder.cpp \
-	$(LLVM_SRC)/lib/DebugInfo/PDB/Native/EnumTables.cpp \
-	$(LLVM_SRC)/lib/DebugInfo/PDB/Native/FormatUtil.cpp \
-	$(LLVM_SRC)/lib/DebugInfo/PDB/Native/GlobalsStream.cpp \
-	$(LLVM_SRC)/lib/DebugInfo/PDB/Native/Hash.cpp \
-	$(LLVM_SRC)/lib/DebugInfo/PDB/Native/HashTable.cpp \
-	$(LLVM_SRC)/lib/DebugInfo/PDB/Native/InfoStream.cpp \
-	$(LLVM_SRC)/lib/DebugInfo/PDB/Native/InfoStreamBuilder.cpp \
-	$(LLVM_SRC)/lib/DebugInfo/PDB/Native/InjectedSourceStream.cpp \
-	$(LLVM_SRC)/lib/DebugInfo/PDB/Native/InputFile.cpp \
-	$(LLVM_SRC)/lib/DebugInfo/PDB/Native/LinePrinter.cpp \
-	$(LLVM_SRC)/lib/DebugInfo/PDB/Native/ModuleDebugStream.cpp \
-	$(LLVM_SRC)/lib/DebugInfo/PDB/Native/NativeCompilandSymbol.cpp \
-	$(LLVM_SRC)/lib/DebugInfo/PDB/Native/NativeEnumGlobals.cpp \
-	$(LLVM_SRC)/lib/DebugInfo/PDB/Native/NativeEnumInjectedSources.cpp \
-	$(LLVM_SRC)/lib/DebugInfo/PDB/Native/NativeEnumLineNumbers.cpp \
-	$(LLVM_SRC)/lib/DebugInfo/PDB/Native/NativeEnumModules.cpp \
-	$(LLVM_SRC)/lib/DebugInfo/PDB/Native/NativeEnumTypes.cpp \
-	$(LLVM_SRC)/lib/DebugInfo/PDB/Native/NativeEnumSymbols.cpp \
-	$(LLVM_SRC)/lib/DebugInfo/PDB/Native/NativeExeSymbol.cpp \
-	$(LLVM_SRC)/lib/DebugInfo/PDB/Native/NativeFunctionSymbol.cpp \
-	$(LLVM_SRC)/lib/DebugInfo/PDB/Native/NativeInlineSiteSymbol.cpp \
-	$(LLVM_SRC)/lib/DebugInfo/PDB/Native/NativeLineNumber.cpp \
-	$(LLVM_SRC)/lib/DebugInfo/PDB/Native/NativePublicSymbol.cpp \
-	$(LLVM_SRC)/lib/DebugInfo/PDB/Native/NativeRawSymbol.cpp \
-	$(LLVM_SRC)/lib/DebugInfo/PDB/Native/NativeSourceFile.cpp \
-	$(LLVM_SRC)/lib/DebugInfo/PDB/Native/NativeSymbolEnumerator.cpp \
-	$(LLVM_SRC)/lib/DebugInfo/PDB/Native/NativeTypeArray.cpp \
-	$(LLVM_SRC)/lib/DebugInfo/PDB/Native/NativeTypeBuiltin.cpp \
-	$(LLVM_SRC)/lib/DebugInfo/PDB/Native/NativeTypeEnum.cpp \
-	$(LLVM_SRC)/lib/DebugInfo/PDB/Native/NativeTypeFunctionSig.cpp \
-	$(LLVM_SRC)/lib/DebugInfo/PDB/Native/NativeTypePointer.cpp \
-	$(LLVM_SRC)/lib/DebugInfo/PDB/Native/NativeTypeTypedef.cpp \
-	$(LLVM_SRC)/lib/DebugInfo/PDB/Native/NativeTypeUDT.cpp \
-	$(LLVM_SRC)/lib/DebugInfo/PDB/Native/NativeTypeVTShape.cpp \
-	$(LLVM_SRC)/lib/DebugInfo/PDB/Native/NamedStreamMap.cpp \
-	$(LLVM_SRC)/lib/DebugInfo/PDB/Native/NativeSession.cpp \
-	$(LLVM_SRC)/lib/DebugInfo/PDB/Native/PDBFile.cpp \
-	$(LLVM_SRC)/lib/DebugInfo/PDB/Native/PDBFileBuilder.cpp \
-	$(LLVM_SRC)/lib/DebugInfo/PDB/Native/PDBStringTable.cpp \
-	$(LLVM_SRC)/lib/DebugInfo/PDB/Native/PDBStringTableBuilder.cpp \
-	$(LLVM_SRC)/lib/DebugInfo/PDB/Native/PublicsStream.cpp \
-	$(LLVM_SRC)/lib/DebugInfo/PDB/Native/GSIStreamBuilder.cpp \
-	$(LLVM_SRC)/lib/DebugInfo/PDB/Native/RawError.cpp \
-	$(LLVM_SRC)/lib/DebugInfo/PDB/Native/SymbolCache.cpp \
-	$(LLVM_SRC)/lib/DebugInfo/PDB/Native/SymbolStream.cpp \
-	$(LLVM_SRC)/lib/DebugInfo/PDB/Native/TpiHashing.cpp \
-	$(LLVM_SRC)/lib/DebugInfo/PDB/Native/TpiStream.cpp \
-	$(LLVM_SRC)/lib/DebugInfo/PDB/Native/TpiStreamBuilder.cpp \
-	$(LLVM_SRC)/lib/DebugInfo/BTF/BTFParser.cpp \
-	$(LLVM_SRC)/lib/DebugInfo/BTF/BTFContext.cpp \
-	$(LLVM_SRC)/lib/DebugInfo/Symbolize/DIPrinter.cpp \
-	$(LLVM_SRC)/lib/DebugInfo/Symbolize/Markup.cpp \
-	$(LLVM_SRC)/lib/DebugInfo/Symbolize/MarkupFilter.cpp \
-	$(LLVM_SRC)/lib/DebugInfo/Symbolize/SymbolizableObjectFile.cpp \
-	$(LLVM_SRC)/lib/DebugInfo/Symbolize/Symbolize.cpp \
 	$(LLVM_SRC)/lib/ProfileData/DataAccessProf.cpp \
-	$(LLVM_SRC)/lib/ProfileData/GCOV.cpp \
 	$(LLVM_SRC)/lib/ProfileData/IndexedMemProfData.cpp \
 	$(LLVM_SRC)/lib/ProfileData/InstrProf.cpp \
 	$(LLVM_SRC)/lib/ProfileData/InstrProfCorrelator.cpp \
 	$(LLVM_SRC)/lib/ProfileData/InstrProfReader.cpp \
-	$(LLVM_SRC)/lib/ProfileData/InstrProfWriter.cpp \
 	$(LLVM_SRC)/lib/ProfileData/ItaniumManglingCanonicalizer.cpp \
 	$(LLVM_SRC)/lib/ProfileData/MemProf.cpp \
-	$(LLVM_SRC)/lib/ProfileData/MemProfCommon.cpp \
-	$(LLVM_SRC)/lib/ProfileData/MemProfReader.cpp \
 	$(LLVM_SRC)/lib/ProfileData/MemProfRadixTree.cpp \
 	$(LLVM_SRC)/lib/ProfileData/MemProfSummary.cpp \
-	$(LLVM_SRC)/lib/ProfileData/MemProfSummaryBuilder.cpp \
 	$(LLVM_SRC)/lib/ProfileData/PGOCtxProfReader.cpp \
-	$(LLVM_SRC)/lib/ProfileData/PGOCtxProfWriter.cpp \
 	$(LLVM_SRC)/lib/ProfileData/ProfileSummaryBuilder.cpp \
 	$(LLVM_SRC)/lib/ProfileData/SampleProf.cpp \
 	$(LLVM_SRC)/lib/ProfileData/SampleProfReader.cpp \
-	$(LLVM_SRC)/lib/ProfileData/SampleProfWriter.cpp \
 	$(LLVM_SRC)/lib/ProfileData/SymbolRemappingReader.cpp \
 	$(LLVM_SRC)/lib/Analysis/AliasAnalysis.cpp \
-	$(LLVM_SRC)/lib/Analysis/AliasAnalysisEvaluator.cpp \
 	$(LLVM_SRC)/lib/Analysis/AliasSetTracker.cpp \
-	$(LLVM_SRC)/lib/Analysis/Analysis.cpp \
 	$(LLVM_SRC)/lib/Analysis/AssumeBundleQueries.cpp \
 	$(LLVM_SRC)/lib/Analysis/AssumptionCache.cpp \
 	$(LLVM_SRC)/lib/Analysis/BasicAliasAnalysis.cpp \
@@ -1211,230 +988,125 @@ LLVM_LIB_COMMON_SRCS := \
 	$(LLVM_SRC)/lib/Analysis/BranchProbabilityInfo.cpp \
 	$(LLVM_SRC)/lib/Analysis/CFG.cpp \
 	$(LLVM_SRC)/lib/Analysis/CFGPrinter.cpp \
-	$(LLVM_SRC)/lib/Analysis/CFGSCCPrinter.cpp \
 	$(LLVM_SRC)/lib/Analysis/CGSCCPassManager.cpp \
 	$(LLVM_SRC)/lib/Analysis/CallGraph.cpp \
 	$(LLVM_SRC)/lib/Analysis/CallGraphSCCPass.cpp \
-	$(LLVM_SRC)/lib/Analysis/CallPrinter.cpp \
 	$(LLVM_SRC)/lib/Analysis/CaptureTracking.cpp \
 	$(LLVM_SRC)/lib/Analysis/CmpInstAnalysis.cpp \
-	$(LLVM_SRC)/lib/Analysis/CostModel.cpp \
 	$(LLVM_SRC)/lib/Analysis/CodeMetrics.cpp \
 	$(LLVM_SRC)/lib/Analysis/ConstantFolding.cpp \
 	$(LLVM_SRC)/lib/Analysis/CtxProfAnalysis.cpp \
 	$(LLVM_SRC)/lib/Analysis/CycleAnalysis.cpp \
-	$(LLVM_SRC)/lib/Analysis/DDG.cpp \
-	$(LLVM_SRC)/lib/Analysis/DDGPrinter.cpp \
-	$(LLVM_SRC)/lib/Analysis/ConstraintSystem.cpp \
-	$(LLVM_SRC)/lib/Analysis/Delinearization.cpp \
 	$(LLVM_SRC)/lib/Analysis/DemandedBits.cpp \
-	$(LLVM_SRC)/lib/Analysis/DependenceAnalysis.cpp \
-	$(LLVM_SRC)/lib/Analysis/DependenceGraphBuilder.cpp \
-	$(LLVM_SRC)/lib/Analysis/DevelopmentModeInlineAdvisor.cpp \
-	$(LLVM_SRC)/lib/Analysis/DomConditionCache.cpp \
-	$(LLVM_SRC)/lib/Analysis/DomPrinter.cpp \
 	$(LLVM_SRC)/lib/Analysis/DomTreeUpdater.cpp \
 	$(LLVM_SRC)/lib/Analysis/DominanceFrontier.cpp \
-	$(LLVM_SRC)/lib/Analysis/DXILResource.cpp \
-	$(LLVM_SRC)/lib/Analysis/DXILMetadataAnalysis.cpp \
 	$(LLVM_SRC)/lib/Analysis/EphemeralValuesCache.cpp \
 	$(LLVM_SRC)/lib/Analysis/FloatingPointPredicateUtils.cpp \
-	$(LLVM_SRC)/lib/Analysis/FunctionPropertiesAnalysis.cpp \
 	$(LLVM_SRC)/lib/Analysis/GlobalsModRef.cpp \
 	$(LLVM_SRC)/lib/Analysis/GuardUtils.cpp \
-	$(LLVM_SRC)/lib/Analysis/HashRecognize.cpp \
 	$(LLVM_SRC)/lib/Analysis/HeatUtils.cpp \
 	$(LLVM_SRC)/lib/Analysis/IR2Vec.cpp \
-	$(LLVM_SRC)/lib/Analysis/IRSimilarityIdentifier.cpp \
 	$(LLVM_SRC)/lib/Analysis/IVDescriptors.cpp \
 	$(LLVM_SRC)/lib/Analysis/IVUsers.cpp \
-	$(LLVM_SRC)/lib/Analysis/ImportedFunctionsInliningStatistics.cpp \
 	$(LLVM_SRC)/lib/Analysis/IndirectCallPromotionAnalysis.cpp \
 	$(LLVM_SRC)/lib/Analysis/InlineCost.cpp \
-	$(LLVM_SRC)/lib/Analysis/InlineAdvisor.cpp \
-	$(LLVM_SRC)/lib/Analysis/InlineOrder.cpp \
-	$(LLVM_SRC)/lib/Analysis/InstCount.cpp \
 	$(LLVM_SRC)/lib/Analysis/InstructionPrecedenceTracking.cpp \
 	$(LLVM_SRC)/lib/Analysis/InstructionSimplify.cpp \
 	$(LLVM_SRC)/lib/Analysis/InteractiveModelRunner.cpp \
-	$(LLVM_SRC)/lib/Analysis/KernelInfo.cpp \
-	$(LLVM_SRC)/lib/Analysis/LastRunTrackingAnalysis.cpp \
 	$(LLVM_SRC)/lib/Analysis/LazyBranchProbabilityInfo.cpp \
 	$(LLVM_SRC)/lib/Analysis/LazyBlockFrequencyInfo.cpp \
 	$(LLVM_SRC)/lib/Analysis/LazyCallGraph.cpp \
-	$(LLVM_SRC)/lib/Analysis/LazyValueInfo.cpp \
-	$(LLVM_SRC)/lib/Analysis/Lint.cpp \
 	$(LLVM_SRC)/lib/Analysis/Loads.cpp \
 	$(LLVM_SRC)/lib/Analysis/Local.cpp \
 	$(LLVM_SRC)/lib/Analysis/LoopAccessAnalysis.cpp \
 	$(LLVM_SRC)/lib/Analysis/LoopAnalysisManager.cpp \
-	$(LLVM_SRC)/lib/Analysis/LoopCacheAnalysis.cpp \
 	$(LLVM_SRC)/lib/Analysis/LoopNestAnalysis.cpp \
-	$(LLVM_SRC)/lib/Analysis/LoopUnrollAnalyzer.cpp \
 	$(LLVM_SRC)/lib/Analysis/LoopInfo.cpp \
 	$(LLVM_SRC)/lib/Analysis/LoopPass.cpp \
-	$(LLVM_SRC)/lib/Analysis/MLInlineAdvisor.cpp \
-	$(LLVM_SRC)/lib/Analysis/MemDerefPrinter.cpp \
 	$(LLVM_SRC)/lib/Analysis/MemoryBuiltins.cpp \
 	$(LLVM_SRC)/lib/Analysis/MemoryDependenceAnalysis.cpp \
 	$(LLVM_SRC)/lib/Analysis/MemoryLocation.cpp \
 	$(LLVM_SRC)/lib/Analysis/MemoryProfileInfo.cpp \
 	$(LLVM_SRC)/lib/Analysis/MemorySSA.cpp \
 	$(LLVM_SRC)/lib/Analysis/MemorySSAUpdater.cpp \
-	$(LLVM_SRC)/lib/Analysis/ModelUnderTrainingRunner.cpp \
-	$(LLVM_SRC)/lib/Analysis/ModuleDebugInfoPrinter.cpp \
 	$(LLVM_SRC)/lib/Analysis/ModuleSummaryAnalysis.cpp \
 	$(LLVM_SRC)/lib/Analysis/MustExecute.cpp \
-	$(LLVM_SRC)/lib/Analysis/NoInferenceModelRunner.cpp \
-	$(LLVM_SRC)/lib/Analysis/ObjCARCAliasAnalysis.cpp \
 	$(LLVM_SRC)/lib/Analysis/ObjCARCAnalysisUtils.cpp \
 	$(LLVM_SRC)/lib/Analysis/ObjCARCInstKind.cpp \
 	$(LLVM_SRC)/lib/Analysis/OptimizationRemarkEmitter.cpp \
 	$(LLVM_SRC)/lib/Analysis/OverflowInstAnalysis.cpp \
 	$(LLVM_SRC)/lib/Analysis/PHITransAddr.cpp \
-	$(LLVM_SRC)/lib/Analysis/PhiValues.cpp \
 	$(LLVM_SRC)/lib/Analysis/PostDominators.cpp \
 	$(LLVM_SRC)/lib/Analysis/ProfileSummaryInfo.cpp \
-	$(LLVM_SRC)/lib/Analysis/PtrUseVisitor.cpp \
-	$(LLVM_SRC)/lib/Analysis/RegionInfo.cpp \
-	$(LLVM_SRC)/lib/Analysis/RegionPass.cpp \
-	$(LLVM_SRC)/lib/Analysis/RegionPrinter.cpp \
-	$(LLVM_SRC)/lib/Analysis/ReplayInlineAdvisor.cpp \
 	$(LLVM_SRC)/lib/Analysis/RuntimeLibcallInfo.cpp \
 	$(LLVM_SRC)/lib/Analysis/ScalarEvolution.cpp \
 	$(LLVM_SRC)/lib/Analysis/ScalarEvolutionAliasAnalysis.cpp \
-	$(LLVM_SRC)/lib/Analysis/ScalarEvolutionDivision.cpp \
 	$(LLVM_SRC)/lib/Analysis/ScalarEvolutionNormalization.cpp \
 	$(LLVM_SRC)/lib/Analysis/StaticDataProfileInfo.cpp \
 	$(LLVM_SRC)/lib/Analysis/StackLifetime.cpp \
 	$(LLVM_SRC)/lib/Analysis/StackSafetyAnalysis.cpp \
-	$(LLVM_SRC)/lib/Analysis/StructuralHash.cpp \
-	$(LLVM_SRC)/lib/Analysis/SyntheticCountsUtils.cpp \
-	$(LLVM_SRC)/lib/Analysis/TFLiteUtils.cpp \
 	$(LLVM_SRC)/lib/Analysis/TargetLibraryInfo.cpp \
 	$(LLVM_SRC)/lib/Analysis/TargetTransformInfo.cpp \
 	$(LLVM_SRC)/lib/Analysis/TensorSpec.cpp \
-	$(LLVM_SRC)/lib/Analysis/Trace.cpp \
 	$(LLVM_SRC)/lib/Analysis/TrainingLogger.cpp \
 	$(LLVM_SRC)/lib/Analysis/TypeBasedAliasAnalysis.cpp \
 	$(LLVM_SRC)/lib/Analysis/TypeMetadataUtils.cpp \
 	$(LLVM_SRC)/lib/Analysis/UniformityAnalysis.cpp \
 	$(LLVM_SRC)/lib/Analysis/ScopedNoAliasAA.cpp \
-	$(LLVM_SRC)/lib/Analysis/ValueLattice.cpp \
-	$(LLVM_SRC)/lib/Analysis/ValueLatticeUtils.cpp \
 	$(LLVM_SRC)/lib/Analysis/ValueTracking.cpp \
 	$(LLVM_SRC)/lib/Analysis/VectorUtils.cpp \
 	$(LLVM_SRC)/lib/Target/RegisterTargetPassConfigCallback.cpp \
-	$(LLVM_SRC)/lib/Target/Target.cpp \
 	$(LLVM_SRC)/lib/Target/TargetLoweringObjectFile.cpp \
 	$(LLVM_SRC)/lib/Target/TargetMachine.cpp \
-	$(LLVM_SRC)/lib/Target/TargetMachineC.cpp \
 	$(LLVM_SRC)/lib/ExecutionEngine/ExecutionEngine.cpp \
 	$(LLVM_SRC)/lib/ExecutionEngine/ExecutionEngineBindings.cpp \
 	$(LLVM_SRC)/lib/ExecutionEngine/GDBRegistrationListener.cpp \
 	$(LLVM_SRC)/lib/ExecutionEngine/SectionMemoryManager.cpp \
 	$(LLVM_SRC)/lib/ExecutionEngine/TargetSelect.cpp \
 	$(LLVM_SRC)/lib/ExecutionEngine/MCJIT/MCJIT.cpp \
-	$(LLVM_SRC)/lib/Transforms/Utils/AddDiscriminators.cpp \
-	$(LLVM_SRC)/lib/Transforms/Utils/AMDGPUEmitPrintf.cpp \
 	$(LLVM_SRC)/lib/Transforms/Utils/ASanStackFrameLayout.cpp \
 	$(LLVM_SRC)/lib/Transforms/Utils/AssumeBundleBuilder.cpp \
 	$(LLVM_SRC)/lib/Transforms/Utils/BasicBlockUtils.cpp \
 	$(LLVM_SRC)/lib/Transforms/Utils/BreakCriticalEdges.cpp \
 	$(LLVM_SRC)/lib/Transforms/Utils/BuildLibCalls.cpp \
 	$(LLVM_SRC)/lib/Transforms/Utils/BypassSlowDivision.cpp \
-	$(LLVM_SRC)/lib/Transforms/Utils/CallPromotionUtils.cpp \
-	$(LLVM_SRC)/lib/Transforms/Utils/CallGraphUpdater.cpp \
-	$(LLVM_SRC)/lib/Transforms/Utils/CanonicalizeAliases.cpp \
 	$(LLVM_SRC)/lib/Transforms/Utils/CanonicalizeFreezeInLoops.cpp \
 	$(LLVM_SRC)/lib/Transforms/Utils/CloneFunction.cpp \
-	$(LLVM_SRC)/lib/Transforms/Utils/CloneModule.cpp \
-	$(LLVM_SRC)/lib/Transforms/Utils/CodeExtractor.cpp \
 	$(LLVM_SRC)/lib/Transforms/Utils/CodeLayout.cpp \
-	$(LLVM_SRC)/lib/Transforms/Utils/CodeMoverUtils.cpp \
-	$(LLVM_SRC)/lib/Transforms/Utils/ControlFlowUtils.cpp \
-	$(LLVM_SRC)/lib/Transforms/Utils/CtorUtils.cpp \
-	$(LLVM_SRC)/lib/Transforms/Utils/CountVisits.cpp \
 	$(LLVM_SRC)/lib/Transforms/Utils/Debugify.cpp \
-	$(LLVM_SRC)/lib/Transforms/Utils/DebugSSAUpdater.cpp \
-	$(LLVM_SRC)/lib/Transforms/Utils/DeclareRuntimeLibcalls.cpp \
 	$(LLVM_SRC)/lib/Transforms/Utils/DemoteRegToStack.cpp \
-	$(LLVM_SRC)/lib/Transforms/Utils/DXILUpgrade.cpp \
 	$(LLVM_SRC)/lib/Transforms/Utils/EntryExitInstrumenter.cpp \
 	$(LLVM_SRC)/lib/Transforms/Utils/EscapeEnumerator.cpp \
-	$(LLVM_SRC)/lib/Transforms/Utils/Evaluator.cpp \
-	$(LLVM_SRC)/lib/Transforms/Utils/FixIrreducible.cpp \
-	$(LLVM_SRC)/lib/Transforms/Utils/FlattenCFG.cpp \
-	$(LLVM_SRC)/lib/Transforms/Utils/FunctionComparator.cpp \
-	$(LLVM_SRC)/lib/Transforms/Utils/FunctionImportUtils.cpp \
-	$(LLVM_SRC)/lib/Transforms/Utils/GlobalStatus.cpp \
-	$(LLVM_SRC)/lib/Transforms/Utils/GuardUtils.cpp \
-	$(LLVM_SRC)/lib/Transforms/Utils/HelloWorld.cpp \
 	$(LLVM_SRC)/lib/Transforms/Utils/InlineFunction.cpp \
-	$(LLVM_SRC)/lib/Transforms/Utils/InjectTLIMappings.cpp \
-	$(LLVM_SRC)/lib/Transforms/Utils/InstructionNamer.cpp \
 	$(LLVM_SRC)/lib/Transforms/Utils/Instrumentation.cpp \
 	$(LLVM_SRC)/lib/Transforms/Utils/IntegerDivision.cpp \
-	$(LLVM_SRC)/lib/Transforms/Utils/IRNormalizer.cpp \
 	$(LLVM_SRC)/lib/Transforms/Utils/LCSSA.cpp \
-	$(LLVM_SRC)/lib/Transforms/Utils/LibCallsShrinkWrap.cpp \
 	$(LLVM_SRC)/lib/Transforms/Utils/Local.cpp \
-	$(LLVM_SRC)/lib/Transforms/Utils/LoopConstrainer.cpp \
-	$(LLVM_SRC)/lib/Transforms/Utils/LoopPeel.cpp \
-	$(LLVM_SRC)/lib/Transforms/Utils/LoopRotationUtils.cpp \
 	$(LLVM_SRC)/lib/Transforms/Utils/LoopSimplify.cpp \
 	$(LLVM_SRC)/lib/Transforms/Utils/LoopUnroll.cpp \
-	$(LLVM_SRC)/lib/Transforms/Utils/LoopUnrollAndJam.cpp \
 	$(LLVM_SRC)/lib/Transforms/Utils/LoopUnrollRuntime.cpp \
 	$(LLVM_SRC)/lib/Transforms/Utils/LoopUtils.cpp \
-	$(LLVM_SRC)/lib/Transforms/Utils/LoopVersioning.cpp \
 	$(LLVM_SRC)/lib/Transforms/Utils/LowerAtomic.cpp \
 	$(LLVM_SRC)/lib/Transforms/Utils/LowerGlobalDtors.cpp \
 	$(LLVM_SRC)/lib/Transforms/Utils/LowerIFunc.cpp \
 	$(LLVM_SRC)/lib/Transforms/Utils/LowerInvoke.cpp \
 	$(LLVM_SRC)/lib/Transforms/Utils/LowerMemIntrinsics.cpp \
-	$(LLVM_SRC)/lib/Transforms/Utils/LowerSwitch.cpp \
 	$(LLVM_SRC)/lib/Transforms/Utils/LowerVectorIntrinsics.cpp \
-	$(LLVM_SRC)/lib/Transforms/Utils/MatrixUtils.cpp \
 	$(LLVM_SRC)/lib/Transforms/Utils/MemoryOpRemark.cpp \
 	$(LLVM_SRC)/lib/Transforms/Utils/MemoryTaggingSupport.cpp \
-	$(LLVM_SRC)/lib/Transforms/Utils/Mem2Reg.cpp \
-	$(LLVM_SRC)/lib/Transforms/Utils/MetaRenamer.cpp \
-	$(LLVM_SRC)/lib/Transforms/Utils/MisExpect.cpp \
 	$(LLVM_SRC)/lib/Transforms/Utils/ModuleUtils.cpp \
-	$(LLVM_SRC)/lib/Transforms/Utils/MoveAutoInit.cpp \
-	$(LLVM_SRC)/lib/Transforms/Utils/NameAnonGlobals.cpp \
-	$(LLVM_SRC)/lib/Transforms/Utils/PredicateInfo.cpp \
-	$(LLVM_SRC)/lib/Transforms/Utils/ProfileVerify.cpp \
 	$(LLVM_SRC)/lib/Transforms/Utils/PromoteMemoryToRegister.cpp \
-	$(LLVM_SRC)/lib/Transforms/Utils/RelLookupTableConverter.cpp \
 	$(LLVM_SRC)/lib/Transforms/Utils/ScalarEvolutionExpander.cpp \
-	$(LLVM_SRC)/lib/Transforms/Utils/SCCPSolver.cpp \
-	$(LLVM_SRC)/lib/Transforms/Utils/StripGCRelocates.cpp \
 	$(LLVM_SRC)/lib/Transforms/Utils/SSAUpdater.cpp \
-	$(LLVM_SRC)/lib/Transforms/Utils/SSAUpdaterBulk.cpp \
 	$(LLVM_SRC)/lib/Transforms/Utils/SampleProfileInference.cpp \
 	$(LLVM_SRC)/lib/Transforms/Utils/SampleProfileLoaderBaseUtil.cpp \
-	$(LLVM_SRC)/lib/Transforms/Utils/SanitizerStats.cpp \
 	$(LLVM_SRC)/lib/Transforms/Utils/SimplifyCFG.cpp \
 	$(LLVM_SRC)/lib/Transforms/Utils/SimplifyIndVar.cpp \
 	$(LLVM_SRC)/lib/Transforms/Utils/SimplifyLibCalls.cpp \
 	$(LLVM_SRC)/lib/Transforms/Utils/SizeOpts.cpp \
-	$(LLVM_SRC)/lib/Transforms/Utils/SplitModule.cpp \
-	$(LLVM_SRC)/lib/Transforms/Utils/SplitModuleByCategory.cpp \
-	$(LLVM_SRC)/lib/Transforms/Utils/StripNonLineTableDebugInfo.cpp \
-	$(LLVM_SRC)/lib/Transforms/Utils/SymbolRewriter.cpp \
-	$(LLVM_SRC)/lib/Transforms/Utils/UnifyFunctionExitNodes.cpp \
-	$(LLVM_SRC)/lib/Transforms/Utils/UnifyLoopExits.cpp \
-	$(LLVM_SRC)/lib/Transforms/Utils/Utils.cpp \
 	$(LLVM_SRC)/lib/Transforms/Utils/ValueMapper.cpp \
-	$(LLVM_SRC)/lib/Transforms/Utils/VNCoercion.cpp \
-	$(LLVM_SRC)/lib/Transforms/AggressiveInstCombine/AggressiveInstCombine.cpp \
-	$(LLVM_SRC)/lib/Transforms/AggressiveInstCombine/TruncInstCombine.cpp \
 	$(LLVM_SRC)/lib/Transforms/CFGuard/CFGuard.cpp \
-	$(LLVM_SRC)/lib/Bitcode/Writer/BitWriter.cpp \
 	$(LLVM_SRC)/lib/Bitcode/Writer/BitcodeWriter.cpp \
-	$(LLVM_SRC)/lib/Bitcode/Writer/BitcodeWriterPass.cpp \
 	$(LLVM_SRC)/lib/Bitcode/Writer/ValueEnumerator.cpp \
 	$(LLVM_SRC)/lib/CGData/CodeGenData.cpp \
 	$(LLVM_SRC)/lib/CGData/CodeGenDataReader.cpp \
@@ -1445,109 +1117,24 @@ LLVM_LIB_COMMON_SRCS := \
 	$(LLVM_SRC)/lib/CGData/StableFunctionMapRecord.cpp \
 	$(LLVM_SRC)/lib/CodeGenTypes/LowLevelType.cpp \
 	$(LLVM_SRC)/lib/Transforms/ObjCARC/ObjCARC.cpp \
-	$(LLVM_SRC)/lib/Transforms/ObjCARC/ObjCARCOpts.cpp \
-	$(LLVM_SRC)/lib/Transforms/ObjCARC/ObjCARCExpand.cpp \
 	$(LLVM_SRC)/lib/Transforms/ObjCARC/ObjCARCContract.cpp \
 	$(LLVM_SRC)/lib/Transforms/ObjCARC/DependencyAnalysis.cpp \
 	$(LLVM_SRC)/lib/Transforms/ObjCARC/ProvenanceAnalysis.cpp \
-	$(LLVM_SRC)/lib/Transforms/ObjCARC/ProvenanceAnalysisEvaluator.cpp \
-	$(LLVM_SRC)/lib/Transforms/ObjCARC/PtrState.cpp \
-	$(LLVM_SRC)/lib/Transforms/InstCombine/InstructionCombining.cpp \
-	$(LLVM_SRC)/lib/Transforms/InstCombine/InstCombineAddSub.cpp \
-	$(LLVM_SRC)/lib/Transforms/InstCombine/InstCombineAtomicRMW.cpp \
-	$(LLVM_SRC)/lib/Transforms/InstCombine/InstCombineAndOrXor.cpp \
-	$(LLVM_SRC)/lib/Transforms/InstCombine/InstCombineCalls.cpp \
-	$(LLVM_SRC)/lib/Transforms/InstCombine/InstCombineCasts.cpp \
-	$(LLVM_SRC)/lib/Transforms/InstCombine/InstCombineCompares.cpp \
-	$(LLVM_SRC)/lib/Transforms/InstCombine/InstCombineLoadStoreAlloca.cpp \
-	$(LLVM_SRC)/lib/Transforms/InstCombine/InstCombineMulDivRem.cpp \
-	$(LLVM_SRC)/lib/Transforms/InstCombine/InstCombineNegator.cpp \
-	$(LLVM_SRC)/lib/Transforms/InstCombine/InstCombinePHI.cpp \
-	$(LLVM_SRC)/lib/Transforms/InstCombine/InstCombineSelect.cpp \
-	$(LLVM_SRC)/lib/Transforms/InstCombine/InstCombineShifts.cpp \
-	$(LLVM_SRC)/lib/Transforms/InstCombine/InstCombineSimplifyDemanded.cpp \
-	$(LLVM_SRC)/lib/Transforms/InstCombine/InstCombineVectorOps.cpp \
 	$(LLVM_SRC)/lib/Transforms/Scalar/ADCE.cpp \
-	$(LLVM_SRC)/lib/Transforms/Scalar/AlignmentFromAssumptions.cpp \
-	$(LLVM_SRC)/lib/Transforms/Scalar/AnnotationRemarks.cpp \
-	$(LLVM_SRC)/lib/Transforms/Scalar/BDCE.cpp \
-	$(LLVM_SRC)/lib/Transforms/Scalar/CallSiteSplitting.cpp \
 	$(LLVM_SRC)/lib/Transforms/Scalar/ConstantHoisting.cpp \
-	$(LLVM_SRC)/lib/Transforms/Scalar/ConstraintElimination.cpp \
-	$(LLVM_SRC)/lib/Transforms/Scalar/CorrelatedValuePropagation.cpp \
-	$(LLVM_SRC)/lib/Transforms/Scalar/DCE.cpp \
 	$(LLVM_SRC)/lib/Transforms/Scalar/DeadStoreElimination.cpp \
-	$(LLVM_SRC)/lib/Transforms/Scalar/DFAJumpThreading.cpp \
-	$(LLVM_SRC)/lib/Transforms/Scalar/DivRemPairs.cpp \
-	$(LLVM_SRC)/lib/Transforms/Scalar/DropUnnecessaryAssumes.cpp \
 	$(LLVM_SRC)/lib/Transforms/Scalar/EarlyCSE.cpp \
-	$(LLVM_SRC)/lib/Transforms/Scalar/FlattenCFGPass.cpp \
-	$(LLVM_SRC)/lib/Transforms/Scalar/Float2Int.cpp \
-	$(LLVM_SRC)/lib/Transforms/Scalar/GuardWidening.cpp \
-	$(LLVM_SRC)/lib/Transforms/Scalar/GVN.cpp \
-	$(LLVM_SRC)/lib/Transforms/Scalar/GVNHoist.cpp \
-	$(LLVM_SRC)/lib/Transforms/Scalar/GVNSink.cpp \
-	$(LLVM_SRC)/lib/Transforms/Scalar/IVUsersPrinter.cpp \
-	$(LLVM_SRC)/lib/Transforms/Scalar/InductiveRangeCheckElimination.cpp \
-	$(LLVM_SRC)/lib/Transforms/Scalar/IndVarSimplify.cpp \
-	$(LLVM_SRC)/lib/Transforms/Scalar/InferAddressSpaces.cpp \
-	$(LLVM_SRC)/lib/Transforms/Scalar/InferAlignment.cpp \
-	$(LLVM_SRC)/lib/Transforms/Scalar/InstSimplifyPass.cpp \
-	$(LLVM_SRC)/lib/Transforms/Scalar/JumpThreading.cpp \
-	$(LLVM_SRC)/lib/Transforms/Scalar/JumpTableToSwitch.cpp \
 	$(LLVM_SRC)/lib/Transforms/Scalar/LICM.cpp \
-	$(LLVM_SRC)/lib/Transforms/Scalar/LoopAccessAnalysisPrinter.cpp \
-	$(LLVM_SRC)/lib/Transforms/Scalar/LoopBoundSplit.cpp \
-	$(LLVM_SRC)/lib/Transforms/Scalar/LoopSink.cpp \
-	$(LLVM_SRC)/lib/Transforms/Scalar/LoopDeletion.cpp \
 	$(LLVM_SRC)/lib/Transforms/Scalar/LoopDataPrefetch.cpp \
-	$(LLVM_SRC)/lib/Transforms/Scalar/LoopDistribute.cpp \
-	$(LLVM_SRC)/lib/Transforms/Scalar/LoopFuse.cpp \
-	$(LLVM_SRC)/lib/Transforms/Scalar/LoopIdiomRecognize.cpp \
-	$(LLVM_SRC)/lib/Transforms/Scalar/LoopInstSimplify.cpp \
-	$(LLVM_SRC)/lib/Transforms/Scalar/LoopInterchange.cpp \
-	$(LLVM_SRC)/lib/Transforms/Scalar/LoopFlatten.cpp \
-	$(LLVM_SRC)/lib/Transforms/Scalar/LoopLoadElimination.cpp \
 	$(LLVM_SRC)/lib/Transforms/Scalar/LoopPassManager.cpp \
-	$(LLVM_SRC)/lib/Transforms/Scalar/LoopPredication.cpp \
-	$(LLVM_SRC)/lib/Transforms/Scalar/LoopRotation.cpp \
-	$(LLVM_SRC)/lib/Transforms/Scalar/LoopSimplifyCFG.cpp \
 	$(LLVM_SRC)/lib/Transforms/Scalar/LoopStrengthReduce.cpp \
 	$(LLVM_SRC)/lib/Transforms/Scalar/LoopTermFold.cpp \
-	$(LLVM_SRC)/lib/Transforms/Scalar/LoopUnrollPass.cpp \
-	$(LLVM_SRC)/lib/Transforms/Scalar/LoopUnrollAndJamPass.cpp \
-	$(LLVM_SRC)/lib/Transforms/Scalar/LoopVersioningLICM.cpp \
-	$(LLVM_SRC)/lib/Transforms/Scalar/LowerAtomicPass.cpp \
 	$(LLVM_SRC)/lib/Transforms/Scalar/LowerConstantIntrinsics.cpp \
-	$(LLVM_SRC)/lib/Transforms/Scalar/LowerExpectIntrinsic.cpp \
-	$(LLVM_SRC)/lib/Transforms/Scalar/LowerGuardIntrinsic.cpp \
-	$(LLVM_SRC)/lib/Transforms/Scalar/LowerMatrixIntrinsics.cpp \
-	$(LLVM_SRC)/lib/Transforms/Scalar/LowerWidenableCondition.cpp \
-	$(LLVM_SRC)/lib/Transforms/Scalar/MakeGuardsExplicit.cpp \
-	$(LLVM_SRC)/lib/Transforms/Scalar/MemCpyOptimizer.cpp \
 	$(LLVM_SRC)/lib/Transforms/Scalar/MergeICmps.cpp \
-	$(LLVM_SRC)/lib/Transforms/Scalar/MergedLoadStoreMotion.cpp \
-	$(LLVM_SRC)/lib/Transforms/Scalar/NaryReassociate.cpp \
-	$(LLVM_SRC)/lib/Transforms/Scalar/NewGVN.cpp \
 	$(LLVM_SRC)/lib/Transforms/Scalar/PartiallyInlineLibCalls.cpp \
-	$(LLVM_SRC)/lib/Transforms/Scalar/PlaceSafepoints.cpp \
-	$(LLVM_SRC)/lib/Transforms/Scalar/Reassociate.cpp \
-	$(LLVM_SRC)/lib/Transforms/Scalar/Reg2Mem.cpp \
-	$(LLVM_SRC)/lib/Transforms/Scalar/RewriteStatepointsForGC.cpp \
-	$(LLVM_SRC)/lib/Transforms/Scalar/SCCP.cpp \
-	$(LLVM_SRC)/lib/Transforms/Scalar/SROA.cpp \
-	$(LLVM_SRC)/lib/Transforms/Scalar/Scalar.cpp \
-	$(LLVM_SRC)/lib/Transforms/Scalar/Scalarizer.cpp \
 	$(LLVM_SRC)/lib/Transforms/Scalar/ScalarizeMaskedMemIntrin.cpp \
 	$(LLVM_SRC)/lib/Transforms/Scalar/SeparateConstOffsetFromGEP.cpp \
-	$(LLVM_SRC)/lib/Transforms/Scalar/SimpleLoopUnswitch.cpp \
 	$(LLVM_SRC)/lib/Transforms/Scalar/SimplifyCFGPass.cpp \
-	$(LLVM_SRC)/lib/Transforms/Scalar/Sink.cpp \
-	$(LLVM_SRC)/lib/Transforms/Scalar/SpeculativeExecution.cpp \
-	$(LLVM_SRC)/lib/Transforms/Scalar/StraightLineStrengthReduce.cpp \
-	$(LLVM_SRC)/lib/Transforms/Scalar/StructurizeCFG.cpp \
-	$(LLVM_SRC)/lib/Transforms/Scalar/TailRecursionElimination.cpp \
-	$(LLVM_SRC)/lib/Transforms/Scalar/WarnMissedTransforms.cpp \
 	$(LLVM_SRC)/lib/CodeGen/AggressiveAntiDepBreaker.cpp \
 	$(LLVM_SRC)/lib/CodeGen/AllocationOrder.cpp \
 	$(LLVM_SRC)/lib/CodeGen/Analysis.cpp \
@@ -1570,7 +1157,6 @@ LLVM_LIB_COMMON_SRCS := \
 	$(LLVM_SRC)/lib/CodeGen/CodeGen.cpp \
 	$(LLVM_SRC)/lib/CodeGen/CodeGenCommonISel.cpp \
 	$(LLVM_SRC)/lib/CodeGen/CodeGenPrepare.cpp \
-	$(LLVM_SRC)/lib/CodeGen/CommandFlags.cpp \
 	$(LLVM_SRC)/lib/CodeGen/ComplexDeinterleavingPass.cpp \
 	$(LLVM_SRC)/lib/CodeGen/CriticalAntiDepBreaker.cpp \
 	$(LLVM_SRC)/lib/CodeGen/DeadMachineInstructionElim.cpp \
@@ -1608,7 +1194,6 @@ LLVM_LIB_COMMON_SRCS := \
 	$(LLVM_SRC)/lib/CodeGen/InterferenceCache.cpp \
 	$(LLVM_SRC)/lib/CodeGen/InterleavedAccessPass.cpp \
 	$(LLVM_SRC)/lib/CodeGen/InterleavedLoadCombinePass.cpp \
-	$(LLVM_SRC)/lib/CodeGen/IntrinsicLowering.cpp \
 	$(LLVM_SRC)/lib/CodeGen/JMCInstrumenter.cpp \
 	$(LLVM_SRC)/lib/CodeGen/KCFI.cpp \
 	$(LLVM_SRC)/lib/CodeGen/LatencyPriorityQueue.cpp \
@@ -1682,18 +1267,15 @@ LLVM_LIB_COMMON_SRCS := \
 	$(LLVM_SRC)/lib/CodeGen/MachineVerifier.cpp \
 	$(LLVM_SRC)/lib/CodeGen/MIRFSDiscriminator.cpp \
 	$(LLVM_SRC)/lib/CodeGen/MIRSampleProfile.cpp \
-	$(LLVM_SRC)/lib/CodeGen/MIRYamlMapping.cpp \
 	$(LLVM_SRC)/lib/CodeGen/MIR2Vec.cpp \
 	$(LLVM_SRC)/lib/CodeGen/MLRegAllocEvictAdvisor.cpp \
 	$(LLVM_SRC)/lib/CodeGen/MLRegAllocPriorityAdvisor.cpp \
 	$(LLVM_SRC)/lib/CodeGen/ModuloSchedule.cpp \
-	$(LLVM_SRC)/lib/CodeGen/MultiHazardRecognizer.cpp \
 	$(LLVM_SRC)/lib/CodeGen/PatchableFunction.cpp \
 	$(LLVM_SRC)/lib/CodeGen/MBFIWrapper.cpp \
 	$(LLVM_SRC)/lib/CodeGen/MIRPrinter.cpp \
 	$(LLVM_SRC)/lib/CodeGen/MIRPrintingPass.cpp \
 	$(LLVM_SRC)/lib/CodeGen/MacroFusion.cpp \
-	$(LLVM_SRC)/lib/CodeGen/NonRelocatableStringpool.cpp \
 	$(LLVM_SRC)/lib/CodeGen/OptimizePHIs.cpp \
 	$(LLVM_SRC)/lib/CodeGen/PeepholeOptimizer.cpp \
 	$(LLVM_SRC)/lib/CodeGen/PHIElimination.cpp \
@@ -1716,7 +1298,6 @@ LLVM_LIB_COMMON_SRCS := \
 	$(LLVM_SRC)/lib/CodeGen/RegAllocGreedy.cpp \
 	$(LLVM_SRC)/lib/CodeGen/RegAllocPBQP.cpp \
 	$(LLVM_SRC)/lib/CodeGen/RegAllocPriorityAdvisor.cpp \
-	$(LLVM_SRC)/lib/CodeGen/RegAllocScore.cpp \
 	$(LLVM_SRC)/lib/CodeGen/RegisterClassInfo.cpp \
 	$(LLVM_SRC)/lib/CodeGen/RegisterCoalescer.cpp \
 	$(LLVM_SRC)/lib/CodeGen/RegisterPressure.cpp \
@@ -1775,7 +1356,6 @@ LLVM_LIB_COMMON_SRCS := \
 	$(LLVM_SRC)/lib/CodeGen/TypePromotion.cpp \
 	$(LLVM_SRC)/lib/CodeGen/UnreachableBlockElim.cpp \
 	$(LLVM_SRC)/lib/CodeGen/ValueTypes.cpp \
-	$(LLVM_SRC)/lib/CodeGen/VLIWMachineScheduler.cpp \
 	$(LLVM_SRC)/lib/CodeGen/VirtRegMap.cpp \
 	$(LLVM_SRC)/lib/CodeGen/WasmEHPrepare.cpp \
 	$(LLVM_SRC)/lib/CodeGen/WindowScheduler.cpp \
@@ -1841,243 +1421,48 @@ LLVM_LIB_COMMON_SRCS := \
 	$(LLVM_SRC)/lib/CodeGen/GlobalISel/MachineIRBuilder.cpp \
 	$(LLVM_SRC)/lib/CodeGen/GlobalISel/RegBankSelect.cpp \
 	$(LLVM_SRC)/lib/CodeGen/GlobalISel/Utils.cpp \
-	$(LLVM_SRC)/lib/ObjectYAML/ArchiveEmitter.cpp \
-	$(LLVM_SRC)/lib/ObjectYAML/ArchiveYAML.cpp \
-	$(LLVM_SRC)/lib/ObjectYAML/CodeViewYAMLDebugSections.cpp \
-	$(LLVM_SRC)/lib/ObjectYAML/CodeViewYAMLSymbols.cpp \
-	$(LLVM_SRC)/lib/ObjectYAML/CodeViewYAMLTypeHashing.cpp \
-	$(LLVM_SRC)/lib/ObjectYAML/CodeViewYAMLTypes.cpp \
-	$(LLVM_SRC)/lib/ObjectYAML/COFFEmitter.cpp \
-	$(LLVM_SRC)/lib/ObjectYAML/COFFYAML.cpp \
-	$(LLVM_SRC)/lib/ObjectYAML/DWARFEmitter.cpp \
-	$(LLVM_SRC)/lib/ObjectYAML/DWARFYAML.cpp \
-	$(LLVM_SRC)/lib/ObjectYAML/DXContainerEmitter.cpp \
-	$(LLVM_SRC)/lib/ObjectYAML/DXContainerYAML.cpp \
-	$(LLVM_SRC)/lib/ObjectYAML/ELFEmitter.cpp \
-	$(LLVM_SRC)/lib/ObjectYAML/ELFYAML.cpp \
-	$(LLVM_SRC)/lib/ObjectYAML/GOFFEmitter.cpp \
-	$(LLVM_SRC)/lib/ObjectYAML/GOFFYAML.cpp \
-	$(LLVM_SRC)/lib/ObjectYAML/MachOEmitter.cpp \
-	$(LLVM_SRC)/lib/ObjectYAML/MachOYAML.cpp \
-	$(LLVM_SRC)/lib/ObjectYAML/ObjectYAML.cpp \
-	$(LLVM_SRC)/lib/ObjectYAML/MinidumpEmitter.cpp \
-	$(LLVM_SRC)/lib/ObjectYAML/MinidumpYAML.cpp \
-	$(LLVM_SRC)/lib/ObjectYAML/OffloadEmitter.cpp \
-	$(LLVM_SRC)/lib/ObjectYAML/OffloadYAML.cpp \
-	$(LLVM_SRC)/lib/ObjectYAML/WasmEmitter.cpp \
-	$(LLVM_SRC)/lib/ObjectYAML/WasmYAML.cpp \
-	$(LLVM_SRC)/lib/ObjectYAML/XCOFFEmitter.cpp \
-	$(LLVM_SRC)/lib/ObjectYAML/XCOFFYAML.cpp \
-	$(LLVM_SRC)/lib/ObjectYAML/YAML.cpp \
-	$(LLVM_SRC)/lib/ObjectYAML/yaml2obj.cpp \
-	$(LLVM_SRC)/lib/Frontend/Offloading/Utility.cpp \
-	$(LLVM_SRC)/lib/Frontend/Offloading/OffloadWrapper.cpp \
-	$(LLVM_SRC)/lib/Frontend/Offloading/PropertySet.cpp \
-	$(LLVM_SRC)/lib/Frontend/Atomic/Atomic.cpp \
-	$(LLVM_SRC)/lib/Frontend/Directive/Spelling.cpp \
-	$(LLVM_SRC)/lib/Frontend/OpenMP/OMP.cpp \
-	$(LLVM_SRC)/lib/Frontend/OpenMP/OMPContext.cpp \
-	$(LLVM_SRC)/lib/Frontend/OpenMP/OMPIRBuilder.cpp \
-	$(LLVM_SRC)/lib/Frontend/OpenMP/DirectiveNameParser.cpp \
-	$(LLVM_SRC)/lib/Linker/IRMover.cpp \
-	$(LLVM_SRC)/lib/Linker/LinkModules.cpp \
-	$(LLVM_SRC)/lib/SandboxIR/Argument.cpp \
-	$(LLVM_SRC)/lib/SandboxIR/BasicBlock.cpp \
-	$(LLVM_SRC)/lib/SandboxIR/Constant.cpp \
-	$(LLVM_SRC)/lib/SandboxIR/Context.cpp \
-	$(LLVM_SRC)/lib/SandboxIR/Function.cpp \
-	$(LLVM_SRC)/lib/SandboxIR/Instruction.cpp \
-	$(LLVM_SRC)/lib/SandboxIR/Module.cpp \
-	$(LLVM_SRC)/lib/SandboxIR/Pass.cpp \
-	$(LLVM_SRC)/lib/SandboxIR/PassManager.cpp \
-	$(LLVM_SRC)/lib/SandboxIR/Region.cpp \
-	$(LLVM_SRC)/lib/SandboxIR/Tracker.cpp \
-	$(LLVM_SRC)/lib/SandboxIR/Type.cpp \
-	$(LLVM_SRC)/lib/SandboxIR/User.cpp \
-	$(LLVM_SRC)/lib/SandboxIR/Use.cpp \
-	$(LLVM_SRC)/lib/SandboxIR/Value.cpp \
-	$(LLVM_SRC)/lib/Transforms/Vectorize/LoadStoreVectorizer.cpp \
 	$(LLVM_SRC)/lib/Transforms/Vectorize/LoopIdiomVectorize.cpp \
-	$(LLVM_SRC)/lib/Transforms/Vectorize/LoopVectorizationLegality.cpp \
-	$(LLVM_SRC)/lib/Transforms/Vectorize/LoopVectorize.cpp \
-	$(LLVM_SRC)/lib/Transforms/Vectorize/SandboxVectorizer/DependencyGraph.cpp \
-	$(LLVM_SRC)/lib/Transforms/Vectorize/SandboxVectorizer/InstrMaps.cpp \
-	$(LLVM_SRC)/lib/Transforms/Vectorize/SandboxVectorizer/Interval.cpp \
-	$(LLVM_SRC)/lib/Transforms/Vectorize/SandboxVectorizer/Legality.cpp \
-	$(LLVM_SRC)/lib/Transforms/Vectorize/SandboxVectorizer/Passes/BottomUpVec.cpp \
-	$(LLVM_SRC)/lib/Transforms/Vectorize/SandboxVectorizer/Passes/PackReuse.cpp \
-	$(LLVM_SRC)/lib/Transforms/Vectorize/SandboxVectorizer/Passes/RegionsFromBBs.cpp \
-	$(LLVM_SRC)/lib/Transforms/Vectorize/SandboxVectorizer/Passes/RegionsFromMetadata.cpp \
-	$(LLVM_SRC)/lib/Transforms/Vectorize/SandboxVectorizer/Passes/SeedCollection.cpp \
-	$(LLVM_SRC)/lib/Transforms/Vectorize/SandboxVectorizer/Passes/TransactionAcceptOrRevert.cpp \
-	$(LLVM_SRC)/lib/Transforms/Vectorize/SandboxVectorizer/Passes/TransactionSave.cpp \
-	$(LLVM_SRC)/lib/Transforms/Vectorize/SandboxVectorizer/SandboxVectorizer.cpp \
-	$(LLVM_SRC)/lib/Transforms/Vectorize/SandboxVectorizer/SandboxVectorizerPassBuilder.cpp \
-	$(LLVM_SRC)/lib/Transforms/Vectorize/SandboxVectorizer/Scheduler.cpp \
-	$(LLVM_SRC)/lib/Transforms/Vectorize/SandboxVectorizer/SeedCollector.cpp \
-	$(LLVM_SRC)/lib/Transforms/Vectorize/SandboxVectorizer/VecUtils.cpp \
-	$(LLVM_SRC)/lib/Transforms/Vectorize/SLPVectorizer.cpp \
-	$(LLVM_SRC)/lib/Transforms/Vectorize/Vectorize.cpp \
-	$(LLVM_SRC)/lib/Transforms/Vectorize/VectorCombine.cpp \
-	$(LLVM_SRC)/lib/Transforms/Vectorize/VPlan.cpp \
-	$(LLVM_SRC)/lib/Transforms/Vectorize/VPlanAnalysis.cpp \
-	$(LLVM_SRC)/lib/Transforms/Vectorize/VPlanConstruction.cpp \
-	$(LLVM_SRC)/lib/Transforms/Vectorize/VPlanPredicator.cpp \
-	$(LLVM_SRC)/lib/Transforms/Vectorize/VPlanRecipes.cpp \
-	$(LLVM_SRC)/lib/Transforms/Vectorize/VPlanSLP.cpp \
-	$(LLVM_SRC)/lib/Transforms/Vectorize/VPlanTransforms.cpp \
-	$(LLVM_SRC)/lib/Transforms/Vectorize/VPlanUnroll.cpp \
-	$(LLVM_SRC)/lib/Transforms/Vectorize/VPlanVerifier.cpp \
-	$(LLVM_SRC)/lib/Transforms/Vectorize/VPlanUtils.cpp \
 	$(LLVM_SRC)/lib/Transforms/Instrumentation/AddressSanitizer.cpp \
-	$(LLVM_SRC)/lib/Transforms/Instrumentation/AllocToken.cpp \
-	$(LLVM_SRC)/lib/Transforms/Instrumentation/BoundsChecking.cpp \
-	$(LLVM_SRC)/lib/Transforms/Instrumentation/CGProfile.cpp \
-	$(LLVM_SRC)/lib/Transforms/Instrumentation/ControlHeightReduction.cpp \
-	$(LLVM_SRC)/lib/Transforms/Instrumentation/DataFlowSanitizer.cpp \
-	$(LLVM_SRC)/lib/Transforms/Instrumentation/GCOVProfiling.cpp \
-	$(LLVM_SRC)/lib/Transforms/Instrumentation/BlockCoverageInference.cpp \
-	$(LLVM_SRC)/lib/Transforms/Instrumentation/MemProfInstrumentation.cpp \
-	$(LLVM_SRC)/lib/Transforms/Instrumentation/MemProfUse.cpp \
-	$(LLVM_SRC)/lib/Transforms/Instrumentation/MemorySanitizer.cpp \
-	$(LLVM_SRC)/lib/Transforms/Instrumentation/NumericalStabilitySanitizer.cpp \
-	$(LLVM_SRC)/lib/Transforms/Instrumentation/IndirectCallPromotion.cpp \
-	$(LLVM_SRC)/lib/Transforms/Instrumentation/InstrProfiling.cpp \
-	$(LLVM_SRC)/lib/Transforms/Instrumentation/KCFI.cpp \
-	$(LLVM_SRC)/lib/Transforms/Instrumentation/LowerAllowCheckPass.cpp \
-	$(LLVM_SRC)/lib/Transforms/Instrumentation/PGOCtxProfFlattening.cpp \
-	$(LLVM_SRC)/lib/Transforms/Instrumentation/PGOCtxProfLowering.cpp \
-	$(LLVM_SRC)/lib/Transforms/Instrumentation/PGOForceFunctionAttrs.cpp \
-	$(LLVM_SRC)/lib/Transforms/Instrumentation/PGOInstrumentation.cpp \
-	$(LLVM_SRC)/lib/Transforms/Instrumentation/PGOMemOPSizeOpt.cpp \
-	$(LLVM_SRC)/lib/Transforms/Instrumentation/SanitizerCoverage.cpp \
-	$(LLVM_SRC)/lib/Transforms/Instrumentation/SanitizerBinaryMetadata.cpp \
-	$(LLVM_SRC)/lib/Transforms/Instrumentation/ValueProfileCollector.cpp \
-	$(LLVM_SRC)/lib/Transforms/Instrumentation/ThreadSanitizer.cpp \
-	$(LLVM_SRC)/lib/Transforms/Instrumentation/TypeSanitizer.cpp \
-	$(LLVM_SRC)/lib/Transforms/Instrumentation/HWAddressSanitizer.cpp \
-	$(LLVM_SRC)/lib/Transforms/Instrumentation/RealtimeSanitizer.cpp \
-	$(LLVM_SRC)/lib/Transforms/IPO/AlwaysInliner.cpp \
-	$(LLVM_SRC)/lib/Transforms/IPO/Annotation2Metadata.cpp \
-	$(LLVM_SRC)/lib/Transforms/IPO/ArgumentPromotion.cpp \
-	$(LLVM_SRC)/lib/Transforms/IPO/Attributor.cpp \
-	$(LLVM_SRC)/lib/Transforms/IPO/AttributorAttributes.cpp \
-	$(LLVM_SRC)/lib/Transforms/IPO/BarrierNoopPass.cpp \
-	$(LLVM_SRC)/lib/Transforms/IPO/BlockExtractor.cpp \
-	$(LLVM_SRC)/lib/Transforms/IPO/CalledValuePropagation.cpp \
-	$(LLVM_SRC)/lib/Transforms/IPO/ConstantMerge.cpp \
-	$(LLVM_SRC)/lib/Transforms/IPO/CrossDSOCFI.cpp \
-	$(LLVM_SRC)/lib/Transforms/IPO/DeadArgumentElimination.cpp \
-	$(LLVM_SRC)/lib/Transforms/IPO/ElimAvailExtern.cpp \
-	$(LLVM_SRC)/lib/Transforms/IPO/EmbedBitcodePass.cpp \
-	$(LLVM_SRC)/lib/Transforms/IPO/ExpandVariadics.cpp \
-	$(LLVM_SRC)/lib/Transforms/IPO/ExtractGV.cpp \
-	$(LLVM_SRC)/lib/Transforms/IPO/FatLTOCleanup.cpp \
-	$(LLVM_SRC)/lib/Transforms/IPO/ForceFunctionAttrs.cpp \
-	$(LLVM_SRC)/lib/Transforms/IPO/FunctionAttrs.cpp \
-	$(LLVM_SRC)/lib/Transforms/IPO/FunctionImport.cpp \
-	$(LLVM_SRC)/lib/Transforms/IPO/FunctionSpecialization.cpp \
-	$(LLVM_SRC)/lib/Transforms/IPO/GlobalDCE.cpp \
-	$(LLVM_SRC)/lib/Transforms/IPO/GlobalOpt.cpp \
-	$(LLVM_SRC)/lib/Transforms/IPO/GlobalSplit.cpp \
-	$(LLVM_SRC)/lib/Transforms/IPO/HotColdSplitting.cpp \
-	$(LLVM_SRC)/lib/Transforms/IPO/IPO.cpp \
-	$(LLVM_SRC)/lib/Transforms/IPO/IROutliner.cpp \
-	$(LLVM_SRC)/lib/Transforms/IPO/InferFunctionAttrs.cpp \
-	$(LLVM_SRC)/lib/Transforms/IPO/Inliner.cpp \
-	$(LLVM_SRC)/lib/Transforms/IPO/Internalize.cpp \
-	$(LLVM_SRC)/lib/Transforms/IPO/LoopExtractor.cpp \
-	$(LLVM_SRC)/lib/Transforms/IPO/LowerTypeTests.cpp \
-	$(LLVM_SRC)/lib/Transforms/IPO/MemProfContextDisambiguation.cpp \
-	$(LLVM_SRC)/lib/Transforms/IPO/MergeFunctions.cpp \
-	$(LLVM_SRC)/lib/Transforms/IPO/ModuleInliner.cpp \
-	$(LLVM_SRC)/lib/Transforms/IPO/OpenMPOpt.cpp \
-	$(LLVM_SRC)/lib/Transforms/IPO/PartialInlining.cpp \
-	$(LLVM_SRC)/lib/Transforms/IPO/SampleContextTracker.cpp \
-	$(LLVM_SRC)/lib/Transforms/IPO/SampleProfile.cpp \
-	$(LLVM_SRC)/lib/Transforms/IPO/SampleProfileMatcher.cpp \
-	$(LLVM_SRC)/lib/Transforms/IPO/SampleProfileProbe.cpp \
-	$(LLVM_SRC)/lib/Transforms/IPO/SCCP.cpp \
-	$(LLVM_SRC)/lib/Transforms/IPO/StripDeadPrototypes.cpp \
-	$(LLVM_SRC)/lib/Transforms/IPO/StripSymbols.cpp \
-	$(LLVM_SRC)/lib/Transforms/IPO/ThinLTOBitcodeWriter.cpp \
-	$(LLVM_SRC)/lib/Transforms/IPO/WholeProgramDevirt.cpp \
-	$(LLVM_SRC)/lib/Transforms/Coroutines/Coroutines.cpp \
-	$(LLVM_SRC)/lib/Transforms/Coroutines/CoroAnnotationElide.cpp \
-	$(LLVM_SRC)/lib/Transforms/Coroutines/CoroCleanup.cpp \
-	$(LLVM_SRC)/lib/Transforms/Coroutines/CoroConditionalWrapper.cpp \
-	$(LLVM_SRC)/lib/Transforms/Coroutines/CoroEarly.cpp \
-	$(LLVM_SRC)/lib/Transforms/Coroutines/CoroElide.cpp \
-	$(LLVM_SRC)/lib/Transforms/Coroutines/CoroFrame.cpp \
-	$(LLVM_SRC)/lib/Transforms/Coroutines/CoroSplit.cpp \
-	$(LLVM_SRC)/lib/Transforms/Coroutines/SuspendCrossingInfo.cpp \
-	$(LLVM_SRC)/lib/Transforms/Coroutines/SpillUtils.cpp \
-	$(LLVM_SRC)/lib/Transforms/Coroutines/MaterializationUtils.cpp \
-	$(LLVM_SRC)/lib/Transforms/HipStdPar/HipStdPar.cpp \
 	$(LLVM_SRC)/lib/IRPrinter/IRPrintingPasses.cpp \
-	$(LLVM_SRC)/lib/Passes/CodeGenPassBuilder.cpp \
 	$(LLVM_SRC)/lib/Passes/OptimizationLevel.cpp \
-	$(LLVM_SRC)/lib/Passes/PassBuilder.cpp \
-	$(LLVM_SRC)/lib/Passes/PassBuilderBindings.cpp \
-	$(LLVM_SRC)/lib/Passes/PassBuilderPipelines.cpp \
-	$(LLVM_SRC)/lib/Passes/StandardInstrumentations.cpp \
 
-$(call llvm_objs,$(LLVM_OBJ),$(LLVM_SRC)/lib/BinaryFormat/AMDGPUMetadataVerifier.cpp $(LLVM_SRC)/lib/BinaryFormat/COFF.cpp $(LLVM_SRC)/lib/BinaryFormat/Dwarf.cpp $(LLVM_SRC)/lib/BinaryFormat/DXContainer.cpp $(LLVM_SRC)/lib/BinaryFormat/ELF.cpp $(LLVM_SRC)/lib/BinaryFormat/MachO.cpp $(LLVM_SRC)/lib/BinaryFormat/Magic.cpp $(LLVM_SRC)/lib/BinaryFormat/MsgPackDocument.cpp $(LLVM_SRC)/lib/BinaryFormat/MsgPackDocumentYAML.cpp $(LLVM_SRC)/lib/BinaryFormat/MsgPackReader.cpp $(LLVM_SRC)/lib/BinaryFormat/MsgPackWriter.cpp $(LLVM_SRC)/lib/BinaryFormat/SFrame.cpp $(LLVM_SRC)/lib/BinaryFormat/Wasm.cpp $(LLVM_SRC)/lib/BinaryFormat/XCOFF.cpp): LLVM_CPPFLAGS = $(LLVM_F10)
+$(call llvm_objs,$(LLVM_OBJ),$(LLVM_SRC)/lib/BinaryFormat/COFF.cpp $(LLVM_SRC)/lib/BinaryFormat/Dwarf.cpp $(LLVM_SRC)/lib/BinaryFormat/DXContainer.cpp $(LLVM_SRC)/lib/BinaryFormat/MachO.cpp $(LLVM_SRC)/lib/BinaryFormat/Magic.cpp $(LLVM_SRC)/lib/BinaryFormat/Wasm.cpp $(LLVM_SRC)/lib/BinaryFormat/XCOFF.cpp): LLVM_CPPFLAGS = $(LLVM_F10)
 $(call llvm_objs,$(LLVM_OBJ),$(LLVM_SRC)/lib/Bitstream/Reader/BitstreamReader.cpp): LLVM_CPPFLAGS = $(LLVM_F11)
-$(call llvm_objs,$(LLVM_OBJ),$(LLVM_SRC)/lib/Remarks/BitstreamRemarkParser.cpp $(LLVM_SRC)/lib/Remarks/BitstreamRemarkSerializer.cpp $(LLVM_SRC)/lib/Remarks/Remark.cpp $(LLVM_SRC)/lib/Remarks/RemarkFormat.cpp $(LLVM_SRC)/lib/Remarks/RemarkLinker.cpp $(LLVM_SRC)/lib/Remarks/RemarkParser.cpp $(LLVM_SRC)/lib/Remarks/RemarkSerializer.cpp $(LLVM_SRC)/lib/Remarks/RemarkStreamer.cpp $(LLVM_SRC)/lib/Remarks/RemarkStringTable.cpp $(LLVM_SRC)/lib/Remarks/YAMLRemarkParser.cpp $(LLVM_SRC)/lib/Remarks/YAMLRemarkSerializer.cpp): LLVM_CPPFLAGS = $(LLVM_F12)
-$(call llvm_objs,$(LLVM_OBJ),$(LLVM_SRC)/lib/IR/AbstractCallSite.cpp $(LLVM_SRC)/lib/IR/AsmWriter.cpp $(LLVM_SRC)/lib/IR/Assumptions.cpp $(LLVM_SRC)/lib/IR/Attributes.cpp $(LLVM_SRC)/lib/IR/AutoUpgrade.cpp $(LLVM_SRC)/lib/IR/BasicBlock.cpp $(LLVM_SRC)/lib/IR/BuiltinGCs.cpp $(LLVM_SRC)/lib/IR/Comdat.cpp $(LLVM_SRC)/lib/IR/ConstantFold.cpp $(LLVM_SRC)/lib/IR/ConstantFPRange.cpp $(LLVM_SRC)/lib/IR/ConstantRange.cpp $(LLVM_SRC)/lib/IR/ConstantRangeList.cpp $(LLVM_SRC)/lib/IR/Constants.cpp $(LLVM_SRC)/lib/IR/ConvergenceVerifier.cpp $(LLVM_SRC)/lib/IR/Core.cpp $(LLVM_SRC)/lib/IR/CycleInfo.cpp $(LLVM_SRC)/lib/IR/DIBuilder.cpp $(LLVM_SRC)/lib/IR/DataLayout.cpp $(LLVM_SRC)/lib/IR/DebugInfo.cpp $(LLVM_SRC)/lib/IR/DebugInfoMetadata.cpp $(LLVM_SRC)/lib/IR/DIExpressionOptimizer.cpp $(LLVM_SRC)/lib/IR/DebugProgramInstruction.cpp $(LLVM_SRC)/lib/IR/DebugLoc.cpp $(LLVM_SRC)/lib/IR/DiagnosticHandler.cpp $(LLVM_SRC)/lib/IR/DiagnosticInfo.cpp $(LLVM_SRC)/lib/IR/DiagnosticPrinter.cpp $(LLVM_SRC)/lib/IR/Dominators.cpp $(LLVM_SRC)/lib/IR/DroppedVariableStats.cpp $(LLVM_SRC)/lib/IR/DroppedVariableStatsIR.cpp $(LLVM_SRC)/lib/IR/EHPersonalities.cpp $(LLVM_SRC)/lib/IR/FPEnv.cpp $(LLVM_SRC)/lib/IR/Function.cpp $(LLVM_SRC)/lib/IR/GCStrategy.cpp $(LLVM_SRC)/lib/IR/GVMaterializer.cpp $(LLVM_SRC)/lib/IR/Globals.cpp $(LLVM_SRC)/lib/IR/Intrinsics.cpp $(LLVM_SRC)/lib/IR/NVVMIntrinsicUtils.cpp $(LLVM_SRC)/lib/IR/IRBuilder.cpp $(LLVM_SRC)/lib/IR/IRPrintingPasses.cpp $(LLVM_SRC)/lib/IR/SSAContext.cpp $(LLVM_SRC)/lib/IR/InlineAsm.cpp $(LLVM_SRC)/lib/IR/Instruction.cpp $(LLVM_SRC)/lib/IR/Instructions.cpp $(LLVM_SRC)/lib/IR/IntrinsicInst.cpp $(LLVM_SRC)/lib/IR/LLVMContext.cpp $(LLVM_SRC)/lib/IR/LLVMContextImpl.cpp $(LLVM_SRC)/lib/IR/LLVMRemarkStreamer.cpp $(LLVM_SRC)/lib/IR/LegacyPassManager.cpp $(LLVM_SRC)/lib/IR/MDBuilder.cpp $(LLVM_SRC)/lib/IR/MemoryModelRelaxationAnnotations.cpp $(LLVM_SRC)/lib/IR/Mangler.cpp $(LLVM_SRC)/lib/IR/Metadata.cpp $(LLVM_SRC)/lib/IR/Module.cpp $(LLVM_SRC)/lib/IR/ModuleSummaryIndex.cpp $(LLVM_SRC)/lib/IR/Operator.cpp $(LLVM_SRC)/lib/IR/OptBisect.cpp $(LLVM_SRC)/lib/IR/Pass.cpp $(LLVM_SRC)/lib/IR/PassInstrumentation.cpp $(LLVM_SRC)/lib/IR/PassManager.cpp $(LLVM_SRC)/lib/IR/PassRegistry.cpp $(LLVM_SRC)/lib/IR/PassTimingInfo.cpp $(LLVM_SRC)/lib/IR/PrintPasses.cpp $(LLVM_SRC)/lib/IR/ProfDataUtils.cpp $(LLVM_SRC)/lib/IR/SafepointIRVerifier.cpp $(LLVM_SRC)/lib/IR/ProfileSummary.cpp $(LLVM_SRC)/lib/IR/PseudoProbe.cpp $(LLVM_SRC)/lib/IR/ReplaceConstant.cpp $(LLVM_SRC)/lib/IR/Statepoint.cpp $(LLVM_SRC)/lib/IR/StructuralHash.cpp $(LLVM_SRC)/lib/IR/Type.cpp $(LLVM_SRC)/lib/IR/TypedPointerType.cpp $(LLVM_SRC)/lib/IR/TypeFinder.cpp $(LLVM_SRC)/lib/IR/Use.cpp $(LLVM_SRC)/lib/IR/User.cpp $(LLVM_SRC)/lib/IR/Value.cpp $(LLVM_SRC)/lib/IR/ValueSymbolTable.cpp $(LLVM_SRC)/lib/IR/VectorTypeUtils.cpp $(LLVM_SRC)/lib/IR/Verifier.cpp $(LLVM_SRC)/lib/IR/VFABIDemangler.cpp $(LLVM_SRC)/lib/IR/RuntimeLibcalls.cpp): LLVM_CPPFLAGS = $(LLVM_F13)
+$(call llvm_objs,$(LLVM_OBJ),$(LLVM_SRC)/lib/Remarks/BitstreamRemarkParser.cpp $(LLVM_SRC)/lib/Remarks/BitstreamRemarkSerializer.cpp $(LLVM_SRC)/lib/Remarks/RemarkFormat.cpp $(LLVM_SRC)/lib/Remarks/RemarkParser.cpp $(LLVM_SRC)/lib/Remarks/RemarkSerializer.cpp $(LLVM_SRC)/lib/Remarks/RemarkStreamer.cpp $(LLVM_SRC)/lib/Remarks/RemarkStringTable.cpp $(LLVM_SRC)/lib/Remarks/YAMLRemarkParser.cpp $(LLVM_SRC)/lib/Remarks/YAMLRemarkSerializer.cpp): LLVM_CPPFLAGS = $(LLVM_F12)
+$(call llvm_objs,$(LLVM_OBJ),$(LLVM_SRC)/lib/IR/AbstractCallSite.cpp $(LLVM_SRC)/lib/IR/AsmWriter.cpp $(LLVM_SRC)/lib/IR/Attributes.cpp $(LLVM_SRC)/lib/IR/AutoUpgrade.cpp $(LLVM_SRC)/lib/IR/BasicBlock.cpp $(LLVM_SRC)/lib/IR/BuiltinGCs.cpp $(LLVM_SRC)/lib/IR/Comdat.cpp $(LLVM_SRC)/lib/IR/ConstantFold.cpp $(LLVM_SRC)/lib/IR/ConstantFPRange.cpp $(LLVM_SRC)/lib/IR/ConstantRange.cpp $(LLVM_SRC)/lib/IR/ConstantRangeList.cpp $(LLVM_SRC)/lib/IR/Constants.cpp $(LLVM_SRC)/lib/IR/ConvergenceVerifier.cpp $(LLVM_SRC)/lib/IR/CycleInfo.cpp $(LLVM_SRC)/lib/IR/DIBuilder.cpp $(LLVM_SRC)/lib/IR/DataLayout.cpp $(LLVM_SRC)/lib/IR/DebugInfo.cpp $(LLVM_SRC)/lib/IR/DebugInfoMetadata.cpp $(LLVM_SRC)/lib/IR/DIExpressionOptimizer.cpp $(LLVM_SRC)/lib/IR/DebugProgramInstruction.cpp $(LLVM_SRC)/lib/IR/DebugLoc.cpp $(LLVM_SRC)/lib/IR/DiagnosticHandler.cpp $(LLVM_SRC)/lib/IR/DiagnosticInfo.cpp $(LLVM_SRC)/lib/IR/DiagnosticPrinter.cpp $(LLVM_SRC)/lib/IR/Dominators.cpp $(LLVM_SRC)/lib/IR/DroppedVariableStats.cpp $(LLVM_SRC)/lib/IR/EHPersonalities.cpp $(LLVM_SRC)/lib/IR/FPEnv.cpp $(LLVM_SRC)/lib/IR/Function.cpp $(LLVM_SRC)/lib/IR/GCStrategy.cpp $(LLVM_SRC)/lib/IR/GVMaterializer.cpp $(LLVM_SRC)/lib/IR/Globals.cpp $(LLVM_SRC)/lib/IR/Intrinsics.cpp $(LLVM_SRC)/lib/IR/NVVMIntrinsicUtils.cpp $(LLVM_SRC)/lib/IR/IRBuilder.cpp $(LLVM_SRC)/lib/IR/IRPrintingPasses.cpp $(LLVM_SRC)/lib/IR/SSAContext.cpp $(LLVM_SRC)/lib/IR/InlineAsm.cpp $(LLVM_SRC)/lib/IR/Instruction.cpp $(LLVM_SRC)/lib/IR/Instructions.cpp $(LLVM_SRC)/lib/IR/IntrinsicInst.cpp $(LLVM_SRC)/lib/IR/LLVMContext.cpp $(LLVM_SRC)/lib/IR/LLVMContextImpl.cpp $(LLVM_SRC)/lib/IR/LLVMRemarkStreamer.cpp $(LLVM_SRC)/lib/IR/LegacyPassManager.cpp $(LLVM_SRC)/lib/IR/MDBuilder.cpp $(LLVM_SRC)/lib/IR/MemoryModelRelaxationAnnotations.cpp $(LLVM_SRC)/lib/IR/Mangler.cpp $(LLVM_SRC)/lib/IR/Metadata.cpp $(LLVM_SRC)/lib/IR/Module.cpp $(LLVM_SRC)/lib/IR/ModuleSummaryIndex.cpp $(LLVM_SRC)/lib/IR/Operator.cpp $(LLVM_SRC)/lib/IR/OptBisect.cpp $(LLVM_SRC)/lib/IR/Pass.cpp $(LLVM_SRC)/lib/IR/PassInstrumentation.cpp $(LLVM_SRC)/lib/IR/PassManager.cpp $(LLVM_SRC)/lib/IR/PassRegistry.cpp $(LLVM_SRC)/lib/IR/PassTimingInfo.cpp $(LLVM_SRC)/lib/IR/PrintPasses.cpp $(LLVM_SRC)/lib/IR/ProfDataUtils.cpp $(LLVM_SRC)/lib/IR/ProfileSummary.cpp $(LLVM_SRC)/lib/IR/Statepoint.cpp $(LLVM_SRC)/lib/IR/StructuralHash.cpp $(LLVM_SRC)/lib/IR/Type.cpp $(LLVM_SRC)/lib/IR/TypeFinder.cpp $(LLVM_SRC)/lib/IR/Use.cpp $(LLVM_SRC)/lib/IR/User.cpp $(LLVM_SRC)/lib/IR/Value.cpp $(LLVM_SRC)/lib/IR/ValueSymbolTable.cpp $(LLVM_SRC)/lib/IR/VectorTypeUtils.cpp $(LLVM_SRC)/lib/IR/Verifier.cpp $(LLVM_SRC)/lib/IR/VFABIDemangler.cpp $(LLVM_SRC)/lib/IR/RuntimeLibcalls.cpp): LLVM_CPPFLAGS = $(LLVM_F13)
 $(call llvm_objs,$(LLVM_OBJ),$(LLVM_SRC)/lib/DebugInfo/DWARF/LowLevel/DWARFCFIProgram.cpp $(LLVM_SRC)/lib/DebugInfo/DWARF/LowLevel/DWARFExpression.cpp $(LLVM_SRC)/lib/DebugInfo/DWARF/LowLevel/DWARFUnwindTable.cpp): LLVM_CPPFLAGS = $(LLVM_F14)
-$(call llvm_objs,$(LLVM_OBJ),$(LLVM_SRC)/lib/MC/ConstantPools.cpp $(LLVM_SRC)/lib/MC/DXContainerPSVInfo.cpp $(LLVM_SRC)/lib/MC/DXContainerRootSignature.cpp $(LLVM_SRC)/lib/MC/ELFObjectWriter.cpp $(LLVM_SRC)/lib/MC/GOFFObjectWriter.cpp $(LLVM_SRC)/lib/MC/MCAsmBackend.cpp $(LLVM_SRC)/lib/MC/MCAsmInfo.cpp $(LLVM_SRC)/lib/MC/MCAsmInfoCOFF.cpp $(LLVM_SRC)/lib/MC/MCAsmInfoDarwin.cpp $(LLVM_SRC)/lib/MC/MCAsmInfoELF.cpp $(LLVM_SRC)/lib/MC/MCAsmInfoGOFF.cpp $(LLVM_SRC)/lib/MC/MCAsmInfoWasm.cpp $(LLVM_SRC)/lib/MC/MCAsmInfoXCOFF.cpp $(LLVM_SRC)/lib/MC/MCAsmMacro.cpp $(LLVM_SRC)/lib/MC/MCAsmStreamer.cpp $(LLVM_SRC)/lib/MC/MCAssembler.cpp $(LLVM_SRC)/lib/MC/MCCodeEmitter.cpp $(LLVM_SRC)/lib/MC/MCCodeView.cpp $(LLVM_SRC)/lib/MC/MCContext.cpp $(LLVM_SRC)/lib/MC/MCDwarf.cpp $(LLVM_SRC)/lib/MC/MCDXContainerStreamer.cpp $(LLVM_SRC)/lib/MC/MCDXContainerWriter.cpp $(LLVM_SRC)/lib/MC/MCELFObjectTargetWriter.cpp $(LLVM_SRC)/lib/MC/MCELFStreamer.cpp $(LLVM_SRC)/lib/MC/MCExpr.cpp $(LLVM_SRC)/lib/MC/MCFragment.cpp $(LLVM_SRC)/lib/MC/MCGOFFStreamer.cpp $(LLVM_SRC)/lib/MC/MCInst.cpp $(LLVM_SRC)/lib/MC/MCInstPrinter.cpp $(LLVM_SRC)/lib/MC/MCInstrAnalysis.cpp $(LLVM_SRC)/lib/MC/MCInstrDesc.cpp $(LLVM_SRC)/lib/MC/MCInstrInfo.cpp $(LLVM_SRC)/lib/MC/MCLabel.cpp $(LLVM_SRC)/lib/MC/MCLinkerOptimizationHint.cpp $(LLVM_SRC)/lib/MC/MCMachOStreamer.cpp $(LLVM_SRC)/lib/MC/MCMachObjectTargetWriter.cpp $(LLVM_SRC)/lib/MC/MCNullStreamer.cpp $(LLVM_SRC)/lib/MC/MCObjectFileInfo.cpp $(LLVM_SRC)/lib/MC/MCObjectStreamer.cpp $(LLVM_SRC)/lib/MC/MCObjectWriter.cpp $(LLVM_SRC)/lib/MC/MCPseudoProbe.cpp $(LLVM_SRC)/lib/MC/MCRegisterInfo.cpp $(LLVM_SRC)/lib/MC/MCSchedule.cpp $(LLVM_SRC)/lib/MC/MCSection.cpp $(LLVM_SRC)/lib/MC/MCSectionMachO.cpp $(LLVM_SRC)/lib/MC/MCStreamer.cpp $(LLVM_SRC)/lib/MC/MCSFrame.cpp $(LLVM_SRC)/lib/MC/MCSPIRVStreamer.cpp $(LLVM_SRC)/lib/MC/MCSubtargetInfo.cpp $(LLVM_SRC)/lib/MC/MCSymbol.cpp $(LLVM_SRC)/lib/MC/MCSymbolELF.cpp $(LLVM_SRC)/lib/MC/MCSymbolGOFF.cpp $(LLVM_SRC)/lib/MC/MCSymbolXCOFF.cpp $(LLVM_SRC)/lib/MC/MCTargetOptions.cpp $(LLVM_SRC)/lib/MC/MCTargetOptionsCommandFlags.cpp $(LLVM_SRC)/lib/MC/MCValue.cpp $(LLVM_SRC)/lib/MC/MCWasmObjectTargetWriter.cpp $(LLVM_SRC)/lib/MC/MCWasmStreamer.cpp $(LLVM_SRC)/lib/MC/MCWin64EH.cpp $(LLVM_SRC)/lib/MC/MCWinCOFFStreamer.cpp $(LLVM_SRC)/lib/MC/MCWinEH.cpp $(LLVM_SRC)/lib/MC/MCXCOFFObjectTargetWriter.cpp $(LLVM_SRC)/lib/MC/MCXCOFFStreamer.cpp $(LLVM_SRC)/lib/MC/MachObjectWriter.cpp $(LLVM_SRC)/lib/MC/SPIRVObjectWriter.cpp $(LLVM_SRC)/lib/MC/StringTableBuilder.cpp $(LLVM_SRC)/lib/MC/TargetRegistry.cpp $(LLVM_SRC)/lib/MC/WasmObjectWriter.cpp $(LLVM_SRC)/lib/MC/WinCOFFObjectWriter.cpp $(LLVM_SRC)/lib/MC/XCOFFObjectWriter.cpp): LLVM_CPPFLAGS = $(LLVM_F15)
-$(call llvm_objs,$(LLVM_OBJ),$(LLVM_SRC)/lib/Bitcode/Reader/BitcodeAnalyzer.cpp $(LLVM_SRC)/lib/Bitcode/Reader/BitReader.cpp $(LLVM_SRC)/lib/Bitcode/Reader/BitcodeReader.cpp $(LLVM_SRC)/lib/Bitcode/Reader/MetadataLoader.cpp $(LLVM_SRC)/lib/Bitcode/Reader/ValueList.cpp): LLVM_CPPFLAGS = $(LLVM_F16)
+$(call llvm_objs,$(LLVM_OBJ),$(LLVM_SRC)/lib/MC/ConstantPools.cpp $(LLVM_SRC)/lib/MC/ELFObjectWriter.cpp $(LLVM_SRC)/lib/MC/GOFFObjectWriter.cpp $(LLVM_SRC)/lib/MC/MCAsmBackend.cpp $(LLVM_SRC)/lib/MC/MCAsmInfo.cpp $(LLVM_SRC)/lib/MC/MCAsmInfoCOFF.cpp $(LLVM_SRC)/lib/MC/MCAsmInfoDarwin.cpp $(LLVM_SRC)/lib/MC/MCAsmInfoELF.cpp $(LLVM_SRC)/lib/MC/MCAsmInfoXCOFF.cpp $(LLVM_SRC)/lib/MC/MCAsmStreamer.cpp $(LLVM_SRC)/lib/MC/MCAssembler.cpp $(LLVM_SRC)/lib/MC/MCCodeEmitter.cpp $(LLVM_SRC)/lib/MC/MCCodeView.cpp $(LLVM_SRC)/lib/MC/MCContext.cpp $(LLVM_SRC)/lib/MC/MCDwarf.cpp $(LLVM_SRC)/lib/MC/MCDXContainerStreamer.cpp $(LLVM_SRC)/lib/MC/MCDXContainerWriter.cpp $(LLVM_SRC)/lib/MC/MCELFObjectTargetWriter.cpp $(LLVM_SRC)/lib/MC/MCELFStreamer.cpp $(LLVM_SRC)/lib/MC/MCExpr.cpp $(LLVM_SRC)/lib/MC/MCFragment.cpp $(LLVM_SRC)/lib/MC/MCGOFFStreamer.cpp $(LLVM_SRC)/lib/MC/MCInst.cpp $(LLVM_SRC)/lib/MC/MCInstPrinter.cpp $(LLVM_SRC)/lib/MC/MCInstrAnalysis.cpp $(LLVM_SRC)/lib/MC/MCInstrDesc.cpp $(LLVM_SRC)/lib/MC/MCLinkerOptimizationHint.cpp $(LLVM_SRC)/lib/MC/MCMachOStreamer.cpp $(LLVM_SRC)/lib/MC/MCMachObjectTargetWriter.cpp $(LLVM_SRC)/lib/MC/MCNullStreamer.cpp $(LLVM_SRC)/lib/MC/MCObjectFileInfo.cpp $(LLVM_SRC)/lib/MC/MCObjectStreamer.cpp $(LLVM_SRC)/lib/MC/MCObjectWriter.cpp $(LLVM_SRC)/lib/MC/MCPseudoProbe.cpp $(LLVM_SRC)/lib/MC/MCRegisterInfo.cpp $(LLVM_SRC)/lib/MC/MCSchedule.cpp $(LLVM_SRC)/lib/MC/MCSection.cpp $(LLVM_SRC)/lib/MC/MCSectionMachO.cpp $(LLVM_SRC)/lib/MC/MCStreamer.cpp $(LLVM_SRC)/lib/MC/MCSFrame.cpp $(LLVM_SRC)/lib/MC/MCSPIRVStreamer.cpp $(LLVM_SRC)/lib/MC/MCSubtargetInfo.cpp $(LLVM_SRC)/lib/MC/MCSymbol.cpp $(LLVM_SRC)/lib/MC/MCSymbolELF.cpp $(LLVM_SRC)/lib/MC/MCSymbolGOFF.cpp $(LLVM_SRC)/lib/MC/MCSymbolXCOFF.cpp $(LLVM_SRC)/lib/MC/MCTargetOptions.cpp $(LLVM_SRC)/lib/MC/MCWasmStreamer.cpp $(LLVM_SRC)/lib/MC/MCWin64EH.cpp $(LLVM_SRC)/lib/MC/MCWinCOFFStreamer.cpp $(LLVM_SRC)/lib/MC/MCWinEH.cpp $(LLVM_SRC)/lib/MC/MachObjectWriter.cpp $(LLVM_SRC)/lib/MC/SPIRVObjectWriter.cpp $(LLVM_SRC)/lib/MC/StringTableBuilder.cpp $(LLVM_SRC)/lib/MC/TargetRegistry.cpp $(LLVM_SRC)/lib/MC/WasmObjectWriter.cpp $(LLVM_SRC)/lib/MC/WinCOFFObjectWriter.cpp $(LLVM_SRC)/lib/MC/XCOFFObjectWriter.cpp): LLVM_CPPFLAGS = $(LLVM_F15)
+$(call llvm_objs,$(LLVM_OBJ),$(LLVM_SRC)/lib/Bitcode/Reader/BitcodeReader.cpp $(LLVM_SRC)/lib/Bitcode/Reader/MetadataLoader.cpp $(LLVM_SRC)/lib/Bitcode/Reader/ValueList.cpp): LLVM_CPPFLAGS = $(LLVM_F16)
 $(call llvm_objs,$(LLVM_OBJ),$(LLVM_SRC)/lib/AsmParser/AsmParserContext.cpp $(LLVM_SRC)/lib/AsmParser/LLLexer.cpp $(LLVM_SRC)/lib/AsmParser/LLParser.cpp $(LLVM_SRC)/lib/AsmParser/Parser.cpp): LLVM_CPPFLAGS = $(LLVM_F17)
 $(call llvm_objs,$(LLVM_OBJ),$(LLVM_SRC)/lib/IRReader/IRReader.cpp): LLVM_CPPFLAGS = $(LLVM_F18)
-$(call llvm_objs,$(LLVM_OBJ),$(LLVM_SRC)/lib/MC/MCParser/AsmLexer.cpp $(LLVM_SRC)/lib/MC/MCParser/AsmParser.cpp $(LLVM_SRC)/lib/MC/MCParser/COFFAsmParser.cpp $(LLVM_SRC)/lib/MC/MCParser/COFFMasmParser.cpp $(LLVM_SRC)/lib/MC/MCParser/GOFFAsmParser.cpp $(LLVM_SRC)/lib/MC/MCParser/DarwinAsmParser.cpp $(LLVM_SRC)/lib/MC/MCParser/ELFAsmParser.cpp $(LLVM_SRC)/lib/MC/MCParser/MCAsmParser.cpp $(LLVM_SRC)/lib/MC/MCParser/MCAsmParserExtension.cpp $(LLVM_SRC)/lib/MC/MCParser/MCTargetAsmParser.cpp $(LLVM_SRC)/lib/MC/MCParser/MasmParser.cpp $(LLVM_SRC)/lib/MC/MCParser/WasmAsmParser.cpp $(LLVM_SRC)/lib/MC/MCParser/XCOFFAsmParser.cpp): LLVM_CPPFLAGS = $(LLVM_F19)
-$(call llvm_objs,$(LLVM_OBJ),$(LLVM_SRC)/lib/TextAPI/Architecture.cpp $(LLVM_SRC)/lib/TextAPI/ArchitectureSet.cpp $(LLVM_SRC)/lib/TextAPI/InterfaceFile.cpp $(LLVM_SRC)/lib/TextAPI/TextStubV5.cpp $(LLVM_SRC)/lib/TextAPI/PackedVersion.cpp $(LLVM_SRC)/lib/TextAPI/Platform.cpp $(LLVM_SRC)/lib/TextAPI/RecordsSlice.cpp $(LLVM_SRC)/lib/TextAPI/RecordVisitor.cpp $(LLVM_SRC)/lib/TextAPI/Symbol.cpp $(LLVM_SRC)/lib/TextAPI/SymbolSet.cpp $(LLVM_SRC)/lib/TextAPI/Target.cpp $(LLVM_SRC)/lib/TextAPI/TextAPIError.cpp $(LLVM_SRC)/lib/TextAPI/TextStub.cpp $(LLVM_SRC)/lib/TextAPI/TextStubCommon.cpp $(LLVM_SRC)/lib/TextAPI/Utils.cpp): LLVM_CPPFLAGS = $(LLVM_F20)
-$(call llvm_objs,$(LLVM_OBJ),$(LLVM_SRC)/lib/Object/Archive.cpp $(LLVM_SRC)/lib/Object/ArchiveWriter.cpp $(LLVM_SRC)/lib/Object/Binary.cpp $(LLVM_SRC)/lib/Object/BuildID.cpp $(LLVM_SRC)/lib/Object/COFFImportFile.cpp $(LLVM_SRC)/lib/Object/COFFModuleDefinition.cpp $(LLVM_SRC)/lib/Object/COFFObjectFile.cpp $(LLVM_SRC)/lib/Object/Decompressor.cpp $(LLVM_SRC)/lib/Object/DXContainer.cpp $(LLVM_SRC)/lib/Object/ELF.cpp $(LLVM_SRC)/lib/Object/ELFObjectFile.cpp $(LLVM_SRC)/lib/Object/Error.cpp $(LLVM_SRC)/lib/Object/GOFFObjectFile.cpp $(LLVM_SRC)/lib/Object/FaultMapParser.cpp $(LLVM_SRC)/lib/Object/IRObjectFile.cpp $(LLVM_SRC)/lib/Object/IRSymtab.cpp $(LLVM_SRC)/lib/Object/MachOObjectFile.cpp $(LLVM_SRC)/lib/Object/MachOUniversal.cpp $(LLVM_SRC)/lib/Object/Minidump.cpp $(LLVM_SRC)/lib/Object/ModuleSymbolTable.cpp $(LLVM_SRC)/lib/Object/Object.cpp $(LLVM_SRC)/lib/Object/ObjectFile.cpp $(LLVM_SRC)/lib/Object/OffloadBinary.cpp $(LLVM_SRC)/lib/Object/OffloadBundle.cpp $(LLVM_SRC)/lib/Object/RecordStreamer.cpp $(LLVM_SRC)/lib/Object/RelocationResolver.cpp $(LLVM_SRC)/lib/Object/SFrameParser.cpp $(LLVM_SRC)/lib/Object/SymbolicFile.cpp $(LLVM_SRC)/lib/Object/SymbolSize.cpp $(LLVM_SRC)/lib/Object/TapiFile.cpp $(LLVM_SRC)/lib/Object/TapiUniversal.cpp $(LLVM_SRC)/lib/Object/MachOUniversalWriter.cpp $(LLVM_SRC)/lib/Object/WasmObjectFile.cpp $(LLVM_SRC)/lib/Object/WindowsMachineFlag.cpp $(LLVM_SRC)/lib/Object/WindowsResource.cpp $(LLVM_SRC)/lib/Object/XCOFFObjectFile.cpp): LLVM_CPPFLAGS = $(LLVM_F21)
-$(call llvm_objs,$(LLVM_OBJ),$(LLVM_SRC)/lib/ExecutionEngine/Orc/Shared/AllocationActions.cpp $(LLVM_SRC)/lib/ExecutionEngine/Orc/Shared/MachOObjectFormat.cpp $(LLVM_SRC)/lib/ExecutionEngine/Orc/Shared/ObjectFormats.cpp $(LLVM_SRC)/lib/ExecutionEngine/Orc/Shared/OrcError.cpp $(LLVM_SRC)/lib/ExecutionEngine/Orc/Shared/OrcRTBridge.cpp $(LLVM_SRC)/lib/ExecutionEngine/Orc/Shared/SimpleRemoteEPCUtils.cpp $(LLVM_SRC)/lib/ExecutionEngine/Orc/Shared/SymbolStringPool.cpp): LLVM_CPPFLAGS = $(LLVM_F22)
-$(call llvm_objs,$(LLVM_OBJ),$(LLVM_SRC)/lib/ExecutionEngine/Orc/TargetProcess/ExecutorSharedMemoryMapperService.cpp $(LLVM_SRC)/lib/ExecutionEngine/Orc/TargetProcess/DefaultHostBootstrapValues.cpp $(LLVM_SRC)/lib/ExecutionEngine/Orc/TargetProcess/ExecutorResolver.cpp $(LLVM_SRC)/lib/ExecutionEngine/Orc/TargetProcess/LibraryResolver.cpp $(LLVM_SRC)/lib/ExecutionEngine/Orc/TargetProcess/JITLoaderGDB.cpp $(LLVM_SRC)/lib/ExecutionEngine/Orc/TargetProcess/JITLoaderPerf.cpp $(LLVM_SRC)/lib/ExecutionEngine/Orc/TargetProcess/JITLoaderVTune.cpp $(LLVM_SRC)/lib/ExecutionEngine/Orc/TargetProcess/LibraryScanner.cpp $(LLVM_SRC)/lib/ExecutionEngine/Orc/TargetProcess/OrcRTBootstrap.cpp $(LLVM_SRC)/lib/ExecutionEngine/Orc/TargetProcess/RegisterEHFrames.cpp $(LLVM_SRC)/lib/ExecutionEngine/Orc/TargetProcess/SimpleExecutorDylibManager.cpp $(LLVM_SRC)/lib/ExecutionEngine/Orc/TargetProcess/SimpleExecutorMemoryManager.cpp $(LLVM_SRC)/lib/ExecutionEngine/Orc/TargetProcess/SimpleRemoteEPCServer.cpp $(LLVM_SRC)/lib/ExecutionEngine/Orc/TargetProcess/TargetExecutionUtils.cpp $(LLVM_SRC)/lib/ExecutionEngine/Orc/TargetProcess/UnwindInfoManager.cpp): LLVM_CPPFLAGS = $(LLVM_F23)
+$(call llvm_objs,$(LLVM_OBJ),$(LLVM_SRC)/lib/MC/MCParser/AsmLexer.cpp $(LLVM_SRC)/lib/MC/MCParser/AsmParser.cpp $(LLVM_SRC)/lib/MC/MCParser/COFFAsmParser.cpp $(LLVM_SRC)/lib/MC/MCParser/GOFFAsmParser.cpp $(LLVM_SRC)/lib/MC/MCParser/DarwinAsmParser.cpp $(LLVM_SRC)/lib/MC/MCParser/ELFAsmParser.cpp $(LLVM_SRC)/lib/MC/MCParser/MCAsmParser.cpp $(LLVM_SRC)/lib/MC/MCParser/MCAsmParserExtension.cpp $(LLVM_SRC)/lib/MC/MCParser/MCTargetAsmParser.cpp $(LLVM_SRC)/lib/MC/MCParser/WasmAsmParser.cpp $(LLVM_SRC)/lib/MC/MCParser/XCOFFAsmParser.cpp): LLVM_CPPFLAGS = $(LLVM_F19)
+$(call llvm_objs,$(LLVM_OBJ),$(LLVM_SRC)/lib/TextAPI/Architecture.cpp $(LLVM_SRC)/lib/TextAPI/ArchitectureSet.cpp $(LLVM_SRC)/lib/TextAPI/InterfaceFile.cpp $(LLVM_SRC)/lib/TextAPI/TextStubV5.cpp $(LLVM_SRC)/lib/TextAPI/PackedVersion.cpp $(LLVM_SRC)/lib/TextAPI/Platform.cpp $(LLVM_SRC)/lib/TextAPI/Symbol.cpp $(LLVM_SRC)/lib/TextAPI/SymbolSet.cpp $(LLVM_SRC)/lib/TextAPI/Target.cpp $(LLVM_SRC)/lib/TextAPI/TextAPIError.cpp $(LLVM_SRC)/lib/TextAPI/TextStub.cpp $(LLVM_SRC)/lib/TextAPI/TextStubCommon.cpp): LLVM_CPPFLAGS = $(LLVM_F20)
+$(call llvm_objs,$(LLVM_OBJ),$(LLVM_SRC)/lib/Object/Archive.cpp $(LLVM_SRC)/lib/Object/ArchiveWriter.cpp $(LLVM_SRC)/lib/Object/Binary.cpp $(LLVM_SRC)/lib/Object/COFFImportFile.cpp $(LLVM_SRC)/lib/Object/COFFObjectFile.cpp $(LLVM_SRC)/lib/Object/Decompressor.cpp $(LLVM_SRC)/lib/Object/DXContainer.cpp $(LLVM_SRC)/lib/Object/ELF.cpp $(LLVM_SRC)/lib/Object/ELFObjectFile.cpp $(LLVM_SRC)/lib/Object/Error.cpp $(LLVM_SRC)/lib/Object/IRObjectFile.cpp $(LLVM_SRC)/lib/Object/IRSymtab.cpp $(LLVM_SRC)/lib/Object/MachOObjectFile.cpp $(LLVM_SRC)/lib/Object/MachOUniversal.cpp $(LLVM_SRC)/lib/Object/Minidump.cpp $(LLVM_SRC)/lib/Object/ModuleSymbolTable.cpp $(LLVM_SRC)/lib/Object/ObjectFile.cpp $(LLVM_SRC)/lib/Object/OffloadBinary.cpp $(LLVM_SRC)/lib/Object/RecordStreamer.cpp $(LLVM_SRC)/lib/Object/RelocationResolver.cpp $(LLVM_SRC)/lib/Object/SymbolicFile.cpp $(LLVM_SRC)/lib/Object/SymbolSize.cpp $(LLVM_SRC)/lib/Object/TapiFile.cpp $(LLVM_SRC)/lib/Object/TapiUniversal.cpp $(LLVM_SRC)/lib/Object/WasmObjectFile.cpp $(LLVM_SRC)/lib/Object/WindowsResource.cpp $(LLVM_SRC)/lib/Object/XCOFFObjectFile.cpp): LLVM_CPPFLAGS = $(LLVM_F21)
+$(call llvm_objs,$(LLVM_OBJ),$(LLVM_SRC)/lib/ExecutionEngine/Orc/TargetProcess/JITLoaderGDB.cpp): LLVM_CPPFLAGS = $(LLVM_F23)
 $(call llvm_objs,$(LLVM_OBJ),$(LLVM_SRC)/lib/ExecutionEngine/RuntimeDyld/JITSymbol.cpp $(LLVM_SRC)/lib/ExecutionEngine/RuntimeDyld/RTDyldMemoryManager.cpp $(LLVM_SRC)/lib/ExecutionEngine/RuntimeDyld/RuntimeDyld.cpp $(LLVM_SRC)/lib/ExecutionEngine/RuntimeDyld/RuntimeDyldChecker.cpp $(LLVM_SRC)/lib/ExecutionEngine/RuntimeDyld/RuntimeDyldCOFF.cpp $(LLVM_SRC)/lib/ExecutionEngine/RuntimeDyld/RuntimeDyldELF.cpp $(LLVM_SRC)/lib/ExecutionEngine/RuntimeDyld/RuntimeDyldMachO.cpp $(LLVM_SRC)/lib/ExecutionEngine/RuntimeDyld/Targets/RuntimeDyldELFMips.cpp): LLVM_CPPFLAGS = $(LLVM_F24)
-$(call llvm_objs,$(LLVM_OBJ),$(LLVM_SRC)/lib/Frontend/HLSL/CBuffer.cpp $(LLVM_SRC)/lib/Frontend/HLSL/HLSLBinding.cpp $(LLVM_SRC)/lib/Frontend/HLSL/HLSLResource.cpp $(LLVM_SRC)/lib/Frontend/HLSL/HLSLRootSignature.cpp $(LLVM_SRC)/lib/Frontend/HLSL/RootSignatureMetadata.cpp $(LLVM_SRC)/lib/Frontend/HLSL/RootSignatureValidations.cpp): LLVM_CPPFLAGS = $(LLVM_F25)
-$(call llvm_objs,$(LLVM_OBJ),$(LLVM_SRC)/lib/DebugInfo/DWARF/DWARFAbbreviationDeclaration.cpp $(LLVM_SRC)/lib/DebugInfo/DWARF/DWARFAddressRange.cpp $(LLVM_SRC)/lib/DebugInfo/DWARF/DWARFAcceleratorTable.cpp $(LLVM_SRC)/lib/DebugInfo/DWARF/DWARFCFIPrinter.cpp $(LLVM_SRC)/lib/DebugInfo/DWARF/DWARFCompileUnit.cpp $(LLVM_SRC)/lib/DebugInfo/DWARF/DWARFContext.cpp $(LLVM_SRC)/lib/DebugInfo/DWARF/DWARFDebugAbbrev.cpp $(LLVM_SRC)/lib/DebugInfo/DWARF/DWARFDebugAddr.cpp $(LLVM_SRC)/lib/DebugInfo/DWARF/DWARFDebugArangeSet.cpp $(LLVM_SRC)/lib/DebugInfo/DWARF/DWARFDebugAranges.cpp $(LLVM_SRC)/lib/DebugInfo/DWARF/DWARFDebugFrame.cpp $(LLVM_SRC)/lib/DebugInfo/DWARF/DWARFDebugInfoEntry.cpp $(LLVM_SRC)/lib/DebugInfo/DWARF/DWARFDebugLine.cpp $(LLVM_SRC)/lib/DebugInfo/DWARF/DWARFDebugLoc.cpp $(LLVM_SRC)/lib/DebugInfo/DWARF/DWARFDebugMacro.cpp $(LLVM_SRC)/lib/DebugInfo/DWARF/DWARFDebugPubTable.cpp $(LLVM_SRC)/lib/DebugInfo/DWARF/DWARFDebugRangeList.cpp $(LLVM_SRC)/lib/DebugInfo/DWARF/DWARFDebugRnglists.cpp $(LLVM_SRC)/lib/DebugInfo/DWARF/DWARFDie.cpp $(LLVM_SRC)/lib/DebugInfo/DWARF/DWARFExpressionPrinter.cpp $(LLVM_SRC)/lib/DebugInfo/DWARF/DWARFFormValue.cpp $(LLVM_SRC)/lib/DebugInfo/DWARF/DWARFGdbIndex.cpp $(LLVM_SRC)/lib/DebugInfo/DWARF/DWARFListTable.cpp $(LLVM_SRC)/lib/DebugInfo/DWARF/DWARFLocationExpression.cpp $(LLVM_SRC)/lib/DebugInfo/DWARF/DWARFTypeUnit.cpp $(LLVM_SRC)/lib/DebugInfo/DWARF/DWARFUnitIndex.cpp $(LLVM_SRC)/lib/DebugInfo/DWARF/DWARFUnit.cpp $(LLVM_SRC)/lib/DebugInfo/DWARF/DWARFUnwindTablePrinter.cpp $(LLVM_SRC)/lib/DebugInfo/DWARF/DWARFVerifier.cpp): LLVM_CPPFLAGS = $(LLVM_F26)
-$(call llvm_objs,$(LLVM_OBJ),$(LLVM_SRC)/lib/DebugInfo/GSYM/DwarfTransformer.cpp $(LLVM_SRC)/lib/DebugInfo/GSYM/Header.cpp $(LLVM_SRC)/lib/DebugInfo/GSYM/FileWriter.cpp $(LLVM_SRC)/lib/DebugInfo/GSYM/FunctionInfo.cpp $(LLVM_SRC)/lib/DebugInfo/GSYM/GsymCreator.cpp $(LLVM_SRC)/lib/DebugInfo/GSYM/GsymContext.cpp $(LLVM_SRC)/lib/DebugInfo/GSYM/GsymReader.cpp $(LLVM_SRC)/lib/DebugInfo/GSYM/InlineInfo.cpp $(LLVM_SRC)/lib/DebugInfo/GSYM/LineTable.cpp $(LLVM_SRC)/lib/DebugInfo/GSYM/LookupResult.cpp $(LLVM_SRC)/lib/DebugInfo/GSYM/CallSiteInfo.cpp $(LLVM_SRC)/lib/DebugInfo/GSYM/MergedFunctionsInfo.cpp $(LLVM_SRC)/lib/DebugInfo/GSYM/ObjectFileTransformer.cpp $(LLVM_SRC)/lib/DebugInfo/GSYM/ExtractRanges.cpp): LLVM_CPPFLAGS = $(LLVM_F27)
-$(call llvm_objs,$(LLVM_OBJ),$(LLVM_SRC)/lib/DebugInfo/CodeView/AppendingTypeTableBuilder.cpp $(LLVM_SRC)/lib/DebugInfo/CodeView/CodeViewError.cpp $(LLVM_SRC)/lib/DebugInfo/CodeView/CodeViewRecordIO.cpp $(LLVM_SRC)/lib/DebugInfo/CodeView/ContinuationRecordBuilder.cpp $(LLVM_SRC)/lib/DebugInfo/CodeView/CVSymbolVisitor.cpp $(LLVM_SRC)/lib/DebugInfo/CodeView/CVTypeVisitor.cpp $(LLVM_SRC)/lib/DebugInfo/CodeView/DebugChecksumsSubsection.cpp $(LLVM_SRC)/lib/DebugInfo/CodeView/DebugCrossExSubsection.cpp $(LLVM_SRC)/lib/DebugInfo/CodeView/DebugCrossImpSubsection.cpp $(LLVM_SRC)/lib/DebugInfo/CodeView/DebugFrameDataSubsection.cpp $(LLVM_SRC)/lib/DebugInfo/CodeView/DebugInlineeLinesSubsection.cpp $(LLVM_SRC)/lib/DebugInfo/CodeView/DebugLinesSubsection.cpp $(LLVM_SRC)/lib/DebugInfo/CodeView/DebugStringTableSubsection.cpp $(LLVM_SRC)/lib/DebugInfo/CodeView/DebugSubsection.cpp $(LLVM_SRC)/lib/DebugInfo/CodeView/DebugSubsectionRecord.cpp $(LLVM_SRC)/lib/DebugInfo/CodeView/DebugSubsectionVisitor.cpp $(LLVM_SRC)/lib/DebugInfo/CodeView/DebugSymbolRVASubsection.cpp $(LLVM_SRC)/lib/DebugInfo/CodeView/DebugSymbolsSubsection.cpp $(LLVM_SRC)/lib/DebugInfo/CodeView/EnumTables.cpp $(LLVM_SRC)/lib/DebugInfo/CodeView/Formatters.cpp $(LLVM_SRC)/lib/DebugInfo/CodeView/GlobalTypeTableBuilder.cpp $(LLVM_SRC)/lib/DebugInfo/CodeView/LazyRandomTypeCollection.cpp $(LLVM_SRC)/lib/DebugInfo/CodeView/Line.cpp $(LLVM_SRC)/lib/DebugInfo/CodeView/MergingTypeTableBuilder.cpp $(LLVM_SRC)/lib/DebugInfo/CodeView/RecordName.cpp $(LLVM_SRC)/lib/DebugInfo/CodeView/RecordSerialization.cpp $(LLVM_SRC)/lib/DebugInfo/CodeView/SimpleTypeSerializer.cpp $(LLVM_SRC)/lib/DebugInfo/CodeView/StringsAndChecksums.cpp $(LLVM_SRC)/lib/DebugInfo/CodeView/SymbolDumper.cpp $(LLVM_SRC)/lib/DebugInfo/CodeView/SymbolRecordHelpers.cpp $(LLVM_SRC)/lib/DebugInfo/CodeView/SymbolRecordMapping.cpp $(LLVM_SRC)/lib/DebugInfo/CodeView/SymbolSerializer.cpp $(LLVM_SRC)/lib/DebugInfo/CodeView/TypeDumpVisitor.cpp $(LLVM_SRC)/lib/DebugInfo/CodeView/TypeIndex.cpp $(LLVM_SRC)/lib/DebugInfo/CodeView/TypeIndexDiscovery.cpp $(LLVM_SRC)/lib/DebugInfo/CodeView/TypeHashing.cpp $(LLVM_SRC)/lib/DebugInfo/CodeView/TypeRecordHelpers.cpp $(LLVM_SRC)/lib/DebugInfo/CodeView/TypeRecordMapping.cpp $(LLVM_SRC)/lib/DebugInfo/CodeView/TypeStreamMerger.cpp $(LLVM_SRC)/lib/DebugInfo/CodeView/TypeTableCollection.cpp): LLVM_CPPFLAGS = $(LLVM_F28)
-$(call llvm_objs,$(LLVM_OBJ),$(LLVM_SRC)/lib/DebugInfo/MSF/MappedBlockStream.cpp $(LLVM_SRC)/lib/DebugInfo/MSF/MSFBuilder.cpp $(LLVM_SRC)/lib/DebugInfo/MSF/MSFCommon.cpp $(LLVM_SRC)/lib/DebugInfo/MSF/MSFError.cpp): LLVM_CPPFLAGS = $(LLVM_F29)
+$(call llvm_objs,$(LLVM_OBJ),$(LLVM_SRC)/lib/DebugInfo/DWARF/DWARFAbbreviationDeclaration.cpp $(LLVM_SRC)/lib/DebugInfo/DWARF/DWARFAddressRange.cpp $(LLVM_SRC)/lib/DebugInfo/DWARF/DWARFAcceleratorTable.cpp $(LLVM_SRC)/lib/DebugInfo/DWARF/DWARFCFIPrinter.cpp $(LLVM_SRC)/lib/DebugInfo/DWARF/DWARFCompileUnit.cpp $(LLVM_SRC)/lib/DebugInfo/DWARF/DWARFContext.cpp $(LLVM_SRC)/lib/DebugInfo/DWARF/DWARFDebugAbbrev.cpp $(LLVM_SRC)/lib/DebugInfo/DWARF/DWARFDebugAddr.cpp $(LLVM_SRC)/lib/DebugInfo/DWARF/DWARFDebugArangeSet.cpp $(LLVM_SRC)/lib/DebugInfo/DWARF/DWARFDebugAranges.cpp $(LLVM_SRC)/lib/DebugInfo/DWARF/DWARFDebugFrame.cpp $(LLVM_SRC)/lib/DebugInfo/DWARF/DWARFDebugInfoEntry.cpp $(LLVM_SRC)/lib/DebugInfo/DWARF/DWARFDebugLine.cpp $(LLVM_SRC)/lib/DebugInfo/DWARF/DWARFDebugLoc.cpp $(LLVM_SRC)/lib/DebugInfo/DWARF/DWARFDebugMacro.cpp $(LLVM_SRC)/lib/DebugInfo/DWARF/DWARFDebugPubTable.cpp $(LLVM_SRC)/lib/DebugInfo/DWARF/DWARFDebugRangeList.cpp $(LLVM_SRC)/lib/DebugInfo/DWARF/DWARFDebugRnglists.cpp $(LLVM_SRC)/lib/DebugInfo/DWARF/DWARFDie.cpp $(LLVM_SRC)/lib/DebugInfo/DWARF/DWARFExpressionPrinter.cpp $(LLVM_SRC)/lib/DebugInfo/DWARF/DWARFFormValue.cpp $(LLVM_SRC)/lib/DebugInfo/DWARF/DWARFGdbIndex.cpp $(LLVM_SRC)/lib/DebugInfo/DWARF/DWARFListTable.cpp $(LLVM_SRC)/lib/DebugInfo/DWARF/DWARFTypeUnit.cpp $(LLVM_SRC)/lib/DebugInfo/DWARF/DWARFUnitIndex.cpp $(LLVM_SRC)/lib/DebugInfo/DWARF/DWARFUnit.cpp $(LLVM_SRC)/lib/DebugInfo/DWARF/DWARFUnwindTablePrinter.cpp $(LLVM_SRC)/lib/DebugInfo/DWARF/DWARFVerifier.cpp): LLVM_CPPFLAGS = $(LLVM_F26)
+$(call llvm_objs,$(LLVM_OBJ),$(LLVM_SRC)/lib/DebugInfo/CodeView/CodeViewError.cpp $(LLVM_SRC)/lib/DebugInfo/CodeView/CodeViewRecordIO.cpp $(LLVM_SRC)/lib/DebugInfo/CodeView/ContinuationRecordBuilder.cpp $(LLVM_SRC)/lib/DebugInfo/CodeView/CVTypeVisitor.cpp $(LLVM_SRC)/lib/DebugInfo/CodeView/EnumTables.cpp $(LLVM_SRC)/lib/DebugInfo/CodeView/GlobalTypeTableBuilder.cpp $(LLVM_SRC)/lib/DebugInfo/CodeView/Line.cpp $(LLVM_SRC)/lib/DebugInfo/CodeView/RecordName.cpp $(LLVM_SRC)/lib/DebugInfo/CodeView/RecordSerialization.cpp $(LLVM_SRC)/lib/DebugInfo/CodeView/SimpleTypeSerializer.cpp $(LLVM_SRC)/lib/DebugInfo/CodeView/SymbolRecordMapping.cpp $(LLVM_SRC)/lib/DebugInfo/CodeView/TypeIndex.cpp $(LLVM_SRC)/lib/DebugInfo/CodeView/TypeIndexDiscovery.cpp $(LLVM_SRC)/lib/DebugInfo/CodeView/TypeHashing.cpp $(LLVM_SRC)/lib/DebugInfo/CodeView/TypeRecordMapping.cpp $(LLVM_SRC)/lib/DebugInfo/CodeView/TypeTableCollection.cpp): LLVM_CPPFLAGS = $(LLVM_F28)
 $(call llvm_objs,$(LLVM_OBJ),$(LLVM_SRC)/lib/Support/BLAKE3/blake3.c $(LLVM_SRC)/lib/Support/BLAKE3/blake3_dispatch.c $(LLVM_SRC)/lib/Support/BLAKE3/blake3_portable.c $(LLVM_SRC)/lib/Support/BLAKE3/blake3_neon.c): LLVM_CPPFLAGS = $(LLVM_F3)
-$(call llvm_objs,$(LLVM_OBJ),$(LLVM_SRC)/lib/DebugInfo/PDB/GenericError.cpp $(LLVM_SRC)/lib/DebugInfo/PDB/IPDBSourceFile.cpp $(LLVM_SRC)/lib/DebugInfo/PDB/PDB.cpp $(LLVM_SRC)/lib/DebugInfo/PDB/PDBContext.cpp $(LLVM_SRC)/lib/DebugInfo/PDB/PDBExtras.cpp $(LLVM_SRC)/lib/DebugInfo/PDB/PDBInterfaceAnchors.cpp $(LLVM_SRC)/lib/DebugInfo/PDB/PDBSymbol.cpp $(LLVM_SRC)/lib/DebugInfo/PDB/PDBSymbolAnnotation.cpp $(LLVM_SRC)/lib/DebugInfo/PDB/PDBSymbolBlock.cpp $(LLVM_SRC)/lib/DebugInfo/PDB/PDBSymbolCompiland.cpp $(LLVM_SRC)/lib/DebugInfo/PDB/PDBSymbolCompilandDetails.cpp $(LLVM_SRC)/lib/DebugInfo/PDB/PDBSymbolCompilandEnv.cpp $(LLVM_SRC)/lib/DebugInfo/PDB/PDBSymbolCustom.cpp $(LLVM_SRC)/lib/DebugInfo/PDB/PDBSymbolData.cpp $(LLVM_SRC)/lib/DebugInfo/PDB/PDBSymbolExe.cpp $(LLVM_SRC)/lib/DebugInfo/PDB/PDBSymbolFunc.cpp $(LLVM_SRC)/lib/DebugInfo/PDB/PDBSymbolFuncDebugEnd.cpp $(LLVM_SRC)/lib/DebugInfo/PDB/PDBSymbolFuncDebugStart.cpp $(LLVM_SRC)/lib/DebugInfo/PDB/PDBSymbolLabel.cpp $(LLVM_SRC)/lib/DebugInfo/PDB/PDBSymbolPublicSymbol.cpp $(LLVM_SRC)/lib/DebugInfo/PDB/PDBSymbolThunk.cpp $(LLVM_SRC)/lib/DebugInfo/PDB/PDBSymbolTypeArray.cpp $(LLVM_SRC)/lib/DebugInfo/PDB/PDBSymbolTypeBaseClass.cpp $(LLVM_SRC)/lib/DebugInfo/PDB/PDBSymbolTypeBuiltin.cpp $(LLVM_SRC)/lib/DebugInfo/PDB/PDBSymbolTypeCustom.cpp $(LLVM_SRC)/lib/DebugInfo/PDB/PDBSymbolTypeDimension.cpp $(LLVM_SRC)/lib/DebugInfo/PDB/PDBSymbolTypeEnum.cpp $(LLVM_SRC)/lib/DebugInfo/PDB/PDBSymbolTypeFriend.cpp $(LLVM_SRC)/lib/DebugInfo/PDB/PDBSymbolTypeFunctionArg.cpp $(LLVM_SRC)/lib/DebugInfo/PDB/PDBSymbolTypeFunctionSig.cpp $(LLVM_SRC)/lib/DebugInfo/PDB/PDBSymbolTypeManaged.cpp $(LLVM_SRC)/lib/DebugInfo/PDB/PDBSymbolTypePointer.cpp $(LLVM_SRC)/lib/DebugInfo/PDB/PDBSymbolTypeTypedef.cpp $(LLVM_SRC)/lib/DebugInfo/PDB/PDBSymbolTypeUDT.cpp $(LLVM_SRC)/lib/DebugInfo/PDB/PDBSymbolTypeVTable.cpp $(LLVM_SRC)/lib/DebugInfo/PDB/PDBSymbolTypeVTableShape.cpp $(LLVM_SRC)/lib/DebugInfo/PDB/PDBSymbolUnknown.cpp $(LLVM_SRC)/lib/DebugInfo/PDB/PDBSymbolUsingNamespace.cpp $(LLVM_SRC)/lib/DebugInfo/PDB/PDBSymDumper.cpp $(LLVM_SRC)/lib/DebugInfo/PDB/UDTLayout.cpp $(LLVM_SRC)/lib/DebugInfo/PDB/Native/DbiModuleDescriptor.cpp $(LLVM_SRC)/lib/DebugInfo/PDB/Native/DbiModuleDescriptorBuilder.cpp $(LLVM_SRC)/lib/DebugInfo/PDB/Native/DbiModuleList.cpp $(LLVM_SRC)/lib/DebugInfo/PDB/Native/DbiStream.cpp $(LLVM_SRC)/lib/DebugInfo/PDB/Native/DbiStreamBuilder.cpp $(LLVM_SRC)/lib/DebugInfo/PDB/Native/EnumTables.cpp $(LLVM_SRC)/lib/DebugInfo/PDB/Native/FormatUtil.cpp $(LLVM_SRC)/lib/DebugInfo/PDB/Native/GlobalsStream.cpp $(LLVM_SRC)/lib/DebugInfo/PDB/Native/Hash.cpp $(LLVM_SRC)/lib/DebugInfo/PDB/Native/HashTable.cpp $(LLVM_SRC)/lib/DebugInfo/PDB/Native/InfoStream.cpp $(LLVM_SRC)/lib/DebugInfo/PDB/Native/InfoStreamBuilder.cpp $(LLVM_SRC)/lib/DebugInfo/PDB/Native/InjectedSourceStream.cpp $(LLVM_SRC)/lib/DebugInfo/PDB/Native/InputFile.cpp $(LLVM_SRC)/lib/DebugInfo/PDB/Native/LinePrinter.cpp $(LLVM_SRC)/lib/DebugInfo/PDB/Native/ModuleDebugStream.cpp $(LLVM_SRC)/lib/DebugInfo/PDB/Native/NativeCompilandSymbol.cpp $(LLVM_SRC)/lib/DebugInfo/PDB/Native/NativeEnumGlobals.cpp $(LLVM_SRC)/lib/DebugInfo/PDB/Native/NativeEnumInjectedSources.cpp $(LLVM_SRC)/lib/DebugInfo/PDB/Native/NativeEnumLineNumbers.cpp $(LLVM_SRC)/lib/DebugInfo/PDB/Native/NativeEnumModules.cpp $(LLVM_SRC)/lib/DebugInfo/PDB/Native/NativeEnumTypes.cpp $(LLVM_SRC)/lib/DebugInfo/PDB/Native/NativeEnumSymbols.cpp $(LLVM_SRC)/lib/DebugInfo/PDB/Native/NativeExeSymbol.cpp $(LLVM_SRC)/lib/DebugInfo/PDB/Native/NativeFunctionSymbol.cpp $(LLVM_SRC)/lib/DebugInfo/PDB/Native/NativeInlineSiteSymbol.cpp $(LLVM_SRC)/lib/DebugInfo/PDB/Native/NativeLineNumber.cpp $(LLVM_SRC)/lib/DebugInfo/PDB/Native/NativePublicSymbol.cpp $(LLVM_SRC)/lib/DebugInfo/PDB/Native/NativeRawSymbol.cpp $(LLVM_SRC)/lib/DebugInfo/PDB/Native/NativeSourceFile.cpp $(LLVM_SRC)/lib/DebugInfo/PDB/Native/NativeSymbolEnumerator.cpp $(LLVM_SRC)/lib/DebugInfo/PDB/Native/NativeTypeArray.cpp $(LLVM_SRC)/lib/DebugInfo/PDB/Native/NativeTypeBuiltin.cpp $(LLVM_SRC)/lib/DebugInfo/PDB/Native/NativeTypeEnum.cpp $(LLVM_SRC)/lib/DebugInfo/PDB/Native/NativeTypeFunctionSig.cpp $(LLVM_SRC)/lib/DebugInfo/PDB/Native/NativeTypePointer.cpp $(LLVM_SRC)/lib/DebugInfo/PDB/Native/NativeTypeTypedef.cpp $(LLVM_SRC)/lib/DebugInfo/PDB/Native/NativeTypeUDT.cpp $(LLVM_SRC)/lib/DebugInfo/PDB/Native/NativeTypeVTShape.cpp $(LLVM_SRC)/lib/DebugInfo/PDB/Native/NamedStreamMap.cpp $(LLVM_SRC)/lib/DebugInfo/PDB/Native/NativeSession.cpp $(LLVM_SRC)/lib/DebugInfo/PDB/Native/PDBFile.cpp $(LLVM_SRC)/lib/DebugInfo/PDB/Native/PDBFileBuilder.cpp $(LLVM_SRC)/lib/DebugInfo/PDB/Native/PDBStringTable.cpp $(LLVM_SRC)/lib/DebugInfo/PDB/Native/PDBStringTableBuilder.cpp $(LLVM_SRC)/lib/DebugInfo/PDB/Native/PublicsStream.cpp $(LLVM_SRC)/lib/DebugInfo/PDB/Native/GSIStreamBuilder.cpp $(LLVM_SRC)/lib/DebugInfo/PDB/Native/RawError.cpp $(LLVM_SRC)/lib/DebugInfo/PDB/Native/SymbolCache.cpp $(LLVM_SRC)/lib/DebugInfo/PDB/Native/SymbolStream.cpp $(LLVM_SRC)/lib/DebugInfo/PDB/Native/TpiHashing.cpp $(LLVM_SRC)/lib/DebugInfo/PDB/Native/TpiStream.cpp $(LLVM_SRC)/lib/DebugInfo/PDB/Native/TpiStreamBuilder.cpp): LLVM_CPPFLAGS = $(LLVM_F30)
-$(call llvm_objs,$(LLVM_OBJ),$(LLVM_SRC)/lib/DebugInfo/BTF/BTFParser.cpp $(LLVM_SRC)/lib/DebugInfo/BTF/BTFContext.cpp): LLVM_CPPFLAGS = $(LLVM_F31)
-$(call llvm_objs,$(LLVM_OBJ),$(LLVM_SRC)/lib/DebugInfo/Symbolize/DIPrinter.cpp $(LLVM_SRC)/lib/DebugInfo/Symbolize/Markup.cpp $(LLVM_SRC)/lib/DebugInfo/Symbolize/MarkupFilter.cpp $(LLVM_SRC)/lib/DebugInfo/Symbolize/SymbolizableObjectFile.cpp $(LLVM_SRC)/lib/DebugInfo/Symbolize/Symbolize.cpp): LLVM_CPPFLAGS = $(LLVM_F32)
-$(call llvm_objs,$(LLVM_OBJ),$(LLVM_SRC)/lib/ProfileData/DataAccessProf.cpp $(LLVM_SRC)/lib/ProfileData/GCOV.cpp $(LLVM_SRC)/lib/ProfileData/IndexedMemProfData.cpp $(LLVM_SRC)/lib/ProfileData/InstrProf.cpp $(LLVM_SRC)/lib/ProfileData/InstrProfCorrelator.cpp $(LLVM_SRC)/lib/ProfileData/InstrProfReader.cpp $(LLVM_SRC)/lib/ProfileData/InstrProfWriter.cpp $(LLVM_SRC)/lib/ProfileData/ItaniumManglingCanonicalizer.cpp $(LLVM_SRC)/lib/ProfileData/MemProf.cpp $(LLVM_SRC)/lib/ProfileData/MemProfCommon.cpp $(LLVM_SRC)/lib/ProfileData/MemProfReader.cpp $(LLVM_SRC)/lib/ProfileData/MemProfRadixTree.cpp $(LLVM_SRC)/lib/ProfileData/MemProfSummary.cpp $(LLVM_SRC)/lib/ProfileData/MemProfSummaryBuilder.cpp $(LLVM_SRC)/lib/ProfileData/PGOCtxProfReader.cpp $(LLVM_SRC)/lib/ProfileData/PGOCtxProfWriter.cpp $(LLVM_SRC)/lib/ProfileData/ProfileSummaryBuilder.cpp $(LLVM_SRC)/lib/ProfileData/SampleProf.cpp $(LLVM_SRC)/lib/ProfileData/SampleProfReader.cpp $(LLVM_SRC)/lib/ProfileData/SampleProfWriter.cpp $(LLVM_SRC)/lib/ProfileData/SymbolRemappingReader.cpp): LLVM_CPPFLAGS = $(LLVM_F33)
-$(call llvm_objs,$(LLVM_OBJ),$(LLVM_SRC)/lib/Analysis/AliasAnalysis.cpp $(LLVM_SRC)/lib/Analysis/AliasAnalysisEvaluator.cpp $(LLVM_SRC)/lib/Analysis/AliasSetTracker.cpp $(LLVM_SRC)/lib/Analysis/Analysis.cpp $(LLVM_SRC)/lib/Analysis/AssumeBundleQueries.cpp $(LLVM_SRC)/lib/Analysis/AssumptionCache.cpp $(LLVM_SRC)/lib/Analysis/BasicAliasAnalysis.cpp $(LLVM_SRC)/lib/Analysis/BlockFrequencyInfo.cpp $(LLVM_SRC)/lib/Analysis/BlockFrequencyInfoImpl.cpp $(LLVM_SRC)/lib/Analysis/BranchProbabilityInfo.cpp $(LLVM_SRC)/lib/Analysis/CFG.cpp $(LLVM_SRC)/lib/Analysis/CFGPrinter.cpp $(LLVM_SRC)/lib/Analysis/CFGSCCPrinter.cpp $(LLVM_SRC)/lib/Analysis/CGSCCPassManager.cpp $(LLVM_SRC)/lib/Analysis/CallGraph.cpp $(LLVM_SRC)/lib/Analysis/CallGraphSCCPass.cpp $(LLVM_SRC)/lib/Analysis/CallPrinter.cpp $(LLVM_SRC)/lib/Analysis/CaptureTracking.cpp $(LLVM_SRC)/lib/Analysis/CmpInstAnalysis.cpp $(LLVM_SRC)/lib/Analysis/CostModel.cpp $(LLVM_SRC)/lib/Analysis/CodeMetrics.cpp $(LLVM_SRC)/lib/Analysis/ConstantFolding.cpp $(LLVM_SRC)/lib/Analysis/CtxProfAnalysis.cpp $(LLVM_SRC)/lib/Analysis/CycleAnalysis.cpp $(LLVM_SRC)/lib/Analysis/DDG.cpp $(LLVM_SRC)/lib/Analysis/DDGPrinter.cpp $(LLVM_SRC)/lib/Analysis/ConstraintSystem.cpp $(LLVM_SRC)/lib/Analysis/Delinearization.cpp $(LLVM_SRC)/lib/Analysis/DemandedBits.cpp $(LLVM_SRC)/lib/Analysis/DependenceAnalysis.cpp $(LLVM_SRC)/lib/Analysis/DependenceGraphBuilder.cpp $(LLVM_SRC)/lib/Analysis/DevelopmentModeInlineAdvisor.cpp $(LLVM_SRC)/lib/Analysis/DomConditionCache.cpp $(LLVM_SRC)/lib/Analysis/DomPrinter.cpp $(LLVM_SRC)/lib/Analysis/DomTreeUpdater.cpp $(LLVM_SRC)/lib/Analysis/DominanceFrontier.cpp $(LLVM_SRC)/lib/Analysis/DXILResource.cpp $(LLVM_SRC)/lib/Analysis/DXILMetadataAnalysis.cpp $(LLVM_SRC)/lib/Analysis/EphemeralValuesCache.cpp $(LLVM_SRC)/lib/Analysis/FloatingPointPredicateUtils.cpp $(LLVM_SRC)/lib/Analysis/FunctionPropertiesAnalysis.cpp $(LLVM_SRC)/lib/Analysis/GlobalsModRef.cpp $(LLVM_SRC)/lib/Analysis/GuardUtils.cpp $(LLVM_SRC)/lib/Analysis/HashRecognize.cpp $(LLVM_SRC)/lib/Analysis/HeatUtils.cpp $(LLVM_SRC)/lib/Analysis/IR2Vec.cpp $(LLVM_SRC)/lib/Analysis/IRSimilarityIdentifier.cpp $(LLVM_SRC)/lib/Analysis/IVDescriptors.cpp $(LLVM_SRC)/lib/Analysis/IVUsers.cpp $(LLVM_SRC)/lib/Analysis/ImportedFunctionsInliningStatistics.cpp $(LLVM_SRC)/lib/Analysis/IndirectCallPromotionAnalysis.cpp $(LLVM_SRC)/lib/Analysis/InlineCost.cpp $(LLVM_SRC)/lib/Analysis/InlineAdvisor.cpp $(LLVM_SRC)/lib/Analysis/InlineOrder.cpp $(LLVM_SRC)/lib/Analysis/InstCount.cpp $(LLVM_SRC)/lib/Analysis/InstructionPrecedenceTracking.cpp $(LLVM_SRC)/lib/Analysis/InstructionSimplify.cpp $(LLVM_SRC)/lib/Analysis/InteractiveModelRunner.cpp $(LLVM_SRC)/lib/Analysis/KernelInfo.cpp $(LLVM_SRC)/lib/Analysis/LastRunTrackingAnalysis.cpp $(LLVM_SRC)/lib/Analysis/LazyBranchProbabilityInfo.cpp $(LLVM_SRC)/lib/Analysis/LazyBlockFrequencyInfo.cpp $(LLVM_SRC)/lib/Analysis/LazyCallGraph.cpp $(LLVM_SRC)/lib/Analysis/LazyValueInfo.cpp $(LLVM_SRC)/lib/Analysis/Lint.cpp $(LLVM_SRC)/lib/Analysis/Loads.cpp $(LLVM_SRC)/lib/Analysis/Local.cpp $(LLVM_SRC)/lib/Analysis/LoopAccessAnalysis.cpp $(LLVM_SRC)/lib/Analysis/LoopAnalysisManager.cpp $(LLVM_SRC)/lib/Analysis/LoopCacheAnalysis.cpp $(LLVM_SRC)/lib/Analysis/LoopNestAnalysis.cpp $(LLVM_SRC)/lib/Analysis/LoopUnrollAnalyzer.cpp $(LLVM_SRC)/lib/Analysis/LoopInfo.cpp $(LLVM_SRC)/lib/Analysis/LoopPass.cpp $(LLVM_SRC)/lib/Analysis/MLInlineAdvisor.cpp $(LLVM_SRC)/lib/Analysis/MemDerefPrinter.cpp $(LLVM_SRC)/lib/Analysis/MemoryBuiltins.cpp $(LLVM_SRC)/lib/Analysis/MemoryDependenceAnalysis.cpp $(LLVM_SRC)/lib/Analysis/MemoryLocation.cpp $(LLVM_SRC)/lib/Analysis/MemoryProfileInfo.cpp $(LLVM_SRC)/lib/Analysis/MemorySSA.cpp $(LLVM_SRC)/lib/Analysis/MemorySSAUpdater.cpp $(LLVM_SRC)/lib/Analysis/ModelUnderTrainingRunner.cpp $(LLVM_SRC)/lib/Analysis/ModuleDebugInfoPrinter.cpp $(LLVM_SRC)/lib/Analysis/ModuleSummaryAnalysis.cpp $(LLVM_SRC)/lib/Analysis/MustExecute.cpp $(LLVM_SRC)/lib/Analysis/NoInferenceModelRunner.cpp $(LLVM_SRC)/lib/Analysis/ObjCARCAliasAnalysis.cpp $(LLVM_SRC)/lib/Analysis/ObjCARCAnalysisUtils.cpp $(LLVM_SRC)/lib/Analysis/ObjCARCInstKind.cpp $(LLVM_SRC)/lib/Analysis/OptimizationRemarkEmitter.cpp $(LLVM_SRC)/lib/Analysis/OverflowInstAnalysis.cpp $(LLVM_SRC)/lib/Analysis/PHITransAddr.cpp $(LLVM_SRC)/lib/Analysis/PhiValues.cpp $(LLVM_SRC)/lib/Analysis/PostDominators.cpp $(LLVM_SRC)/lib/Analysis/ProfileSummaryInfo.cpp $(LLVM_SRC)/lib/Analysis/PtrUseVisitor.cpp $(LLVM_SRC)/lib/Analysis/RegionInfo.cpp $(LLVM_SRC)/lib/Analysis/RegionPass.cpp $(LLVM_SRC)/lib/Analysis/RegionPrinter.cpp $(LLVM_SRC)/lib/Analysis/ReplayInlineAdvisor.cpp $(LLVM_SRC)/lib/Analysis/RuntimeLibcallInfo.cpp $(LLVM_SRC)/lib/Analysis/ScalarEvolution.cpp $(LLVM_SRC)/lib/Analysis/ScalarEvolutionAliasAnalysis.cpp $(LLVM_SRC)/lib/Analysis/ScalarEvolutionDivision.cpp $(LLVM_SRC)/lib/Analysis/ScalarEvolutionNormalization.cpp $(LLVM_SRC)/lib/Analysis/StaticDataProfileInfo.cpp $(LLVM_SRC)/lib/Analysis/StackLifetime.cpp $(LLVM_SRC)/lib/Analysis/StackSafetyAnalysis.cpp $(LLVM_SRC)/lib/Analysis/StructuralHash.cpp $(LLVM_SRC)/lib/Analysis/SyntheticCountsUtils.cpp $(LLVM_SRC)/lib/Analysis/TFLiteUtils.cpp $(LLVM_SRC)/lib/Analysis/TargetLibraryInfo.cpp $(LLVM_SRC)/lib/Analysis/TargetTransformInfo.cpp $(LLVM_SRC)/lib/Analysis/TensorSpec.cpp $(LLVM_SRC)/lib/Analysis/Trace.cpp $(LLVM_SRC)/lib/Analysis/TrainingLogger.cpp $(LLVM_SRC)/lib/Analysis/TypeBasedAliasAnalysis.cpp $(LLVM_SRC)/lib/Analysis/TypeMetadataUtils.cpp $(LLVM_SRC)/lib/Analysis/UniformityAnalysis.cpp $(LLVM_SRC)/lib/Analysis/ScopedNoAliasAA.cpp $(LLVM_SRC)/lib/Analysis/ValueLattice.cpp $(LLVM_SRC)/lib/Analysis/ValueLatticeUtils.cpp $(LLVM_SRC)/lib/Analysis/ValueTracking.cpp $(LLVM_SRC)/lib/Analysis/VectorUtils.cpp): LLVM_CPPFLAGS = $(LLVM_F34)
-$(call llvm_objs,$(LLVM_OBJ),$(LLVM_SRC)/lib/Target/RegisterTargetPassConfigCallback.cpp $(LLVM_SRC)/lib/Target/Target.cpp $(LLVM_SRC)/lib/Target/TargetLoweringObjectFile.cpp $(LLVM_SRC)/lib/Target/TargetMachine.cpp $(LLVM_SRC)/lib/Target/TargetMachineC.cpp): LLVM_CPPFLAGS = $(LLVM_F35)
+$(call llvm_objs,$(LLVM_OBJ),$(LLVM_SRC)/lib/ProfileData/DataAccessProf.cpp $(LLVM_SRC)/lib/ProfileData/IndexedMemProfData.cpp $(LLVM_SRC)/lib/ProfileData/InstrProf.cpp $(LLVM_SRC)/lib/ProfileData/InstrProfCorrelator.cpp $(LLVM_SRC)/lib/ProfileData/InstrProfReader.cpp $(LLVM_SRC)/lib/ProfileData/ItaniumManglingCanonicalizer.cpp $(LLVM_SRC)/lib/ProfileData/MemProf.cpp $(LLVM_SRC)/lib/ProfileData/MemProfRadixTree.cpp $(LLVM_SRC)/lib/ProfileData/MemProfSummary.cpp $(LLVM_SRC)/lib/ProfileData/PGOCtxProfReader.cpp $(LLVM_SRC)/lib/ProfileData/ProfileSummaryBuilder.cpp $(LLVM_SRC)/lib/ProfileData/SampleProf.cpp $(LLVM_SRC)/lib/ProfileData/SampleProfReader.cpp $(LLVM_SRC)/lib/ProfileData/SymbolRemappingReader.cpp): LLVM_CPPFLAGS = $(LLVM_F33)
+$(call llvm_objs,$(LLVM_OBJ),$(LLVM_SRC)/lib/Analysis/AliasAnalysis.cpp $(LLVM_SRC)/lib/Analysis/AliasSetTracker.cpp $(LLVM_SRC)/lib/Analysis/AssumeBundleQueries.cpp $(LLVM_SRC)/lib/Analysis/AssumptionCache.cpp $(LLVM_SRC)/lib/Analysis/BasicAliasAnalysis.cpp $(LLVM_SRC)/lib/Analysis/BlockFrequencyInfo.cpp $(LLVM_SRC)/lib/Analysis/BlockFrequencyInfoImpl.cpp $(LLVM_SRC)/lib/Analysis/BranchProbabilityInfo.cpp $(LLVM_SRC)/lib/Analysis/CFG.cpp $(LLVM_SRC)/lib/Analysis/CFGPrinter.cpp $(LLVM_SRC)/lib/Analysis/CGSCCPassManager.cpp $(LLVM_SRC)/lib/Analysis/CallGraph.cpp $(LLVM_SRC)/lib/Analysis/CallGraphSCCPass.cpp $(LLVM_SRC)/lib/Analysis/CaptureTracking.cpp $(LLVM_SRC)/lib/Analysis/CmpInstAnalysis.cpp $(LLVM_SRC)/lib/Analysis/CodeMetrics.cpp $(LLVM_SRC)/lib/Analysis/ConstantFolding.cpp $(LLVM_SRC)/lib/Analysis/CtxProfAnalysis.cpp $(LLVM_SRC)/lib/Analysis/CycleAnalysis.cpp $(LLVM_SRC)/lib/Analysis/DemandedBits.cpp $(LLVM_SRC)/lib/Analysis/DomTreeUpdater.cpp $(LLVM_SRC)/lib/Analysis/DominanceFrontier.cpp $(LLVM_SRC)/lib/Analysis/EphemeralValuesCache.cpp $(LLVM_SRC)/lib/Analysis/FloatingPointPredicateUtils.cpp $(LLVM_SRC)/lib/Analysis/GlobalsModRef.cpp $(LLVM_SRC)/lib/Analysis/GuardUtils.cpp $(LLVM_SRC)/lib/Analysis/HeatUtils.cpp $(LLVM_SRC)/lib/Analysis/IR2Vec.cpp $(LLVM_SRC)/lib/Analysis/IVDescriptors.cpp $(LLVM_SRC)/lib/Analysis/IVUsers.cpp $(LLVM_SRC)/lib/Analysis/IndirectCallPromotionAnalysis.cpp $(LLVM_SRC)/lib/Analysis/InlineCost.cpp $(LLVM_SRC)/lib/Analysis/InstructionPrecedenceTracking.cpp $(LLVM_SRC)/lib/Analysis/InstructionSimplify.cpp $(LLVM_SRC)/lib/Analysis/InteractiveModelRunner.cpp $(LLVM_SRC)/lib/Analysis/LazyBranchProbabilityInfo.cpp $(LLVM_SRC)/lib/Analysis/LazyBlockFrequencyInfo.cpp $(LLVM_SRC)/lib/Analysis/LazyCallGraph.cpp $(LLVM_SRC)/lib/Analysis/Loads.cpp $(LLVM_SRC)/lib/Analysis/Local.cpp $(LLVM_SRC)/lib/Analysis/LoopAccessAnalysis.cpp $(LLVM_SRC)/lib/Analysis/LoopAnalysisManager.cpp $(LLVM_SRC)/lib/Analysis/LoopNestAnalysis.cpp $(LLVM_SRC)/lib/Analysis/LoopInfo.cpp $(LLVM_SRC)/lib/Analysis/LoopPass.cpp $(LLVM_SRC)/lib/Analysis/MemoryBuiltins.cpp $(LLVM_SRC)/lib/Analysis/MemoryDependenceAnalysis.cpp $(LLVM_SRC)/lib/Analysis/MemoryLocation.cpp $(LLVM_SRC)/lib/Analysis/MemoryProfileInfo.cpp $(LLVM_SRC)/lib/Analysis/MemorySSA.cpp $(LLVM_SRC)/lib/Analysis/MemorySSAUpdater.cpp $(LLVM_SRC)/lib/Analysis/ModuleSummaryAnalysis.cpp $(LLVM_SRC)/lib/Analysis/MustExecute.cpp $(LLVM_SRC)/lib/Analysis/ObjCARCAnalysisUtils.cpp $(LLVM_SRC)/lib/Analysis/ObjCARCInstKind.cpp $(LLVM_SRC)/lib/Analysis/OptimizationRemarkEmitter.cpp $(LLVM_SRC)/lib/Analysis/OverflowInstAnalysis.cpp $(LLVM_SRC)/lib/Analysis/PHITransAddr.cpp $(LLVM_SRC)/lib/Analysis/PostDominators.cpp $(LLVM_SRC)/lib/Analysis/ProfileSummaryInfo.cpp $(LLVM_SRC)/lib/Analysis/RuntimeLibcallInfo.cpp $(LLVM_SRC)/lib/Analysis/ScalarEvolution.cpp $(LLVM_SRC)/lib/Analysis/ScalarEvolutionAliasAnalysis.cpp $(LLVM_SRC)/lib/Analysis/ScalarEvolutionNormalization.cpp $(LLVM_SRC)/lib/Analysis/StaticDataProfileInfo.cpp $(LLVM_SRC)/lib/Analysis/StackLifetime.cpp $(LLVM_SRC)/lib/Analysis/StackSafetyAnalysis.cpp $(LLVM_SRC)/lib/Analysis/TargetLibraryInfo.cpp $(LLVM_SRC)/lib/Analysis/TargetTransformInfo.cpp $(LLVM_SRC)/lib/Analysis/TensorSpec.cpp $(LLVM_SRC)/lib/Analysis/TrainingLogger.cpp $(LLVM_SRC)/lib/Analysis/TypeBasedAliasAnalysis.cpp $(LLVM_SRC)/lib/Analysis/TypeMetadataUtils.cpp $(LLVM_SRC)/lib/Analysis/UniformityAnalysis.cpp $(LLVM_SRC)/lib/Analysis/ScopedNoAliasAA.cpp $(LLVM_SRC)/lib/Analysis/ValueTracking.cpp $(LLVM_SRC)/lib/Analysis/VectorUtils.cpp): LLVM_CPPFLAGS = $(LLVM_F34)
+$(call llvm_objs,$(LLVM_OBJ),$(LLVM_SRC)/lib/Target/RegisterTargetPassConfigCallback.cpp $(LLVM_SRC)/lib/Target/TargetLoweringObjectFile.cpp $(LLVM_SRC)/lib/Target/TargetMachine.cpp): LLVM_CPPFLAGS = $(LLVM_F35)
 $(call llvm_objs,$(LLVM_OBJ),$(LLVM_SRC)/lib/ExecutionEngine/ExecutionEngine.cpp $(LLVM_SRC)/lib/ExecutionEngine/ExecutionEngineBindings.cpp $(LLVM_SRC)/lib/ExecutionEngine/GDBRegistrationListener.cpp $(LLVM_SRC)/lib/ExecutionEngine/SectionMemoryManager.cpp $(LLVM_SRC)/lib/ExecutionEngine/TargetSelect.cpp): LLVM_CPPFLAGS = $(LLVM_F36)
 $(call llvm_objs,$(LLVM_OBJ),$(LLVM_SRC)/lib/ExecutionEngine/MCJIT/MCJIT.cpp): LLVM_CPPFLAGS = $(LLVM_F37)
-$(call llvm_objs,$(LLVM_OBJ),$(LLVM_SRC)/lib/Transforms/Utils/AddDiscriminators.cpp $(LLVM_SRC)/lib/Transforms/Utils/AMDGPUEmitPrintf.cpp $(LLVM_SRC)/lib/Transforms/Utils/ASanStackFrameLayout.cpp $(LLVM_SRC)/lib/Transforms/Utils/AssumeBundleBuilder.cpp $(LLVM_SRC)/lib/Transforms/Utils/BasicBlockUtils.cpp $(LLVM_SRC)/lib/Transforms/Utils/BreakCriticalEdges.cpp $(LLVM_SRC)/lib/Transforms/Utils/BuildLibCalls.cpp $(LLVM_SRC)/lib/Transforms/Utils/BypassSlowDivision.cpp $(LLVM_SRC)/lib/Transforms/Utils/CallPromotionUtils.cpp $(LLVM_SRC)/lib/Transforms/Utils/CallGraphUpdater.cpp $(LLVM_SRC)/lib/Transforms/Utils/CanonicalizeAliases.cpp $(LLVM_SRC)/lib/Transforms/Utils/CanonicalizeFreezeInLoops.cpp $(LLVM_SRC)/lib/Transforms/Utils/CloneFunction.cpp $(LLVM_SRC)/lib/Transforms/Utils/CloneModule.cpp $(LLVM_SRC)/lib/Transforms/Utils/CodeExtractor.cpp $(LLVM_SRC)/lib/Transforms/Utils/CodeLayout.cpp $(LLVM_SRC)/lib/Transforms/Utils/CodeMoverUtils.cpp $(LLVM_SRC)/lib/Transforms/Utils/ControlFlowUtils.cpp $(LLVM_SRC)/lib/Transforms/Utils/CtorUtils.cpp $(LLVM_SRC)/lib/Transforms/Utils/CountVisits.cpp $(LLVM_SRC)/lib/Transforms/Utils/Debugify.cpp $(LLVM_SRC)/lib/Transforms/Utils/DebugSSAUpdater.cpp $(LLVM_SRC)/lib/Transforms/Utils/DeclareRuntimeLibcalls.cpp $(LLVM_SRC)/lib/Transforms/Utils/DemoteRegToStack.cpp $(LLVM_SRC)/lib/Transforms/Utils/DXILUpgrade.cpp $(LLVM_SRC)/lib/Transforms/Utils/EntryExitInstrumenter.cpp $(LLVM_SRC)/lib/Transforms/Utils/EscapeEnumerator.cpp $(LLVM_SRC)/lib/Transforms/Utils/Evaluator.cpp $(LLVM_SRC)/lib/Transforms/Utils/FixIrreducible.cpp $(LLVM_SRC)/lib/Transforms/Utils/FlattenCFG.cpp $(LLVM_SRC)/lib/Transforms/Utils/FunctionComparator.cpp $(LLVM_SRC)/lib/Transforms/Utils/FunctionImportUtils.cpp $(LLVM_SRC)/lib/Transforms/Utils/GlobalStatus.cpp $(LLVM_SRC)/lib/Transforms/Utils/GuardUtils.cpp $(LLVM_SRC)/lib/Transforms/Utils/HelloWorld.cpp $(LLVM_SRC)/lib/Transforms/Utils/InlineFunction.cpp $(LLVM_SRC)/lib/Transforms/Utils/InjectTLIMappings.cpp $(LLVM_SRC)/lib/Transforms/Utils/InstructionNamer.cpp $(LLVM_SRC)/lib/Transforms/Utils/Instrumentation.cpp $(LLVM_SRC)/lib/Transforms/Utils/IntegerDivision.cpp $(LLVM_SRC)/lib/Transforms/Utils/IRNormalizer.cpp $(LLVM_SRC)/lib/Transforms/Utils/LCSSA.cpp $(LLVM_SRC)/lib/Transforms/Utils/LibCallsShrinkWrap.cpp $(LLVM_SRC)/lib/Transforms/Utils/Local.cpp $(LLVM_SRC)/lib/Transforms/Utils/LoopConstrainer.cpp $(LLVM_SRC)/lib/Transforms/Utils/LoopPeel.cpp $(LLVM_SRC)/lib/Transforms/Utils/LoopRotationUtils.cpp $(LLVM_SRC)/lib/Transforms/Utils/LoopSimplify.cpp $(LLVM_SRC)/lib/Transforms/Utils/LoopUnroll.cpp $(LLVM_SRC)/lib/Transforms/Utils/LoopUnrollAndJam.cpp $(LLVM_SRC)/lib/Transforms/Utils/LoopUnrollRuntime.cpp $(LLVM_SRC)/lib/Transforms/Utils/LoopUtils.cpp $(LLVM_SRC)/lib/Transforms/Utils/LoopVersioning.cpp $(LLVM_SRC)/lib/Transforms/Utils/LowerAtomic.cpp $(LLVM_SRC)/lib/Transforms/Utils/LowerGlobalDtors.cpp $(LLVM_SRC)/lib/Transforms/Utils/LowerIFunc.cpp $(LLVM_SRC)/lib/Transforms/Utils/LowerInvoke.cpp $(LLVM_SRC)/lib/Transforms/Utils/LowerMemIntrinsics.cpp $(LLVM_SRC)/lib/Transforms/Utils/LowerSwitch.cpp $(LLVM_SRC)/lib/Transforms/Utils/LowerVectorIntrinsics.cpp $(LLVM_SRC)/lib/Transforms/Utils/MatrixUtils.cpp $(LLVM_SRC)/lib/Transforms/Utils/MemoryOpRemark.cpp $(LLVM_SRC)/lib/Transforms/Utils/MemoryTaggingSupport.cpp $(LLVM_SRC)/lib/Transforms/Utils/Mem2Reg.cpp $(LLVM_SRC)/lib/Transforms/Utils/MetaRenamer.cpp $(LLVM_SRC)/lib/Transforms/Utils/MisExpect.cpp $(LLVM_SRC)/lib/Transforms/Utils/ModuleUtils.cpp $(LLVM_SRC)/lib/Transforms/Utils/MoveAutoInit.cpp $(LLVM_SRC)/lib/Transforms/Utils/NameAnonGlobals.cpp $(LLVM_SRC)/lib/Transforms/Utils/PredicateInfo.cpp $(LLVM_SRC)/lib/Transforms/Utils/ProfileVerify.cpp $(LLVM_SRC)/lib/Transforms/Utils/PromoteMemoryToRegister.cpp $(LLVM_SRC)/lib/Transforms/Utils/RelLookupTableConverter.cpp $(LLVM_SRC)/lib/Transforms/Utils/ScalarEvolutionExpander.cpp $(LLVM_SRC)/lib/Transforms/Utils/SCCPSolver.cpp $(LLVM_SRC)/lib/Transforms/Utils/StripGCRelocates.cpp $(LLVM_SRC)/lib/Transforms/Utils/SSAUpdater.cpp $(LLVM_SRC)/lib/Transforms/Utils/SSAUpdaterBulk.cpp $(LLVM_SRC)/lib/Transforms/Utils/SampleProfileInference.cpp $(LLVM_SRC)/lib/Transforms/Utils/SampleProfileLoaderBaseUtil.cpp $(LLVM_SRC)/lib/Transforms/Utils/SanitizerStats.cpp $(LLVM_SRC)/lib/Transforms/Utils/SimplifyCFG.cpp $(LLVM_SRC)/lib/Transforms/Utils/SimplifyIndVar.cpp $(LLVM_SRC)/lib/Transforms/Utils/SimplifyLibCalls.cpp $(LLVM_SRC)/lib/Transforms/Utils/SizeOpts.cpp $(LLVM_SRC)/lib/Transforms/Utils/SplitModule.cpp $(LLVM_SRC)/lib/Transforms/Utils/SplitModuleByCategory.cpp $(LLVM_SRC)/lib/Transforms/Utils/StripNonLineTableDebugInfo.cpp $(LLVM_SRC)/lib/Transforms/Utils/SymbolRewriter.cpp $(LLVM_SRC)/lib/Transforms/Utils/UnifyFunctionExitNodes.cpp $(LLVM_SRC)/lib/Transforms/Utils/UnifyLoopExits.cpp $(LLVM_SRC)/lib/Transforms/Utils/Utils.cpp $(LLVM_SRC)/lib/Transforms/Utils/ValueMapper.cpp $(LLVM_SRC)/lib/Transforms/Utils/VNCoercion.cpp): LLVM_CPPFLAGS = $(LLVM_F38)
-$(call llvm_objs,$(LLVM_OBJ),$(LLVM_SRC)/lib/Transforms/AggressiveInstCombine/AggressiveInstCombine.cpp $(LLVM_SRC)/lib/Transforms/AggressiveInstCombine/TruncInstCombine.cpp): LLVM_CPPFLAGS = $(LLVM_F39)
+$(call llvm_objs,$(LLVM_OBJ),$(LLVM_SRC)/lib/Transforms/Utils/ASanStackFrameLayout.cpp $(LLVM_SRC)/lib/Transforms/Utils/AssumeBundleBuilder.cpp $(LLVM_SRC)/lib/Transforms/Utils/BasicBlockUtils.cpp $(LLVM_SRC)/lib/Transforms/Utils/BreakCriticalEdges.cpp $(LLVM_SRC)/lib/Transforms/Utils/BuildLibCalls.cpp $(LLVM_SRC)/lib/Transforms/Utils/BypassSlowDivision.cpp $(LLVM_SRC)/lib/Transforms/Utils/CanonicalizeFreezeInLoops.cpp $(LLVM_SRC)/lib/Transforms/Utils/CloneFunction.cpp $(LLVM_SRC)/lib/Transforms/Utils/CodeLayout.cpp $(LLVM_SRC)/lib/Transforms/Utils/Debugify.cpp $(LLVM_SRC)/lib/Transforms/Utils/DemoteRegToStack.cpp $(LLVM_SRC)/lib/Transforms/Utils/EntryExitInstrumenter.cpp $(LLVM_SRC)/lib/Transforms/Utils/EscapeEnumerator.cpp $(LLVM_SRC)/lib/Transforms/Utils/InlineFunction.cpp $(LLVM_SRC)/lib/Transforms/Utils/Instrumentation.cpp $(LLVM_SRC)/lib/Transforms/Utils/IntegerDivision.cpp $(LLVM_SRC)/lib/Transforms/Utils/LCSSA.cpp $(LLVM_SRC)/lib/Transforms/Utils/Local.cpp $(LLVM_SRC)/lib/Transforms/Utils/LoopSimplify.cpp $(LLVM_SRC)/lib/Transforms/Utils/LoopUnroll.cpp $(LLVM_SRC)/lib/Transforms/Utils/LoopUnrollRuntime.cpp $(LLVM_SRC)/lib/Transforms/Utils/LoopUtils.cpp $(LLVM_SRC)/lib/Transforms/Utils/LowerAtomic.cpp $(LLVM_SRC)/lib/Transforms/Utils/LowerGlobalDtors.cpp $(LLVM_SRC)/lib/Transforms/Utils/LowerIFunc.cpp $(LLVM_SRC)/lib/Transforms/Utils/LowerInvoke.cpp $(LLVM_SRC)/lib/Transforms/Utils/LowerMemIntrinsics.cpp $(LLVM_SRC)/lib/Transforms/Utils/LowerVectorIntrinsics.cpp $(LLVM_SRC)/lib/Transforms/Utils/MemoryOpRemark.cpp $(LLVM_SRC)/lib/Transforms/Utils/MemoryTaggingSupport.cpp $(LLVM_SRC)/lib/Transforms/Utils/ModuleUtils.cpp $(LLVM_SRC)/lib/Transforms/Utils/PromoteMemoryToRegister.cpp $(LLVM_SRC)/lib/Transforms/Utils/ScalarEvolutionExpander.cpp $(LLVM_SRC)/lib/Transforms/Utils/SSAUpdater.cpp $(LLVM_SRC)/lib/Transforms/Utils/SampleProfileInference.cpp $(LLVM_SRC)/lib/Transforms/Utils/SampleProfileLoaderBaseUtil.cpp $(LLVM_SRC)/lib/Transforms/Utils/SimplifyCFG.cpp $(LLVM_SRC)/lib/Transforms/Utils/SimplifyIndVar.cpp $(LLVM_SRC)/lib/Transforms/Utils/SimplifyLibCalls.cpp $(LLVM_SRC)/lib/Transforms/Utils/SizeOpts.cpp $(LLVM_SRC)/lib/Transforms/Utils/ValueMapper.cpp): LLVM_CPPFLAGS = $(LLVM_F38)
 $(call llvm_objs,$(LLVM_OBJ),$(LLVM_SRC)/lib/Support/ABIBreak.cpp $(LLVM_SRC)/lib/Support/AMDGPUMetadata.cpp $(LLVM_SRC)/lib/Support/APFixedPoint.cpp $(LLVM_SRC)/lib/Support/APFloat.cpp $(LLVM_SRC)/lib/Support/APInt.cpp $(LLVM_SRC)/lib/Support/APSInt.cpp $(LLVM_SRC)/lib/Support/ARMBuildAttributes.cpp $(LLVM_SRC)/lib/Support/AArch64AttributeParser.cpp $(LLVM_SRC)/lib/Support/AArch64BuildAttributes.cpp $(LLVM_SRC)/lib/Support/ARMAttributeParser.cpp $(LLVM_SRC)/lib/Support/ARMWinEH.cpp $(LLVM_SRC)/lib/Support/AllocToken.cpp $(LLVM_SRC)/lib/Support/Allocator.cpp $(LLVM_SRC)/lib/Support/AutoConvert.cpp $(LLVM_SRC)/lib/Support/Base64.cpp $(LLVM_SRC)/lib/Support/BalancedPartitioning.cpp $(LLVM_SRC)/lib/Support/BinaryStreamError.cpp $(LLVM_SRC)/lib/Support/BinaryStreamReader.cpp $(LLVM_SRC)/lib/Support/BinaryStreamRef.cpp $(LLVM_SRC)/lib/Support/BinaryStreamWriter.cpp $(LLVM_SRC)/lib/Support/BlockFrequency.cpp $(LLVM_SRC)/lib/Support/BranchProbability.cpp $(LLVM_SRC)/lib/Support/BuryPointer.cpp $(LLVM_SRC)/lib/Support/CachePruning.cpp $(LLVM_SRC)/lib/Support/Caching.cpp $(LLVM_SRC)/lib/Support/circular_raw_ostream.cpp $(LLVM_SRC)/lib/Support/Chrono.cpp $(LLVM_SRC)/lib/Support/COM.cpp $(LLVM_SRC)/lib/Support/CodeGenCoverage.cpp $(LLVM_SRC)/lib/Support/CommandLine.cpp $(LLVM_SRC)/lib/Support/Compression.cpp $(LLVM_SRC)/lib/Support/CRC.cpp $(LLVM_SRC)/lib/Support/ConvertUTF.cpp $(LLVM_SRC)/lib/Support/ConvertEBCDIC.cpp $(LLVM_SRC)/lib/Support/ConvertUTFWrapper.cpp $(LLVM_SRC)/lib/Support/CrashRecoveryContext.cpp $(LLVM_SRC)/lib/Support/CSKYAttributes.cpp $(LLVM_SRC)/lib/Support/CSKYAttributeParser.cpp $(LLVM_SRC)/lib/Support/DataExtractor.cpp $(LLVM_SRC)/lib/Support/Debug.cpp $(LLVM_SRC)/lib/Support/DebugCounter.cpp $(LLVM_SRC)/lib/Support/DeltaAlgorithm.cpp $(LLVM_SRC)/lib/Support/DeltaTree.cpp $(LLVM_SRC)/lib/Support/DivisionByConstantInfo.cpp $(LLVM_SRC)/lib/Support/DAGDeltaAlgorithm.cpp $(LLVM_SRC)/lib/Support/DJB.cpp $(LLVM_SRC)/lib/Support/DXILABI.cpp $(LLVM_SRC)/lib/Support/DynamicAPInt.cpp $(LLVM_SRC)/lib/Support/ELFAttributes.cpp $(LLVM_SRC)/lib/Support/ELFAttrParserCompact.cpp $(LLVM_SRC)/lib/Support/ELFAttrParserExtended.cpp $(LLVM_SRC)/lib/Support/Error.cpp $(LLVM_SRC)/lib/Support/ErrorHandling.cpp $(LLVM_SRC)/lib/Support/ExponentialBackoff.cpp $(LLVM_SRC)/lib/Support/ExtensibleRTTI.cpp $(LLVM_SRC)/lib/Support/FileCollector.cpp $(LLVM_SRC)/lib/Support/FileUtilities.cpp $(LLVM_SRC)/lib/Support/FileOutputBuffer.cpp $(LLVM_SRC)/lib/Support/FloatingPointMode.cpp $(LLVM_SRC)/lib/Support/FoldingSet.cpp $(LLVM_SRC)/lib/Support/FormattedStream.cpp $(LLVM_SRC)/lib/Support/FormatVariadic.cpp $(LLVM_SRC)/lib/Support/GlobPattern.cpp $(LLVM_SRC)/lib/Support/GraphWriter.cpp $(LLVM_SRC)/lib/Support/Hash.cpp $(LLVM_SRC)/lib/Support/HexagonAttributeParser.cpp $(LLVM_SRC)/lib/Support/HexagonAttributes.cpp $(LLVM_SRC)/lib/Support/InitLLVM.cpp $(LLVM_SRC)/lib/Support/InstructionCost.cpp $(LLVM_SRC)/lib/Support/IntEqClasses.cpp $(LLVM_SRC)/lib/Support/IntervalMap.cpp $(LLVM_SRC)/lib/Support/Jobserver.cpp $(LLVM_SRC)/lib/Support/JSON.cpp $(LLVM_SRC)/lib/Support/KnownBits.cpp $(LLVM_SRC)/lib/Support/KnownFPClass.cpp $(LLVM_SRC)/lib/Support/LEB128.cpp $(LLVM_SRC)/lib/Support/LineIterator.cpp $(LLVM_SRC)/lib/Support/Locale.cpp $(LLVM_SRC)/lib/Support/LockFileManager.cpp $(LLVM_SRC)/lib/Support/ManagedStatic.cpp $(LLVM_SRC)/lib/Support/MathExtras.cpp $(LLVM_SRC)/lib/Support/MemAlloc.cpp $(LLVM_SRC)/lib/Support/MemoryBuffer.cpp $(LLVM_SRC)/lib/Support/MemoryBufferRef.cpp $(LLVM_SRC)/lib/Support/ModRef.cpp $(LLVM_SRC)/lib/Support/MD5.cpp $(LLVM_SRC)/lib/Support/MSP430Attributes.cpp $(LLVM_SRC)/lib/Support/MSP430AttributeParser.cpp $(LLVM_SRC)/lib/Support/Mustache.cpp $(LLVM_SRC)/lib/Support/NativeFormatting.cpp $(LLVM_SRC)/lib/Support/OptimizedStructLayout.cpp $(LLVM_SRC)/lib/Support/Optional.cpp $(LLVM_SRC)/lib/Support/OptionStrCmp.cpp $(LLVM_SRC)/lib/Support/PGOOptions.cpp $(LLVM_SRC)/lib/Support/Parallel.cpp $(LLVM_SRC)/lib/Support/PluginLoader.cpp $(LLVM_SRC)/lib/Support/PrettyStackTrace.cpp $(LLVM_SRC)/lib/Support/RandomNumberGenerator.cpp $(LLVM_SRC)/lib/Support/IntegerInclusiveInterval.cpp $(LLVM_SRC)/lib/Support/Regex.cpp $(LLVM_SRC)/lib/Support/RewriteBuffer.cpp $(LLVM_SRC)/lib/Support/RewriteRope.cpp $(LLVM_SRC)/lib/Support/RISCVAttributes.cpp $(LLVM_SRC)/lib/Support/RISCVAttributeParser.cpp $(LLVM_SRC)/lib/Support/RISCVISAUtils.cpp $(LLVM_SRC)/lib/Support/ScaledNumber.cpp $(LLVM_SRC)/lib/Support/ScopedPrinter.cpp $(LLVM_SRC)/lib/Support/SHA1.cpp $(LLVM_SRC)/lib/Support/SHA256.cpp $(LLVM_SRC)/lib/Support/Signposts.cpp $(LLVM_SRC)/lib/Support/SipHash.cpp $(LLVM_SRC)/lib/Support/SlowDynamicAPInt.cpp $(LLVM_SRC)/lib/Support/SmallPtrSet.cpp $(LLVM_SRC)/lib/Support/SmallVector.cpp $(LLVM_SRC)/lib/Support/SourceMgr.cpp $(LLVM_SRC)/lib/Support/SpecialCaseList.cpp $(LLVM_SRC)/lib/Support/Statistic.cpp $(LLVM_SRC)/lib/Support/StringExtras.cpp $(LLVM_SRC)/lib/Support/StringMap.cpp $(LLVM_SRC)/lib/Support/StringSaver.cpp $(LLVM_SRC)/lib/Support/StringRef.cpp $(LLVM_SRC)/lib/Support/SuffixTreeNode.cpp $(LLVM_SRC)/lib/Support/SuffixTree.cpp $(LLVM_SRC)/lib/Support/SystemUtils.cpp $(LLVM_SRC)/lib/Support/TarWriter.cpp $(LLVM_SRC)/lib/Support/TextEncoding.cpp $(LLVM_SRC)/lib/Support/ThreadPool.cpp $(LLVM_SRC)/lib/Support/TimeProfiler.cpp $(LLVM_SRC)/lib/Support/Timer.cpp $(LLVM_SRC)/lib/Support/ToolOutputFile.cpp $(LLVM_SRC)/lib/Support/TrieRawHashMap.cpp $(LLVM_SRC)/lib/Support/Twine.cpp $(LLVM_SRC)/lib/Support/Unicode.cpp $(LLVM_SRC)/lib/Support/UnicodeCaseFold.cpp $(LLVM_SRC)/lib/Support/UnicodeNameToCodepoint.cpp $(LLVM_SRC)/lib/Support/UnicodeNameToCodepointGenerated.cpp $(LLVM_SRC)/lib/Support/VersionTuple.cpp $(LLVM_SRC)/lib/Support/VirtualFileSystem.cpp $(LLVM_SRC)/lib/Support/VirtualOutputBackend.cpp $(LLVM_SRC)/lib/Support/VirtualOutputBackends.cpp $(LLVM_SRC)/lib/Support/VirtualOutputConfig.cpp $(LLVM_SRC)/lib/Support/VirtualOutputError.cpp $(LLVM_SRC)/lib/Support/VirtualOutputFile.cpp $(LLVM_SRC)/lib/Support/WithColor.cpp $(LLVM_SRC)/lib/Support/YAMLParser.cpp $(LLVM_SRC)/lib/Support/YAMLTraits.cpp $(LLVM_SRC)/lib/Support/raw_os_ostream.cpp $(LLVM_SRC)/lib/Support/raw_ostream.cpp $(LLVM_SRC)/lib/Support/raw_ostream_proxy.cpp $(LLVM_SRC)/lib/Support/raw_socket_stream.cpp $(LLVM_SRC)/lib/Support/regcomp.c $(LLVM_SRC)/lib/Support/regerror.c $(LLVM_SRC)/lib/Support/regexec.c $(LLVM_SRC)/lib/Support/regfree.c $(LLVM_SRC)/lib/Support/regstrlcpy.c $(LLVM_SRC)/lib/Support/xxhash.cpp $(LLVM_SRC)/lib/Support/Z3Solver.cpp $(LLVM_SRC)/lib/Support/Atomic.cpp $(LLVM_SRC)/lib/Support/DynamicLibrary.cpp $(LLVM_SRC)/lib/Support/Errno.cpp $(LLVM_SRC)/lib/Support/Memory.cpp $(LLVM_SRC)/lib/Support/Path.cpp $(LLVM_SRC)/lib/Support/Process.cpp $(LLVM_SRC)/lib/Support/Program.cpp $(LLVM_SRC)/lib/Support/ProgramStack.cpp $(LLVM_SRC)/lib/Support/RWMutex.cpp $(LLVM_SRC)/lib/Support/Signals.cpp $(LLVM_SRC)/lib/Support/Threading.cpp $(LLVM_SRC)/lib/Support/Valgrind.cpp $(LLVM_SRC)/lib/Support/Watchdog.cpp $(LLVM_SRC)/lib/Support/zOSLibFunctions.cpp): LLVM_CPPFLAGS = $(LLVM_F4)
 $(call llvm_objs,$(LLVM_OBJ),$(LLVM_SRC)/lib/Transforms/CFGuard/CFGuard.cpp): LLVM_CPPFLAGS = $(LLVM_F40)
-$(call llvm_objs,$(LLVM_OBJ),$(LLVM_SRC)/lib/Bitcode/Writer/BitWriter.cpp $(LLVM_SRC)/lib/Bitcode/Writer/BitcodeWriter.cpp $(LLVM_SRC)/lib/Bitcode/Writer/BitcodeWriterPass.cpp $(LLVM_SRC)/lib/Bitcode/Writer/ValueEnumerator.cpp): LLVM_CPPFLAGS = $(LLVM_F41)
+$(call llvm_objs,$(LLVM_OBJ),$(LLVM_SRC)/lib/Bitcode/Writer/BitcodeWriter.cpp $(LLVM_SRC)/lib/Bitcode/Writer/ValueEnumerator.cpp): LLVM_CPPFLAGS = $(LLVM_F41)
 $(call llvm_objs,$(LLVM_OBJ),$(LLVM_SRC)/lib/CGData/CodeGenData.cpp $(LLVM_SRC)/lib/CGData/CodeGenDataReader.cpp $(LLVM_SRC)/lib/CGData/CodeGenDataWriter.cpp $(LLVM_SRC)/lib/CGData/OutlinedHashTree.cpp $(LLVM_SRC)/lib/CGData/OutlinedHashTreeRecord.cpp $(LLVM_SRC)/lib/CGData/StableFunctionMap.cpp $(LLVM_SRC)/lib/CGData/StableFunctionMapRecord.cpp): LLVM_CPPFLAGS = $(LLVM_F42)
-$(call llvm_objs,$(LLVM_OBJ),$(LLVM_SRC)/lib/Transforms/ObjCARC/ObjCARC.cpp $(LLVM_SRC)/lib/Transforms/ObjCARC/ObjCARCOpts.cpp $(LLVM_SRC)/lib/Transforms/ObjCARC/ObjCARCExpand.cpp $(LLVM_SRC)/lib/Transforms/ObjCARC/ObjCARCContract.cpp $(LLVM_SRC)/lib/Transforms/ObjCARC/DependencyAnalysis.cpp $(LLVM_SRC)/lib/Transforms/ObjCARC/ProvenanceAnalysis.cpp $(LLVM_SRC)/lib/Transforms/ObjCARC/ProvenanceAnalysisEvaluator.cpp $(LLVM_SRC)/lib/Transforms/ObjCARC/PtrState.cpp): LLVM_CPPFLAGS = $(LLVM_F43)
-$(call llvm_objs,$(LLVM_OBJ),$(LLVM_SRC)/lib/Transforms/InstCombine/InstructionCombining.cpp $(LLVM_SRC)/lib/Transforms/InstCombine/InstCombineAddSub.cpp $(LLVM_SRC)/lib/Transforms/InstCombine/InstCombineAtomicRMW.cpp $(LLVM_SRC)/lib/Transforms/InstCombine/InstCombineAndOrXor.cpp $(LLVM_SRC)/lib/Transforms/InstCombine/InstCombineCalls.cpp $(LLVM_SRC)/lib/Transforms/InstCombine/InstCombineCasts.cpp $(LLVM_SRC)/lib/Transforms/InstCombine/InstCombineCompares.cpp $(LLVM_SRC)/lib/Transforms/InstCombine/InstCombineLoadStoreAlloca.cpp $(LLVM_SRC)/lib/Transforms/InstCombine/InstCombineMulDivRem.cpp $(LLVM_SRC)/lib/Transforms/InstCombine/InstCombineNegator.cpp $(LLVM_SRC)/lib/Transforms/InstCombine/InstCombinePHI.cpp $(LLVM_SRC)/lib/Transforms/InstCombine/InstCombineSelect.cpp $(LLVM_SRC)/lib/Transforms/InstCombine/InstCombineShifts.cpp $(LLVM_SRC)/lib/Transforms/InstCombine/InstCombineSimplifyDemanded.cpp $(LLVM_SRC)/lib/Transforms/InstCombine/InstCombineVectorOps.cpp): LLVM_CPPFLAGS = $(LLVM_F44)
-$(call llvm_objs,$(LLVM_OBJ),$(LLVM_SRC)/lib/Transforms/Scalar/ADCE.cpp $(LLVM_SRC)/lib/Transforms/Scalar/AlignmentFromAssumptions.cpp $(LLVM_SRC)/lib/Transforms/Scalar/AnnotationRemarks.cpp $(LLVM_SRC)/lib/Transforms/Scalar/BDCE.cpp $(LLVM_SRC)/lib/Transforms/Scalar/CallSiteSplitting.cpp $(LLVM_SRC)/lib/Transforms/Scalar/ConstantHoisting.cpp $(LLVM_SRC)/lib/Transforms/Scalar/ConstraintElimination.cpp $(LLVM_SRC)/lib/Transforms/Scalar/CorrelatedValuePropagation.cpp $(LLVM_SRC)/lib/Transforms/Scalar/DCE.cpp $(LLVM_SRC)/lib/Transforms/Scalar/DeadStoreElimination.cpp $(LLVM_SRC)/lib/Transforms/Scalar/DFAJumpThreading.cpp $(LLVM_SRC)/lib/Transforms/Scalar/DivRemPairs.cpp $(LLVM_SRC)/lib/Transforms/Scalar/DropUnnecessaryAssumes.cpp $(LLVM_SRC)/lib/Transforms/Scalar/EarlyCSE.cpp $(LLVM_SRC)/lib/Transforms/Scalar/FlattenCFGPass.cpp $(LLVM_SRC)/lib/Transforms/Scalar/Float2Int.cpp $(LLVM_SRC)/lib/Transforms/Scalar/GuardWidening.cpp $(LLVM_SRC)/lib/Transforms/Scalar/GVN.cpp $(LLVM_SRC)/lib/Transforms/Scalar/GVNHoist.cpp $(LLVM_SRC)/lib/Transforms/Scalar/GVNSink.cpp $(LLVM_SRC)/lib/Transforms/Scalar/IVUsersPrinter.cpp $(LLVM_SRC)/lib/Transforms/Scalar/InductiveRangeCheckElimination.cpp $(LLVM_SRC)/lib/Transforms/Scalar/IndVarSimplify.cpp $(LLVM_SRC)/lib/Transforms/Scalar/InferAddressSpaces.cpp $(LLVM_SRC)/lib/Transforms/Scalar/InferAlignment.cpp $(LLVM_SRC)/lib/Transforms/Scalar/InstSimplifyPass.cpp $(LLVM_SRC)/lib/Transforms/Scalar/JumpThreading.cpp $(LLVM_SRC)/lib/Transforms/Scalar/JumpTableToSwitch.cpp $(LLVM_SRC)/lib/Transforms/Scalar/LICM.cpp $(LLVM_SRC)/lib/Transforms/Scalar/LoopAccessAnalysisPrinter.cpp $(LLVM_SRC)/lib/Transforms/Scalar/LoopBoundSplit.cpp $(LLVM_SRC)/lib/Transforms/Scalar/LoopSink.cpp $(LLVM_SRC)/lib/Transforms/Scalar/LoopDeletion.cpp $(LLVM_SRC)/lib/Transforms/Scalar/LoopDataPrefetch.cpp $(LLVM_SRC)/lib/Transforms/Scalar/LoopDistribute.cpp $(LLVM_SRC)/lib/Transforms/Scalar/LoopFuse.cpp $(LLVM_SRC)/lib/Transforms/Scalar/LoopIdiomRecognize.cpp $(LLVM_SRC)/lib/Transforms/Scalar/LoopInstSimplify.cpp $(LLVM_SRC)/lib/Transforms/Scalar/LoopInterchange.cpp $(LLVM_SRC)/lib/Transforms/Scalar/LoopFlatten.cpp $(LLVM_SRC)/lib/Transforms/Scalar/LoopLoadElimination.cpp $(LLVM_SRC)/lib/Transforms/Scalar/LoopPassManager.cpp $(LLVM_SRC)/lib/Transforms/Scalar/LoopPredication.cpp $(LLVM_SRC)/lib/Transforms/Scalar/LoopRotation.cpp $(LLVM_SRC)/lib/Transforms/Scalar/LoopSimplifyCFG.cpp $(LLVM_SRC)/lib/Transforms/Scalar/LoopStrengthReduce.cpp $(LLVM_SRC)/lib/Transforms/Scalar/LoopTermFold.cpp $(LLVM_SRC)/lib/Transforms/Scalar/LoopUnrollPass.cpp $(LLVM_SRC)/lib/Transforms/Scalar/LoopUnrollAndJamPass.cpp $(LLVM_SRC)/lib/Transforms/Scalar/LoopVersioningLICM.cpp $(LLVM_SRC)/lib/Transforms/Scalar/LowerAtomicPass.cpp $(LLVM_SRC)/lib/Transforms/Scalar/LowerConstantIntrinsics.cpp $(LLVM_SRC)/lib/Transforms/Scalar/LowerExpectIntrinsic.cpp $(LLVM_SRC)/lib/Transforms/Scalar/LowerGuardIntrinsic.cpp $(LLVM_SRC)/lib/Transforms/Scalar/LowerMatrixIntrinsics.cpp $(LLVM_SRC)/lib/Transforms/Scalar/LowerWidenableCondition.cpp $(LLVM_SRC)/lib/Transforms/Scalar/MakeGuardsExplicit.cpp $(LLVM_SRC)/lib/Transforms/Scalar/MemCpyOptimizer.cpp $(LLVM_SRC)/lib/Transforms/Scalar/MergeICmps.cpp $(LLVM_SRC)/lib/Transforms/Scalar/MergedLoadStoreMotion.cpp $(LLVM_SRC)/lib/Transforms/Scalar/NaryReassociate.cpp $(LLVM_SRC)/lib/Transforms/Scalar/NewGVN.cpp $(LLVM_SRC)/lib/Transforms/Scalar/PartiallyInlineLibCalls.cpp $(LLVM_SRC)/lib/Transforms/Scalar/PlaceSafepoints.cpp $(LLVM_SRC)/lib/Transforms/Scalar/Reassociate.cpp $(LLVM_SRC)/lib/Transforms/Scalar/Reg2Mem.cpp $(LLVM_SRC)/lib/Transforms/Scalar/RewriteStatepointsForGC.cpp $(LLVM_SRC)/lib/Transforms/Scalar/SCCP.cpp $(LLVM_SRC)/lib/Transforms/Scalar/SROA.cpp $(LLVM_SRC)/lib/Transforms/Scalar/Scalar.cpp $(LLVM_SRC)/lib/Transforms/Scalar/Scalarizer.cpp $(LLVM_SRC)/lib/Transforms/Scalar/ScalarizeMaskedMemIntrin.cpp $(LLVM_SRC)/lib/Transforms/Scalar/SeparateConstOffsetFromGEP.cpp $(LLVM_SRC)/lib/Transforms/Scalar/SimpleLoopUnswitch.cpp $(LLVM_SRC)/lib/Transforms/Scalar/SimplifyCFGPass.cpp $(LLVM_SRC)/lib/Transforms/Scalar/Sink.cpp $(LLVM_SRC)/lib/Transforms/Scalar/SpeculativeExecution.cpp $(LLVM_SRC)/lib/Transforms/Scalar/StraightLineStrengthReduce.cpp $(LLVM_SRC)/lib/Transforms/Scalar/StructurizeCFG.cpp $(LLVM_SRC)/lib/Transforms/Scalar/TailRecursionElimination.cpp $(LLVM_SRC)/lib/Transforms/Scalar/WarnMissedTransforms.cpp): LLVM_CPPFLAGS = $(LLVM_F45)
-$(call llvm_objs,$(LLVM_OBJ),$(LLVM_SRC)/lib/CodeGen/AggressiveAntiDepBreaker.cpp $(LLVM_SRC)/lib/CodeGen/AllocationOrder.cpp $(LLVM_SRC)/lib/CodeGen/Analysis.cpp $(LLVM_SRC)/lib/CodeGen/AssignmentTrackingAnalysis.cpp $(LLVM_SRC)/lib/CodeGen/AtomicExpandPass.cpp $(LLVM_SRC)/lib/CodeGen/BasicTargetTransformInfo.cpp $(LLVM_SRC)/lib/CodeGen/BranchFolding.cpp $(LLVM_SRC)/lib/CodeGen/BranchRelaxation.cpp $(LLVM_SRC)/lib/CodeGen/BreakFalseDeps.cpp $(LLVM_SRC)/lib/CodeGen/BasicBlockSections.cpp $(LLVM_SRC)/lib/CodeGen/BasicBlockPathCloning.cpp $(LLVM_SRC)/lib/CodeGen/BasicBlockSectionsProfileReader.cpp $(LLVM_SRC)/lib/CodeGen/BasicBlockMatchingAndInference.cpp $(LLVM_SRC)/lib/CodeGen/CalcSpillWeights.cpp $(LLVM_SRC)/lib/CodeGen/CallBrPrepare.cpp $(LLVM_SRC)/lib/CodeGen/CallingConvLower.cpp $(LLVM_SRC)/lib/CodeGen/CFGuardLongjmp.cpp $(LLVM_SRC)/lib/CodeGen/CFIFixup.cpp $(LLVM_SRC)/lib/CodeGen/CFIInstrInserter.cpp $(LLVM_SRC)/lib/CodeGen/CodeGen.cpp $(LLVM_SRC)/lib/CodeGen/CodeGenCommonISel.cpp $(LLVM_SRC)/lib/CodeGen/CodeGenPrepare.cpp $(LLVM_SRC)/lib/CodeGen/CommandFlags.cpp $(LLVM_SRC)/lib/CodeGen/ComplexDeinterleavingPass.cpp $(LLVM_SRC)/lib/CodeGen/CriticalAntiDepBreaker.cpp $(LLVM_SRC)/lib/CodeGen/DeadMachineInstructionElim.cpp $(LLVM_SRC)/lib/CodeGen/DetectDeadLanes.cpp $(LLVM_SRC)/lib/CodeGen/DFAPacketizer.cpp $(LLVM_SRC)/lib/CodeGen/DroppedVariableStatsMIR.cpp $(LLVM_SRC)/lib/CodeGen/DwarfEHPrepare.cpp $(LLVM_SRC)/lib/CodeGen/EarlyIfConversion.cpp $(LLVM_SRC)/lib/CodeGen/EdgeBundles.cpp $(LLVM_SRC)/lib/CodeGen/EHContGuardTargets.cpp $(LLVM_SRC)/lib/CodeGen/ExecutionDomainFix.cpp $(LLVM_SRC)/lib/CodeGen/ExpandIRInsts.cpp $(LLVM_SRC)/lib/CodeGen/ExpandMemCmp.cpp $(LLVM_SRC)/lib/CodeGen/ExpandPostRAPseudos.cpp $(LLVM_SRC)/lib/CodeGen/ExpandReductions.cpp $(LLVM_SRC)/lib/CodeGen/ExpandVectorPredication.cpp $(LLVM_SRC)/lib/CodeGen/FaultMaps.cpp $(LLVM_SRC)/lib/CodeGen/FEntryInserter.cpp $(LLVM_SRC)/lib/CodeGen/FinalizeISel.cpp $(LLVM_SRC)/lib/CodeGen/FixupStatepointCallerSaved.cpp $(LLVM_SRC)/lib/CodeGen/FuncletLayout.cpp $(LLVM_SRC)/lib/CodeGen/MachineFunctionAnalysis.cpp $(LLVM_SRC)/lib/CodeGen/GCMetadata.cpp $(LLVM_SRC)/lib/CodeGen/GCMetadataPrinter.cpp $(LLVM_SRC)/lib/CodeGen/GCRootLowering.cpp $(LLVM_SRC)/lib/CodeGen/GlobalMerge.cpp $(LLVM_SRC)/lib/CodeGen/GlobalMergeFunctions.cpp $(LLVM_SRC)/lib/CodeGen/HardwareLoops.cpp $(LLVM_SRC)/lib/CodeGen/IfConversion.cpp $(LLVM_SRC)/lib/CodeGen/ImplicitNullChecks.cpp $(LLVM_SRC)/lib/CodeGen/IndirectBrExpandPass.cpp $(LLVM_SRC)/lib/CodeGen/InitUndef.cpp $(LLVM_SRC)/lib/CodeGen/InlineSpiller.cpp $(LLVM_SRC)/lib/CodeGen/InsertCodePrefetch.cpp $(LLVM_SRC)/lib/CodeGen/InterferenceCache.cpp $(LLVM_SRC)/lib/CodeGen/InterleavedAccessPass.cpp $(LLVM_SRC)/lib/CodeGen/InterleavedLoadCombinePass.cpp $(LLVM_SRC)/lib/CodeGen/IntrinsicLowering.cpp $(LLVM_SRC)/lib/CodeGen/JMCInstrumenter.cpp $(LLVM_SRC)/lib/CodeGen/KCFI.cpp $(LLVM_SRC)/lib/CodeGen/LatencyPriorityQueue.cpp $(LLVM_SRC)/lib/CodeGen/LazyMachineBlockFrequencyInfo.cpp $(LLVM_SRC)/lib/CodeGen/LexicalScopes.cpp $(LLVM_SRC)/lib/CodeGen/LibcallLoweringInfo.cpp $(LLVM_SRC)/lib/CodeGen/LiveDebugVariables.cpp $(LLVM_SRC)/lib/CodeGen/LiveIntervals.cpp $(LLVM_SRC)/lib/CodeGen/LiveInterval.cpp $(LLVM_SRC)/lib/CodeGen/LiveIntervalUnion.cpp $(LLVM_SRC)/lib/CodeGen/LivePhysRegs.cpp $(LLVM_SRC)/lib/CodeGen/LiveRangeCalc.cpp $(LLVM_SRC)/lib/CodeGen/LiveIntervalCalc.cpp $(LLVM_SRC)/lib/CodeGen/LiveRangeEdit.cpp $(LLVM_SRC)/lib/CodeGen/LiveRangeShrink.cpp $(LLVM_SRC)/lib/CodeGen/LiveRegMatrix.cpp $(LLVM_SRC)/lib/CodeGen/LiveRegUnits.cpp $(LLVM_SRC)/lib/CodeGen/LiveStacks.cpp $(LLVM_SRC)/lib/CodeGen/LiveVariables.cpp $(LLVM_SRC)/lib/CodeGen/CodeGenTargetMachineImpl.cpp $(LLVM_SRC)/lib/CodeGen/LocalStackSlotAllocation.cpp $(LLVM_SRC)/lib/CodeGen/LoopTraversal.cpp $(LLVM_SRC)/lib/CodeGen/LowLevelTypeUtils.cpp $(LLVM_SRC)/lib/CodeGen/LowerEmuTLS.cpp $(LLVM_SRC)/lib/CodeGen/MachineBasicBlock.cpp $(LLVM_SRC)/lib/CodeGen/MachineBlockFrequencyInfo.cpp $(LLVM_SRC)/lib/CodeGen/MachineBlockHashInfo.cpp $(LLVM_SRC)/lib/CodeGen/MachineBlockPlacement.cpp $(LLVM_SRC)/lib/CodeGen/MachineBranchProbabilityInfo.cpp $(LLVM_SRC)/lib/CodeGen/MachineCFGPrinter.cpp $(LLVM_SRC)/lib/CodeGen/MachineCombiner.cpp $(LLVM_SRC)/lib/CodeGen/MachineConvergenceVerifier.cpp $(LLVM_SRC)/lib/CodeGen/MachineCopyPropagation.cpp $(LLVM_SRC)/lib/CodeGen/MachineCSE.cpp $(LLVM_SRC)/lib/CodeGen/MachineCheckDebugify.cpp $(LLVM_SRC)/lib/CodeGen/MachineCycleAnalysis.cpp $(LLVM_SRC)/lib/CodeGen/MachineDebugify.cpp $(LLVM_SRC)/lib/CodeGen/MachineDomTreeUpdater.cpp $(LLVM_SRC)/lib/CodeGen/MachineDominanceFrontier.cpp $(LLVM_SRC)/lib/CodeGen/MachineDominators.cpp $(LLVM_SRC)/lib/CodeGen/MachineFrameInfo.cpp $(LLVM_SRC)/lib/CodeGen/MachineFunction.cpp $(LLVM_SRC)/lib/CodeGen/MachineFunctionPass.cpp $(LLVM_SRC)/lib/CodeGen/MachineFunctionPrinterPass.cpp $(LLVM_SRC)/lib/CodeGen/MachineFunctionSplitter.cpp $(LLVM_SRC)/lib/CodeGen/MachineInstrBundle.cpp $(LLVM_SRC)/lib/CodeGen/MachineInstr.cpp $(LLVM_SRC)/lib/CodeGen/MachineLateInstrsCleanup.cpp $(LLVM_SRC)/lib/CodeGen/MachineLICM.cpp $(LLVM_SRC)/lib/CodeGen/MachineLoopInfo.cpp $(LLVM_SRC)/lib/CodeGen/MachineLoopUtils.cpp $(LLVM_SRC)/lib/CodeGen/MachineModuleInfo.cpp $(LLVM_SRC)/lib/CodeGen/MachineModuleInfoImpls.cpp $(LLVM_SRC)/lib/CodeGen/MachineModuleSlotTracker.cpp $(LLVM_SRC)/lib/CodeGen/MachineOperand.cpp $(LLVM_SRC)/lib/CodeGen/MachineOptimizationRemarkEmitter.cpp $(LLVM_SRC)/lib/CodeGen/MachineOutliner.cpp $(LLVM_SRC)/lib/CodeGen/MachinePassManager.cpp $(LLVM_SRC)/lib/CodeGen/MachinePipeliner.cpp $(LLVM_SRC)/lib/CodeGen/MachinePostDominators.cpp $(LLVM_SRC)/lib/CodeGen/MachineRegionInfo.cpp $(LLVM_SRC)/lib/CodeGen/MachineRegisterInfo.cpp $(LLVM_SRC)/lib/CodeGen/MachineScheduler.cpp $(LLVM_SRC)/lib/CodeGen/MachineSink.cpp $(LLVM_SRC)/lib/CodeGen/MachineSizeOpts.cpp $(LLVM_SRC)/lib/CodeGen/MachineSSAContext.cpp $(LLVM_SRC)/lib/CodeGen/MachineSSAUpdater.cpp $(LLVM_SRC)/lib/CodeGen/MachineStripDebug.cpp $(LLVM_SRC)/lib/CodeGen/MachineTraceMetrics.cpp $(LLVM_SRC)/lib/CodeGen/MachineUniformityAnalysis.cpp $(LLVM_SRC)/lib/CodeGen/MachineVerifier.cpp $(LLVM_SRC)/lib/CodeGen/MIRFSDiscriminator.cpp $(LLVM_SRC)/lib/CodeGen/MIRSampleProfile.cpp $(LLVM_SRC)/lib/CodeGen/MIRYamlMapping.cpp $(LLVM_SRC)/lib/CodeGen/MIR2Vec.cpp $(LLVM_SRC)/lib/CodeGen/MLRegAllocEvictAdvisor.cpp $(LLVM_SRC)/lib/CodeGen/MLRegAllocPriorityAdvisor.cpp $(LLVM_SRC)/lib/CodeGen/ModuloSchedule.cpp $(LLVM_SRC)/lib/CodeGen/MultiHazardRecognizer.cpp $(LLVM_SRC)/lib/CodeGen/PatchableFunction.cpp $(LLVM_SRC)/lib/CodeGen/MBFIWrapper.cpp $(LLVM_SRC)/lib/CodeGen/MIRPrinter.cpp $(LLVM_SRC)/lib/CodeGen/MIRPrintingPass.cpp $(LLVM_SRC)/lib/CodeGen/MacroFusion.cpp $(LLVM_SRC)/lib/CodeGen/NonRelocatableStringpool.cpp $(LLVM_SRC)/lib/CodeGen/OptimizePHIs.cpp $(LLVM_SRC)/lib/CodeGen/PeepholeOptimizer.cpp $(LLVM_SRC)/lib/CodeGen/PHIElimination.cpp $(LLVM_SRC)/lib/CodeGen/PHIEliminationUtils.cpp $(LLVM_SRC)/lib/CodeGen/PostRAHazardRecognizer.cpp $(LLVM_SRC)/lib/CodeGen/PostRASchedulerList.cpp $(LLVM_SRC)/lib/CodeGen/PreISelIntrinsicLowering.cpp $(LLVM_SRC)/lib/CodeGen/ProcessImplicitDefs.cpp $(LLVM_SRC)/lib/CodeGen/PrologEpilogInserter.cpp $(LLVM_SRC)/lib/CodeGen/PseudoProbeInserter.cpp $(LLVM_SRC)/lib/CodeGen/PseudoSourceValue.cpp $(LLVM_SRC)/lib/CodeGen/RDFGraph.cpp $(LLVM_SRC)/lib/CodeGen/RDFLiveness.cpp $(LLVM_SRC)/lib/CodeGen/RDFRegisters.cpp $(LLVM_SRC)/lib/CodeGen/ReachingDefAnalysis.cpp $(LLVM_SRC)/lib/CodeGen/RegAllocBase.cpp $(LLVM_SRC)/lib/CodeGen/RegAllocBasic.cpp $(LLVM_SRC)/lib/CodeGen/RegAllocEvictionAdvisor.cpp $(LLVM_SRC)/lib/CodeGen/RegAllocFast.cpp $(LLVM_SRC)/lib/CodeGen/RegAllocGreedy.cpp $(LLVM_SRC)/lib/CodeGen/RegAllocPBQP.cpp $(LLVM_SRC)/lib/CodeGen/RegAllocPriorityAdvisor.cpp $(LLVM_SRC)/lib/CodeGen/RegAllocScore.cpp $(LLVM_SRC)/lib/CodeGen/RegisterClassInfo.cpp $(LLVM_SRC)/lib/CodeGen/RegisterCoalescer.cpp $(LLVM_SRC)/lib/CodeGen/RegisterPressure.cpp $(LLVM_SRC)/lib/CodeGen/RegisterScavenging.cpp $(LLVM_SRC)/lib/CodeGen/GCEmptyBasicBlocks.cpp $(LLVM_SRC)/lib/CodeGen/RemoveRedundantDebugValues.cpp $(LLVM_SRC)/lib/CodeGen/RenameIndependentSubregs.cpp $(LLVM_SRC)/lib/CodeGen/MachineStableHash.cpp $(LLVM_SRC)/lib/CodeGen/MIRVRegNamerUtils.cpp $(LLVM_SRC)/lib/CodeGen/MIRNamerPass.cpp $(LLVM_SRC)/lib/CodeGen/MIRCanonicalizerPass.cpp $(LLVM_SRC)/lib/CodeGen/RegisterUsageInfo.cpp $(LLVM_SRC)/lib/CodeGen/RegUsageInfoCollector.cpp $(LLVM_SRC)/lib/CodeGen/RegUsageInfoPropagate.cpp $(LLVM_SRC)/lib/CodeGen/RemoveLoadsIntoFakeUses.cpp $(LLVM_SRC)/lib/CodeGen/ReplaceWithVeclib.cpp $(LLVM_SRC)/lib/CodeGen/ResetMachineFunctionPass.cpp $(LLVM_SRC)/lib/CodeGen/RegisterBank.cpp $(LLVM_SRC)/lib/CodeGen/RegisterBankInfo.cpp $(LLVM_SRC)/lib/CodeGen/SafeStack.cpp $(LLVM_SRC)/lib/CodeGen/SafeStackLayout.cpp $(LLVM_SRC)/lib/CodeGen/SanitizerBinaryMetadata.cpp $(LLVM_SRC)/lib/CodeGen/ScheduleDAG.cpp $(LLVM_SRC)/lib/CodeGen/ScheduleDAGInstrs.cpp $(LLVM_SRC)/lib/CodeGen/ScheduleDAGPrinter.cpp $(LLVM_SRC)/lib/CodeGen/ScoreboardHazardRecognizer.cpp $(LLVM_SRC)/lib/CodeGen/SelectOptimize.cpp $(LLVM_SRC)/lib/CodeGen/ShadowStackGCLowering.cpp $(LLVM_SRC)/lib/CodeGen/ShrinkWrap.cpp $(LLVM_SRC)/lib/CodeGen/SjLjEHPrepare.cpp $(LLVM_SRC)/lib/CodeGen/SlotIndexes.cpp $(LLVM_SRC)/lib/CodeGen/SpillPlacement.cpp $(LLVM_SRC)/lib/CodeGen/SplitKit.cpp $(LLVM_SRC)/lib/CodeGen/StackColoring.cpp $(LLVM_SRC)/lib/CodeGen/StackFrameLayoutAnalysisPass.cpp $(LLVM_SRC)/lib/CodeGen/StackMapLivenessAnalysis.cpp $(LLVM_SRC)/lib/CodeGen/StackMaps.cpp $(LLVM_SRC)/lib/CodeGen/StackProtector.cpp $(LLVM_SRC)/lib/CodeGen/StackSlotColoring.cpp $(LLVM_SRC)/lib/CodeGen/StaticDataSplitter.cpp $(LLVM_SRC)/lib/CodeGen/StaticDataAnnotator.cpp $(LLVM_SRC)/lib/CodeGen/SwiftErrorValueTracking.cpp $(LLVM_SRC)/lib/CodeGen/SwitchLoweringUtils.cpp $(LLVM_SRC)/lib/CodeGen/TailDuplication.cpp $(LLVM_SRC)/lib/CodeGen/TailDuplicator.cpp $(LLVM_SRC)/lib/CodeGen/TargetFrameLoweringImpl.cpp $(LLVM_SRC)/lib/CodeGen/TargetInstrInfo.cpp $(LLVM_SRC)/lib/CodeGen/TargetLoweringBase.cpp $(LLVM_SRC)/lib/CodeGen/TargetLoweringObjectFileImpl.cpp $(LLVM_SRC)/lib/CodeGen/TargetOptionsImpl.cpp $(LLVM_SRC)/lib/CodeGen/TargetPassConfig.cpp $(LLVM_SRC)/lib/CodeGen/TargetRegisterInfo.cpp $(LLVM_SRC)/lib/CodeGen/TargetSchedule.cpp $(LLVM_SRC)/lib/CodeGen/TargetSubtargetInfo.cpp $(LLVM_SRC)/lib/CodeGen/TwoAddressInstructionPass.cpp $(LLVM_SRC)/lib/CodeGen/TypePromotion.cpp $(LLVM_SRC)/lib/CodeGen/UnreachableBlockElim.cpp $(LLVM_SRC)/lib/CodeGen/ValueTypes.cpp $(LLVM_SRC)/lib/CodeGen/VLIWMachineScheduler.cpp $(LLVM_SRC)/lib/CodeGen/VirtRegMap.cpp $(LLVM_SRC)/lib/CodeGen/WasmEHPrepare.cpp $(LLVM_SRC)/lib/CodeGen/WindowScheduler.cpp $(LLVM_SRC)/lib/CodeGen/WindowsSecureHotPatching.cpp $(LLVM_SRC)/lib/CodeGen/WinEHPrepare.cpp $(LLVM_SRC)/lib/CodeGen/XRayInstrumentation.cpp $(LLVM_SRC)/lib/CodeGen/LiveDebugValues/LiveDebugValues.cpp $(LLVM_SRC)/lib/CodeGen/LiveDebugValues/VarLocBasedImpl.cpp $(LLVM_SRC)/lib/CodeGen/LiveDebugValues/InstrRefBasedImpl.cpp): LLVM_CPPFLAGS = $(LLVM_F46)
+$(call llvm_objs,$(LLVM_OBJ),$(LLVM_SRC)/lib/Transforms/ObjCARC/ObjCARC.cpp $(LLVM_SRC)/lib/Transforms/ObjCARC/ObjCARCContract.cpp $(LLVM_SRC)/lib/Transforms/ObjCARC/DependencyAnalysis.cpp $(LLVM_SRC)/lib/Transforms/ObjCARC/ProvenanceAnalysis.cpp): LLVM_CPPFLAGS = $(LLVM_F43)
+$(call llvm_objs,$(LLVM_OBJ),$(LLVM_SRC)/lib/Transforms/Scalar/ADCE.cpp $(LLVM_SRC)/lib/Transforms/Scalar/ConstantHoisting.cpp $(LLVM_SRC)/lib/Transforms/Scalar/DeadStoreElimination.cpp $(LLVM_SRC)/lib/Transforms/Scalar/EarlyCSE.cpp $(LLVM_SRC)/lib/Transforms/Scalar/LICM.cpp $(LLVM_SRC)/lib/Transforms/Scalar/LoopDataPrefetch.cpp $(LLVM_SRC)/lib/Transforms/Scalar/LoopPassManager.cpp $(LLVM_SRC)/lib/Transforms/Scalar/LoopStrengthReduce.cpp $(LLVM_SRC)/lib/Transforms/Scalar/LoopTermFold.cpp $(LLVM_SRC)/lib/Transforms/Scalar/LowerConstantIntrinsics.cpp $(LLVM_SRC)/lib/Transforms/Scalar/MergeICmps.cpp $(LLVM_SRC)/lib/Transforms/Scalar/PartiallyInlineLibCalls.cpp $(LLVM_SRC)/lib/Transforms/Scalar/ScalarizeMaskedMemIntrin.cpp $(LLVM_SRC)/lib/Transforms/Scalar/SeparateConstOffsetFromGEP.cpp $(LLVM_SRC)/lib/Transforms/Scalar/SimplifyCFGPass.cpp): LLVM_CPPFLAGS = $(LLVM_F45)
+$(call llvm_objs,$(LLVM_OBJ),$(LLVM_SRC)/lib/CodeGen/AggressiveAntiDepBreaker.cpp $(LLVM_SRC)/lib/CodeGen/AllocationOrder.cpp $(LLVM_SRC)/lib/CodeGen/Analysis.cpp $(LLVM_SRC)/lib/CodeGen/AssignmentTrackingAnalysis.cpp $(LLVM_SRC)/lib/CodeGen/AtomicExpandPass.cpp $(LLVM_SRC)/lib/CodeGen/BasicTargetTransformInfo.cpp $(LLVM_SRC)/lib/CodeGen/BranchFolding.cpp $(LLVM_SRC)/lib/CodeGen/BranchRelaxation.cpp $(LLVM_SRC)/lib/CodeGen/BreakFalseDeps.cpp $(LLVM_SRC)/lib/CodeGen/BasicBlockSections.cpp $(LLVM_SRC)/lib/CodeGen/BasicBlockPathCloning.cpp $(LLVM_SRC)/lib/CodeGen/BasicBlockSectionsProfileReader.cpp $(LLVM_SRC)/lib/CodeGen/BasicBlockMatchingAndInference.cpp $(LLVM_SRC)/lib/CodeGen/CalcSpillWeights.cpp $(LLVM_SRC)/lib/CodeGen/CallBrPrepare.cpp $(LLVM_SRC)/lib/CodeGen/CallingConvLower.cpp $(LLVM_SRC)/lib/CodeGen/CFGuardLongjmp.cpp $(LLVM_SRC)/lib/CodeGen/CFIFixup.cpp $(LLVM_SRC)/lib/CodeGen/CFIInstrInserter.cpp $(LLVM_SRC)/lib/CodeGen/CodeGen.cpp $(LLVM_SRC)/lib/CodeGen/CodeGenCommonISel.cpp $(LLVM_SRC)/lib/CodeGen/CodeGenPrepare.cpp $(LLVM_SRC)/lib/CodeGen/ComplexDeinterleavingPass.cpp $(LLVM_SRC)/lib/CodeGen/CriticalAntiDepBreaker.cpp $(LLVM_SRC)/lib/CodeGen/DeadMachineInstructionElim.cpp $(LLVM_SRC)/lib/CodeGen/DetectDeadLanes.cpp $(LLVM_SRC)/lib/CodeGen/DFAPacketizer.cpp $(LLVM_SRC)/lib/CodeGen/DroppedVariableStatsMIR.cpp $(LLVM_SRC)/lib/CodeGen/DwarfEHPrepare.cpp $(LLVM_SRC)/lib/CodeGen/EarlyIfConversion.cpp $(LLVM_SRC)/lib/CodeGen/EdgeBundles.cpp $(LLVM_SRC)/lib/CodeGen/EHContGuardTargets.cpp $(LLVM_SRC)/lib/CodeGen/ExecutionDomainFix.cpp $(LLVM_SRC)/lib/CodeGen/ExpandIRInsts.cpp $(LLVM_SRC)/lib/CodeGen/ExpandMemCmp.cpp $(LLVM_SRC)/lib/CodeGen/ExpandPostRAPseudos.cpp $(LLVM_SRC)/lib/CodeGen/ExpandReductions.cpp $(LLVM_SRC)/lib/CodeGen/ExpandVectorPredication.cpp $(LLVM_SRC)/lib/CodeGen/FaultMaps.cpp $(LLVM_SRC)/lib/CodeGen/FEntryInserter.cpp $(LLVM_SRC)/lib/CodeGen/FinalizeISel.cpp $(LLVM_SRC)/lib/CodeGen/FixupStatepointCallerSaved.cpp $(LLVM_SRC)/lib/CodeGen/FuncletLayout.cpp $(LLVM_SRC)/lib/CodeGen/MachineFunctionAnalysis.cpp $(LLVM_SRC)/lib/CodeGen/GCMetadata.cpp $(LLVM_SRC)/lib/CodeGen/GCMetadataPrinter.cpp $(LLVM_SRC)/lib/CodeGen/GCRootLowering.cpp $(LLVM_SRC)/lib/CodeGen/GlobalMerge.cpp $(LLVM_SRC)/lib/CodeGen/GlobalMergeFunctions.cpp $(LLVM_SRC)/lib/CodeGen/HardwareLoops.cpp $(LLVM_SRC)/lib/CodeGen/IfConversion.cpp $(LLVM_SRC)/lib/CodeGen/ImplicitNullChecks.cpp $(LLVM_SRC)/lib/CodeGen/IndirectBrExpandPass.cpp $(LLVM_SRC)/lib/CodeGen/InitUndef.cpp $(LLVM_SRC)/lib/CodeGen/InlineSpiller.cpp $(LLVM_SRC)/lib/CodeGen/InsertCodePrefetch.cpp $(LLVM_SRC)/lib/CodeGen/InterferenceCache.cpp $(LLVM_SRC)/lib/CodeGen/InterleavedAccessPass.cpp $(LLVM_SRC)/lib/CodeGen/InterleavedLoadCombinePass.cpp $(LLVM_SRC)/lib/CodeGen/JMCInstrumenter.cpp $(LLVM_SRC)/lib/CodeGen/KCFI.cpp $(LLVM_SRC)/lib/CodeGen/LatencyPriorityQueue.cpp $(LLVM_SRC)/lib/CodeGen/LazyMachineBlockFrequencyInfo.cpp $(LLVM_SRC)/lib/CodeGen/LexicalScopes.cpp $(LLVM_SRC)/lib/CodeGen/LibcallLoweringInfo.cpp $(LLVM_SRC)/lib/CodeGen/LiveDebugVariables.cpp $(LLVM_SRC)/lib/CodeGen/LiveIntervals.cpp $(LLVM_SRC)/lib/CodeGen/LiveInterval.cpp $(LLVM_SRC)/lib/CodeGen/LiveIntervalUnion.cpp $(LLVM_SRC)/lib/CodeGen/LivePhysRegs.cpp $(LLVM_SRC)/lib/CodeGen/LiveRangeCalc.cpp $(LLVM_SRC)/lib/CodeGen/LiveIntervalCalc.cpp $(LLVM_SRC)/lib/CodeGen/LiveRangeEdit.cpp $(LLVM_SRC)/lib/CodeGen/LiveRangeShrink.cpp $(LLVM_SRC)/lib/CodeGen/LiveRegMatrix.cpp $(LLVM_SRC)/lib/CodeGen/LiveRegUnits.cpp $(LLVM_SRC)/lib/CodeGen/LiveStacks.cpp $(LLVM_SRC)/lib/CodeGen/LiveVariables.cpp $(LLVM_SRC)/lib/CodeGen/CodeGenTargetMachineImpl.cpp $(LLVM_SRC)/lib/CodeGen/LocalStackSlotAllocation.cpp $(LLVM_SRC)/lib/CodeGen/LoopTraversal.cpp $(LLVM_SRC)/lib/CodeGen/LowLevelTypeUtils.cpp $(LLVM_SRC)/lib/CodeGen/LowerEmuTLS.cpp $(LLVM_SRC)/lib/CodeGen/MachineBasicBlock.cpp $(LLVM_SRC)/lib/CodeGen/MachineBlockFrequencyInfo.cpp $(LLVM_SRC)/lib/CodeGen/MachineBlockHashInfo.cpp $(LLVM_SRC)/lib/CodeGen/MachineBlockPlacement.cpp $(LLVM_SRC)/lib/CodeGen/MachineBranchProbabilityInfo.cpp $(LLVM_SRC)/lib/CodeGen/MachineCFGPrinter.cpp $(LLVM_SRC)/lib/CodeGen/MachineCombiner.cpp $(LLVM_SRC)/lib/CodeGen/MachineConvergenceVerifier.cpp $(LLVM_SRC)/lib/CodeGen/MachineCopyPropagation.cpp $(LLVM_SRC)/lib/CodeGen/MachineCSE.cpp $(LLVM_SRC)/lib/CodeGen/MachineCheckDebugify.cpp $(LLVM_SRC)/lib/CodeGen/MachineCycleAnalysis.cpp $(LLVM_SRC)/lib/CodeGen/MachineDebugify.cpp $(LLVM_SRC)/lib/CodeGen/MachineDomTreeUpdater.cpp $(LLVM_SRC)/lib/CodeGen/MachineDominanceFrontier.cpp $(LLVM_SRC)/lib/CodeGen/MachineDominators.cpp $(LLVM_SRC)/lib/CodeGen/MachineFrameInfo.cpp $(LLVM_SRC)/lib/CodeGen/MachineFunction.cpp $(LLVM_SRC)/lib/CodeGen/MachineFunctionPass.cpp $(LLVM_SRC)/lib/CodeGen/MachineFunctionPrinterPass.cpp $(LLVM_SRC)/lib/CodeGen/MachineFunctionSplitter.cpp $(LLVM_SRC)/lib/CodeGen/MachineInstrBundle.cpp $(LLVM_SRC)/lib/CodeGen/MachineInstr.cpp $(LLVM_SRC)/lib/CodeGen/MachineLateInstrsCleanup.cpp $(LLVM_SRC)/lib/CodeGen/MachineLICM.cpp $(LLVM_SRC)/lib/CodeGen/MachineLoopInfo.cpp $(LLVM_SRC)/lib/CodeGen/MachineLoopUtils.cpp $(LLVM_SRC)/lib/CodeGen/MachineModuleInfo.cpp $(LLVM_SRC)/lib/CodeGen/MachineModuleInfoImpls.cpp $(LLVM_SRC)/lib/CodeGen/MachineModuleSlotTracker.cpp $(LLVM_SRC)/lib/CodeGen/MachineOperand.cpp $(LLVM_SRC)/lib/CodeGen/MachineOptimizationRemarkEmitter.cpp $(LLVM_SRC)/lib/CodeGen/MachineOutliner.cpp $(LLVM_SRC)/lib/CodeGen/MachinePassManager.cpp $(LLVM_SRC)/lib/CodeGen/MachinePipeliner.cpp $(LLVM_SRC)/lib/CodeGen/MachinePostDominators.cpp $(LLVM_SRC)/lib/CodeGen/MachineRegionInfo.cpp $(LLVM_SRC)/lib/CodeGen/MachineRegisterInfo.cpp $(LLVM_SRC)/lib/CodeGen/MachineScheduler.cpp $(LLVM_SRC)/lib/CodeGen/MachineSink.cpp $(LLVM_SRC)/lib/CodeGen/MachineSizeOpts.cpp $(LLVM_SRC)/lib/CodeGen/MachineSSAContext.cpp $(LLVM_SRC)/lib/CodeGen/MachineSSAUpdater.cpp $(LLVM_SRC)/lib/CodeGen/MachineStripDebug.cpp $(LLVM_SRC)/lib/CodeGen/MachineTraceMetrics.cpp $(LLVM_SRC)/lib/CodeGen/MachineUniformityAnalysis.cpp $(LLVM_SRC)/lib/CodeGen/MachineVerifier.cpp $(LLVM_SRC)/lib/CodeGen/MIRFSDiscriminator.cpp $(LLVM_SRC)/lib/CodeGen/MIRSampleProfile.cpp $(LLVM_SRC)/lib/CodeGen/MIR2Vec.cpp $(LLVM_SRC)/lib/CodeGen/MLRegAllocEvictAdvisor.cpp $(LLVM_SRC)/lib/CodeGen/MLRegAllocPriorityAdvisor.cpp $(LLVM_SRC)/lib/CodeGen/ModuloSchedule.cpp $(LLVM_SRC)/lib/CodeGen/PatchableFunction.cpp $(LLVM_SRC)/lib/CodeGen/MBFIWrapper.cpp $(LLVM_SRC)/lib/CodeGen/MIRPrinter.cpp $(LLVM_SRC)/lib/CodeGen/MIRPrintingPass.cpp $(LLVM_SRC)/lib/CodeGen/MacroFusion.cpp $(LLVM_SRC)/lib/CodeGen/OptimizePHIs.cpp $(LLVM_SRC)/lib/CodeGen/PeepholeOptimizer.cpp $(LLVM_SRC)/lib/CodeGen/PHIElimination.cpp $(LLVM_SRC)/lib/CodeGen/PHIEliminationUtils.cpp $(LLVM_SRC)/lib/CodeGen/PostRAHazardRecognizer.cpp $(LLVM_SRC)/lib/CodeGen/PostRASchedulerList.cpp $(LLVM_SRC)/lib/CodeGen/PreISelIntrinsicLowering.cpp $(LLVM_SRC)/lib/CodeGen/ProcessImplicitDefs.cpp $(LLVM_SRC)/lib/CodeGen/PrologEpilogInserter.cpp $(LLVM_SRC)/lib/CodeGen/PseudoProbeInserter.cpp $(LLVM_SRC)/lib/CodeGen/PseudoSourceValue.cpp $(LLVM_SRC)/lib/CodeGen/RDFGraph.cpp $(LLVM_SRC)/lib/CodeGen/RDFLiveness.cpp $(LLVM_SRC)/lib/CodeGen/RDFRegisters.cpp $(LLVM_SRC)/lib/CodeGen/ReachingDefAnalysis.cpp $(LLVM_SRC)/lib/CodeGen/RegAllocBase.cpp $(LLVM_SRC)/lib/CodeGen/RegAllocBasic.cpp $(LLVM_SRC)/lib/CodeGen/RegAllocEvictionAdvisor.cpp $(LLVM_SRC)/lib/CodeGen/RegAllocFast.cpp $(LLVM_SRC)/lib/CodeGen/RegAllocGreedy.cpp $(LLVM_SRC)/lib/CodeGen/RegAllocPBQP.cpp $(LLVM_SRC)/lib/CodeGen/RegAllocPriorityAdvisor.cpp $(LLVM_SRC)/lib/CodeGen/RegisterClassInfo.cpp $(LLVM_SRC)/lib/CodeGen/RegisterCoalescer.cpp $(LLVM_SRC)/lib/CodeGen/RegisterPressure.cpp $(LLVM_SRC)/lib/CodeGen/RegisterScavenging.cpp $(LLVM_SRC)/lib/CodeGen/GCEmptyBasicBlocks.cpp $(LLVM_SRC)/lib/CodeGen/RemoveRedundantDebugValues.cpp $(LLVM_SRC)/lib/CodeGen/RenameIndependentSubregs.cpp $(LLVM_SRC)/lib/CodeGen/MachineStableHash.cpp $(LLVM_SRC)/lib/CodeGen/MIRVRegNamerUtils.cpp $(LLVM_SRC)/lib/CodeGen/MIRNamerPass.cpp $(LLVM_SRC)/lib/CodeGen/MIRCanonicalizerPass.cpp $(LLVM_SRC)/lib/CodeGen/RegisterUsageInfo.cpp $(LLVM_SRC)/lib/CodeGen/RegUsageInfoCollector.cpp $(LLVM_SRC)/lib/CodeGen/RegUsageInfoPropagate.cpp $(LLVM_SRC)/lib/CodeGen/RemoveLoadsIntoFakeUses.cpp $(LLVM_SRC)/lib/CodeGen/ReplaceWithVeclib.cpp $(LLVM_SRC)/lib/CodeGen/ResetMachineFunctionPass.cpp $(LLVM_SRC)/lib/CodeGen/RegisterBank.cpp $(LLVM_SRC)/lib/CodeGen/RegisterBankInfo.cpp $(LLVM_SRC)/lib/CodeGen/SafeStack.cpp $(LLVM_SRC)/lib/CodeGen/SafeStackLayout.cpp $(LLVM_SRC)/lib/CodeGen/SanitizerBinaryMetadata.cpp $(LLVM_SRC)/lib/CodeGen/ScheduleDAG.cpp $(LLVM_SRC)/lib/CodeGen/ScheduleDAGInstrs.cpp $(LLVM_SRC)/lib/CodeGen/ScheduleDAGPrinter.cpp $(LLVM_SRC)/lib/CodeGen/ScoreboardHazardRecognizer.cpp $(LLVM_SRC)/lib/CodeGen/SelectOptimize.cpp $(LLVM_SRC)/lib/CodeGen/ShadowStackGCLowering.cpp $(LLVM_SRC)/lib/CodeGen/ShrinkWrap.cpp $(LLVM_SRC)/lib/CodeGen/SjLjEHPrepare.cpp $(LLVM_SRC)/lib/CodeGen/SlotIndexes.cpp $(LLVM_SRC)/lib/CodeGen/SpillPlacement.cpp $(LLVM_SRC)/lib/CodeGen/SplitKit.cpp $(LLVM_SRC)/lib/CodeGen/StackColoring.cpp $(LLVM_SRC)/lib/CodeGen/StackFrameLayoutAnalysisPass.cpp $(LLVM_SRC)/lib/CodeGen/StackMapLivenessAnalysis.cpp $(LLVM_SRC)/lib/CodeGen/StackMaps.cpp $(LLVM_SRC)/lib/CodeGen/StackProtector.cpp $(LLVM_SRC)/lib/CodeGen/StackSlotColoring.cpp $(LLVM_SRC)/lib/CodeGen/StaticDataSplitter.cpp $(LLVM_SRC)/lib/CodeGen/StaticDataAnnotator.cpp $(LLVM_SRC)/lib/CodeGen/SwiftErrorValueTracking.cpp $(LLVM_SRC)/lib/CodeGen/SwitchLoweringUtils.cpp $(LLVM_SRC)/lib/CodeGen/TailDuplication.cpp $(LLVM_SRC)/lib/CodeGen/TailDuplicator.cpp $(LLVM_SRC)/lib/CodeGen/TargetFrameLoweringImpl.cpp $(LLVM_SRC)/lib/CodeGen/TargetInstrInfo.cpp $(LLVM_SRC)/lib/CodeGen/TargetLoweringBase.cpp $(LLVM_SRC)/lib/CodeGen/TargetLoweringObjectFileImpl.cpp $(LLVM_SRC)/lib/CodeGen/TargetOptionsImpl.cpp $(LLVM_SRC)/lib/CodeGen/TargetPassConfig.cpp $(LLVM_SRC)/lib/CodeGen/TargetRegisterInfo.cpp $(LLVM_SRC)/lib/CodeGen/TargetSchedule.cpp $(LLVM_SRC)/lib/CodeGen/TargetSubtargetInfo.cpp $(LLVM_SRC)/lib/CodeGen/TwoAddressInstructionPass.cpp $(LLVM_SRC)/lib/CodeGen/TypePromotion.cpp $(LLVM_SRC)/lib/CodeGen/UnreachableBlockElim.cpp $(LLVM_SRC)/lib/CodeGen/ValueTypes.cpp $(LLVM_SRC)/lib/CodeGen/VirtRegMap.cpp $(LLVM_SRC)/lib/CodeGen/WasmEHPrepare.cpp $(LLVM_SRC)/lib/CodeGen/WindowScheduler.cpp $(LLVM_SRC)/lib/CodeGen/WindowsSecureHotPatching.cpp $(LLVM_SRC)/lib/CodeGen/WinEHPrepare.cpp $(LLVM_SRC)/lib/CodeGen/XRayInstrumentation.cpp $(LLVM_SRC)/lib/CodeGen/LiveDebugValues/LiveDebugValues.cpp $(LLVM_SRC)/lib/CodeGen/LiveDebugValues/VarLocBasedImpl.cpp $(LLVM_SRC)/lib/CodeGen/LiveDebugValues/InstrRefBasedImpl.cpp): LLVM_CPPFLAGS = $(LLVM_F46)
 $(call llvm_objs,$(LLVM_OBJ),$(LLVM_SRC)/lib/CodeGen/SelectionDAG/DAGCombiner.cpp $(LLVM_SRC)/lib/CodeGen/SelectionDAG/FastISel.cpp $(LLVM_SRC)/lib/CodeGen/SelectionDAG/FunctionLoweringInfo.cpp $(LLVM_SRC)/lib/CodeGen/SelectionDAG/InstrEmitter.cpp $(LLVM_SRC)/lib/CodeGen/SelectionDAG/LegalizeDAG.cpp $(LLVM_SRC)/lib/CodeGen/SelectionDAG/LegalizeFloatTypes.cpp $(LLVM_SRC)/lib/CodeGen/SelectionDAG/LegalizeIntegerTypes.cpp $(LLVM_SRC)/lib/CodeGen/SelectionDAG/LegalizeTypes.cpp $(LLVM_SRC)/lib/CodeGen/SelectionDAG/LegalizeTypesGeneric.cpp $(LLVM_SRC)/lib/CodeGen/SelectionDAG/LegalizeVectorOps.cpp $(LLVM_SRC)/lib/CodeGen/SelectionDAG/LegalizeVectorTypes.cpp $(LLVM_SRC)/lib/CodeGen/SelectionDAG/ResourcePriorityQueue.cpp $(LLVM_SRC)/lib/CodeGen/SelectionDAG/SDNodeInfo.cpp $(LLVM_SRC)/lib/CodeGen/SelectionDAG/ScheduleDAGFast.cpp $(LLVM_SRC)/lib/CodeGen/SelectionDAG/ScheduleDAGRRList.cpp $(LLVM_SRC)/lib/CodeGen/SelectionDAG/ScheduleDAGSDNodes.cpp $(LLVM_SRC)/lib/CodeGen/SelectionDAG/ScheduleDAGVLIW.cpp $(LLVM_SRC)/lib/CodeGen/SelectionDAG/SelectionDAGBuilder.cpp $(LLVM_SRC)/lib/CodeGen/SelectionDAG/SelectionDAG.cpp $(LLVM_SRC)/lib/CodeGen/SelectionDAG/SelectionDAGAddressAnalysis.cpp $(LLVM_SRC)/lib/CodeGen/SelectionDAG/SelectionDAGDumper.cpp $(LLVM_SRC)/lib/CodeGen/SelectionDAG/SelectionDAGISel.cpp $(LLVM_SRC)/lib/CodeGen/SelectionDAG/SelectionDAGPrinter.cpp $(LLVM_SRC)/lib/CodeGen/SelectionDAG/SelectionDAGTargetInfo.cpp $(LLVM_SRC)/lib/CodeGen/SelectionDAG/StatepointLowering.cpp $(LLVM_SRC)/lib/CodeGen/SelectionDAG/TargetLowering.cpp): LLVM_CPPFLAGS = $(LLVM_F47)
 $(call llvm_objs,$(LLVM_OBJ),$(LLVM_SRC)/lib/CodeGen/GlobalISel/CSEInfo.cpp $(LLVM_SRC)/lib/CodeGen/GlobalISel/GISelValueTracking.cpp $(LLVM_SRC)/lib/CodeGen/GlobalISel/CSEMIRBuilder.cpp $(LLVM_SRC)/lib/CodeGen/GlobalISel/CallLowering.cpp $(LLVM_SRC)/lib/CodeGen/GlobalISel/GlobalISel.cpp $(LLVM_SRC)/lib/CodeGen/GlobalISel/Combiner.cpp $(LLVM_SRC)/lib/CodeGen/GlobalISel/CombinerHelper.cpp $(LLVM_SRC)/lib/CodeGen/GlobalISel/CombinerHelperArtifacts.cpp $(LLVM_SRC)/lib/CodeGen/GlobalISel/CombinerHelperCasts.cpp $(LLVM_SRC)/lib/CodeGen/GlobalISel/CombinerHelperCompares.cpp $(LLVM_SRC)/lib/CodeGen/GlobalISel/CombinerHelperVectorOps.cpp $(LLVM_SRC)/lib/CodeGen/GlobalISel/GIMatchTableExecutor.cpp $(LLVM_SRC)/lib/CodeGen/GlobalISel/GISelChangeObserver.cpp $(LLVM_SRC)/lib/CodeGen/GlobalISel/IRTranslator.cpp $(LLVM_SRC)/lib/CodeGen/GlobalISel/InlineAsmLowering.cpp $(LLVM_SRC)/lib/CodeGen/GlobalISel/InstructionSelect.cpp $(LLVM_SRC)/lib/CodeGen/GlobalISel/InstructionSelector.cpp $(LLVM_SRC)/lib/CodeGen/GlobalISel/LegalityPredicates.cpp $(LLVM_SRC)/lib/CodeGen/GlobalISel/LegalizeMutations.cpp $(LLVM_SRC)/lib/CodeGen/GlobalISel/Legalizer.cpp $(LLVM_SRC)/lib/CodeGen/GlobalISel/LegalizerHelper.cpp $(LLVM_SRC)/lib/CodeGen/GlobalISel/LegalizerInfo.cpp $(LLVM_SRC)/lib/CodeGen/GlobalISel/LegacyLegalizerInfo.cpp $(LLVM_SRC)/lib/CodeGen/GlobalISel/LoadStoreOpt.cpp $(LLVM_SRC)/lib/CodeGen/GlobalISel/Localizer.cpp $(LLVM_SRC)/lib/CodeGen/GlobalISel/LostDebugLocObserver.cpp $(LLVM_SRC)/lib/CodeGen/GlobalISel/MachineFloatingPointPredicateUtils.cpp $(LLVM_SRC)/lib/CodeGen/GlobalISel/MachineIRBuilder.cpp $(LLVM_SRC)/lib/CodeGen/GlobalISel/RegBankSelect.cpp $(LLVM_SRC)/lib/CodeGen/GlobalISel/Utils.cpp): LLVM_CPPFLAGS = $(LLVM_F48)
-$(call llvm_objs,$(LLVM_OBJ),$(LLVM_SRC)/lib/ObjectYAML/ArchiveEmitter.cpp $(LLVM_SRC)/lib/ObjectYAML/ArchiveYAML.cpp $(LLVM_SRC)/lib/ObjectYAML/CodeViewYAMLDebugSections.cpp $(LLVM_SRC)/lib/ObjectYAML/CodeViewYAMLSymbols.cpp $(LLVM_SRC)/lib/ObjectYAML/CodeViewYAMLTypeHashing.cpp $(LLVM_SRC)/lib/ObjectYAML/CodeViewYAMLTypes.cpp $(LLVM_SRC)/lib/ObjectYAML/COFFEmitter.cpp $(LLVM_SRC)/lib/ObjectYAML/COFFYAML.cpp $(LLVM_SRC)/lib/ObjectYAML/DWARFEmitter.cpp $(LLVM_SRC)/lib/ObjectYAML/DWARFYAML.cpp $(LLVM_SRC)/lib/ObjectYAML/DXContainerEmitter.cpp $(LLVM_SRC)/lib/ObjectYAML/DXContainerYAML.cpp $(LLVM_SRC)/lib/ObjectYAML/ELFEmitter.cpp $(LLVM_SRC)/lib/ObjectYAML/ELFYAML.cpp $(LLVM_SRC)/lib/ObjectYAML/GOFFEmitter.cpp $(LLVM_SRC)/lib/ObjectYAML/GOFFYAML.cpp $(LLVM_SRC)/lib/ObjectYAML/MachOEmitter.cpp $(LLVM_SRC)/lib/ObjectYAML/MachOYAML.cpp $(LLVM_SRC)/lib/ObjectYAML/ObjectYAML.cpp $(LLVM_SRC)/lib/ObjectYAML/MinidumpEmitter.cpp $(LLVM_SRC)/lib/ObjectYAML/MinidumpYAML.cpp $(LLVM_SRC)/lib/ObjectYAML/OffloadEmitter.cpp $(LLVM_SRC)/lib/ObjectYAML/OffloadYAML.cpp $(LLVM_SRC)/lib/ObjectYAML/WasmEmitter.cpp $(LLVM_SRC)/lib/ObjectYAML/WasmYAML.cpp $(LLVM_SRC)/lib/ObjectYAML/XCOFFEmitter.cpp $(LLVM_SRC)/lib/ObjectYAML/XCOFFYAML.cpp $(LLVM_SRC)/lib/ObjectYAML/YAML.cpp $(LLVM_SRC)/lib/ObjectYAML/yaml2obj.cpp): LLVM_CPPFLAGS = $(LLVM_F49)
-$(call llvm_objs,$(LLVM_OBJ),$(LLVM_SRC)/lib/Frontend/Offloading/Utility.cpp $(LLVM_SRC)/lib/Frontend/Offloading/OffloadWrapper.cpp $(LLVM_SRC)/lib/Frontend/Offloading/PropertySet.cpp): LLVM_CPPFLAGS = $(LLVM_F50)
-$(call llvm_objs,$(LLVM_OBJ),$(LLVM_SRC)/lib/Frontend/Atomic/Atomic.cpp): LLVM_CPPFLAGS = $(LLVM_F51)
-$(call llvm_objs,$(LLVM_OBJ),$(LLVM_SRC)/lib/Frontend/Directive/Spelling.cpp): LLVM_CPPFLAGS = $(LLVM_F52)
-$(call llvm_objs,$(LLVM_OBJ),$(LLVM_SRC)/lib/Frontend/OpenMP/OMP.cpp $(LLVM_SRC)/lib/Frontend/OpenMP/OMPContext.cpp $(LLVM_SRC)/lib/Frontend/OpenMP/OMPIRBuilder.cpp $(LLVM_SRC)/lib/Frontend/OpenMP/DirectiveNameParser.cpp): LLVM_CPPFLAGS = $(LLVM_F53)
-$(call llvm_objs,$(LLVM_OBJ),$(LLVM_SRC)/lib/Linker/IRMover.cpp $(LLVM_SRC)/lib/Linker/LinkModules.cpp): LLVM_CPPFLAGS = $(LLVM_F54)
-$(call llvm_objs,$(LLVM_OBJ),$(LLVM_SRC)/lib/SandboxIR/Argument.cpp $(LLVM_SRC)/lib/SandboxIR/BasicBlock.cpp $(LLVM_SRC)/lib/SandboxIR/Constant.cpp $(LLVM_SRC)/lib/SandboxIR/Context.cpp $(LLVM_SRC)/lib/SandboxIR/Function.cpp $(LLVM_SRC)/lib/SandboxIR/Instruction.cpp $(LLVM_SRC)/lib/SandboxIR/Module.cpp $(LLVM_SRC)/lib/SandboxIR/Pass.cpp $(LLVM_SRC)/lib/SandboxIR/PassManager.cpp $(LLVM_SRC)/lib/SandboxIR/Region.cpp $(LLVM_SRC)/lib/SandboxIR/Tracker.cpp $(LLVM_SRC)/lib/SandboxIR/Type.cpp $(LLVM_SRC)/lib/SandboxIR/User.cpp $(LLVM_SRC)/lib/SandboxIR/Use.cpp $(LLVM_SRC)/lib/SandboxIR/Value.cpp): LLVM_CPPFLAGS = $(LLVM_F55)
-$(call llvm_objs,$(LLVM_OBJ),$(LLVM_SRC)/lib/Transforms/Vectorize/LoadStoreVectorizer.cpp $(LLVM_SRC)/lib/Transforms/Vectorize/LoopIdiomVectorize.cpp $(LLVM_SRC)/lib/Transforms/Vectorize/LoopVectorizationLegality.cpp $(LLVM_SRC)/lib/Transforms/Vectorize/LoopVectorize.cpp $(LLVM_SRC)/lib/Transforms/Vectorize/SandboxVectorizer/DependencyGraph.cpp $(LLVM_SRC)/lib/Transforms/Vectorize/SandboxVectorizer/InstrMaps.cpp $(LLVM_SRC)/lib/Transforms/Vectorize/SandboxVectorizer/Interval.cpp $(LLVM_SRC)/lib/Transforms/Vectorize/SandboxVectorizer/Legality.cpp $(LLVM_SRC)/lib/Transforms/Vectorize/SandboxVectorizer/Passes/BottomUpVec.cpp $(LLVM_SRC)/lib/Transforms/Vectorize/SandboxVectorizer/Passes/PackReuse.cpp $(LLVM_SRC)/lib/Transforms/Vectorize/SandboxVectorizer/Passes/RegionsFromBBs.cpp $(LLVM_SRC)/lib/Transforms/Vectorize/SandboxVectorizer/Passes/RegionsFromMetadata.cpp $(LLVM_SRC)/lib/Transforms/Vectorize/SandboxVectorizer/Passes/SeedCollection.cpp $(LLVM_SRC)/lib/Transforms/Vectorize/SandboxVectorizer/Passes/TransactionAcceptOrRevert.cpp $(LLVM_SRC)/lib/Transforms/Vectorize/SandboxVectorizer/Passes/TransactionSave.cpp $(LLVM_SRC)/lib/Transforms/Vectorize/SandboxVectorizer/SandboxVectorizer.cpp $(LLVM_SRC)/lib/Transforms/Vectorize/SandboxVectorizer/SandboxVectorizerPassBuilder.cpp $(LLVM_SRC)/lib/Transforms/Vectorize/SandboxVectorizer/Scheduler.cpp $(LLVM_SRC)/lib/Transforms/Vectorize/SandboxVectorizer/SeedCollector.cpp $(LLVM_SRC)/lib/Transforms/Vectorize/SandboxVectorizer/VecUtils.cpp $(LLVM_SRC)/lib/Transforms/Vectorize/SLPVectorizer.cpp $(LLVM_SRC)/lib/Transforms/Vectorize/Vectorize.cpp $(LLVM_SRC)/lib/Transforms/Vectorize/VectorCombine.cpp $(LLVM_SRC)/lib/Transforms/Vectorize/VPlan.cpp $(LLVM_SRC)/lib/Transforms/Vectorize/VPlanAnalysis.cpp $(LLVM_SRC)/lib/Transforms/Vectorize/VPlanConstruction.cpp $(LLVM_SRC)/lib/Transforms/Vectorize/VPlanPredicator.cpp $(LLVM_SRC)/lib/Transforms/Vectorize/VPlanRecipes.cpp $(LLVM_SRC)/lib/Transforms/Vectorize/VPlanSLP.cpp $(LLVM_SRC)/lib/Transforms/Vectorize/VPlanTransforms.cpp $(LLVM_SRC)/lib/Transforms/Vectorize/VPlanUnroll.cpp $(LLVM_SRC)/lib/Transforms/Vectorize/VPlanVerifier.cpp $(LLVM_SRC)/lib/Transforms/Vectorize/VPlanUtils.cpp): LLVM_CPPFLAGS = $(LLVM_F56)
-$(call llvm_objs,$(LLVM_OBJ),$(LLVM_SRC)/lib/Transforms/Instrumentation/AddressSanitizer.cpp $(LLVM_SRC)/lib/Transforms/Instrumentation/AllocToken.cpp $(LLVM_SRC)/lib/Transforms/Instrumentation/BoundsChecking.cpp $(LLVM_SRC)/lib/Transforms/Instrumentation/CGProfile.cpp $(LLVM_SRC)/lib/Transforms/Instrumentation/ControlHeightReduction.cpp $(LLVM_SRC)/lib/Transforms/Instrumentation/DataFlowSanitizer.cpp $(LLVM_SRC)/lib/Transforms/Instrumentation/GCOVProfiling.cpp $(LLVM_SRC)/lib/Transforms/Instrumentation/BlockCoverageInference.cpp $(LLVM_SRC)/lib/Transforms/Instrumentation/MemProfInstrumentation.cpp $(LLVM_SRC)/lib/Transforms/Instrumentation/MemProfUse.cpp $(LLVM_SRC)/lib/Transforms/Instrumentation/MemorySanitizer.cpp $(LLVM_SRC)/lib/Transforms/Instrumentation/NumericalStabilitySanitizer.cpp $(LLVM_SRC)/lib/Transforms/Instrumentation/IndirectCallPromotion.cpp $(LLVM_SRC)/lib/Transforms/Instrumentation/InstrProfiling.cpp $(LLVM_SRC)/lib/Transforms/Instrumentation/KCFI.cpp $(LLVM_SRC)/lib/Transforms/Instrumentation/LowerAllowCheckPass.cpp $(LLVM_SRC)/lib/Transforms/Instrumentation/PGOCtxProfFlattening.cpp $(LLVM_SRC)/lib/Transforms/Instrumentation/PGOCtxProfLowering.cpp $(LLVM_SRC)/lib/Transforms/Instrumentation/PGOForceFunctionAttrs.cpp $(LLVM_SRC)/lib/Transforms/Instrumentation/PGOInstrumentation.cpp $(LLVM_SRC)/lib/Transforms/Instrumentation/PGOMemOPSizeOpt.cpp $(LLVM_SRC)/lib/Transforms/Instrumentation/SanitizerCoverage.cpp $(LLVM_SRC)/lib/Transforms/Instrumentation/SanitizerBinaryMetadata.cpp $(LLVM_SRC)/lib/Transforms/Instrumentation/ValueProfileCollector.cpp $(LLVM_SRC)/lib/Transforms/Instrumentation/ThreadSanitizer.cpp $(LLVM_SRC)/lib/Transforms/Instrumentation/TypeSanitizer.cpp $(LLVM_SRC)/lib/Transforms/Instrumentation/HWAddressSanitizer.cpp $(LLVM_SRC)/lib/Transforms/Instrumentation/RealtimeSanitizer.cpp): LLVM_CPPFLAGS = $(LLVM_F57)
-$(call llvm_objs,$(LLVM_OBJ),$(LLVM_SRC)/lib/Transforms/IPO/AlwaysInliner.cpp $(LLVM_SRC)/lib/Transforms/IPO/Annotation2Metadata.cpp $(LLVM_SRC)/lib/Transforms/IPO/ArgumentPromotion.cpp $(LLVM_SRC)/lib/Transforms/IPO/Attributor.cpp $(LLVM_SRC)/lib/Transforms/IPO/AttributorAttributes.cpp $(LLVM_SRC)/lib/Transforms/IPO/BarrierNoopPass.cpp $(LLVM_SRC)/lib/Transforms/IPO/BlockExtractor.cpp $(LLVM_SRC)/lib/Transforms/IPO/CalledValuePropagation.cpp $(LLVM_SRC)/lib/Transforms/IPO/ConstantMerge.cpp $(LLVM_SRC)/lib/Transforms/IPO/CrossDSOCFI.cpp $(LLVM_SRC)/lib/Transforms/IPO/DeadArgumentElimination.cpp $(LLVM_SRC)/lib/Transforms/IPO/ElimAvailExtern.cpp $(LLVM_SRC)/lib/Transforms/IPO/EmbedBitcodePass.cpp $(LLVM_SRC)/lib/Transforms/IPO/ExpandVariadics.cpp $(LLVM_SRC)/lib/Transforms/IPO/ExtractGV.cpp $(LLVM_SRC)/lib/Transforms/IPO/FatLTOCleanup.cpp $(LLVM_SRC)/lib/Transforms/IPO/ForceFunctionAttrs.cpp $(LLVM_SRC)/lib/Transforms/IPO/FunctionAttrs.cpp $(LLVM_SRC)/lib/Transforms/IPO/FunctionImport.cpp $(LLVM_SRC)/lib/Transforms/IPO/FunctionSpecialization.cpp $(LLVM_SRC)/lib/Transforms/IPO/GlobalDCE.cpp $(LLVM_SRC)/lib/Transforms/IPO/GlobalOpt.cpp $(LLVM_SRC)/lib/Transforms/IPO/GlobalSplit.cpp $(LLVM_SRC)/lib/Transforms/IPO/HotColdSplitting.cpp $(LLVM_SRC)/lib/Transforms/IPO/IPO.cpp $(LLVM_SRC)/lib/Transforms/IPO/IROutliner.cpp $(LLVM_SRC)/lib/Transforms/IPO/InferFunctionAttrs.cpp $(LLVM_SRC)/lib/Transforms/IPO/Inliner.cpp $(LLVM_SRC)/lib/Transforms/IPO/Internalize.cpp $(LLVM_SRC)/lib/Transforms/IPO/LoopExtractor.cpp $(LLVM_SRC)/lib/Transforms/IPO/LowerTypeTests.cpp $(LLVM_SRC)/lib/Transforms/IPO/MemProfContextDisambiguation.cpp $(LLVM_SRC)/lib/Transforms/IPO/MergeFunctions.cpp $(LLVM_SRC)/lib/Transforms/IPO/ModuleInliner.cpp $(LLVM_SRC)/lib/Transforms/IPO/OpenMPOpt.cpp $(LLVM_SRC)/lib/Transforms/IPO/PartialInlining.cpp $(LLVM_SRC)/lib/Transforms/IPO/SampleContextTracker.cpp $(LLVM_SRC)/lib/Transforms/IPO/SampleProfile.cpp $(LLVM_SRC)/lib/Transforms/IPO/SampleProfileMatcher.cpp $(LLVM_SRC)/lib/Transforms/IPO/SampleProfileProbe.cpp $(LLVM_SRC)/lib/Transforms/IPO/SCCP.cpp $(LLVM_SRC)/lib/Transforms/IPO/StripDeadPrototypes.cpp $(LLVM_SRC)/lib/Transforms/IPO/StripSymbols.cpp $(LLVM_SRC)/lib/Transforms/IPO/ThinLTOBitcodeWriter.cpp $(LLVM_SRC)/lib/Transforms/IPO/WholeProgramDevirt.cpp): LLVM_CPPFLAGS = $(LLVM_F58)
-$(call llvm_objs,$(LLVM_OBJ),$(LLVM_SRC)/lib/Transforms/Coroutines/Coroutines.cpp $(LLVM_SRC)/lib/Transforms/Coroutines/CoroAnnotationElide.cpp $(LLVM_SRC)/lib/Transforms/Coroutines/CoroCleanup.cpp $(LLVM_SRC)/lib/Transforms/Coroutines/CoroConditionalWrapper.cpp $(LLVM_SRC)/lib/Transforms/Coroutines/CoroEarly.cpp $(LLVM_SRC)/lib/Transforms/Coroutines/CoroElide.cpp $(LLVM_SRC)/lib/Transforms/Coroutines/CoroFrame.cpp $(LLVM_SRC)/lib/Transforms/Coroutines/CoroSplit.cpp $(LLVM_SRC)/lib/Transforms/Coroutines/SuspendCrossingInfo.cpp $(LLVM_SRC)/lib/Transforms/Coroutines/SpillUtils.cpp $(LLVM_SRC)/lib/Transforms/Coroutines/MaterializationUtils.cpp): LLVM_CPPFLAGS = $(LLVM_F59)
+$(call llvm_objs,$(LLVM_OBJ),$(LLVM_SRC)/lib/Transforms/Vectorize/LoopIdiomVectorize.cpp): LLVM_CPPFLAGS = $(LLVM_F56)
+$(call llvm_objs,$(LLVM_OBJ),$(LLVM_SRC)/lib/Transforms/Instrumentation/AddressSanitizer.cpp): LLVM_CPPFLAGS = $(LLVM_F57)
 $(call llvm_objs,$(LLVM_OBJ),$(LLVM_SRC)/lib/Demangle/Demangle.cpp $(LLVM_SRC)/lib/Demangle/ItaniumDemangle.cpp $(LLVM_SRC)/lib/Demangle/MicrosoftDemangle.cpp $(LLVM_SRC)/lib/Demangle/MicrosoftDemangleNodes.cpp $(LLVM_SRC)/lib/Demangle/RustDemangle.cpp $(LLVM_SRC)/lib/Demangle/DLangDemangle.cpp): LLVM_CPPFLAGS = $(LLVM_F6)
-$(call llvm_objs,$(LLVM_OBJ),$(LLVM_SRC)/lib/Transforms/HipStdPar/HipStdPar.cpp): LLVM_CPPFLAGS = $(LLVM_F60)
 $(call llvm_objs,$(LLVM_OBJ),$(LLVM_SRC)/lib/IRPrinter/IRPrintingPasses.cpp): LLVM_CPPFLAGS = $(LLVM_F61)
-$(call llvm_objs,$(LLVM_OBJ),$(LLVM_SRC)/lib/Passes/CodeGenPassBuilder.cpp $(LLVM_SRC)/lib/Passes/OptimizationLevel.cpp $(LLVM_SRC)/lib/Passes/PassBuilder.cpp $(LLVM_SRC)/lib/Passes/PassBuilderBindings.cpp $(LLVM_SRC)/lib/Passes/PassBuilderPipelines.cpp $(LLVM_SRC)/lib/Passes/StandardInstrumentations.cpp): LLVM_CPPFLAGS = $(LLVM_F62)
+$(call llvm_objs,$(LLVM_OBJ),$(LLVM_SRC)/lib/Passes/OptimizationLevel.cpp): LLVM_CPPFLAGS = $(LLVM_F62)
 $(call llvm_objs,$(LLVM_OBJ),$(LLVM_SRC)/lib/CodeGenTypes/LowLevelType.cpp): LLVM_CPPFLAGS = $(LLVM_F8)
 $(call llvm_objs,$(LLVM_OBJ),$(LLVM_SRC)/lib/TargetParser/AArch64TargetParser.cpp $(LLVM_SRC)/lib/TargetParser/ARMTargetParserCommon.cpp $(LLVM_SRC)/lib/TargetParser/ARMTargetParser.cpp $(LLVM_SRC)/lib/TargetParser/CSKYTargetParser.cpp $(LLVM_SRC)/lib/TargetParser/Host.cpp $(LLVM_SRC)/lib/TargetParser/LoongArchTargetParser.cpp $(LLVM_SRC)/lib/TargetParser/PPCTargetParser.cpp $(LLVM_SRC)/lib/TargetParser/RISCVISAInfo.cpp $(LLVM_SRC)/lib/TargetParser/RISCVTargetParser.cpp $(LLVM_SRC)/lib/TargetParser/SubtargetFeature.cpp $(LLVM_SRC)/lib/TargetParser/TargetParser.cpp $(LLVM_SRC)/lib/TargetParser/Triple.cpp $(LLVM_SRC)/lib/TargetParser/TargetDataLayout.cpp $(LLVM_SRC)/lib/TargetParser/X86TargetParser.cpp $(LLVM_SRC)/lib/TargetParser/XtensaTargetParser.cpp): LLVM_CPPFLAGS = $(LLVM_F9)
 
@@ -2102,18 +1487,12 @@ LLVM_LIB_X86_SRCS := \
 	$(LLVM_SRC)/lib/CodeGen/AsmPrinter/DwarfStringPool.cpp \
 	$(LLVM_SRC)/lib/CodeGen/AsmPrinter/DwarfUnit.cpp \
 	$(LLVM_SRC)/lib/CodeGen/AsmPrinter/EHStreamer.cpp \
-	$(LLVM_SRC)/lib/CodeGen/AsmPrinter/ErlangGCPrinter.cpp \
-	$(LLVM_SRC)/lib/CodeGen/AsmPrinter/OcamlGCPrinter.cpp \
 	$(LLVM_SRC)/lib/CodeGen/AsmPrinter/PseudoProbePrinter.cpp \
 	$(LLVM_SRC)/lib/CodeGen/AsmPrinter/WinCFGuard.cpp \
 	$(LLVM_SRC)/lib/CodeGen/AsmPrinter/WinException.cpp \
 	$(LLVM_SRC)/lib/CodeGen/AsmPrinter/CodeViewDebug.cpp \
 	$(LLVM_SRC)/lib/CodeGen/AsmPrinter/WasmException.cpp \
-	$(LLVM_SRC)/lib/MC/MCDisassembler/Disassembler.cpp \
-	$(LLVM_SRC)/lib/MC/MCDisassembler/MCDisassembler.cpp \
-	$(LLVM_SRC)/lib/MC/MCDisassembler/MCExternalSymbolizer.cpp \
 	$(LLVM_SRC)/lib/MC/MCDisassembler/MCRelocationInfo.cpp \
-	$(LLVM_SRC)/lib/MC/MCDisassembler/MCSymbolizer.cpp \
 	$(LLVM_SRC)/lib/Target/X86/TargetInfo/X86TargetInfo.cpp \
 	$(LLVM_SRC)/lib/Target/X86/MCTargetDesc/X86ATTInstPrinter.cpp \
 	$(LLVM_SRC)/lib/Target/X86/MCTargetDesc/X86IntelInstPrinter.cpp \
@@ -2198,42 +1577,13 @@ LLVM_LIB_X86_SRCS := \
 	$(LLVM_SRC)/lib/Target/X86/GISel/X86PreLegalizerCombiner.cpp \
 	$(LLVM_SRC)/lib/Target/X86/GISel/X86RegisterBankInfo.cpp \
 	$(LLVM_SRC)/lib/Target/X86/AsmParser/X86AsmParser.cpp \
-	$(LLVM_SRC)/lib/Target/X86/Disassembler/X86Disassembler.cpp \
-	$(LLVM_SRC)/lib/MCA/CodeEmitter.cpp \
-	$(LLVM_SRC)/lib/MCA/Context.cpp \
-	$(LLVM_SRC)/lib/MCA/CustomBehaviour.cpp \
-	$(LLVM_SRC)/lib/MCA/HWEventListener.cpp \
-	$(LLVM_SRC)/lib/MCA/HardwareUnits/HardwareUnit.cpp \
-	$(LLVM_SRC)/lib/MCA/HardwareUnits/LSUnit.cpp \
-	$(LLVM_SRC)/lib/MCA/HardwareUnits/RegisterFile.cpp \
-	$(LLVM_SRC)/lib/MCA/HardwareUnits/ResourceManager.cpp \
-	$(LLVM_SRC)/lib/MCA/HardwareUnits/RetireControlUnit.cpp \
-	$(LLVM_SRC)/lib/MCA/HardwareUnits/Scheduler.cpp \
-	$(LLVM_SRC)/lib/MCA/IncrementalSourceMgr.cpp \
-	$(LLVM_SRC)/lib/MCA/InstrBuilder.cpp \
-	$(LLVM_SRC)/lib/MCA/Instruction.cpp \
-	$(LLVM_SRC)/lib/MCA/Pipeline.cpp \
-	$(LLVM_SRC)/lib/MCA/Stages/DispatchStage.cpp \
-	$(LLVM_SRC)/lib/MCA/Stages/EntryStage.cpp \
-	$(LLVM_SRC)/lib/MCA/Stages/ExecuteStage.cpp \
-	$(LLVM_SRC)/lib/MCA/Stages/InOrderIssueStage.cpp \
-	$(LLVM_SRC)/lib/MCA/Stages/InstructionTables.cpp \
-	$(LLVM_SRC)/lib/MCA/Stages/MicroOpQueueStage.cpp \
-	$(LLVM_SRC)/lib/MCA/Stages/RetireStage.cpp \
-	$(LLVM_SRC)/lib/MCA/Stages/Stage.cpp \
-	$(LLVM_SRC)/lib/MCA/Support.cpp \
-	$(LLVM_SRC)/lib/MCA/View.cpp \
-	$(LLVM_SRC)/lib/Target/X86/MCA/X86CustomBehaviour.cpp \
 
-$(call llvm_objs,$(LLVM_OBJ),$(LLVM_SRC)/lib/CodeGen/AsmPrinter/AccelTable.cpp $(LLVM_SRC)/lib/CodeGen/AsmPrinter/AddressPool.cpp $(LLVM_SRC)/lib/CodeGen/AsmPrinter/AIXException.cpp $(LLVM_SRC)/lib/CodeGen/AsmPrinter/ARMException.cpp $(LLVM_SRC)/lib/CodeGen/AsmPrinter/AsmPrinter.cpp $(LLVM_SRC)/lib/CodeGen/AsmPrinter/AsmPrinterDwarf.cpp $(LLVM_SRC)/lib/CodeGen/AsmPrinter/AsmPrinterInlineAsm.cpp $(LLVM_SRC)/lib/CodeGen/AsmPrinter/DbgEntityHistoryCalculator.cpp $(LLVM_SRC)/lib/CodeGen/AsmPrinter/DebugHandlerBase.cpp $(LLVM_SRC)/lib/CodeGen/AsmPrinter/DebugLocStream.cpp $(LLVM_SRC)/lib/CodeGen/AsmPrinter/DIE.cpp $(LLVM_SRC)/lib/CodeGen/AsmPrinter/DIEHash.cpp $(LLVM_SRC)/lib/CodeGen/AsmPrinter/DwarfCFIException.cpp $(LLVM_SRC)/lib/CodeGen/AsmPrinter/DwarfCompileUnit.cpp $(LLVM_SRC)/lib/CodeGen/AsmPrinter/DwarfDebug.cpp $(LLVM_SRC)/lib/CodeGen/AsmPrinter/DwarfExpression.cpp $(LLVM_SRC)/lib/CodeGen/AsmPrinter/DwarfFile.cpp $(LLVM_SRC)/lib/CodeGen/AsmPrinter/DwarfStringPool.cpp $(LLVM_SRC)/lib/CodeGen/AsmPrinter/DwarfUnit.cpp $(LLVM_SRC)/lib/CodeGen/AsmPrinter/EHStreamer.cpp $(LLVM_SRC)/lib/CodeGen/AsmPrinter/ErlangGCPrinter.cpp $(LLVM_SRC)/lib/CodeGen/AsmPrinter/OcamlGCPrinter.cpp $(LLVM_SRC)/lib/CodeGen/AsmPrinter/PseudoProbePrinter.cpp $(LLVM_SRC)/lib/CodeGen/AsmPrinter/WinCFGuard.cpp $(LLVM_SRC)/lib/CodeGen/AsmPrinter/WinException.cpp $(LLVM_SRC)/lib/CodeGen/AsmPrinter/CodeViewDebug.cpp $(LLVM_SRC)/lib/CodeGen/AsmPrinter/WasmException.cpp): LLVM_CPPFLAGS = $(LLVM_F63)
-$(call llvm_objs,$(LLVM_OBJ),$(LLVM_SRC)/lib/MC/MCDisassembler/Disassembler.cpp $(LLVM_SRC)/lib/MC/MCDisassembler/MCDisassembler.cpp $(LLVM_SRC)/lib/MC/MCDisassembler/MCExternalSymbolizer.cpp $(LLVM_SRC)/lib/MC/MCDisassembler/MCRelocationInfo.cpp $(LLVM_SRC)/lib/MC/MCDisassembler/MCSymbolizer.cpp): LLVM_CPPFLAGS = $(LLVM_F64)
+$(call llvm_objs,$(LLVM_OBJ),$(LLVM_SRC)/lib/CodeGen/AsmPrinter/AccelTable.cpp $(LLVM_SRC)/lib/CodeGen/AsmPrinter/AddressPool.cpp $(LLVM_SRC)/lib/CodeGen/AsmPrinter/AIXException.cpp $(LLVM_SRC)/lib/CodeGen/AsmPrinter/ARMException.cpp $(LLVM_SRC)/lib/CodeGen/AsmPrinter/AsmPrinter.cpp $(LLVM_SRC)/lib/CodeGen/AsmPrinter/AsmPrinterDwarf.cpp $(LLVM_SRC)/lib/CodeGen/AsmPrinter/AsmPrinterInlineAsm.cpp $(LLVM_SRC)/lib/CodeGen/AsmPrinter/DbgEntityHistoryCalculator.cpp $(LLVM_SRC)/lib/CodeGen/AsmPrinter/DebugHandlerBase.cpp $(LLVM_SRC)/lib/CodeGen/AsmPrinter/DebugLocStream.cpp $(LLVM_SRC)/lib/CodeGen/AsmPrinter/DIE.cpp $(LLVM_SRC)/lib/CodeGen/AsmPrinter/DIEHash.cpp $(LLVM_SRC)/lib/CodeGen/AsmPrinter/DwarfCFIException.cpp $(LLVM_SRC)/lib/CodeGen/AsmPrinter/DwarfCompileUnit.cpp $(LLVM_SRC)/lib/CodeGen/AsmPrinter/DwarfDebug.cpp $(LLVM_SRC)/lib/CodeGen/AsmPrinter/DwarfExpression.cpp $(LLVM_SRC)/lib/CodeGen/AsmPrinter/DwarfFile.cpp $(LLVM_SRC)/lib/CodeGen/AsmPrinter/DwarfStringPool.cpp $(LLVM_SRC)/lib/CodeGen/AsmPrinter/DwarfUnit.cpp $(LLVM_SRC)/lib/CodeGen/AsmPrinter/EHStreamer.cpp $(LLVM_SRC)/lib/CodeGen/AsmPrinter/PseudoProbePrinter.cpp $(LLVM_SRC)/lib/CodeGen/AsmPrinter/WinCFGuard.cpp $(LLVM_SRC)/lib/CodeGen/AsmPrinter/WinException.cpp $(LLVM_SRC)/lib/CodeGen/AsmPrinter/CodeViewDebug.cpp $(LLVM_SRC)/lib/CodeGen/AsmPrinter/WasmException.cpp): LLVM_CPPFLAGS = $(LLVM_F63)
+$(call llvm_objs,$(LLVM_OBJ),$(LLVM_SRC)/lib/MC/MCDisassembler/MCRelocationInfo.cpp): LLVM_CPPFLAGS = $(LLVM_F64)
 $(call llvm_objs,$(LLVM_OBJ),$(LLVM_SRC)/lib/Target/X86/TargetInfo/X86TargetInfo.cpp): LLVM_CPPFLAGS = $(LLVM_F65)
 $(call llvm_objs,$(LLVM_OBJ),$(LLVM_SRC)/lib/Target/X86/MCTargetDesc/X86ATTInstPrinter.cpp $(LLVM_SRC)/lib/Target/X86/MCTargetDesc/X86IntelInstPrinter.cpp $(LLVM_SRC)/lib/Target/X86/MCTargetDesc/X86InstComments.cpp $(LLVM_SRC)/lib/Target/X86/MCTargetDesc/X86InstPrinterCommon.cpp $(LLVM_SRC)/lib/Target/X86/MCTargetDesc/X86EncodingOptimization.cpp $(LLVM_SRC)/lib/Target/X86/MCTargetDesc/X86ShuffleDecode.cpp $(LLVM_SRC)/lib/Target/X86/MCTargetDesc/X86AsmBackend.cpp $(LLVM_SRC)/lib/Target/X86/MCTargetDesc/X86MCTargetDesc.cpp $(LLVM_SRC)/lib/Target/X86/MCTargetDesc/X86MCAsmInfo.cpp $(LLVM_SRC)/lib/Target/X86/MCTargetDesc/X86MCCodeEmitter.cpp $(LLVM_SRC)/lib/Target/X86/MCTargetDesc/X86MachObjectWriter.cpp $(LLVM_SRC)/lib/Target/X86/MCTargetDesc/X86MnemonicTables.cpp $(LLVM_SRC)/lib/Target/X86/MCTargetDesc/X86ELFObjectWriter.cpp $(LLVM_SRC)/lib/Target/X86/MCTargetDesc/X86WinCOFFObjectWriter.cpp $(LLVM_SRC)/lib/Target/X86/MCTargetDesc/X86WinCOFFStreamer.cpp $(LLVM_SRC)/lib/Target/X86/MCTargetDesc/X86WinCOFFTargetStreamer.cpp): LLVM_CPPFLAGS = $(LLVM_F66)
 $(call llvm_objs,$(LLVM_OBJ),$(LLVM_SRC)/lib/Target/X86/X86ArgumentStackSlotRebase.cpp $(LLVM_SRC)/lib/Target/X86/X86AsmPrinter.cpp $(LLVM_SRC)/lib/Target/X86/X86AvoidTrailingCall.cpp $(LLVM_SRC)/lib/Target/X86/X86CallFrameOptimization.cpp $(LLVM_SRC)/lib/Target/X86/X86CallingConv.cpp $(LLVM_SRC)/lib/Target/X86/X86CmovConversion.cpp $(LLVM_SRC)/lib/Target/X86/X86CodeGenPassBuilder.cpp $(LLVM_SRC)/lib/Target/X86/X86DomainReassignment.cpp $(LLVM_SRC)/lib/Target/X86/X86LowerTileCopy.cpp $(LLVM_SRC)/lib/Target/X86/X86LowerAMXType.cpp $(LLVM_SRC)/lib/Target/X86/X86LowerAMXIntrinsics.cpp $(LLVM_SRC)/lib/Target/X86/X86TileConfig.cpp $(LLVM_SRC)/lib/Target/X86/X86FastPreTileConfig.cpp $(LLVM_SRC)/lib/Target/X86/X86FastTileConfig.cpp $(LLVM_SRC)/lib/Target/X86/X86PreTileConfig.cpp $(LLVM_SRC)/lib/Target/X86/X86ExpandPseudo.cpp $(LLVM_SRC)/lib/Target/X86/X86FastISel.cpp $(LLVM_SRC)/lib/Target/X86/X86FixupBWInsts.cpp $(LLVM_SRC)/lib/Target/X86/X86FixupLEAs.cpp $(LLVM_SRC)/lib/Target/X86/X86FixupInstTuning.cpp $(LLVM_SRC)/lib/Target/X86/X86FixupVectorConstants.cpp $(LLVM_SRC)/lib/Target/X86/X86AvoidStoreForwardingBlocks.cpp $(LLVM_SRC)/lib/Target/X86/X86DynAllocaExpander.cpp $(LLVM_SRC)/lib/Target/X86/X86FixupSetCC.cpp $(LLVM_SRC)/lib/Target/X86/X86FlagsCopyLowering.cpp $(LLVM_SRC)/lib/Target/X86/X86FloatingPoint.cpp $(LLVM_SRC)/lib/Target/X86/X86FrameLowering.cpp $(LLVM_SRC)/lib/Target/X86/X86ISelDAGToDAG.cpp $(LLVM_SRC)/lib/Target/X86/X86ISelLowering.cpp $(LLVM_SRC)/lib/Target/X86/X86ISelLoweringCall.cpp $(LLVM_SRC)/lib/Target/X86/X86IndirectBranchTracking.cpp $(LLVM_SRC)/lib/Target/X86/X86IndirectThunks.cpp $(LLVM_SRC)/lib/Target/X86/X86InterleavedAccess.cpp $(LLVM_SRC)/lib/Target/X86/X86InstCombineIntrinsic.cpp $(LLVM_SRC)/lib/Target/X86/X86InstrFMA3Info.cpp $(LLVM_SRC)/lib/Target/X86/X86InstrFoldTables.cpp $(LLVM_SRC)/lib/Target/X86/X86InstrInfo.cpp $(LLVM_SRC)/lib/Target/X86/X86CompressEVEX.cpp $(LLVM_SRC)/lib/Target/X86/X86LoadValueInjectionLoadHardening.cpp $(LLVM_SRC)/lib/Target/X86/X86LoadValueInjectionRetHardening.cpp $(LLVM_SRC)/lib/Target/X86/X86MCInstLower.cpp $(LLVM_SRC)/lib/Target/X86/X86MachineFunctionInfo.cpp $(LLVM_SRC)/lib/Target/X86/X86MacroFusion.cpp $(LLVM_SRC)/lib/Target/X86/X86OptimizeLEAs.cpp $(LLVM_SRC)/lib/Target/X86/X86PadShortFunction.cpp $(LLVM_SRC)/lib/Target/X86/X86PartialReduction.cpp $(LLVM_SRC)/lib/Target/X86/X86RegisterInfo.cpp $(LLVM_SRC)/lib/Target/X86/X86ReturnThunks.cpp $(LLVM_SRC)/lib/Target/X86/X86SelectionDAGInfo.cpp $(LLVM_SRC)/lib/Target/X86/X86ShuffleDecodeConstantPool.cpp $(LLVM_SRC)/lib/Target/X86/X86SpeculativeLoadHardening.cpp $(LLVM_SRC)/lib/Target/X86/X86SpeculativeExecutionSideEffectSuppression.cpp $(LLVM_SRC)/lib/Target/X86/X86Subtarget.cpp $(LLVM_SRC)/lib/Target/X86/X86SuppressAPXForReloc.cpp $(LLVM_SRC)/lib/Target/X86/X86TargetMachine.cpp $(LLVM_SRC)/lib/Target/X86/X86TargetObjectFile.cpp $(LLVM_SRC)/lib/Target/X86/X86TargetTransformInfo.cpp $(LLVM_SRC)/lib/Target/X86/X86VZeroUpper.cpp $(LLVM_SRC)/lib/Target/X86/X86WinEHState.cpp $(LLVM_SRC)/lib/Target/X86/X86WinEHUnwindV2.cpp $(LLVM_SRC)/lib/Target/X86/X86InsertWait.cpp $(LLVM_SRC)/lib/Target/X86/GISel/X86CallLowering.cpp $(LLVM_SRC)/lib/Target/X86/GISel/X86InstructionSelector.cpp $(LLVM_SRC)/lib/Target/X86/GISel/X86LegalizerInfo.cpp $(LLVM_SRC)/lib/Target/X86/GISel/X86PreLegalizerCombiner.cpp $(LLVM_SRC)/lib/Target/X86/GISel/X86RegisterBankInfo.cpp): LLVM_CPPFLAGS = $(LLVM_F67)
 $(call llvm_objs,$(LLVM_OBJ),$(LLVM_SRC)/lib/Target/X86/AsmParser/X86AsmParser.cpp): LLVM_CPPFLAGS = $(LLVM_F68)
-$(call llvm_objs,$(LLVM_OBJ),$(LLVM_SRC)/lib/Target/X86/Disassembler/X86Disassembler.cpp): LLVM_CPPFLAGS = $(LLVM_F69)
-$(call llvm_objs,$(LLVM_OBJ),$(LLVM_SRC)/lib/MCA/CodeEmitter.cpp $(LLVM_SRC)/lib/MCA/Context.cpp $(LLVM_SRC)/lib/MCA/CustomBehaviour.cpp $(LLVM_SRC)/lib/MCA/HWEventListener.cpp $(LLVM_SRC)/lib/MCA/HardwareUnits/HardwareUnit.cpp $(LLVM_SRC)/lib/MCA/HardwareUnits/LSUnit.cpp $(LLVM_SRC)/lib/MCA/HardwareUnits/RegisterFile.cpp $(LLVM_SRC)/lib/MCA/HardwareUnits/ResourceManager.cpp $(LLVM_SRC)/lib/MCA/HardwareUnits/RetireControlUnit.cpp $(LLVM_SRC)/lib/MCA/HardwareUnits/Scheduler.cpp $(LLVM_SRC)/lib/MCA/IncrementalSourceMgr.cpp $(LLVM_SRC)/lib/MCA/InstrBuilder.cpp $(LLVM_SRC)/lib/MCA/Instruction.cpp $(LLVM_SRC)/lib/MCA/Pipeline.cpp $(LLVM_SRC)/lib/MCA/Stages/DispatchStage.cpp $(LLVM_SRC)/lib/MCA/Stages/EntryStage.cpp $(LLVM_SRC)/lib/MCA/Stages/ExecuteStage.cpp $(LLVM_SRC)/lib/MCA/Stages/InOrderIssueStage.cpp $(LLVM_SRC)/lib/MCA/Stages/InstructionTables.cpp $(LLVM_SRC)/lib/MCA/Stages/MicroOpQueueStage.cpp $(LLVM_SRC)/lib/MCA/Stages/RetireStage.cpp $(LLVM_SRC)/lib/MCA/Stages/Stage.cpp $(LLVM_SRC)/lib/MCA/Support.cpp $(LLVM_SRC)/lib/MCA/View.cpp): LLVM_CPPFLAGS = $(LLVM_F70)
-$(call llvm_objs,$(LLVM_OBJ),$(LLVM_SRC)/lib/Target/X86/MCA/X86CustomBehaviour.cpp): LLVM_CPPFLAGS = $(LLVM_F71)
 
 LLVM_LIB_AARCH64_SRCS := \
 	$(LLVM_SRC)/lib/Target/AArch64/TargetInfo/AArch64TargetInfo.cpp \
@@ -2270,8 +1620,6 @@ LLVM_LIB_AARCH64_SRCS := \
 	$(LLVM_SRC)/lib/CodeGen/AsmPrinter/DwarfStringPool.cpp \
 	$(LLVM_SRC)/lib/CodeGen/AsmPrinter/DwarfUnit.cpp \
 	$(LLVM_SRC)/lib/CodeGen/AsmPrinter/EHStreamer.cpp \
-	$(LLVM_SRC)/lib/CodeGen/AsmPrinter/ErlangGCPrinter.cpp \
-	$(LLVM_SRC)/lib/CodeGen/AsmPrinter/OcamlGCPrinter.cpp \
 	$(LLVM_SRC)/lib/CodeGen/AsmPrinter/PseudoProbePrinter.cpp \
 	$(LLVM_SRC)/lib/CodeGen/AsmPrinter/WinCFGuard.cpp \
 	$(LLVM_SRC)/lib/CodeGen/AsmPrinter/WinException.cpp \
@@ -2341,22 +1689,15 @@ LLVM_LIB_AARCH64_SRCS := \
 	$(LLVM_SRC)/lib/Target/AArch64/AArch64SIMDInstrOpt.cpp \
 	$(LLVM_SRC)/lib/Target/AArch64/AArch64PrologueEpilogue.cpp \
 	$(LLVM_SRC)/lib/Target/AArch64/AsmParser/AArch64AsmParser.cpp \
-	$(LLVM_SRC)/lib/MC/MCDisassembler/Disassembler.cpp \
-	$(LLVM_SRC)/lib/MC/MCDisassembler/MCDisassembler.cpp \
-	$(LLVM_SRC)/lib/MC/MCDisassembler/MCExternalSymbolizer.cpp \
 	$(LLVM_SRC)/lib/MC/MCDisassembler/MCRelocationInfo.cpp \
-	$(LLVM_SRC)/lib/MC/MCDisassembler/MCSymbolizer.cpp \
-	$(LLVM_SRC)/lib/Target/AArch64/Disassembler/AArch64Disassembler.cpp \
-	$(LLVM_SRC)/lib/Target/AArch64/Disassembler/AArch64ExternalSymbolizer.cpp \
 
-$(call llvm_objs,$(LLVM_OBJ),$(LLVM_SRC)/lib/CodeGen/AsmPrinter/AccelTable.cpp $(LLVM_SRC)/lib/CodeGen/AsmPrinter/AddressPool.cpp $(LLVM_SRC)/lib/CodeGen/AsmPrinter/AIXException.cpp $(LLVM_SRC)/lib/CodeGen/AsmPrinter/ARMException.cpp $(LLVM_SRC)/lib/CodeGen/AsmPrinter/AsmPrinter.cpp $(LLVM_SRC)/lib/CodeGen/AsmPrinter/AsmPrinterDwarf.cpp $(LLVM_SRC)/lib/CodeGen/AsmPrinter/AsmPrinterInlineAsm.cpp $(LLVM_SRC)/lib/CodeGen/AsmPrinter/DbgEntityHistoryCalculator.cpp $(LLVM_SRC)/lib/CodeGen/AsmPrinter/DebugHandlerBase.cpp $(LLVM_SRC)/lib/CodeGen/AsmPrinter/DebugLocStream.cpp $(LLVM_SRC)/lib/CodeGen/AsmPrinter/DIE.cpp $(LLVM_SRC)/lib/CodeGen/AsmPrinter/DIEHash.cpp $(LLVM_SRC)/lib/CodeGen/AsmPrinter/DwarfCFIException.cpp $(LLVM_SRC)/lib/CodeGen/AsmPrinter/DwarfCompileUnit.cpp $(LLVM_SRC)/lib/CodeGen/AsmPrinter/DwarfDebug.cpp $(LLVM_SRC)/lib/CodeGen/AsmPrinter/DwarfExpression.cpp $(LLVM_SRC)/lib/CodeGen/AsmPrinter/DwarfFile.cpp $(LLVM_SRC)/lib/CodeGen/AsmPrinter/DwarfStringPool.cpp $(LLVM_SRC)/lib/CodeGen/AsmPrinter/DwarfUnit.cpp $(LLVM_SRC)/lib/CodeGen/AsmPrinter/EHStreamer.cpp $(LLVM_SRC)/lib/CodeGen/AsmPrinter/ErlangGCPrinter.cpp $(LLVM_SRC)/lib/CodeGen/AsmPrinter/OcamlGCPrinter.cpp $(LLVM_SRC)/lib/CodeGen/AsmPrinter/PseudoProbePrinter.cpp $(LLVM_SRC)/lib/CodeGen/AsmPrinter/WinCFGuard.cpp $(LLVM_SRC)/lib/CodeGen/AsmPrinter/WinException.cpp $(LLVM_SRC)/lib/CodeGen/AsmPrinter/CodeViewDebug.cpp $(LLVM_SRC)/lib/CodeGen/AsmPrinter/WasmException.cpp): LLVM_CPPFLAGS = $(LLVM_F63)
-$(call llvm_objs,$(LLVM_OBJ),$(LLVM_SRC)/lib/MC/MCDisassembler/Disassembler.cpp $(LLVM_SRC)/lib/MC/MCDisassembler/MCDisassembler.cpp $(LLVM_SRC)/lib/MC/MCDisassembler/MCExternalSymbolizer.cpp $(LLVM_SRC)/lib/MC/MCDisassembler/MCRelocationInfo.cpp $(LLVM_SRC)/lib/MC/MCDisassembler/MCSymbolizer.cpp): LLVM_CPPFLAGS = $(LLVM_F64)
+$(call llvm_objs,$(LLVM_OBJ),$(LLVM_SRC)/lib/CodeGen/AsmPrinter/AccelTable.cpp $(LLVM_SRC)/lib/CodeGen/AsmPrinter/AddressPool.cpp $(LLVM_SRC)/lib/CodeGen/AsmPrinter/AIXException.cpp $(LLVM_SRC)/lib/CodeGen/AsmPrinter/ARMException.cpp $(LLVM_SRC)/lib/CodeGen/AsmPrinter/AsmPrinter.cpp $(LLVM_SRC)/lib/CodeGen/AsmPrinter/AsmPrinterDwarf.cpp $(LLVM_SRC)/lib/CodeGen/AsmPrinter/AsmPrinterInlineAsm.cpp $(LLVM_SRC)/lib/CodeGen/AsmPrinter/DbgEntityHistoryCalculator.cpp $(LLVM_SRC)/lib/CodeGen/AsmPrinter/DebugHandlerBase.cpp $(LLVM_SRC)/lib/CodeGen/AsmPrinter/DebugLocStream.cpp $(LLVM_SRC)/lib/CodeGen/AsmPrinter/DIE.cpp $(LLVM_SRC)/lib/CodeGen/AsmPrinter/DIEHash.cpp $(LLVM_SRC)/lib/CodeGen/AsmPrinter/DwarfCFIException.cpp $(LLVM_SRC)/lib/CodeGen/AsmPrinter/DwarfCompileUnit.cpp $(LLVM_SRC)/lib/CodeGen/AsmPrinter/DwarfDebug.cpp $(LLVM_SRC)/lib/CodeGen/AsmPrinter/DwarfExpression.cpp $(LLVM_SRC)/lib/CodeGen/AsmPrinter/DwarfFile.cpp $(LLVM_SRC)/lib/CodeGen/AsmPrinter/DwarfStringPool.cpp $(LLVM_SRC)/lib/CodeGen/AsmPrinter/DwarfUnit.cpp $(LLVM_SRC)/lib/CodeGen/AsmPrinter/EHStreamer.cpp $(LLVM_SRC)/lib/CodeGen/AsmPrinter/PseudoProbePrinter.cpp $(LLVM_SRC)/lib/CodeGen/AsmPrinter/WinCFGuard.cpp $(LLVM_SRC)/lib/CodeGen/AsmPrinter/WinException.cpp $(LLVM_SRC)/lib/CodeGen/AsmPrinter/CodeViewDebug.cpp $(LLVM_SRC)/lib/CodeGen/AsmPrinter/WasmException.cpp): LLVM_CPPFLAGS = $(LLVM_F63)
+$(call llvm_objs,$(LLVM_OBJ),$(LLVM_SRC)/lib/MC/MCDisassembler/MCRelocationInfo.cpp): LLVM_CPPFLAGS = $(LLVM_F64)
 $(call llvm_objs,$(LLVM_OBJ),$(LLVM_SRC)/lib/Target/AArch64/TargetInfo/AArch64TargetInfo.cpp): LLVM_CPPFLAGS = $(LLVM_F72)
 $(call llvm_objs,$(LLVM_OBJ),$(LLVM_SRC)/lib/Target/AArch64/Utils/AArch64BaseInfo.cpp): LLVM_CPPFLAGS = $(LLVM_F73)
 $(call llvm_objs,$(LLVM_OBJ),$(LLVM_SRC)/lib/Target/AArch64/MCTargetDesc/AArch64AsmBackend.cpp $(LLVM_SRC)/lib/Target/AArch64/MCTargetDesc/AArch64ELFObjectWriter.cpp $(LLVM_SRC)/lib/Target/AArch64/MCTargetDesc/AArch64ELFStreamer.cpp $(LLVM_SRC)/lib/Target/AArch64/MCTargetDesc/AArch64InstPrinter.cpp $(LLVM_SRC)/lib/Target/AArch64/MCTargetDesc/AArch64MCAsmInfo.cpp $(LLVM_SRC)/lib/Target/AArch64/MCTargetDesc/AArch64MCCodeEmitter.cpp $(LLVM_SRC)/lib/Target/AArch64/MCTargetDesc/AArch64MCExpr.cpp $(LLVM_SRC)/lib/Target/AArch64/MCTargetDesc/AArch64MCTargetDesc.cpp $(LLVM_SRC)/lib/Target/AArch64/MCTargetDesc/AArch64MachObjectWriter.cpp $(LLVM_SRC)/lib/Target/AArch64/MCTargetDesc/AArch64TargetStreamer.cpp $(LLVM_SRC)/lib/Target/AArch64/MCTargetDesc/AArch64WinCOFFObjectWriter.cpp $(LLVM_SRC)/lib/Target/AArch64/MCTargetDesc/AArch64WinCOFFStreamer.cpp): LLVM_CPPFLAGS = $(LLVM_F74)
 $(call llvm_objs,$(LLVM_OBJ),$(LLVM_SRC)/lib/Target/AArch64/GISel/AArch64CallLowering.cpp $(LLVM_SRC)/lib/Target/AArch64/GISel/AArch64GlobalISelUtils.cpp $(LLVM_SRC)/lib/Target/AArch64/GISel/AArch64InstructionSelector.cpp $(LLVM_SRC)/lib/Target/AArch64/GISel/AArch64LegalizerInfo.cpp $(LLVM_SRC)/lib/Target/AArch64/GISel/AArch64O0PreLegalizerCombiner.cpp $(LLVM_SRC)/lib/Target/AArch64/GISel/AArch64PreLegalizerCombiner.cpp $(LLVM_SRC)/lib/Target/AArch64/GISel/AArch64PostLegalizerCombiner.cpp $(LLVM_SRC)/lib/Target/AArch64/GISel/AArch64PostLegalizerLowering.cpp $(LLVM_SRC)/lib/Target/AArch64/GISel/AArch64PostSelectOptimize.cpp $(LLVM_SRC)/lib/Target/AArch64/GISel/AArch64RegisterBankInfo.cpp $(LLVM_SRC)/lib/Target/AArch64/AArch64A57FPLoadBalancing.cpp $(LLVM_SRC)/lib/Target/AArch64/AArch64AdvSIMDScalarPass.cpp $(LLVM_SRC)/lib/Target/AArch64/AArch64Arm64ECCallLowering.cpp $(LLVM_SRC)/lib/Target/AArch64/AArch64AsmPrinter.cpp $(LLVM_SRC)/lib/Target/AArch64/AArch64BranchTargets.cpp $(LLVM_SRC)/lib/Target/AArch64/AArch64CallingConvention.cpp $(LLVM_SRC)/lib/Target/AArch64/AArch64CleanupLocalDynamicTLSPass.cpp $(LLVM_SRC)/lib/Target/AArch64/AArch64CollectLOH.cpp $(LLVM_SRC)/lib/Target/AArch64/AArch64CondBrTuning.cpp $(LLVM_SRC)/lib/Target/AArch64/AArch64ConditionalCompares.cpp $(LLVM_SRC)/lib/Target/AArch64/AArch64DeadRegisterDefinitionsPass.cpp $(LLVM_SRC)/lib/Target/AArch64/AArch64ExpandImm.cpp $(LLVM_SRC)/lib/Target/AArch64/AArch64ExpandPseudoInsts.cpp $(LLVM_SRC)/lib/Target/AArch64/AArch64FalkorHWPFFix.cpp $(LLVM_SRC)/lib/Target/AArch64/AArch64FastISel.cpp $(LLVM_SRC)/lib/Target/AArch64/AArch64A53Fix835769.cpp $(LLVM_SRC)/lib/Target/AArch64/AArch64FrameLowering.cpp $(LLVM_SRC)/lib/Target/AArch64/AArch64CompressJumpTables.cpp $(LLVM_SRC)/lib/Target/AArch64/AArch64ConditionOptimizer.cpp $(LLVM_SRC)/lib/Target/AArch64/AArch64RedundantCopyElimination.cpp $(LLVM_SRC)/lib/Target/AArch64/AArch64RedundantCondBranchPass.cpp $(LLVM_SRC)/lib/Target/AArch64/AArch64ISelDAGToDAG.cpp $(LLVM_SRC)/lib/Target/AArch64/AArch64ISelLowering.cpp $(LLVM_SRC)/lib/Target/AArch64/AArch64InstrInfo.cpp $(LLVM_SRC)/lib/Target/AArch64/AArch64LoadStoreOptimizer.cpp $(LLVM_SRC)/lib/Target/AArch64/AArch64LowerHomogeneousPrologEpilog.cpp $(LLVM_SRC)/lib/Target/AArch64/AArch64MachineFunctionInfo.cpp $(LLVM_SRC)/lib/Target/AArch64/AArch64MachineScheduler.cpp $(LLVM_SRC)/lib/Target/AArch64/AArch64MacroFusion.cpp $(LLVM_SRC)/lib/Target/AArch64/AArch64MIPeepholeOpt.cpp $(LLVM_SRC)/lib/Target/AArch64/AArch64MCInstLower.cpp $(LLVM_SRC)/lib/Target/AArch64/AArch64PointerAuth.cpp $(LLVM_SRC)/lib/Target/AArch64/AArch64PostCoalescerPass.cpp $(LLVM_SRC)/lib/Target/AArch64/AArch64PromoteConstant.cpp $(LLVM_SRC)/lib/Target/AArch64/AArch64PBQPRegAlloc.cpp $(LLVM_SRC)/lib/Target/AArch64/AArch64RegisterInfo.cpp $(LLVM_SRC)/lib/Target/AArch64/AArch64SMEAttributes.cpp $(LLVM_SRC)/lib/Target/AArch64/AArch64SLSHardening.cpp $(LLVM_SRC)/lib/Target/AArch64/AArch64SelectionDAGInfo.cpp $(LLVM_SRC)/lib/Target/AArch64/AArch64SpeculationHardening.cpp $(LLVM_SRC)/lib/Target/AArch64/AArch64StackTagging.cpp $(LLVM_SRC)/lib/Target/AArch64/AArch64StackTaggingPreRA.cpp $(LLVM_SRC)/lib/Target/AArch64/AArch64StorePairSuppress.cpp $(LLVM_SRC)/lib/Target/AArch64/AArch64Subtarget.cpp $(LLVM_SRC)/lib/Target/AArch64/AArch64TargetMachine.cpp $(LLVM_SRC)/lib/Target/AArch64/AArch64TargetObjectFile.cpp $(LLVM_SRC)/lib/Target/AArch64/AArch64TargetTransformInfo.cpp $(LLVM_SRC)/lib/Target/AArch64/SMEABIPass.cpp $(LLVM_SRC)/lib/Target/AArch64/SMEPeepholeOpt.cpp $(LLVM_SRC)/lib/Target/AArch64/SVEIntrinsicOpts.cpp $(LLVM_SRC)/lib/Target/AArch64/MachineSMEABIPass.cpp $(LLVM_SRC)/lib/Target/AArch64/AArch64SIMDInstrOpt.cpp $(LLVM_SRC)/lib/Target/AArch64/AArch64PrologueEpilogue.cpp): LLVM_CPPFLAGS = $(LLVM_F75)
 $(call llvm_objs,$(LLVM_OBJ),$(LLVM_SRC)/lib/Target/AArch64/AsmParser/AArch64AsmParser.cpp): LLVM_CPPFLAGS = $(LLVM_F76)
-$(call llvm_objs,$(LLVM_OBJ),$(LLVM_SRC)/lib/Target/AArch64/Disassembler/AArch64Disassembler.cpp $(LLVM_SRC)/lib/Target/AArch64/Disassembler/AArch64ExternalSymbolizer.cpp): LLVM_CPPFLAGS = $(LLVM_F77)
 
 LLVM_LIB_PERFJITEVENTS_SRCS := \
 	$(LLVM_SRC)/lib/ExecutionEngine/PerfJITEvents/PerfJITEventListener.cpp \
