@@ -12,6 +12,7 @@
 #include <unordered_map>
 
 #include "util/key_list.h"
+#include "util/view_cache.h"
 
 
 #define RSX_GCM_FORMAT_IGNORED 0
@@ -670,7 +671,28 @@ namespace rsx
 		};
 
 		ranged_storage m_storage;
-		std::unordered_multimap<u32, std::pair<deferred_subresource, image_view_type>> m_temporary_subresource_cache;
+		// The frame's views of textures put together from surfaces, by address
+		// and properties (util/view_cache.c): plain entries in one table,
+		// emptied at the end of the frame with its memory kept
+		view_cache_t m_temporary_subresource_cache{};
+
+		// Releases every view kept this frame and empties the cache. Whether
+		// there was any
+		bool release_temporary_subresource_cache()
+		{
+			const bool any = m_temporary_subresource_cache.live != 0;
+
+			for (u32 i = 0; any && i < m_temporary_subresource_cache.cap; i++)
+			{
+				if (view_cache_entry_t* e = &m_temporary_subresource_cache.e[i]; VIEW_CACHE_LIVE(e))
+				{
+					release_temporary_subresource(static_cast<image_view_type>(e->view));
+				}
+			}
+
+			view_cache_clear(&m_temporary_subresource_cache);
+			return any;
+		}
 		std::vector<image_view_type> m_uncached_subresources;
 		predictor_type m_predictor;
 
@@ -1865,6 +1887,7 @@ namespace rsx
 		~texture_cache()
 		{
 			key_list_free(&m_flush_always_cache);
+			view_cache_free(&m_temporary_subresource_cache);
 		}
 
 		void clear()
@@ -1883,12 +1906,7 @@ namespace rsx
 		virtual void on_frame_end()
 		{
 			// Must manually release each cached entry
-			for (auto& entry : m_temporary_subresource_cache)
-			{
-				release_temporary_subresource(entry.second.second);
-			}
-
-			m_temporary_subresource_cache.clear();
+			release_temporary_subresource_cache();
 			m_predictor.on_frame_end();
 			reset_frame_statistics();
 		}
@@ -2510,22 +2528,23 @@ namespace rsx
 			if (!desc.do_not_cache) [[likely]]
 			{
 				const auto desc_key = desc.encoded_properties();
-				const auto found = m_temporary_subresource_cache.equal_range(desc.address);
-				for (auto It = found.first; It != found.second; ++It)
+				if (const view_cache_entry_t* const found = view_cache_find(&m_temporary_subresource_cache, desc.address, desc_key))
 				{
-					if (It->second.first.encoded_properties() != desc_key)
-						continue;
+					const image_view_type view = static_cast<image_view_type>(found->view);
+
+					// Read before the update, which may come back in here
+					const u32 found_remap = found->remap;
 
 					if (desc.op == deferred_request_command::copy_image_dynamic)
-						update_image_contents(cmd, It->second.second, desc);
+						update_image_contents(cmd, view, desc);
 
-					if (It->second.first.remap.encoded != desc.remap.encoded)
+					if (found_remap != desc.remap.encoded)
 					{
-						auto image = static_cast<viewable_image_type>(It->second.second->image());
+						auto image = static_cast<viewable_image_type>(view->image());
 						return image->get_view(desc.remap);
 					}
 
-					return It->second.second;
+					return view;
 				}
 			}
 
@@ -2596,7 +2615,8 @@ namespace rsx
 			{
 				if (!desc.do_not_cache) [[likely]]
 				{
-					m_temporary_subresource_cache.insert({ desc.address,{ desc, result } });
+					ensure(view_cache_add(&m_temporary_subresource_cache, desc.address, desc.encoded_properties(),
+						desc.remap.encoded, desc.cache_range.start, desc.cache_range.end, result));
 				}
 				else
 				{
@@ -2619,17 +2639,18 @@ namespace rsx
 
 		void notify_surface_changed(const utils::address_range32& range)
 		{
-			for (auto It = m_temporary_subresource_cache.begin(); It != m_temporary_subresource_cache.end();)
+			if (!m_temporary_subresource_cache.live) [[likely]]
 			{
-				const auto& desc = It->second.first;
-				if (range.overlaps(desc.cache_range))
+				return;
+			}
+
+			for (u32 i = 0; i < m_temporary_subresource_cache.cap; i++)
+			{
+				view_cache_entry_t* const e = &m_temporary_subresource_cache.e[i];
+				if (VIEW_CACHE_LIVE(e) && range.overlaps(utils::address_range32::start_end(e->range_start, e->range_end)))
 				{
-					release_temporary_subresource(It->second.second);
-					It = m_temporary_subresource_cache.erase(It);
-				}
-				else
-				{
-					++It;
+					release_temporary_subresource(static_cast<image_view_type>(e->view));
+					view_cache_kill(&m_temporary_subresource_cache, e);
 				}
 			}
 		}

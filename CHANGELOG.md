@@ -4,6 +4,13 @@ What changed in the libretro core of this fork, newest first. Changes that come 
 
 ## Unreleased
 
+- **Texture cache: a frame's views of composed textures in a plain table.** Not yet run on a game.
+  - **What changed:** a texture put together from several surfaces gets an image view made for it, kept for the rest of the frame in a `std::unordered_multimap` by address. Each kept view copied the whole request (its list of copies included, another allocation), a node was allocated for it, and all of it was freed at the end of every frame. The views are in `util/view_cache.c` now (C89): one open-addressed table of plain entries by address and properties, holding only what a later lookup reads (the view, its channel remap, the memory it was made from). The end of the frame empties it and keeps its memory, so a frame allocates nothing.
+    - A view taken out in the frame (its surface changed) is marked dead where it sits; a table worn down that way is rebuilt at the same size.
+    - Measured alone, with every view asked for four times a frame: about 23 to 27 ns a request in the multimap, 5 to 8 ns here, for 8, 64 and 256 views.
+    - The lookup reads what it needs from an entry before updating a view's contents, which can add entries and move them.
+  - **Tests:** `test_view_cache` covers finding by address and properties together, growth, taking out and keeping again, a worn table rebuilt without growing or losing any, emptying with the memory kept, and freeing. It builds as strict C89 with MinGW. A grep in the test Makefile keeps the multimap out.
+
 - **Z-cull reports: locked pages found by address, not in hash maps.** Not yet run on a game.
   - **What changed:** each page a pending occlusion report is to be written to is locked, and counted, in a `std::unordered_map` for its memory location - looked up for every report queued and again for every report done. A page now has a 32-bit word found by its address in two loads (`util/page_words.c`, C89: leaves of 1024 pages, allocated when first used). The word says whether the page is locked for reports, whether it is protected, and how many reports are still to be written.
     - Measured alone, queueing a report's page goes from about 6 ns to 2.5 ns, for 2, 8 or 64 pages alike.

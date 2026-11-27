@@ -527,6 +527,7 @@ SOURCES_RPCS3 := \
 	$(CORE_DIR)/rpcs3/util/key_list.c \
 	$(CORE_DIR)/rpcs3/util/node_list.c \
 	$(CORE_DIR)/rpcs3/util/page_words.c \
+	$(CORE_DIR)/rpcs3/util/view_cache.c \
 	$(CORE_DIR)/rpcs3/util/slot_registry.c \
 	$(CORE_DIR)/rpcs3/util/ptr_table.c \
 	$(CORE_DIR)/rpcs3/util/addr_map.c \

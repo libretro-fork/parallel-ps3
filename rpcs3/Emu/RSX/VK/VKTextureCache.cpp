@@ -1560,13 +1560,7 @@ namespace vk
 			any_released = true;
 		}
 
-		any_released |= !m_temporary_subresource_cache.empty();
-		for (auto& e : m_temporary_subresource_cache)
-		{
-			ensure(e.second.second);
-			release_temporary_subresource(e.second.second);
-		}
-		m_temporary_subresource_cache.clear();
+		any_released |= release_temporary_subresource_cache();
 
 		return any_released;
 	}
