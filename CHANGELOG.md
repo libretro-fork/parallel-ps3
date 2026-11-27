@@ -4,6 +4,11 @@ What changed in the libretro core of this fork, newest first. Changes that come 
 
 ## Unreleased
 
+- **SPU analyser: branch targets and predecessors in plain per-address lists.** Not yet run on a game.
+  - **What changed:** analysing an SPU function keeps, for each address, the list of addresses it branches to (`m_targets`) and the list it is reached from (`m_preds`). Both were a `std::unordered_map` of `std::vector`: a node and a vector allocated per address, all of it freed and allocated again for the next function. They are in `util/pc_lists.c` now (C89): a list per SPU address, found by index in 256-entry leaves, with no hashing. Clearing between functions keeps every leaf and every list's memory, so a compiler thread stops allocating for these once it has seen a few functions.
+    - The lists are walked in rising address order now, where the hash map's order was arbitrary. The one loop that depends on order reaches the same result either way.
+  - **Tests:** `test_pc_lists` checks the table against a model over 300,000 random steps. `test_llvm_jit` compiles its 200 SPU functions to the same bytes as before (same size, same crc32).
+
 - **Renderer upload buffers call their allocator directly, with no `std::function`.** Not yet run on a game.
   - **What changed:** `rsx::io_buffer` (`Common/io_buffer.h`) is the buffer a texture, a set of transform constants or an instancing table is written into, its memory taken from a ring buffer when it is first asked for. The allocator was held as a `std::function`: built from the caller's lambda and copied again for every buffer, and allocated on the heap when the lambda captures more than two things - the texture upload's captures four, so every texture level uploaded paid two allocations and frees. The buffer now keeps a pointer to the caller's own lambda and calls it through a plain function: nothing built, copied or allocated.
     - The lambda has to outlive the buffer, which it does at every use. Passing a temporary no longer compiles; four places that did (the Vulkan and OpenGL instancing tables) name their lambdas first.

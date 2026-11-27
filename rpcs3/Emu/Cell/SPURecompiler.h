@@ -1,5 +1,6 @@
 #pragma once
 
+#include "util/pc_lists.hpp"
 #include "Utilities/File.h"
 #include "Utilities/lockless.h"
 #include "Utilities/address_range.h"
@@ -808,10 +809,10 @@ protected:
 	bit_set<SPU_LS_SIZE / 4> m_use_rc;
 
 	// List of possible targets for the instruction (entry shouldn't exist for simple instructions)
-	std::unordered_map<u32, std::vector<u32>, value_hash<u32, 2>> m_targets;
+	pc_lists_map m_targets; // util/pc_lists.c: found by the address, gone through by rising address
 
 	// List of block predecessors
-	std::unordered_map<u32, std::vector<u32>, value_hash<u32, 2>> m_preds;
+	pc_lists_map m_preds;
 
 	// List of function entry points and return points (set after BRSL, BRASL, BISL, BISLED)
 	bit_set<SPU_LS_SIZE / 4> m_entry_info;

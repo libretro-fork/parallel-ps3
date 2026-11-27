@@ -4088,7 +4088,11 @@ spu_program spu_recompiler_base::analyse(const be_t<u32>* ls, u32 entry_point, s
 	// we just removed from m_targets.
 	if (out_target_list)
 	{
-		out_target_list->insert(m_targets.begin(), m_targets.end());
+		for (auto& entry : m_targets)
+		{
+			// As the map's insert of a range: an address already there keeps what it has
+			out_target_list->emplace(entry.first, std::vector<u32>(entry.second.begin(), entry.second.end()));
+		}
 	}
 
 	// Fill holes which contain only NOP and LNOP instructions (TODO: compile)
@@ -4126,7 +4130,7 @@ spu_program spu_recompiler_base::analyse(const be_t<u32>* ls, u32 entry_point, s
 		auto& block = m_bbs[pred.first];
 
 		// Copy predeccessors (wrong at this point, needs a fixup later)
-		block.preds = pred.second;
+		block.preds.assign(pred.second.begin(), pred.second.end());
 
 		// Fill register usage info
 		for (u32 ia = pred.first; ia < limit; ia += 4)
@@ -4211,7 +4215,7 @@ spu_program spu_recompiler_base::analyse(const be_t<u32>* ls, u32 entry_point, s
 			if (tfound != m_targets.end())
 			{
 				// Copy targets
-				block.targets = tfound->second;
+				block.targets.assign(tfound->second.begin(), tfound->second.end());
 
 				// Assume that the call reads and modifies all volatile registers (TODO)
 				bool is_call = false;
@@ -5304,9 +5308,9 @@ spu_program spu_recompiler_base::analyse(const be_t<u32>* ls, u32 entry_point, s
 
 	usz target_count = 0;
 
-	for (auto& [pc, loc] : m_targets)
+	for (auto& entry : m_targets)
 	{
-		target_count += loc.size();
+		target_count += entry.second.size();
 	}
 
 	const bool should_search_patterns = target_count < 300u;
