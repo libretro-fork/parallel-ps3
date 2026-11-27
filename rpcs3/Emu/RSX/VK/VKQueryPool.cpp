@@ -105,7 +105,7 @@ namespace vk
 
 		for (; oldest_first; oldest_first = oldest_first->next)
 		{
-			query_pool* const pool = reinterpret_cast<query_pool::released_node*>(oldest_first)->pool;
+			query_pool* const pool = static_cast<query_pool::released_node*>(static_cast<void*>(oldest_first))->pool;
 			ensure(query_pools_push_back_growing(&m_query_pool_cache, &pool));
 		}
 	}

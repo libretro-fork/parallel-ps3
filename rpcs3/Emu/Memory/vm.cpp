@@ -546,7 +546,7 @@ namespace vm
 						{
 							// Until the owner's state changes (its wait flag is a plain store the line watch sees), else 50 us;
 							// where it spun with no end
-							utils::spin_on_cacheline_once(*reinterpret_cast<const u32*>(&ptr->state), std::bit_cast<u32>(state), 50);
+							utils::spin_on_cacheline_once(*static_cast<const u32*>(static_cast<const void*>(&ptr->state)), std::bit_cast<u32>(state), 50);
 						}
 					}
 				}
@@ -1146,12 +1146,12 @@ namespace vm
 
 	static shm_handle& shm_of(addr_map_entry_t& e)
 	{
-		return *std::launder(reinterpret_cast<shm_handle*>(e.data));
+		return *std::launder(static_cast<shm_handle*>(static_cast<void*>(e.data)));
 	}
 
 	static const shm_handle& shm_of(const addr_map_entry_t& e)
 	{
-		return *std::launder(reinterpret_cast<const shm_handle*>(e.data));
+		return *std::launder(static_cast<const shm_handle*>(static_cast<const void*>(e.data)));
 	}
 
 	static utils::shm* shm_get(const addr_map_entry_t& e)

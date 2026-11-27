@@ -2447,7 +2447,7 @@ void spu_thread::do_dma_transfer(spu_thread* _this, const spu_mfc_cmd& args, u8*
 						// Another DMA holds some of these bytes and frees them with a plain compare-and-swap: watch the
 						// 32-bit word holding the first byte it holds, bounded, then look again
 						const u32 k = utils::ctz128(old & wmask) / 32;
-						utils::spin_on_cacheline_once(reinterpret_cast<const u32*>(bits)[k], static_cast<u32>(old >> (k * 32)), 50);
+						utils::spin_on_cacheline_once(static_cast<const u32*>(static_cast<const void*>(bits))[k], static_cast<u32>(old >> (k * 32)), 50);
 					}
 				}())
 				{
@@ -5382,7 +5382,7 @@ retry:
 		{
 			// push_snr holds the channel and frees it with a plain compare-and-swap: watch the word holding the
 			// lock count (the low half), bounded, then look again
-			utils::spin_on_cacheline_once(*reinterpret_cast<const u32*>(&ch_events), static_cast<u32>(now.all), 50);
+			utils::spin_on_cacheline_once(*static_cast<const u32*>(static_cast<const void*>(&ch_events)), static_cast<u32>(now.all), 50);
 		}
 
 		goto retry;
