@@ -182,6 +182,28 @@ PPU-83681f6110d33442329073b72b8dc88a2f677172:
       - [ be32, 0x016C7C80, 0x4E800020 ] # blr 
       - [ bef32, 0x0185260C, "Frame Rate" ] # the time of one vblank, in the low half of where Unlock FPS kept its last clock value
       - [ be32, 0x0002B8F8, 0x20A50001 ] # subfic r5,r5,1 // vblanks per flip: 1 in the 60 FPS mode Unlock FPS sets (it was 0, no wait), 2 in the retail 30 FPS one, as before
+  "Shadow Map Size":
+    Games:
+      "Demon's Souls":
+        BLUS30443: [ 01.00 ]
+    Author: "LibretroAdmin"
+    Notes: >-
+      The game's shadow map size setting, read where an area's shadow camera is made: the debug menu's GAME REND >
+      Shadow > "ShadwoMap Size", set as the game starts. The game's own is 2048; the debug menu stops there. The
+      shadow filter is worked out from this number. Whether the shadow buffer itself grows past 2048 with it has
+      not been seen yet: if shadows look wrong at 4096, go back to 2048.
+    Configurable Values:
+      "Size":
+        Type: long_enum
+        Value: 4096
+        Allowed Values:
+          "4096": 4096
+          "3072": 3072
+          "2048 (the game's)": 2048
+          "1024": 1024
+    Patch Version: 1.0
+    Patch:
+      - [ be32, 0x019D9C58, "Size" ] # the setting's starting value // Original 0x00000800
   "In-Game Debug Menu":
     Games:
       "Demon's Souls":

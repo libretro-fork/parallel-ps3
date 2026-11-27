@@ -4,6 +4,11 @@ What changed in the libretro core of this fork, newest first. Changes that come 
 
 ## Unreleased
 
+- **Demon's Souls: a "Shadow Map Size" patch in the Patch Manager.** Not yet run on a game.
+  - **What changed:** the game's shadow map size setting (2048 as shipped) can be set as the game starts: 4096, 3072, 2048 or 1024. It is the value the debug menu's GAME REND > Shadow > "ShadwoMap Size" shows, which the game reads only where an area's shadow camera is made - so the menu could not change it for the area already loaded.
+    - The shadow filter is worked out from this number. Whether the shadow buffer itself grows past 2048 with it is not known yet: the patch's notes say so, and to go back to 2048 if shadows look wrong.
+  - **Tests:** applied to the game's executable, the setting reads 4096. `test_game_patches` passes.
+
 - **Demon's Souls "In-Game Debug Menu": the shadow map size entry goes up to 4096.** Not yet run on a game.
   - **What changed:** GAME REND > Shadow > "ShadwoMap Size" stopped at 2048, which is also the game's own setting. Its highest value is now 4096 (one instruction at 0x0021CA8C). The game reads the size when an area's shadow camera is made, so a change shows after the next area load. Whether the game's shadow buffer follows the number above 2048 is not known yet: that is what trying it will show. Patch version 1.2.
   - **Tests:** `test_game_patches` passes.
