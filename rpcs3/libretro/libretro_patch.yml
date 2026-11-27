@@ -144,10 +144,11 @@ PPU-83681f6110d33442329073b72b8dc88a2f677172:
         BLUS30443: [ 01.00 ]
     Author: "LibretroAdmin"
     Notes: >-
-      Needs "Unlock FPS" (alone it changes nothing). The game advances a fixed time each frame and waits for one
-      vblank per frame, instead of measuring the host clock: pacing comes from the emulated vblank, the same every run, with no catch-up jumps.
-      Choose 60 FPS with a 60 Hz vblank (default), or 120 FPS with the Vblank Rate set to 120. If the game cannot
-      hold the rate it slows down, as on a console, rather than skipping time.
+      Needs "Unlock FPS" (alone it changes nothing). The game's time comes from the emulated vblank, not the host
+      clock: each frame advances by the vblanks that passed since the last one, and waits for one vblank. Pacing is
+      the same every run, with no catch-up jumps; a frame that takes too long advances two vblanks' time, so the
+      game keeps its speed (up to Unlock FPS's 50 ms a frame). Choose 60 FPS, or 120 FPS with VBlank Frequency at
+      "Auto" or 120: the frame rate chosen must be the VBlank Frequency.
     Configurable Values:
       "Frame Rate":
         Type: double_enum
@@ -155,10 +156,31 @@ PPU-83681f6110d33442329073b72b8dc88a2f677172:
         Allowed Values:
           "60 FPS": 0.016666668
           "120 FPS (Vblank Rate 120)": 0.008333334
-    Patch Version: 1.0
+    Patch Version: 1.1
     Patch:
-      - [ be32, 0x016C7C68, 0xFFE0E090 ] # fmr f31,f28 // Unlock FPS's timestep: its constant, not host clock ticks
-      - [ bef32, 0x016C7C88, "Frame Rate" ] # the constant (Unlock FPS's 50 ms limit), now the frame time
+      # Unlock FPS's frame time routine at 0x016C7C30, written again: vblanks counted in place of host clock ticks
+      - [ be32, 0x016C7C30, 0x3EC00185 ] # lis r22, 0x185 // r22 = 0x01852608, Unlock FPS's two words: the last count, the frame time
+      - [ be32, 0x016C7C34, 0x3AD62608 ] # addi r22, r22, 0x2608
+      - [ be32, 0x016C7C38, 0x3EA001B5 ] # lis r21, 0x1b5 // the game's vblank count (its vblank handler at 0x009F7018 adds 1 to 0x01B50434)
+      - [ be32, 0x016C7C3C, 0x82B50434 ] # lwz r21, 0x434(r21)
+      - [ be32, 0x016C7C40, 0x82760000 ] # lwz r19, 0(r22) // the count at the last frame
+      - [ be32, 0x016C7C44, 0x92B60000 ] # stw r21, 0(r22)
+      - [ be32, 0x016C7C48, 0x7E73A850 ] # subf r19, r19, r21 // vblanks since then
+      - [ be32, 0x016C7C4C, 0x22530000 ] # subfic r18, r19, 0
+      - [ be32, 0x016C7C50, 0x7E730194 ] # addze r19, r19 // none (two frames in one vblank) counts as one
+      - [ be32, 0x016C7C54, 0xFA61FFF8 ] # std r19, -8(r1)
+      - [ be32, 0x016C7C58, 0xCBC1FFF8 ] # lfd f30, -8(r1)
+      - [ be32, 0x016C7C5C, 0xFFC0F69C ] # fcfid f30, f30
+      - [ be32, 0x016C7C60, 0xC3B60004 ] # lfs f29, 4(r22) // the time of one vblank: "Frame Rate"
+      - [ be32, 0x016C7C64, 0xEFFE0772 ] # fmuls f31, f30, f29
+      - [ be32, 0x016C7C68, 0x3E40016C ] # lis r18, 0x16c // Unlock FPS's 50 ms limit, still at 0x016C7C88
+      - [ be32, 0x016C7C6C, 0xC3927C88 ] # lfs f28, 0x7c88(r18)
+      - [ be32, 0x016C7C70, 0xFF9FE000 ] # fcmpu cr7, f31, f28
+      - [ be32, 0x016C7C74, 0x419C0008 ] # blt cr7, 0x16c7c7c
+      - [ be32, 0x016C7C78, 0xFFE0E090 ] # fmr f31, f28
+      - [ be32, 0x016C7C7C, 0xD3F60018 ] # stfs f31, 0x18(r22) // the frame time the game reads
+      - [ be32, 0x016C7C80, 0x4E800020 ] # blr 
+      - [ bef32, 0x0185260C, "Frame Rate" ] # the time of one vblank, in the low half of where Unlock FPS kept its last clock value
       - [ be32, 0x0002B8F8, 0x20A50001 ] # subfic r5,r5,1 // vblanks per flip: 1 in the 60 FPS mode Unlock FPS sets (it was 0, no wait), 2 in the retail 30 FPS one, as before
   "In-Game Debug Menu":
     Games:

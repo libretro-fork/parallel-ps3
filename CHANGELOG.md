@@ -4,6 +4,13 @@ What changed in the libretro core of this fork, newest first. Changes that come 
 
 ## Unreleased
 
+- **Demon's Souls "Fixed Frame Pacing" counts vblanks, so a slow frame no longer slows the game.** Not yet run on a game.
+  - **What changed:** each game frame advanced a fixed 1/60 or 1/120 s. When the machine could not finish that many frames a second the game ran in slow motion, with the frame counter still at 120 (it counts frames presented, not frames the game finished) and the audio unaffected. Each frame now advances by the vblanks that passed since the last one: a frame that misses a vblank advances two vblanks' time, and the game keeps its speed.
+    - The count is the game's own: its vblank handler (0x009F7018) adds one to a counter (0x01B50434) every emulated vblank. Unlock FPS's frame time routine at 0x016C7C30 is written again to read it in place of the host clock (21 instructions, the same space), keeping Unlock FPS's 50 ms a frame limit. Time still comes from the emulated vblank alone: the same every run.
+    - The frame rate chosen must be the VBlank Frequency: "Auto" sees to that.
+    - Patch version 1.1.
+  - **Tests:** applied with the upstream "Unlock FPS" to the game's executable and disassembled: the routine, its two constants and Unlock FPS's hook are in place. `test_game_patches` passes.
+
 - **VBlank Frequency has an "Auto" value, the default: it follows the Patch Manager.** Not yet run on a game.
   - **What changed:** running a game at 120 FPS took two settings that had to agree: the patch's frame rate and the VBlank Frequency core option. "Auto" is 60 Hz, or the frame rate a patch that is on is set to when that is higher: the picked choice of a patch value named for it ("Frame Rate", "FPS"), by the number in its label ("120 FPS") or its value. Demon's Souls "Fixed Frame Pacing" at 120 FPS now needs nothing else set.
     - It is read as the game loads, like the patches themselves: a patch changed in play applies, with its rate, at the next start.
