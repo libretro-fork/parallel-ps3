@@ -2079,17 +2079,21 @@ void VKGSRender::load_program_env()
 		usz indirection_table_offset = 0;
 		usz constants_data_table_offset = 0;
 
-		rsx::io_buffer indirection_table_buf([&](usz size) -> std::pair<void*, usz>
+		// Named: an io_buffer calls its allocator where it stands, and keeps no copy
+		auto alloc_indirection_table = [&](usz size) -> std::pair<void*, usz>
 		{
 			indirection_table_offset = m_instancing_buffer_ring_info.alloc<1>(utils::align(size, alignment));
 			return std::make_pair(m_instancing_buffer_ring_info.map(indirection_table_offset, size), size);
-		});
+		};
 
-		rsx::io_buffer constants_array_buf([&](usz size) -> std::pair<void*, usz>
+		auto alloc_constants_array = [&](usz size) -> std::pair<void*, usz>
 		{
 			constants_data_table_offset = m_instancing_buffer_ring_info.alloc<1>(utils::align(size, alignment));
 			return std::make_pair(m_instancing_buffer_ring_info.map(constants_data_table_offset, size), size);
-		});
+		};
+
+		rsx::io_buffer indirection_table_buf(alloc_indirection_table);
+		rsx::io_buffer constants_array_buf(alloc_constants_array);
 
 		const auto bound_vertex_prog = m_shader_interpreter.is_interpreter(m_program) ? nullptr : m_vertex_prog;
 		m_draw_processor.fill_constants_instancing_buffer(indirection_table_buf, constants_array_buf, bound_vertex_prog);

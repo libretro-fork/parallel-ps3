@@ -1036,19 +1036,24 @@ void GLGSRender::load_program_env()
 		u32 indirection_table_offset = 0;
 		u32 constants_data_table_offset = 0;
 
-		rsx::io_buffer indirection_table_buf([&](usz size) -> std::pair<void*, usz>
+		// Named: an io_buffer calls its allocator where it stands, and keeps no copy
+		auto alloc_indirection_table_buf = [&](usz size) -> std::pair<void*, usz>
 		{
 			const auto mapping = m_instancing_ring_buffer->alloc_from_heap(static_cast<u32>(size), alignment);
 			indirection_table_offset = mapping.second;
 			return mapping;
-		});
+		};
 
-		rsx::io_buffer constants_array_buf([&](usz size) -> std::pair<void*, usz>
+		rsx::io_buffer indirection_table_buf(alloc_indirection_table_buf);
+
+		auto alloc_constants_array_buf = [&](usz size) -> std::pair<void*, usz>
 		{
 			const auto mapping = m_instancing_ring_buffer->alloc_from_heap(static_cast<u32>(size), alignment);
 			constants_data_table_offset = mapping.second;
 			return mapping;
-		});
+		};
+
+		rsx::io_buffer constants_array_buf(alloc_constants_array_buf);
 
 		m_draw_processor.fill_constants_instancing_buffer(indirection_table_buf, constants_array_buf, m_vertex_prog);
 

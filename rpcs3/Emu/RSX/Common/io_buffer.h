@@ -2,7 +2,8 @@
 #include <util/types.hpp>
 #include <util/bless.hpp>
 #include <span>
-#include <functional>
+#include <tuple>
+#include <type_traits>
 
 namespace rsx
 {
@@ -21,7 +22,15 @@ namespace rsx
 		mutable void* m_ptr = nullptr;
 		mutable usz m_size = 0;
 
-		std::function<std::tuple<void*, usz>(usz)> m_allocator{};
+		// The allocator, for a buffer whose memory is taken when it is first
+		// asked for: the caller's own callable, called through a plain
+		// function. It is not kept: it has to outlive the buffer, as the
+		// callers' do (a lambda declared before the buffer). It was a
+		// std::function, built and copied for every texture uploaded, and
+		// allocated on the heap for a lambda with more than two captures
+		using allocator_fn = std::tuple<void*, usz>(*)(void* self, usz size);
+		void* m_allocator_self = nullptr;
+		allocator_fn m_allocator = nullptr;
 		mutable usz m_allocation_size = 0u;
 
 	public:
@@ -34,11 +43,20 @@ namespace rsx
 			m_size = container.size_bytes();
 		}
 
-		io_buffer(std::function<std::tuple<void*, usz>(usz)> allocator)
-		{
-			ensure(allocator);
-			m_allocator = allocator;
-		}
+		template <typename F>
+			requires std::is_invocable_v<F&, usz>
+		io_buffer(F& allocator)
+			: m_allocator_self(const_cast<void*>(static_cast<const void*>(&allocator)))
+			, m_allocator(+[](void* self, usz size) -> std::tuple<void*, usz>
+			{
+				return (*static_cast<F*>(self))(size);
+			})
+		{}
+
+		// Not from a temporary: nothing would be left to call
+		template <typename F>
+			requires std::is_invocable_v<F&, usz>
+		io_buffer(F&& allocator) = delete;
 
 		template <Integral T>
 		io_buffer(void* ptr, T size)
@@ -65,7 +83,7 @@ namespace rsx
 		{
 			if (!m_ptr && m_allocator)
 			{
-				std::tie(m_ptr, m_size) = m_allocator(m_allocation_size);
+				std::tie(m_ptr, m_size) = m_allocator(m_allocator_self, m_allocation_size);
 			}
 
 			return static_cast<T*>(m_ptr);

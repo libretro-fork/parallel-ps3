@@ -4,6 +4,11 @@ What changed in the libretro core of this fork, newest first. Changes that come 
 
 ## Unreleased
 
+- **Renderer upload buffers call their allocator directly, with no `std::function`.** Not yet run on a game.
+  - **What changed:** `rsx::io_buffer` (`Common/io_buffer.h`) is the buffer a texture, a set of transform constants or an instancing table is written into, its memory taken from a ring buffer when it is first asked for. The allocator was held as a `std::function`: built from the caller's lambda and copied again for every buffer, and allocated on the heap when the lambda captures more than two things - the texture upload's captures four, so every texture level uploaded paid two allocations and frees. The buffer now keeps a pointer to the caller's own lambda and calls it through a plain function: nothing built, copied or allocated.
+    - The lambda has to outlive the buffer, which it does at every use. Passing a temporary no longer compiles; four places that did (the Vulkan and OpenGL instancing tables) name their lambdas first.
+  - **Tests:** the full build passes.
+
 - **Texture cache: a frame's views of composed textures in a plain table.** Not yet run on a game.
   - **What changed:** a texture put together from several surfaces gets an image view made for it, kept for the rest of the frame in a `std::unordered_multimap` by address. Each kept view copied the whole request (its list of copies included, another allocation), a node was allocated for it, and all of it was freed at the end of every frame. The views are in `util/view_cache.c` now (C89): one open-addressed table of plain entries by address and properties, holding only what a later lookup reads (the view, its channel remap, the memory it was made from). The end of the frame empties it and keeps its memory, so a frame allocates nothing.
     - A view taken out in the frame (its surface changed) is marked dead where it sits; a table worn down that way is rebuilt at the same size.
