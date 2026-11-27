@@ -63,6 +63,8 @@
 #endif
 #include "Emu/RSX/Null/NullGSRender.h"
 #include "Emu/IdManager.h"
+#include "Emu/Cell/PPUThread.h"
+#include "Emu/savestate_utils.hpp"
 #include "Emu/VFS.h"
 #include "Emu/emu_callbacks.h"
 #include "Emu/system_progress.hpp"
@@ -3494,7 +3496,23 @@ static bool make_state()
     if (!Emu.IsStopped(true))
     {
         if (log_cb)
-            log_cb(RETRO_LOG_WARN, "RPCS3: the game cannot be saved right now\n");
+        {
+            // What RPCS3 will not save across: the system calls the game's
+            // threads are inside right now (a state is refused while any call
+            // that holds the savestate guard is in flight - a game save, most
+            // often), named here because RPCS3's message on screen says only
+            // "game saving is in progress" for all of them
+            std::string calls;
+            idm::select<named_thread<ppu_thread>>([&](u32 id, named_thread<ppu_thread>& ppu)
+            {
+                const char* const now = ppu.current_function;
+                const char* const last = ppu.last_function;
+                if (now || last)
+                    fmt::append(calls, " [0x%x: %s%s%s]", id, now ? "in " : "last ", now ? now : last, "");
+            });
+            log_cb(RETRO_LOG_WARN, "RPCS3: the game cannot be saved right now (savestate guard count %d). Threads:%s\n",
+                static_cast<int>(retro_atomic_load_acquire_int(&g_fxo->get<hle_locks_t>().lock_val)), calls.c_str());
+        }
         return false;
     }
 

@@ -4,6 +4,11 @@ What changed in the libretro core of this fork, newest first. Changes that come 
 
 ## Unreleased
 
+- **A refused save state says in the log what the game's threads were doing.** Not yet run on a game.
+  - **Why:** in Dark Souls, with SPU Compatible Mode on, Save State is refused every time with "Game saving is in progress". RPCS3 shows that for any system call that holds its savestate guard, not only a game save, and nothing said which one. Reading the code did not find a call that keeps the guard.
+  - **What changed:** when a state is refused, the line in the frontend's log now gives the guard's count and, for each of the game's PPU threads, the system call it is in (or was last in). Only on that path; nothing is added while the game runs.
+  - **Tests:** the full build passes.
+
 - **Core option: Save States: SPU Compatible Mode.** Not yet run on a game.
   - **What was wrong:** Save State in Dark Souls failed with "Failed to lock SPU state, enabling SPU-Compatible mode may fix it", and nothing in the core could enable it: RPCS3's Compatible Savestate Mode was not among the core options.
   - **What changed:** a core option for it, off by default as in RPCS3 (it costs some SPU speed). It takes effect at the next content load, and SPU code is compiled again for it.
