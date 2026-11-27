@@ -4,6 +4,10 @@ What changed in the libretro core of this fork, newest first. Changes that come 
 
 ## Unreleased
 
+- **Demon's Souls "In-Game Debug Menu": the shadow map size entry goes up to 4096.** Not yet run on a game.
+  - **What changed:** GAME REND > Shadow > "ShadwoMap Size" stopped at 2048, which is also the game's own setting. Its highest value is now 4096 (one instruction at 0x0021CA8C). The game reads the size when an area's shadow camera is made, so a change shows after the next area load. Whether the game's shadow buffer follows the number above 2048 is not known yet: that is what trying it will show. Patch version 1.2.
+  - **Tests:** `test_game_patches` passes.
+
 - **Demon's Souls "Fixed Frame Pacing" counts vblanks, so a slow frame no longer slows the game.** Not yet run on a game.
   - **What changed:** each game frame advanced a fixed 1/60 or 1/120 s. When the machine could not finish that many frames a second the game ran in slow motion, with the frame counter still at 120 (it counts frames presented, not frames the game finished) and the audio unaffected. Each frame now advances by the vblanks that passed since the last one: a frame that misses a vblank advances two vblanks' time, and the game keeps its speed.
     - The count is the game's own: its vblank handler (0x009F7018) adds one to a counter (0x01B50434) every emulated vblank. Unlock FPS's frame time routine at 0x016C7C30 is written again to read it in place of the host clock (21 instructions, the same space), keeping Unlock FPS's 50 ms a frame limit. Time still comes from the emulated vblank alone: the same every run.
