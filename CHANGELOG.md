@@ -4,6 +4,12 @@ What changed in the libretro core of this fork, newest first. Changes that come 
 
 ## Unreleased
 
+- **Dark Souls: Prepare to Die Edition (EU): 30 FPS at the bonfire with Unlock FPS.** Not yet run on a game.
+  - **What was wrong:** with Unlock FPS (which runs, confirmed on the user's machine) the bonfire menu could close after kindling with the character left sitting, unable to get up, sound and picture carrying on. The PC version has the same fault with unlocked frame rates (its "bonfire input glitch"), and does not have it at 30.
+  - **What changed:** the patch's per-frame code now also sets the flip mode: the retail 30 FPS mode while the bonfire's talk script has the character seated, 60FPS(NO SKIP) otherwise. It reads the game's own flag for that, a byte the talk script's StartBonfireAnimLoop command sets (0x006FD1C0) and its EndBonfireKindleAnimLoop clears (0x006FD230), named in Smithbox's catalogue of DS1 talk commands. The frame time already follows the real time between frames, so nothing else changes speed.
+    - Not known: whether every way of leaving a bonfire (a warp, say) clears that flag. If one does not, the game would stay at 30 until the next bonfire is left normally.
+  - **Tests:** applied to the decrypted executable with the core's patch parser and read back; `test_game_patches` passes.
+
 - **Dark Souls: Prepare to Die Edition (EU): Unlock FPS for the disc's executable.** Not yet run on a game.
   - **What was wrong:** the Patch Manager offered "Unlock FPS" for BLES01765 and turning it on did nothing. RPCS3's patch is for one build of the game (`PPU-03679186...`); the executable here is another (`PPU-d764d35c...`), where the patched addresses hold other code, so the patch engine rightly did not apply it.
   - **What changed:** the core's own patch file has the patch for this executable, under the same name, so the option already shown (and already on) now applies. The same two changes, found again in this build: the game's 60FPS(NO SKIP) flip mode set where its object is made (0x00149CDC), and the fixed 1/30 s step at 0x00145A18 replaced by the time since the last frame, kept between 4 ms and 50 ms. Both in caves the patch engine allocates; the last frame's time is kept in the unused end of the executable's data.
