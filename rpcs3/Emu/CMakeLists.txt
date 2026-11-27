@@ -80,6 +80,7 @@ target_sources(rpcs3_emu PRIVATE
     ../util/tsc_cpuid.c
     ../util/build_word.c
     ../util/key_list.c
+    ../util/node_list.c
     ../util/slot_registry.c
     ../util/ptr_table.c
     ../util/addr_map.c

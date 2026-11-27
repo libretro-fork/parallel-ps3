@@ -4,6 +4,12 @@ What changed in the libretro core of this fork, newest first. Changes that come 
 
 ## Unreleased
 
+- **Surface cache: surfaces taken out of use are kept in a list with its own nodes.** Not yet run on a game.
+  - **What changed:** the render target cache kept the surfaces taken out of use in a `std::list`: a node allocated for each one and freed when it was reused or dropped. They are in `util/node_list.c` now (C89), a doubly linked list whose nodes come from the list's own blocks and are used again.
+    - It keeps what the code around it relies on, exactly as the `std::list` did: the order of adding, and elements that stay where they are while others are added or erased. That is why it is a linked list and not an array: the code holds a reference to the last one while it goes on working, and an array would move it. (The render target bug of 0631 was an entry that moved.)
+    - A surface put in and taken out again measures about 21 ns in the `std::list` and 6 ns here.
+  - **Tests:** `test_node_list` covers the order both ways, nodes staying put through adds and erases, erasing at the front, middle and end, erased nodes used again before a new block, erasing while walking, and freeing. It builds as strict C89 with MinGW. A grep in the test Makefile keeps the `std::list` out.
+
 - **Frame statistics: framebuffer sizes in six slots, not a hash map.** Not yet run on a game.
   - **What changed:** the largest framebuffer seen for each antialiasing mode was kept in a `std::unordered_map` (`Core/RSXDisplay.h`): hashed on every framebuffer bound, and its nodes allocated again when each frame's statistics were copied for the flip. The modes are the values 0, 3, 4 and 5, so it is an array of six with a bit for each one in use; the statistics are plain data again, copied without allocating.
   - **Tests:** the full build passes.

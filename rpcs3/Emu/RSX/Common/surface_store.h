@@ -10,6 +10,7 @@
 
 #include "util/asm.hpp"
 #include "util/pair.hpp"
+#include "util/node_list.hpp"
 
 namespace rsx
 {
@@ -73,7 +74,10 @@ namespace rsx
 		// List of sections that have been wholly inherited and invalidated
 		std::vector<surface_type> superseded_surfaces;
 
-		std::list<surface_storage_type> invalidated_resources;
+		// Surfaces taken out of use, oldest first. A list with its own nodes
+		// (util/node_list.c): elements stay put as others come and go, as in the
+		// std::list this was, without a node allocated for each surface
+		owned_node_list<typename surface_storage_type::element_type> invalidated_resources;
 		const u64 max_invalidated_resources_count = 256ull;
 		u64 cache_tag = 1ull; // Use 1 as the start since 0 is default tag on new surfaces
 		u64 write_tag = 1ull;
