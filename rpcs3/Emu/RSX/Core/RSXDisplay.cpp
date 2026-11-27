@@ -43,7 +43,14 @@ namespace rsx
 
 	void framebuffer_statistics_t::add(u16 width, u16 height, rsx::surface_antialiasing aa)
 	{
-		auto& stashed = data[aa];
+		const u32 mode = static_cast<u8>(aa);
+		if (mode >= max_modes)
+		{
+			return;
+		}
+
+		used |= static_cast<u8>(1u << mode);
+		auto& stashed = data[mode];
 		const auto& incoming = framebuffer_dimensions_t::make(width, height, aa);
 		if (incoming > stashed)
 		{
@@ -61,7 +68,7 @@ namespace rsx
 			u32 samples;
 		};
 
-		if (data.size() == 0)
+		if (!used)
 		{
 			return "None";
 		}
@@ -69,8 +76,15 @@ namespace rsx
 		rsx::simple_array<sorted_message_t> messages;
 		rsx::simple_array<framebuffer_dimensions_t> real_stats;
 
-		for (const auto& [aa_mode, stat] : data)
+		for (u32 mode = 0; mode < max_modes; mode++)
 		{
+			if (!(used & (1u << mode)))
+			{
+				continue;
+			}
+
+			const auto aa_mode = static_cast<surface_antialiasing>(mode);
+			const auto& stat = data[mode];
 			auto real_stat = stat;
 			std::tie(real_stat.width, real_stat.height) = apply_resolution_scale(scaling_config, stat.width, stat.height);
 			real_stats.push_back(real_stat);

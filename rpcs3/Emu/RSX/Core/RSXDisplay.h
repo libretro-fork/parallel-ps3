@@ -3,7 +3,6 @@
 #include <util/types.hpp>
 #include <util/logs.hpp>
 #include <deque>
-#include <unordered_map>
 #include <queues/retro_deque.h>
 
 template <typename T>
@@ -39,7 +38,13 @@ namespace rsx
 
 	struct framebuffer_statistics_t
 	{
-		std::unordered_map<rsx::surface_antialiasing, framebuffer_dimensions_t> data;
+		// By antialiasing mode: its values are 0, 3, 4 and 5 (gcm_enums.h), so
+		// six slots and a bit for each one in use. It was a hash map: hashed on
+		// every framebuffer bound, and allocated again with every frame's copy
+		// of the statistics
+		static constexpr u32 max_modes = 6;
+		framebuffer_dimensions_t data[max_modes]{};
+		u8 used = 0;
 
 		// Replace the existing data with this input if it is greater than what is already known
 		void add(u16 width, u16 height, rsx::surface_antialiasing aa);

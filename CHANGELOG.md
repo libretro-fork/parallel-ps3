@@ -4,6 +4,10 @@ What changed in the libretro core of this fork, newest first. Changes that come 
 
 ## Unreleased
 
+- **Frame statistics: framebuffer sizes in six slots, not a hash map.** Not yet run on a game.
+  - **What changed:** the largest framebuffer seen for each antialiasing mode was kept in a `std::unordered_map` (`Core/RSXDisplay.h`): hashed on every framebuffer bound, and its nodes allocated again when each frame's statistics were copied for the flip. The modes are the values 0, 3, 4 and 5, so it is an array of six with a bit for each one in use; the statistics are plain data again, copied without allocating.
+  - **Tests:** the full build passes.
+
 - **The renderers' memory-mapping blocks are found by address, not in a hash map.** Not yet run on a game.
   - **What changed:** the Vulkan and OpenGL renderers keep a block for each 64 KiB stretch of guest memory they have mapped for transfers (`VKDMA.cpp`, `GLDMA.cpp`), in a `std::unordered_map` keyed by the block's address. Each is now a table with one slot for each of the 65,536 blocks of the guest's 4 GiB, indexed by the address: a shift and a load.
     - OpenGL looked its block up in the map on every mapping. Measured alone, that lookup goes from about 5.4 ns to 0.6 ns.
