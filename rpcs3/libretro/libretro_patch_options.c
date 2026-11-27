@@ -237,7 +237,9 @@ static void put(text_t *t, const char *p, size_t len)
 {
    if (!t->s && t->cap)
       return; /* failed before */
-   if (!grow(&t->s, &t->cap, t->n + len + 1, 1))
+   /* A length whose sum wraps is refused like no memory: it would "fit"
+    * in nothing at all */
+   if (len >= (size_t)-1 - t->n || !grow(&t->s, &t->cap, t->n + len + 1, 1))
    {
       free(t->s);
       t->s = NULL;

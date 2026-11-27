@@ -1,6 +1,7 @@
 #pragma once
 
 #include "overlays.h"
+#include <cstddef>
 #include <retro_atomic.h>
 #include "overlay_audio.h"
 
@@ -40,7 +41,10 @@ namespace rsx
 
 			static void free_lists(mpsc_stack_node_t* node)
 			{
-				delete reinterpret_cast<lists_t*>(node);
+				// The node is lists_t's first member: the same address,
+				// taken back through void*
+				static_assert(offsetof(lists_t, node) == 0);
+				delete static_cast<lists_t*>(static_cast<void*>(node));
 			}
 
 			// @f(lists_t&) on a copy of the lists published, which is then
