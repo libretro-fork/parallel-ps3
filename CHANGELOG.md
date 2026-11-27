@@ -4,6 +4,11 @@ What changed in the libretro core of this fork, newest first. Changes that come 
 
 ## Unreleased
 
+- **Closing content no longer waits for good on a stop that cannot finish.** Not yet run on a game.
+  - **What was wrong:** closing content after a game had crashed could hang RetroArch. The backtrace shows the frontend's thread in `stop_emulation`, waiting for the emulator to become "stopped", with every emulation thread already gone. That state is set at the end of the thread that finishes a stop ("Emulation Join Thread"); if that thread ends on a fatal error part way, nothing ever sets it. Which error it ends on after a crash is not known yet - the hang left no log.
+  - **What changed:** a fatal error on that thread now lets go of whoever waits for the stop, with a line in the log saying the stop did not finish. Every fatal error in the frontend's log now also names the thread it came from (`RPCS3: [thread name] ...`), so the next log says what the stop thread ended on.
+  - **Tests:** the full build passes. Checked against the user's DLL that the hung wait is this one (the return address in `stop_emulation` is the loop that reads the emulator's state).
+
 - **Build warnings: five gone.** Not yet run on a game.
   - **What changed:** no change in behaviour. `SPUThread.cpp` no longer declares `__movsb` again under MinGW, whose own headers define it. `lv2_socket.cpp` loses a counter nothing read. Four casts now go by way of `void*` and stop tripping `-Wstrict-aliasing`: the sleep queue link store in `sys_sync.h`, and one each in `JITASM.cpp`, `HLE_PATCHES.cpp` and `cellVdec.cpp`.
   - **Tests:** the full build passes with no warnings under GCC on Linux. The MinGW `__movsb` change was checked with a small MinGW compile, not a full MinGW build.

@@ -1065,6 +1065,14 @@ namespace
     retro_atomic_int_t s_fatal_ready;  // 1 written, 2 shown
     char s_fatal_text[256];
 
+    // Set when the thread that finishes a stop ("Emulation Join Thread",
+    // Emulator::Kill) ended on a fatal error: nothing is left to mark the
+    // emulator stopped, and the frontend's thread waited on that for good -
+    // closing content after a game had crashed hung RetroArch with every
+    // emulation thread already gone. It stays set: the core is to be
+    // unloaded, not used again.
+    retro_atomic_int_t s_stop_failed;
+
     struct libretro_log_listener : public logs::listener
     {
         void log(u64 /*stamp*/, const logs::message& msg, std::string_view /*prefix*/, std::string_view text) override
@@ -1078,9 +1086,13 @@ namespace
             // trace of where. They are rare, so this costs nothing in play. For
             // an access violation, the faulting thread's state (this is that
             // thread) - its registers, address and call stack
+            // The thread it is from (this one), by name: which one stopped is
+            // half of what happened
+            const std::string thread_name = thread_ctrl::get_name();
+
             if (log_cb)
             {
-                log_cb(RETRO_LOG_ERROR, "RPCS3: %.*s\n", static_cast<int>(text.size()), text.data());
+                log_cb(RETRO_LOG_ERROR, "RPCS3: [%s] %.*s\n", thread_name.c_str(), static_cast<int>(text.size()), text.data());
 
                 if (text.starts_with("Access violation"))
                 {
@@ -1093,6 +1105,15 @@ namespace
             static constexpr std::string_view terminated = "Thread terminated due to fatal error: ";
             if (!text.starts_with(terminated))
                 return;
+
+            // The stop's own thread: it will not finish the stop. Whoever
+            // waits for the stop is let go (wait_for_emulation_stop)
+            if (thread_name == "Emulation Join Thread")
+            {
+                retro_atomic_store_release_int(&s_stop_failed, 1);
+                libretro_event();
+            }
+
             if (retro_atomic_fetch_add_int(&s_fatal_claims, 1) != 0)
                 return;
             text.remove_prefix(terminated.size());
@@ -1979,7 +2000,10 @@ static void wait_for_emulator(Done done)
 
 static void wait_for_emulation_stop()
 {
-    wait_for_emulator([] { return Emu.IsStopped(true); });
+    wait_for_emulator([] { return Emu.IsStopped(true) || retro_atomic_load_acquire_int(&s_stop_failed) != 0; });
+
+    if (retro_atomic_load_acquire_int(&s_stop_failed) && !Emu.IsStopped(true) && log_cb)
+        log_cb(RETRO_LOG_ERROR, "RPCS3: the emulator did not finish stopping (its stop thread ended on the error above); closing anyway\n");
 }
 
 // Stopped at once, not asked to exit first as RPCS3's Stop does: the game's
@@ -3458,7 +3482,7 @@ static bool make_state()
     // preparation gave up on it and the game runs on: SPU threads that cannot
     // be paused where a state can be taken, a video decoder or a game save in
     // progress. RPCS3 says which on screen.
-    wait_for_emulator([] { return Emu.IsStopped(true) || !(Emu.IsClosePending() || Emu.IsStopped()); });
+    wait_for_emulator([] { return Emu.IsStopped(true) || !(Emu.IsClosePending() || Emu.IsStopped()) || retro_atomic_load_acquire_int(&s_stop_failed) != 0; });
 
     g_memory_savestate = nullptr;
 
