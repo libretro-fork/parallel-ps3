@@ -4,6 +4,12 @@ What changed in the libretro core of this fork, newest first. Changes that come 
 
 ## Unreleased
 
+- **Dark Souls: Prepare to Die Edition (EU): falls and slides at 60 FPS as at 30 with Unlock FPS.** Not yet run on a game.
+  - **What was wrong:** with Unlock FPS a roll or a walk off a ledge fell short - the timed roll onto the pillar on the way back to the Undead Asylum could not be made. The PC version had the same fault with an unlocked frame rate. The movement code multiplies the momentum kept in the air by 0.95 once a frame, whatever the frame takes, so at 60 frames a second it faded twice as fast. Ground friction (0.65) and the pull down a slope (1.0) are applied once a frame the same way.
+  - **What changed:** on this console build all three numbers are in the game's data (0x01886C30, 0x019F48C4, 0x019F48C0), so the patch's per-frame code sets them with the flip mode: 0.95 ^ 0.5, 0.65 ^ 0.5 and 0.5 at 60 FPS, the game's own at the bonfire's 30. Found by following the PC fix in zofrea1's DS1-FPS-Unlock (its air damping, slide friction and slide gravity sites) into this executable.
+    - Not covered: the other per-frame effects that project lists for the PC version (camera smoothing, gauge fill speed, some timers); and frames slower than 60 FPS still use the 60 FPS numbers.
+  - **Tests:** applied to the decrypted executable with the core's patch parser and read back; `test_game_patches` passes.
+
 - **Dark Souls: two audio latency patches in the Patch Manager.** Not yet run on a game.
   - **What they are:** Dark Souls uses the same sound engine as Demon's Souls (MagicOrchestra over FMOD), but its built-in setup text has none of the mixer keys Demon's Souls' "Reduce Audio Latency" changes, and its output ring is already the smallest (8 blocks).
     - "Double Sound Update Rate" (all Dark Souls serials the text is found in): the engine's `MainThreadUpdateTime` goes from 33333 to 16666 microseconds, rewritten in the setup text as the executable loads, so it does not depend on the build of the game.

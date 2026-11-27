@@ -379,30 +379,55 @@ PPU-d764d35ca136442f72228ab715a629f26994e641:
       50 ms). At a bonfire the game runs at its retail 30 frames a second, from the moment its script seats the
       character until it lets go: at 60 the bonfire menu could close with the character left sitting for good
       (the PC version's "bonfire input glitch" with unlocked frame rates). The code is in caves the patch engine
-      allocates.
-    Patch Version: 1.1
+      allocates. Three numbers the movement code applies once a frame are set for 60 frames a second too: the
+      momentum kept in the air (so a roll or a walk off a ledge carries as far as at 30), ground friction and
+      the pull down a slope.
+    Patch Version: 1.2
     Patch:
       # The frame's time: in place of the load of the constant 1/30 (0x01876870) into f31 at 0x00145A18
-      - [ calloc, 0x00145A1A, 43 ] # Hook 0x00145A18 // Original lfs f31, -0x7f48(r30); returns to 0x00145A1C
-      # Each frame, first: the retail 30 FPS while the bonfire's talk script has the character seated, 60 FPS otherwise
+      - [ calloc, 0x00145A1A, 65 ] # Hook 0x00145A18 // Original lfs f31, -0x7f48(r30); returns to 0x00145A1C
+      # Each frame, first: the retail 30 FPS while the bonfire's talk script has the character seated, 60 FPS otherwise,
+      # and with each the numbers the movement code applies once a frame
       - [ be32, 0x00000000, 0x3D2001B5 ] # lis r9, 0x1b5 // the game's talk object (its pointer is at 0x01B48C4C): byte 0x7bc is 1 from the bonfire's StartBonfireAnimLoop to its EndBonfireKindleAnimLoop (set at 0x006FD1C0, cleared at 0x006FD230)
       - [ be32, 0x00000000, 0x81298C4C ] # lwz r9, -0x73b4(r9)
       - [ be32, 0x00000000, 0x2B890000 ] # cmplwi cr7, r9, 0
-      - [ be32, 0x00000000, 0x419E003C ] # beq cr7, 0x48
+      - [ be32, 0x00000000, 0x419E0094 ] # beq cr7, 0xa0
       - [ be32, 0x00000000, 0x894907BC ] # lbz r10, 0x7bc(r9)
       - [ be32, 0x00000000, 0x3D2001AB ] # lis r9, 0x1ab // the object with the flip mode (its pointer is at 0x01AB71A8)
       - [ be32, 0x00000000, 0x812971A8 ] # lwz r9, 0x71a8(r9)
       - [ be32, 0x00000000, 0x2B890000 ] # cmplwi cr7, r9, 0
-      - [ be32, 0x00000000, 0x419E0028 ] # beq cr7, 0x48
+      - [ be32, 0x00000000, 0x419E0080 ] # beq cr7, 0xa0
       - [ be32, 0x00000000, 0x2B8A0000 ] # cmplwi cr7, r10, 0
-      - [ be32, 0x00000000, 0x39600003 ] # li r11, 3 // FlipMode 3, 60FPS(NO SKIP), and both its flags (the game's tables at 0x015E6B58 and 0x015E6B50)
+      - [ be32, 0x00000000, 0x3D40019F ] # lis r10, 0x19f // r10: the movement code's two per-frame numbers in the game's data, 0x019F48C0 and the word after it
+      - [ be32, 0x00000000, 0x409E0040 ] # bne cr7, 0x6c
+      - [ be32, 0x00000000, 0x39600003 ] # li r11, 3 // 60 FPS: FlipMode 3, 60FPS(NO SKIP), and both its flags (the game's tables at 0x015E6B58 and 0x015E6B50)
       - [ be32, 0x00000000, 0x39800001 ] # li r12, 1
-      - [ be32, 0x00000000, 0x419E000C ] # beq cr7, 0x3c
-      - [ be32, 0x00000000, 0x39600000 ] # li r11, 0 // at the bonfire: FlipMode 0, the retail 30 FPS, its flags 0
-      - [ be32, 0x00000000, 0x39800000 ] # li r12, 0
       - [ be32, 0x00000000, 0x9969071C ] # stb r11, 0x71c(r9)
       - [ be32, 0x00000000, 0x9989071D ] # stb r12, 0x71d(r9)
       - [ be32, 0x00000000, 0x9989071E ] # stb r12, 0x71e(r9)
+      - [ be32, 0x00000000, 0x3D603F00 ] # lis r11, 0x3f00 // what the movement code applies once a frame, for half the time: the slope's pull 1.0 -> 0.5 (read at 0x00351644)
+      - [ be32, 0x00000000, 0x916A48C0 ] # stw r11, 0x48c0(r10)
+      - [ be32, 0x00000000, 0x3D603F4E ] # lis r11, 0x3f4e // ground friction 0.65 -> 0.65 ^ 0.5 (read at 0x003517F8)
+      - [ be32, 0x00000000, 0x616B64D0 ] # ori r11, r11, 0x64d0
+      - [ be32, 0x00000000, 0x916A48C4 ] # stw r11, 0x48c4(r10)
+      - [ be32, 0x00000000, 0x3D400188 ] # lis r10, 0x188
+      - [ be32, 0x00000000, 0x3D603F79 ] # lis r11, 0x3f79 // momentum kept in the air 0.95 -> 0.95 ^ 0.5 (0x01886C30, read at 0x00351988): at 0.95 sixty times a second a roll or a walk off a ledge fell short
+      - [ be32, 0x00000000, 0x616B8497 ] # ori r11, r11, 0x8497
+      - [ be32, 0x00000000, 0x916A6C30 ] # stw r11, 0x6c30(r10)
+      - [ be32, 0x00000000, 0x48000038 ] # b 0xa0
+      - [ be32, 0x00000000, 0x39600000 ] # li r11, 0 // at the bonfire: FlipMode 0, the retail 30 FPS, its flags 0, and the game's own three numbers
+      - [ be32, 0x00000000, 0x9969071C ] # stb r11, 0x71c(r9)
+      - [ be32, 0x00000000, 0x9969071D ] # stb r11, 0x71d(r9)
+      - [ be32, 0x00000000, 0x9969071E ] # stb r11, 0x71e(r9)
+      - [ be32, 0x00000000, 0x3D603F80 ] # lis r11, 0x3f80
+      - [ be32, 0x00000000, 0x916A48C0 ] # stw r11, 0x48c0(r10)
+      - [ be32, 0x00000000, 0x3D603F26 ] # lis r11, 0x3f26
+      - [ be32, 0x00000000, 0x616B6666 ] # ori r11, r11, 0x6666
+      - [ be32, 0x00000000, 0x916A48C4 ] # stw r11, 0x48c4(r10)
+      - [ be32, 0x00000000, 0x3D400188 ] # lis r10, 0x188
+      - [ be32, 0x00000000, 0x3D603F73 ] # lis r11, 0x3f73
+      - [ be32, 0x00000000, 0x616B3333 ] # ori r11, r11, 0x3333
+      - [ be32, 0x00000000, 0x916A6C30 ] # stw r11, 0x6c30(r10)
       # Then the frame's time
       - [ be32, 0x00000000, 0x7D4C42E6 ] # mftb r10 // the timebase: 80,000,000 ticks a second of the guest's time
       - [ be32, 0x00000000, 0x3D2001BD ] # lis r9, 0x1bd // r9 = 0x01BD3F00, in the last page of the executable's zeroed data, past its end (0x01BD34C8): the timebase at the last frame
@@ -413,12 +438,12 @@ PPU-d764d35ca136442f72228ab715a629f26994e641:
       - [ be32, 0x00000000, 0x3D60003D ] # lis r11, 0x3d // 4,000,000 ticks: 50 ms, the longest step (also the first frame's)
       - [ be32, 0x00000000, 0x616B0900 ] # ori r11, r11, 0x900
       - [ be32, 0x00000000, 0x7FAC5840 ] # cmpld cr7, r12, r11
-      - [ be32, 0x00000000, 0x409D0008 ] # ble cr7, 0x74
+      - [ be32, 0x00000000, 0x409D0008 ] # ble cr7, 0xcc
       - [ be32, 0x00000000, 0x7D6C5B78 ] # mr r12, r11
       - [ be32, 0x00000000, 0x3D600004 ] # lis r11, 4 // 320,000 ticks: 4 ms, the shortest step (two frames in one tick of the clock are not a step of 0)
       - [ be32, 0x00000000, 0x616BE200 ] # ori r11, r11, 0xe200
       - [ be32, 0x00000000, 0x7FAC5840 ] # cmpld cr7, r12, r11
-      - [ be32, 0x00000000, 0x409C0008 ] # bge cr7, 0x88
+      - [ be32, 0x00000000, 0x409C0008 ] # bge cr7, 0xe0
       - [ be32, 0x00000000, 0x7D6C5B78 ] # mr r12, r11
       - [ be32, 0x00000000, 0xF981FFF8 ] # std r12, -8(r1)
       - [ be32, 0x00000000, 0xC801FFF8 ] # lfd f0, -8(r1)
