@@ -1992,6 +1992,7 @@ check: all
 	@if grep -n "futex\|s_hashtable\|NtWaitFor\|cond_handle" ../../util/atomic.cpp; then echo "atomics: RPCS3's own wait engine is back in util/atomic.cpp - waits and notifies go through libretro-common's retro_waitaddr (AGENTS.md)"; exit 1; else echo "atomics: wait and notify through retro_waitaddr"; fi
 	@# A file read or write that goes through a buffer of the core's does not allocate one
 	@if grep -n "std::vector<uchar> local_buf" ../../Emu/Cell/lv2/sys_fs.cpp; then echo "sys_fs: a vector allocated and zeroed for every read or write is back in op_read/op_write (CHANGELOG)"; exit 1; else echo "sys_fs: no buffer allocated for a read or a write"; fi
+	@if grep -n "unordered_map" ../../Emu/RSX/VK/VKDMA.cpp ../../Emu/RSX/GL/GLDMA.cpp; then echo "dma: a hash map of blocks is back in VKDMA.cpp or GLDMA.cpp - a block is found by its address in a table (CHANGELOG)"; exit 1; else echo "dma: blocks found by address, no hash map"; fi
 	@# The Vulkan shader interpreter's caches are looked up and added to with no lock, and time nothing
 	@if grep -n "reader_lock\|shared_mutex\|lock_guard\|std::mutex\|steady_clock\|sleep_for" ../../Emu/RSX/VK/VKShaderInterpreter.cpp ../../Emu/RSX/VK/VKShaderInterpreter.h; then echo "interpreter: a lock, a clock or a sleep is back in the Vulkan shader interpreter - its caches are lock-free, its warm-up waits on its count (AGENTS.md)"; exit 1; else echo "interpreter: no lock, no clock, no sleep"; fi
 	@# The pool of spare Vulkan images is put into and taken from with no lock

@@ -7,7 +7,6 @@
 #include "Emu/RSX/RSXThread.h"
 
 #include "util/asm.hpp"
-#include <unordered_map>
 
 #ifdef _WIN32
 // VirtualQuery: vulkan.h no longer brings windows.h, without a Win32 surface
@@ -24,16 +23,25 @@ namespace vk
 	// their faults to it), so they take no lock. Looking a mapping up and
 	// copying through one do not come here; they read the table of views
 	// (Common/dma_views.h), brought up to date after every change.
-	std::unordered_map<u32, std::unique_ptr<dma_block>> g_dma_pool;
+	// One slot for each 64 KiB block of the guest's 4 GiB, found by the
+	// block's address alone: a shift and a load where a hash map hashed,
+	// probed and, for a block not there yet, allocated a node
+	static std::unique_ptr<dma_block> g_dma_pool[0x1'0000'0000ull / s_dma_block_length];
+	static u32 s_dma_block_count = 0; // the slots in use, for the checks below
+
+	static inline std::unique_ptr<dma_block>& pool_at(u32 block)
+	{
+		return g_dma_pool[block / s_dma_block_length];
+	}
 
 	// Shows readers what the pool holds for the blocks first_block..last_block
 	static void publish_views(u32 first_block, u32 last_block)
 	{
 		for (u64 block = first_block; block <= last_block; block += s_dma_block_length)
 		{
-			const auto found = g_dma_pool.find(static_cast<u32>(block));
+			const auto& found = pool_at(static_cast<u32>(block));
 			rsx_dma_views_set(static_cast<u32>(block), static_cast<u32>(block + s_dma_block_length - 1),
-				found != g_dma_pool.end() && found->second ? found->second->view() : nullptr);
+				found ? found->view() : nullptr);
 		}
 	}
 
@@ -391,21 +399,22 @@ namespace vk
 		const auto map_range = utils::address_range32::start_length(local_address, length);
 		auto first_block = (local_address & s_dma_block_mask);
 
-		if (auto found = g_dma_pool.find(first_block); found != g_dma_pool.end())
+		if (const auto& found = pool_at(first_block))
 		{
-			if (found->second->end() >= map_range.end)
+			if (found->end() >= map_range.end)
 			{
-				return found->second->get(map_range);
+				return found->get(map_range);
 			}
 		}
 
 		auto last_block = (map_range.end & s_dma_block_mask);
 		if (first_block == last_block) [[likely]]
 		{
-			auto &block_info = g_dma_pool[first_block];
+			auto &block_info = pool_at(first_block);
 			ensure(!block_info);
 
 			create_dma_block(block_info, first_block, s_dma_block_length);
+			s_dma_block_count++;
 			publish_views(first_block, last_block);
 			return block_info->get(map_range);
 		}
@@ -413,7 +422,7 @@ namespace vk
 		// Scan range for overlapping sections and update 'chains' accordingly
 		for (auto block = first_block; block <= last_block; block += s_dma_block_length)
 		{
-			if (auto& entry = g_dma_pool[block])
+			if (auto& entry = pool_at(block))
 			{
 				first_block = std::min(first_block, entry->head()->start() & s_dma_block_mask);
 				last_block = std::max(last_block, entry->end() & s_dma_block_mask);
@@ -425,7 +434,8 @@ namespace vk
 
 		for (auto block = first_block; block <= last_block; block += s_dma_block_length)
 		{
-			auto& entry = g_dma_pool[block];
+			auto& entry = pool_at(block);
+			s_dma_block_count += !entry; // every slot of the range is filled below
 
 			if (block == first_block)
 			{
@@ -455,7 +465,7 @@ namespace vk
 
 		// Check that all the math adds up...
 		stale_references.clear();
-		ensure(static_cast<u64>(retro_atomic_load_acquire_64(&s_allocated_dma_pool_size)) == g_dma_pool.size() * s_dma_block_length);
+		ensure(static_cast<u64>(retro_atomic_load_acquire_64(&s_allocated_dma_pool_size)) == u64{s_dma_block_count} * s_dma_block_length);
 
 		ensure(block_head);
 		publish_views(first_block, last_block);
@@ -470,9 +480,9 @@ namespace vk
 
 		for (u32 block = start; block < end;)
 		{
-			if (auto found = g_dma_pool.find(block); found != g_dma_pool.end())
+			if (const auto& found = pool_at(block))
 			{
-				auto head = found->second->head();
+				auto head = found->head();
 				if (dynamic_cast<dma_block_EXT*>(head))
 				{
 					// Passthrough block. Must unmap from GPU
@@ -484,7 +494,11 @@ namespace vk
 
 					for (u32 block_ = start_block; block_ < last_block; block_ += s_dma_block_length)
 					{
-						g_dma_pool.erase(block_);
+						if (auto& gone = pool_at(block_))
+						{
+							gone.reset();
+							s_dma_block_count--;
+						}
 					}
 
 					block = last_block;
@@ -495,7 +509,7 @@ namespace vk
 			block += s_dma_block_length;
 		}
 
-		ensure(static_cast<u64>(retro_atomic_load_acquire_64(&s_allocated_dma_pool_size)) == g_dma_pool.size() * s_dma_block_length);
+		ensure(static_cast<u64>(retro_atomic_load_acquire_64(&s_allocated_dma_pool_size)) == u64{s_dma_block_count} * s_dma_block_length);
 	}
 
 	// Copying through a mapping only reads the table of views: no lock
@@ -512,6 +526,12 @@ namespace vk
 	void clear_dma_resources()
 	{
 		rsx_dma_views_clear();
-		g_dma_pool.clear();
+
+		for (auto& block : g_dma_pool)
+		{
+			block.reset();
+		}
+
+		s_dma_block_count = 0;
 	}
 }

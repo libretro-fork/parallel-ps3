@@ -9,7 +9,15 @@ namespace gl
 	static constexpr u32 s_dma_block_size = 0x10000;
 	static constexpr u32 s_dma_block_mask = ~(s_dma_block_size - 1);
 
-	std::unordered_map<u32, std::unique_ptr<dma_block>> g_dma_pool;
+	// One slot for each 64 KiB block of the guest's 4 GiB, found by the
+	// block's address alone: a shift and a load on every mapping, where a hash
+	// map hashed, probed and, for a block not there yet, allocated a node
+	static std::unique_ptr<dma_block> g_dma_pool[0x1'0000'0000ull / s_dma_block_size];
+
+	static inline std::unique_ptr<dma_block>& pool_at(u32 block)
+	{
+		return g_dma_pool[block / s_dma_block_size];
+	}
 
 	void dma_block::allocate(u32 base_address, u32 block_size)
 	{
@@ -70,7 +78,10 @@ namespace gl
 
 	void clear_dma_resources()
 	{
-		g_dma_pool.clear();
+		for (auto& block : g_dma_pool)
+		{
+			block.reset();
+		}
 	}
 
 	utils::address_range32 to_dma_block_range(u32 start, u32 length)
@@ -83,7 +94,7 @@ namespace gl
 	const dma_block& get_block(u32 start, u32 length)
 	{
 		const auto block_range = to_dma_block_range(start, length);
-		auto& block = g_dma_pool[block_range.start];
+		auto& block = pool_at(block_range.start);
 		if (!block)
 		{
 			block = std::make_unique<dma_block>();
@@ -112,7 +123,7 @@ namespace gl
 			 id += s_dma_block_size)
 		{
 			ensure((id % s_dma_block_size) == 0);
-			g_dma_pool[id]->set_parent(new_owner.get());
+			pool_at(id)->set_parent(new_owner.get());
 		}
 
 		block = std::move(new_owner);

@@ -4,6 +4,13 @@ What changed in the libretro core of this fork, newest first. Changes that come 
 
 ## Unreleased
 
+- **The renderers' memory-mapping blocks are found by address, not in a hash map.** Not yet run on a game.
+  - **What changed:** the Vulkan and OpenGL renderers keep a block for each 64 KiB stretch of guest memory they have mapped for transfers (`VKDMA.cpp`, `GLDMA.cpp`), in a `std::unordered_map` keyed by the block's address. Each is now a table with one slot for each of the 65,536 blocks of the guest's 4 GiB, indexed by the address: a shift and a load.
+    - OpenGL looked its block up in the map on every mapping. Measured alone, that lookup goes from about 5.4 ns to 0.6 ns.
+    - Vulkan already answers repeat mappings from its table of views without the map; this is its first-use path and its unmapping, and the map's node allocations there.
+    - The Vulkan checks that compared the map's size with the memory allocated use a count of the slots in use.
+  - **Tests:** the full build passes. A grep in the test Makefile keeps the hash maps out.
+
 - **Demon's Souls: a "Shadow Map Size" patch in the Patch Manager.** Not yet run on a game.
   - **What changed:** the game's shadow map size setting (2048 as shipped) can be set as the game starts: 4096, 3072, 2048 or 1024. It is the value the debug menu's GAME REND > Shadow > "ShadwoMap Size" shows, which the game reads only where an area's shadow camera is made - so the menu could not change it for the area already loaded.
     - The shadow filter is worked out from this number. Whether the shadow buffer itself grows past 2048 with it is not known yet: the patch's notes say so, and to go back to 2048 if shadows look wrong.
