@@ -4,6 +4,11 @@ What changed in the libretro core of this fork, newest first. Changes that come 
 
 ## Unreleased
 
+- **SPU LLVM recompiler: function chunks found by address, block edges in a small list.** Not yet run on a game.
+  - **What changed:** the recompiler's function chunks (`m_functions`) were a `std::unordered_map` by address and each block carried another one for its edge blocks (`block_edges`), constructed and destroyed with every block though most blocks have none. The chunks are a `pc_map` now (`util/pc_slots.c`) and the edges a `util/pair_list.c` list, which allocates nothing until a block has more than two.
+    - The blocks themselves (`m_blocks`) are left as they were: the order that map is walked in decides the order register stores are moved between blocks, so changing it changes the code that comes out (same size, different bytes). That is a change to make on its own, with a game run.
+  - **Tests:** `test_llvm_jit` passes; the 200 plain and 900 branching programs compile to the same bytes as before.
+
 - **Closing content no longer waits for good on a stop that cannot finish.** Not yet run on a game.
   - **What was wrong:** closing content after a game had crashed could hang RetroArch. The backtrace shows the frontend's thread in `stop_emulation`, waiting for the emulator to become "stopped", with every emulation thread already gone. That state is set at the end of the thread that finishes a stop ("Emulation Join Thread"); if that thread ends on a fatal error part way, nothing ever sets it. Which error it ends on after a crash is not known yet - the hang left no log.
   - **What changed:** a fatal error on that thread now lets go of whoever waits for the stop, with a line in the log saying the stop did not finish. Every fatal error in the frontend's log now also names the thread it came from (`RPCS3: [thread name] ...`), so the next log says what the stop thread ended on.

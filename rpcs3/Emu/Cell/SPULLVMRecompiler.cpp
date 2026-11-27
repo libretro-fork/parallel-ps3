@@ -20,6 +20,7 @@
 #include "util/v128.hpp"
 #include "util/simd.hpp"
 #include "util/sysinfo.hpp"
+#include "util/pair_list.h"
 
 const extern spu_decoder<spu_itype> g_spu_itype;
 const extern spu_decoder<spu_iname> g_spu_iname;
@@ -166,6 +167,38 @@ class spu_llvm_recompiler : public spu_recompiler_base, public cpu_translator
 	llvm::MDNode* m_md_spu_memory_domain{};
 	llvm::MDNode* m_md_spu_context_domain{};
 
+	// A block for each of a few target addresses (util/pair_list.c): most
+	// blocks have none, and none has many
+	struct edge_list
+	{
+		pair_list_t list{};
+
+		edge_list() = default;
+		edge_list(const edge_list&) = delete;
+		edge_list& operator=(const edge_list&) = delete;
+
+		~edge_list()
+		{
+			pair_list_free(&list);
+		}
+
+		// The address's block, null where it had none. It holds until the
+		// next address is added
+		llvm::BasicBlock*& operator[](u32 addr)
+		{
+			u32 i = pair_list_find(&list, addr);
+
+			if (i == PAIR_LIST_NONE)
+			{
+				i = pair_list_add(&list, addr);
+				ensure(i != PAIR_LIST_NONE);
+			}
+
+			static_assert(sizeof(llvm::BasicBlock*) == sizeof(pair_list_room_t));
+			return *static_cast<llvm::BasicBlock**>(static_cast<void*>(PAIR_LIST_ROOMS(&list) + i));
+		}
+	};
+
 	struct block_info
 	{
 		// Pointer to the analyser
@@ -178,7 +211,7 @@ class spu_llvm_recompiler : public spu_recompiler_base, public cpu_translator
 		llvm::BasicBlock* block_end{};
 
 		// Additional blocks for sinking instructions after block_end:
-		std::unordered_map<u32, llvm::BasicBlock*, value_hash<u32, 2>> block_edges;
+		edge_list block_edges;
 
 		// Current register values
 		std::array<llvm::Value*, s_reg_max> reg{};
@@ -241,7 +274,7 @@ class spu_llvm_recompiler : public spu_recompiler_base, public cpu_translator
 	std::vector<u32> m_block_queue;
 
 	// All function chunks in current SPU compile unit
-	std::unordered_map<u32, function_info, value_hash<u32, 2>> m_functions;
+	pc_map<function_info> m_functions;
 
 	// Function chunk list for processing
 	std::vector<u32> m_function_queue;
