@@ -4,6 +4,14 @@ What changed in the libretro core of this fork, newest first. Changes that come 
 
 ## Unreleased
 
+- **Z-cull reports: locked pages found by address, not in hash maps.** Not yet run on a game.
+  - **What changed:** each page a pending occlusion report is to be written to is locked, and counted, in a `std::unordered_map` for its memory location - looked up for every report queued and again for every report done. A page now has a 32-bit word found by its address in two loads (`util/page_words.c`, C89: leaves of 1024 pages, allocated when first used). The word says whether the page is locked for reports, whether it is protected, and how many reports are still to be written.
+    - Measured alone, queueing a report's page goes from about 6 ns to 2.5 ns, for 2, 8 or 64 pages alike.
+    - A sorted array was tried first and was slower than the hash map from 8 pages up, so it was dropped.
+    - The count other threads read with no lock is stored when a page comes or goes, no longer on every report.
+    - The set of addresses in `copy_reports_to` is a sorted array (`util/addr_map.c`), no hash set.
+  - **Tests:** `test_page_words` covers pages found and not found, a page's every address, neighbours, both ends of the address space, words staying put as leaves are added, and freeing. It builds as strict C89 with MinGW. A grep in the test Makefile keeps hash maps out of `RSXZCULL`.
+
 - **Surface cache: surfaces taken out of use are kept in a list with its own nodes.** Not yet run on a game.
   - **What changed:** the render target cache kept the surfaces taken out of use in a `std::list`: a node allocated for each one and freed when it was reused or dropped. They are in `util/node_list.c` now (C89), a doubly linked list whose nodes come from the list's own blocks and are used again.
     - It keeps what the code around it relies on, exactly as the `std::list` did: the order of adding, and elements that stay where they are while others are added or erased. That is why it is a linked list and not an array: the code holds a reference to the last one while it goes on working, and an array would move it. (The render target bug of 0631 was an entry that moved.)

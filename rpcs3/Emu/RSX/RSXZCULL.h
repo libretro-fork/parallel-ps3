@@ -11,7 +11,7 @@
 
 #include <vector>
 #include <stack>
-#include <unordered_map>
+#include "util/page_words.h"
 
 namespace rsx
 {
@@ -74,11 +74,6 @@ namespace rsx
 			void* other_params;
 		};
 
-		struct MMIO_page_data_t : public rsx::ref_counted
-		{
-			utils::protection prot = utils::protection::rw;
-		};
-
 		enum sync_control
 		{
 			sync_none = 0,
@@ -98,7 +93,39 @@ namespace rsx
 		class ZCULL_control
 		{
 		private:
-			std::unordered_map<u32, MMIO_page_data_t> m_locked_pages[2];
+			// The pages locked for reports, for each location: a word for
+			// each page, found by its address in two loads (util/page_words.c).
+			// They were hash maps, looked up for every report queued and
+			// every report done. A page's word: whether it is here at all,
+			// whether it is protected, and the reports still to be written
+			// to it
+			page_words_t m_locked_pages[2]{};
+			u32 m_locked_pages_held[2]{}; // how many pages each has
+
+			enum : u32
+			{
+				page_here      = 0x80000000,
+				page_protected = 0x40000000,
+				page_reports   = 0x3FFFFFFF,
+			};
+
+			// @f(address, word&) for every page of @location that is here
+			template <typename F>
+			void for_each_locked_page(u32 location, F&& f)
+			{
+				for (u32 leaf = 0; leaf < PAGE_WORDS_LEAVES; leaf++)
+				{
+					u32* const words = m_locked_pages[location].leaf[leaf];
+
+					for (u32 i = 0; words && i < PAGE_WORDS_LEAF_PAGES; i++)
+					{
+						if (words[i] & page_here)
+						{
+							f(page_words_addr(leaf, i), words[i]);
+						}
+					}
+				}
+			}
 			retro_atomic_int_t m_pages_accessed[2] = { 0, 0 }; // 0 or 1
 			retro_atomic_int_t m_critical_reports_in_flight{0};
 

@@ -1,9 +1,9 @@
 #include "stdafx.h"
+#include "util/addr_map.h"
 #include "Core/RSXEngLock.hpp"
 #include "Core/RSXReservationLock.hpp"
 #include "Common/guest_page_locks.h"
 #include "RSXThread.h"
-#include <unordered_set>
 
 namespace rsx
 {
@@ -24,18 +24,18 @@ namespace rsx
 
 		ZCULL_control::~ZCULL_control()
 		{
-			for (auto& block : m_locked_pages)
+			for (u32 location = 0; location < 2; location++)
 			{
-				for (auto& p : block)
+				for_each_locked_page(location, [](u32 page, u32& word)
 				{
-					if (p.second.prot != utils::protection::rw)
+					if (word & page_protected)
 					{
-						utils::memory_protect(vm::base(p.first), utils::get_page_size(), utils::protection::rw);
-						rsx_page_locks_release(p.first, p.first + utils::get_page_size() - 1);
+						utils::memory_protect(vm::base(page), utils::get_page_size(), utils::protection::rw);
+						rsx_page_locks_release(page, page + utils::get_page_size() - 1);
 					}
-				}
+				});
 
-				block.clear();
+				page_words_free(&m_locked_pages[location]);
 			}
 		}
 
@@ -798,7 +798,7 @@ namespace rsx
 		u32 ZCULL_control::copy_reports_to(u32 start, u32 range, u32 dest)
 		{
 			u32 bytes_to_write = 0;
-			std::unordered_set<u32> unique_addresses;
+			addr_map_t unique_addresses{}; // each address once: added only where it is not there yet
 
 			const auto memory_range = utils::address_range32::start_length(start, range);
 			for (auto& writer : m_pending_writes)
@@ -811,14 +811,15 @@ namespace rsx
 					const u32 address = (writer.sink - start) + dest;
 					writer.sink_alias.push_back(vm::cast(address));
 
-					if (!unique_addresses.contains(address))
+					if (addr_map_find(&unique_addresses, address) == ADDR_MAP_NONE)
 					{
 						bytes_to_write += sizeof(RsxReport);
-						unique_addresses.insert(address);
+						ensure(addr_map_insert(&unique_addresses, address, 0) != ADDR_MAP_NONE);
 					}
 				}
 			}
 
+			addr_map_free(&unique_addresses);
 			return bytes_to_write;
 		}
 
@@ -828,11 +829,18 @@ namespace rsx
 			if (!retro_atomic_load_acquire_int(&m_pages_accessed[location])) [[ likely ]]
 			{
 				const auto page_address = utils::page_start(static_cast<u32>(address));
-				auto& page = m_locked_pages[location][page_address];
-				retro_atomic_store_release_int(&m_locked_page_count[location], static_cast<int>(m_locked_pages[location].size()));
-				page.add_ref();
+				u32& page = *ensure(page_words_get(&m_locked_pages[location], page_address));
 
-				if (page.prot == utils::protection::rw)
+				if (!(page & page_here))
+				{
+					// Counted before it is protected (on_access_violation)
+					page = page_here;
+					retro_atomic_store_release_int(&m_locked_page_count[location], static_cast<int>(++m_locked_pages_held[location]));
+				}
+
+				page++;
+
+				if (!(page & page_protected))
 				{
 					// Held against a guest write unlocking it on its own
 					// (guest_page_locks.h): a texture can share the page,
@@ -840,7 +848,7 @@ namespace rsx
 					rsx_page_locks_hold(page_address, page_address + utils::get_page_size() - 1);
 					rsx_page_locks_settle(page_address, page_address + utils::get_page_size() - 1);
 					utils::memory_protect(vm::base(page_address), utils::get_page_size(), utils::protection::no);
-					page.prot = utils::protection::no;
+					page |= page_protected;
 				}
 			}
 			else
@@ -855,13 +863,10 @@ namespace rsx
 			if (!retro_atomic_load_acquire_int(&m_pages_accessed[location]))
 			{
 				const auto page_address = utils::page_start(static_cast<u32>(address));
-				if (auto found = m_locked_pages[location].find(page_address);
-					found != m_locked_pages[location].end())
+				if (u32* const page = page_words_find(&m_locked_pages[location], page_address); page && (*page & page_here))
 				{
-					auto& page = found->second;
-
-					ensure(page.has_refs());
-					page.release();
+					ensure(*page & page_reports);
+					--*page;
 				}
 			}
 
@@ -878,26 +883,20 @@ namespace rsx
 			retro_atomic_store_release_int(&m_pages_accessed[location], 1);
 
 			// Unlock pages
-			for (auto& p : m_locked_pages[location])
+			for_each_locked_page(location, [this](u32 this_address, u32& page)
 			{
-				const auto this_address = p.first;
-				auto& page = p.second;
-
-				if (page.prot != utils::protection::rw)
+				if (page & page_protected)
 				{
 					utils::memory_protect(vm::base(this_address), utils::get_page_size(), utils::protection::rw);
 					rsx_page_locks_release(this_address, this_address + utils::get_page_size() - 1);
-					page.prot = utils::protection::rw;
 				}
 
-				while (page.has_refs())
-				{
-					retro_atomic_fetch_add_int(&m_critical_reports_in_flight, 1);
-					page.release();
-				}
-			}
+				// Its reports are now reports in flight
+				retro_atomic_fetch_add_int(&m_critical_reports_in_flight, static_cast<int>(page & page_reports));
+			});
 
-			m_locked_pages[location].clear();
+			page_words_free(&m_locked_pages[location]);
+			m_locked_pages_held[location] = 0;
 			retro_atomic_store_release_int(&m_locked_page_count[location], 0);
 		}
 
@@ -928,13 +927,11 @@ namespace rsx
 
 			bool need_disable_optimizations = false;
 			{
-				if (auto found = m_locked_pages[location].find(page_address);
-					found != m_locked_pages[location].end())
+				if (u32* const fault_page = page_words_find(&m_locked_pages[location], page_address); fault_page && (*fault_page & page_here))
 				{
-					auto& fault_page = found->second;
-					if (fault_page.prot != utils::protection::rw)
+					if (*fault_page & page_protected)
 					{
-						if (fault_page.has_refs())
+						if (*fault_page & page_reports)
 						{
 							// R/W to active block
 							need_disable_optimizations = true;    // Defer actual operation
@@ -945,8 +942,8 @@ namespace rsx
 							// R/W to stale block, unload it and move on
 							utils::memory_protect(vm::base(page_address), utils::get_page_size(), utils::protection::rw);
 							rsx_page_locks_release(page_address, page_address + utils::get_page_size() - 1);
-							m_locked_pages[location].erase(page_address);
-							retro_atomic_store_release_int(&m_locked_page_count[location], static_cast<int>(m_locked_pages[location].size()));
+							*fault_page = 0;
+							retro_atomic_store_release_int(&m_locked_page_count[location], static_cast<int>(--m_locked_pages_held[location]));
 
 							return true;
 						}
