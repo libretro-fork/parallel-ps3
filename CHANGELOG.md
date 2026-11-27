@@ -4,6 +4,11 @@ What changed in the libretro core of this fork, newest first. Changes that come 
 
 ## Unreleased
 
+- **Core option: Save States: SPU Compatible Mode.** Not yet run on a game.
+  - **What was wrong:** Save State in Dark Souls failed with "Failed to lock SPU state, enabling SPU-Compatible mode may fix it", and nothing in the core could enable it: RPCS3's Compatible Savestate Mode was not among the core options.
+  - **What changed:** a core option for it, off by default as in RPCS3 (it costs some SPU speed). It takes effect at the next content load, and SPU code is compiled again for it.
+  - **Tests:** the full build passes. Whether a state can then be made in Dark Souls has not been seen.
+
 - **Dark Souls: Prepare to Die Edition (EU): a bonfire watchdog in place of 30 FPS at the bonfire.** Not yet run on a game.
   - **Why:** dropping to 30 FPS while seated was a workaround, and not a sure one: the softlock (the bonfire menu does not come back, the character stays seated) is in the game at any frame rate, only rarer at 30; Remastered has it at its native 60. What the PC fixes do (FPSFix, FPSFix+, DS1-FPS-Unlock) is watch for it and stand the character up.
   - **What changed:** "Unlock FPS" stays at 60 FPS at the bonfire again, and its three movement numbers are plain data patches now. A new patch, "Bonfire Softlock Watchdog", looks each frame at the game's own state: the talk script's seated byte, and the menu manager's words for the bonfire menu, the yes/no prompt and the bonfire's sub-menus (the ones the game's `IsMenuOpen` reads; the same eight the PC fixes watch, at the same offsets). Seated with none of them open for 4 seconds, and at least 9 seconds after a Kindle or Reverse Hollowing prompt, it does what the script's own leave does: calls the event script's `Lua_BonfireLoopAnimEnd` and clears the seated byte. It hooks the instruction after the frame time's load, so it works with Unlock FPS on or off.

@@ -665,6 +665,13 @@ struct retro_core_option_v2_definition option_defs_us[] = {
         "disabled"
     },
     {
+        "rpcs3_savestate_compatible", "Save States: SPU Compatible Mode", NULL,
+        "RPCS3's Compatible Savestate Mode: SPU code is compiled so that its threads can always be stopped where a state can be saved. Turn it on when Save State fails with \"Failed to lock SPU state\". Off by default, as in RPCS3, because it costs some SPU speed. Takes effect when the next content is loaded; SPU code is compiled again for it.",
+        NULL, "core",
+        { {"disabled", NULL}, {"enabled", NULL}, {NULL, NULL} },
+        "disabled"
+    },
+    {
         "rpcs3_detailed_log", "Detailed Log", NULL,
         "Writes what the emulator logs to system/parallel-ps3/rpcs3_detailed.log, for a bug report. Off, nothing is logged at all, which is faster: every message costs the thread that makes it time. Takes effect when the next content is loaded.",
         NULL, "core",

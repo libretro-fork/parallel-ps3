@@ -587,6 +587,11 @@ static void libretro_apply_core_options()
     // LLVM Precompilation
     g_cfg.core.llvm_precompilation.set(get_option_value("rpcs3_llvm_precompilation", "enabled") == "enabled");
 
+    // RPCS3's Compatible Savestate Mode: without it a state cannot be made
+    // while an SPU thread is where it cannot be stopped ("Failed to lock SPU
+    // state"), which some games' threads always are
+    g_cfg.savestate.compatible_mode.set(get_option_value("rpcs3_savestate_compatible", "disabled") == "enabled");
+
     // Accurate DFMA
     g_cfg.core.use_accurate_dfma.set(get_option_value("rpcs3_accurate_dfma", "enabled") == "enabled");
 
