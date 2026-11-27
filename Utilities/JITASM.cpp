@@ -100,7 +100,7 @@ void jit_announce(uptr func, usz size, std::string_view name)
 			index.size = static_cast<u32>(size);
 			index.off = static_cast<u32>(data_off);
 			// Last, a release store: the entry complete once its address is
-			retro_atomic_store_release_64(reinterpret_cast<retro_atomic_64_t*>(&index.addr), static_cast<s64>(func));
+			retro_atomic_store_release_64(static_cast<retro_atomic_64_t*>(static_cast<void*>(&index.addr)), static_cast<s64>(func));
 		}
 	}
 

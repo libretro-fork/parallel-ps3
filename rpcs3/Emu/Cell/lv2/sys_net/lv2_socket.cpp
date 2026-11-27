@@ -112,14 +112,11 @@ void lv2_socket::handle_events(const pollfd& native_pfd, [[maybe_unused]] bool u
 		if (unset_connecting)
 			set_connecting(false);
 #endif
-		u32 handled = 0;
-
 		for (auto it = queue.begin(); it != queue.end();)
 		{
 			if (it->second(events_happening))
 			{
 				it = queue.erase(it);
-				handled++;
 				continue;
 			}
 

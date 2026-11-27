@@ -76,7 +76,8 @@ struct lv2_obj
 	static inline void release_link(P& slot, std::type_identity_t<P> value)
 	{
 		static_assert(std::is_pointer_v<P> && sizeof(P) == sizeof(void*));
-		retro_atomic_store_release_ptr(reinterpret_cast<retro_atomic_ptr_t*>(&slot), const_cast<void*>(static_cast<const void*>(value)));
+		// By way of void*: a cast straight from P* is a strict-aliasing warning
+		retro_atomic_store_release_ptr(static_cast<retro_atomic_ptr_t*>(static_cast<void*>(&slot)), const_cast<void*>(static_cast<const void*>(value)));
 	}
 
 	static const u32 id_step = 0x100;

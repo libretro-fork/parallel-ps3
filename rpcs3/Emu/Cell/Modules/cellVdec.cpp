@@ -811,7 +811,7 @@ struct vdec_context_reaper
 		for (mpsc_stack_node_t* node = mpsc_stack_drain(&contexts); node;)
 		{
 			mpsc_stack_node_t* const next = node->next;
-			vdec_context* const ctx = reinterpret_cast<vdec_context::reap_node*>(node)->owner;
+			vdec_context* const ctx = static_cast<vdec_context::reap_node*>(static_cast<void*>(node))->owner;
 
 			// Let go: freed here, or - still used by an HLE call in progress -
 			// by that call as it lets go (~vdec_context frees the decoder)

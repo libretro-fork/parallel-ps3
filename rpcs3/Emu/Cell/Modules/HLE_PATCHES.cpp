@@ -29,7 +29,7 @@ void WaitForSPUsToEmptySNRs(ppu_thread& ppu, u32 spu_id, u32 snr_mask)
 	{
 		if (busy_word)
 		{
-			utils::spin_on_cacheline_once(*reinterpret_cast<const u64*>(busy_word), busy_seen, 100);
+			utils::spin_on_cacheline_once(*static_cast<const u64*>(static_cast<const void*>(busy_word)), busy_seen, 100);
 		}
 
 		has_busy = false;

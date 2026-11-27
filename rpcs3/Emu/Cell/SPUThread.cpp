@@ -206,7 +206,11 @@ static const bool s_tsx_avx = utils::has_avx();
 // The threshold will be 0xFFFFFFFF when the performance of rep movsb is expected to be bad
 static const u32 s_rep_movsb_threshold = utils::get_rep_movsb_threshold();
 
-#if defined(_M_X64)
+#if defined(__MINGW32__) && defined(ARCH_X64)
+// MinGW's own headers define it (and _M_X64 with it): declaring it again
+// is a redundant declaration there
+#include <intrin.h>
+#elif defined(_M_X64)
 extern "C" void __movsb(uchar*, const uchar*, size_t);
 #elif defined(ARCH_X64)
 static FORCE_INLINE void __movsb(unsigned char * Dst, const unsigned char * Src, size_t Size)

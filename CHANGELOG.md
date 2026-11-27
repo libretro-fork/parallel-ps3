@@ -4,6 +4,10 @@ What changed in the libretro core of this fork, newest first. Changes that come 
 
 ## Unreleased
 
+- **Build warnings: five gone.** Not yet run on a game.
+  - **What changed:** no change in behaviour. `SPUThread.cpp` no longer declares `__movsb` again under MinGW, whose own headers define it. `lv2_socket.cpp` loses a counter nothing read. Four casts now go by way of `void*` and stop tripping `-Wstrict-aliasing`: the sleep queue link store in `sys_sync.h`, and one each in `JITASM.cpp`, `HLE_PATCHES.cpp` and `cellVdec.cpp`.
+  - **Tests:** the full build passes with no warnings under GCC on Linux. The MinGW `__movsb` change was checked with a small MinGW compile, not a full MinGW build.
+
 - **SPU analyser: its working tables found by address too; analysis about 30% faster.** Not yet run on a game.
   - **What changed:** the pattern search in `spu_recompiler_base::analyse` kept seven more `std::map`s for the length of one analysis: each block's register state (`infos`), the atomic, channel-read and reduced-loop findings, the GETLLAR starts, and two maps of `bool` used as "seen this block" marks. The first five are `pc_map` now (`util/pc_slots.c`, as the blocks and functions are); the two marks are plain bit arrays. The table's first slab is small now, so one that holds a few entries takes little.
   - **Measured:** 3000 analyses of branching programs take about 700 ms, from about 1000 ms (three runs each, alternated).
