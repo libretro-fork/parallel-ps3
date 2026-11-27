@@ -174,6 +174,98 @@ static spu_program spu_function(u32 index, u32 length)
 	return prog;
 }
 
+static double stopwatch();
+
+// A program with branches in it: conditional and plain branches forwards
+// and backwards within it, calls within it and returns in the middle, so
+// that it analyses into many blocks, some reached from several places,
+// some not reached, and - by function - into several functions
+static spu_program spu_branchy_function(u32 index, u32 length)
+{
+	spu_program prog = spu_function(index, length);
+
+	u32 x = index * 40503u + 977;
+	const auto next = [&]() { x ^= x << 13; x ^= x >> 17; x ^= x << 5; return x; };
+
+	for (u32 i = 0; i + 1 < length; i++)
+	{
+		const u32 r = next();
+		const u32 kind = r % 24;
+		const u32 off = ((r >> 8) % length - i) & 0xffff;
+		u32 op;
+		if (kind == 0 || kind == 1)
+			op = 0x21000000u | off << 7 | (r >> 24 & 0x7f); // brnz
+		else if (kind == 2)
+			op = 0x20000000u | off << 7 | (r >> 24 & 0x7f); // brz
+		else if (kind == 3)
+			op = 0x32000000u | off << 7; // br
+		else if (kind == 4)
+			op = 0x33000000u | off << 7; // brsl $lr
+		else if (kind == 5 && r >> 30 == 0)
+			op = 0x1a8u << 21; // bi $lr
+		else
+			continue;
+		prog.data[i] = std::bit_cast<u32>(be_t<u32>{op});
+	}
+
+	return prog;
+}
+
+// Analyses 300 programs with branches at a block size and returns a
+// checksum of what the analyser made of each (its own dump: every block
+// with its function, predecessors and targets in address order, every
+// function with its calls). Compiles each too; if asked, times 3000
+// analyses on their own.
+static u32 spu_analysis(const std::string& cache, spu_block_size_type size, u32& compiled, double* analyse_ms = nullptr)
+{
+	const spu_block_size_type before = g_cfg.core.spu_block_size;
+	g_cfg.core.spu_block_size.set(size);
+
+	g_fxo->reset();
+	g_fxo->init<main_ppu_module<lv2_obj>>();
+	g_fxo->get<main_ppu_module<lv2_obj>>().cache = cache;
+	g_fxo->init<spu_cache>();
+	g_fxo->init<spu_runtime>();
+
+	const auto compiler = spu_recompiler_base::make_llvm_recompiler();
+	compiler->init();
+
+	u32 crc = 0;
+	compiled = 0;
+	std::string text;
+	for (u32 i = 0; i < 300; i++)
+	{
+		static std::vector<be_t<u32>> ls(SPU_LS_SIZE / 4);
+		std::fill(ls.begin(), ls.end(), be_t<u32>{0});
+		const spu_program prog = spu_branchy_function(i, 30 + i % 11 * 37);
+		std::memcpy(&ls[prog.entry_point / 4], prog.data.data(), prog.data.size() * 4);
+		spu_program found = compiler->analyse(ls.data(), prog.entry_point);
+		text.clear();
+		compiler->dump(found, text);
+		crc = encoding_crc32(crc, reinterpret_cast<const u8*>(text.data()), text.size());
+		compiled += !!compiler->compile(std::move(found));
+	}
+
+	// Analysis alone, timed
+	if (analyse_ms)
+	{
+		const double t0 = stopwatch();
+		for (u32 n = 0; n < 3000; n++)
+		{
+			const u32 i = n % 300;
+			static std::vector<be_t<u32>> ls(SPU_LS_SIZE / 4);
+			const spu_program prog = spu_branchy_function(i, 30 + i % 11 * 37);
+			std::memcpy(&ls[prog.entry_point / 4], prog.data.data(), prog.data.size() * 4);
+			compiled += compiler->analyse(ls.data(), prog.entry_point).data.empty();
+			std::memset(&ls[prog.entry_point / 4], 0, prog.data.size() * 4);
+		}
+		*analyse_ms = stopwatch() - t0;
+	}
+
+	g_cfg.core.spu_block_size.set(before);
+	return crc;
+}
+
 static double stopwatch()
 {
 	timespec t;
@@ -698,6 +790,20 @@ int main()
 		std::printf("test_llvm_jit: 200 SPU functions compiled in %.0f ms, loaded from their objects in %.0f ms (%d by their notes), all by their notes in %.0f ms\n", first, second, noted_cold, third);
 		// Nor were the objects loaded from the pack
 		CHECK(!&__jit_debug_descriptor || __jit_debug_descriptor.first_entry == nullptr);
+
+		// The analyser's tables by address (blocks, functions, targets,
+		// predecessors): what it makes of programs with branches, at each
+		// block size, is what it has always made of them
+		{
+			u32 made_safe = 0, made_mega = 0, made_giga = 0;
+			const u32 safe = spu_analysis(dir, spu_block_size_type::safe, made_safe);
+			const u32 mega = spu_analysis(dir, spu_block_size_type::mega, made_mega);
+			double giga_ms = 0;
+			const u32 giga = spu_analysis(dir, spu_block_size_type::giga, made_giga, &giga_ms);
+			std::printf("test_llvm_jit: 300 branching SPU programs analysed: crc32 %08x safe, %08x mega, %08x giga; compiled %u, %u, %u; 3000 analyses by function in %.0f ms\n", safe, mega, giga, made_safe, made_mega, made_giga, giga_ms);
+			CHECK(safe == 0x137a08bfu && mega == 0x52de2a20u && giga == 0x232d31ebu);
+			CHECK(made_safe == 300 && made_mega == 300 && made_giga == 300);
+		}
 
 		g_fxo->clear();
 		std::filesystem::remove_all(dir);

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "util/pc_lists.hpp"
+#include "util/pc_slots.hpp"
 #include "Utilities/File.h"
 #include "Utilities/lockless.h"
 #include "Utilities/address_range.h"
@@ -882,7 +883,7 @@ protected:
 	};
 
 	// Sorted basic block info
-	std::map<u32, block_info> m_bbs;
+	pc_map<block_info> m_bbs;
 
 	// Sorted advanced block (chunk) list
 	std::vector<u32> m_chunks;
@@ -904,7 +905,7 @@ protected:
 	};
 
 	// Sorted function info
-	std::map<u32, func_info> m_funcs;
+	pc_map<func_info> m_funcs;
 
 	// TODO: Add patterns
 	// Not a bitset to allow more possibilities
@@ -929,7 +930,7 @@ protected:
 		std::shared_ptr<void> info_ptr;
 	};
 
-	std::map<u32, pattern_info> m_patterns;
+	pc_map<pattern_info> m_patterns;
 
 	void add_pattern(inst_attr attr, u32 start, u64 info, std::shared_ptr<void> info_ptr = nullptr);
 
