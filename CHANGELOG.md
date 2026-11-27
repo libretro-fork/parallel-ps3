@@ -4,6 +4,10 @@ What changed in the libretro core of this fork, newest first. Changes that come 
 
 ## Unreleased
 
+- **Demon's Souls "In-Game Debug Menu": the debug memory zone is 8 MB, as in gibbed's patch.** Not yet run on a game.
+  - **What changed:** the patch gave the debug menu a root node but left the game's debug memory zone at the retail 2 MB. gibbed's DemonsSoulsDebug raises it to 8 MB (three instructions at 0x0003A1FC, 0x0003A244 and 0x0003A2B0), and this patch had left that out. With a root node, each area load adds its debug pages from that zone: the reload after a death is the likely place it ran out, the game then using memory it never got ("The PS3 application has likely crashed"). The three instructions are now part of the patch (version 1.1).
+  - **Tests:** `test_game_patches` passes.
+
 - **Fatal errors reach the frontend's log.** Not yet run on a game.
   - **What changed:** RPCS3's fatal messages went only to its own log file, which exists only with "Detailed Log" on. A game stopping with "The PS3 application has likely crashed", or a stop that hangs on closing content, left nothing to go by. Every fatal message now also goes to the frontend's log as an error. For a guest access violation, the faulting thread's state goes with it: its registers, the address and the call stack. Fatal messages are rare, so play costs nothing.
   - **Tests:** the full build passes.

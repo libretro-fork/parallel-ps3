@@ -170,8 +170,13 @@ PPU-83681f6110d33442329073b72b8dc88a2f677172:
       Param Man, the character and camera pages and more) are built at boot in the retail game, but never drawn
       nor read. While it is open, the game does not take the pad. From gibbed's DemonsSoulsDebug, with stack frames
       of its own and absolute calls, in two code caves the patch engine allocates.
-    Patch Version: 1.0
+    Patch Version: 1.1
     Patch:
+      # The debug memory zone, 2 MB in the retail game, at gibbed's 8 MB: the menu's nodes come from it, and with
+      # a root node every area load adds its pages. At 2 MB the reload after a death ran out and the game crashed
+      - [ be32, 0x0003A1FC, 0x3C600080 ] # lis r3, 0x80 // Original lis r3, 0x20
+      - [ be32, 0x0003A244, 0x3CA00080 ] # lis r5, 0x80 // Original lis r5, 0x20
+      - [ be32, 0x0003A2B0, 0x3CA00080 ] # lis r5, 0x80 // Original lis r5, 0x20
       # The menu built with a root node: in place of the call to create_debug_menu at 0x00020F44
       - [ calloc, 0x00020F46, 11 ] # Hook 0x00020F44 // Original bl 0x00015A58; returns to 0x00020F48
       - [ be32, 0x00000000, 0xF821FF81 ] # stdu r1, -0x80(r1)
