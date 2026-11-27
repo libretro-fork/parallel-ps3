@@ -1030,6 +1030,8 @@ static void lrcore_uninstall_crash_handler()
 }
 #endif
 
+std::string dump_useful_thread_info(); // Utilities/Thread.cpp
+
 namespace
 {
     // The first error an emulation thread stopped on, for retro_run to show:
@@ -1045,9 +1047,29 @@ namespace
     {
         void log(u64 /*stamp*/, const logs::message& msg, std::string_view /*prefix*/, std::string_view text) override
         {
-            // Only that; other logging is not forwarded
+            if (logs::level{msg} != logs::level::fatal)
+                return;
+
+            // Every fatal message reaches the frontend's log: without "Detailed
+            // Log" there is no file, and a game that stops on a guest access
+            // violation ("The PS3 application has likely crashed") left no
+            // trace of where. They are rare, so this costs nothing in play. For
+            // an access violation, the faulting thread's state (this is that
+            // thread) - its registers, address and call stack
+            if (log_cb)
+            {
+                log_cb(RETRO_LOG_ERROR, "RPCS3: %.*s\n", static_cast<int>(text.size()), text.data());
+
+                if (text.starts_with("Access violation"))
+                {
+                    if (const std::string info = dump_useful_thread_info(); !info.empty())
+                        log_cb(RETRO_LOG_ERROR, "RPCS3: %s\n", info.c_str());
+                }
+            }
+
+            // The first thread to stop on one is shown by retro_run
             static constexpr std::string_view terminated = "Thread terminated due to fatal error: ";
-            if (logs::level{msg} != logs::level::fatal || !text.starts_with(terminated))
+            if (!text.starts_with(terminated))
                 return;
             if (retro_atomic_fetch_add_int(&s_fatal_claims, 1) != 0)
                 return;

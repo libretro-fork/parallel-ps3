@@ -4,6 +4,10 @@ What changed in the libretro core of this fork, newest first. Changes that come 
 
 ## Unreleased
 
+- **Fatal errors reach the frontend's log.** Not yet run on a game.
+  - **What changed:** RPCS3's fatal messages went only to its own log file, which exists only with "Detailed Log" on. A game stopping with "The PS3 application has likely crashed", or a stop that hangs on closing content, left nothing to go by. Every fatal message now also goes to the frontend's log as an error. For a guest access violation, the faulting thread's state goes with it: its registers, the address and the call stack. Fatal messages are rare, so play costs nothing.
+  - **Tests:** the full build passes.
+
 - **A boot that fails while starting the renderer no longer hangs.** Not yet run on a game.
   - **What changed:** while a game's emulator objects and renderer are made, new threads wait before running (`g_launch_retainer` in `init_fxo_for_exec`). When the renderer's start threw, that wait was never let go. The failed boot then stopped the emulator, whose stopping thread waited at its first line for good, and the frontend hung on opening content. The wait is now let go however the start ends, so the failure reaches the frontend's log ("RPCS3: booting ... threw: ...") and content loading fails cleanly.
   - **Tests:** the full build passes.
