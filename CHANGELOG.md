@@ -4,6 +4,13 @@ What changed in the libretro core of this fork, newest first. Changes that come 
 
 ## Unreleased
 
+- **VBlank Frequency has an "Auto" value, the default: it follows the Patch Manager.** Not yet run on a game.
+  - **What changed:** running a game at 120 FPS took two settings that had to agree: the patch's frame rate and the VBlank Frequency core option. "Auto" is 60 Hz, or the frame rate a patch that is on is set to when that is higher: the picked choice of a patch value named for it ("Frame Rate", "FPS"), by the number in its label ("120 FPS") or its value. Demon's Souls "Fixed Frame Pacing" at 120 FPS now needs nothing else set.
+    - It is read as the game loads, like the patches themselves: a patch changed in play applies, with its rate, at the next start.
+    - The fixed values (50 to 240 Hz) and "From List" work as before.
+    - `patch_options_frame_rate` (`libretro_patch_options.c`, C89) does the reading.
+  - **Tests:** `test_patch_options` covers it: no patch on, a label's number, a value without one, the higher of two, and values not named for a frame rate left alone.
+
 - **Demon's Souls "In-Game Debug Menu": the debug memory zone is 8 MB, as in gibbed's patch.** Not yet run on a game.
   - **What changed:** the patch gave the debug menu a root node but left the game's debug memory zone at the retail 2 MB. gibbed's DemonsSoulsDebug raises it to 8 MB (three instructions at 0x0003A1FC, 0x0003A244 and 0x0003A2B0), and this patch had left that out. With a root node, each area load adds its debug pages from that zone: the reload after a death is the likely place it ran out, the game then using memory it never got ("The PS3 application has likely crashed"). The three instructions are now part of the patch (version 1.1).
   - **Tests:** `test_game_patches` passes.

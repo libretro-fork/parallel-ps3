@@ -481,6 +481,51 @@ static void libretro_limit_disk_cache()
 // again for the SPU threads it starts
 extern void fixup_decoders_without_llvm();
 
+// VBlank Frequency. Auto: 60 Hz, or the frame rate a patch turned on in the
+// Patch Manager is set to when that is higher (a "Frame Rate" or "FPS" value:
+// patch_options_frame_rate) - known once the game's patches are collected, so
+// retro_load_game applies this again then. From List: 120 Hz for a game of
+// vblank_unlock.txt - with the core still at 60 frames a second for a 30 fps
+// game, which then runs at 60 - and 60 Hz for any other (NNshi)
+static void libretro_apply_vblank_option(bool at_load = false)
+{
+    std::string vblank = get_option_value("rpcs3_vblank_rate", "auto");
+    s_output_hz = 0;
+    if (vblank == "auto")
+    {
+        // Read from the patches as the game loads only: a patch changed in
+        // play applies at the next start, and so does its rate
+        static unsigned s_rate = 60;
+        if (at_load)
+        {
+            const unsigned rate = patch_options_frame_rate(patch_option_value, nullptr);
+            s_rate = rate > 60 ? rate : 60;
+            if (log_cb && rate > 60)
+                log_cb(RETRO_LOG_INFO, "RPCS3: VBlank Frequency Auto: a patch is set to %u FPS, VBlank at %u Hz\n", rate, rate);
+        }
+        vblank = std::to_string(s_rate);
+    }
+    if (vblank == "list")
+    {
+        const std::string serial = game_serial(game_path);
+        const u32 block = vblank_unlock_block(serial);
+        vblank = block ? "120" : "60";
+        if (block == 30)
+            s_output_hz = 60;
+        static std::string s_logged;
+        if (log_cb && !serial.empty() && s_logged != serial)
+        {
+            s_logged = serial;
+            if (block)
+                log_cb(RETRO_LOG_INFO, "RPCS3: VBlank Frequency from the list: %s is a %u fps game, VBlank at 120 Hz, %u frames a second shown\n",
+                    serial.c_str(), block, block * 2);
+            else
+                log_cb(RETRO_LOG_INFO, "RPCS3: VBlank Frequency from the list: %s is not in vblank_unlock.txt, 60 Hz\n", serial.c_str());
+        }
+    }
+    g_cfg.video.vblank_rate.set(std::stoi(vblank));
+}
+
 static void libretro_apply_core_options()
 {
     if (!environ_cb)
@@ -784,30 +829,7 @@ static void libretro_apply_core_options()
     // Multithreaded RSX
     g_cfg.video.multithreaded_rsx.set(get_option_value("rpcs3_multithreaded_rsx", "disabled") == "enabled");
 
-    // VBlank Rate. From List: 120 Hz for a game of vblank_unlock.txt - with
-    // the core still at 60 frames a second for a 30 fps game, which then runs
-    // at 60 - and 60 Hz for any other (NNshi)
-    std::string vblank = get_option_value("rpcs3_vblank_rate", "60");
-    s_output_hz = 0;
-    if (vblank == "list")
-    {
-        const std::string serial = game_serial(game_path);
-        const u32 block = vblank_unlock_block(serial);
-        vblank = block ? "120" : "60";
-        if (block == 30)
-            s_output_hz = 60;
-        static std::string s_logged;
-        if (log_cb && !serial.empty() && s_logged != serial)
-        {
-            s_logged = serial;
-            if (block)
-                log_cb(RETRO_LOG_INFO, "RPCS3: VBlank Frequency from the list: %s is a %u fps game, VBlank at 120 Hz, %u frames a second shown\n",
-                    serial.c_str(), block, block * 2);
-            else
-                log_cb(RETRO_LOG_INFO, "RPCS3: VBlank Frequency from the list: %s is not in vblank_unlock.txt, 60 Hz\n", serial.c_str());
-        }
-    }
-    g_cfg.video.vblank_rate.set(std::stoi(vblank));
+    libretro_apply_vblank_option();
 
     // Immediate: the readback path is only the fallback without the
     // frontend's Vulkan device now, and no longer offered as an option.
@@ -2943,6 +2965,11 @@ bool retro_load_game(const struct retro_game_info* game)
     // boots: before any boot (the null and software renderers boot just
     // below, the others as their context comes)
     libretro_patches::write_config(patch_option_value, nullptr);
+
+    // VBlank Frequency "Auto" follows those patches: applied again now that
+    // they are known, and saved for BootGame to read
+    libretro_apply_vblank_option(true);
+    g_cfg.save(config_path);
 
     // For null renderer, boot immediately. For OpenGL, defer until
     // context_reset(). The software path has no context coming, so it boots

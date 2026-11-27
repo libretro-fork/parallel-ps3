@@ -713,8 +713,8 @@ struct retro_core_option_v2_definition option_defs_ar[] = {
         "rpcs3_vblank_rate", RPCS3_VBLANK_RATE_LABEL_AR, NULL,
         RPCS3_VBLANK_RATE_INFO_0_AR,
         NULL, "gpu",
-        { {"50", OPTION_VAL_50_RPCS3_VBLANK_RATE_AR}, {"60", OPTION_VAL_60_RPCS3_VBLANK_RATE_AR}, {"120", OPTION_VAL_120_RPCS3_VBLANK_RATE_AR}, {"144", OPTION_VAL_144_RPCS3_VBLANK_RATE_AR}, {"240", OPTION_VAL_240_RPCS3_VBLANK_RATE_AR}, {"list", OPTION_VAL_LIST_AR}, {NULL, NULL} },
-        "60"
+        { {"auto", OPTION_VAL_AUTO_AR}, {"50", OPTION_VAL_50_RPCS3_VBLANK_RATE_AR}, {"60", OPTION_VAL_60_RPCS3_VBLANK_RATE_AR}, {"120", OPTION_VAL_120_RPCS3_VBLANK_RATE_AR}, {"144", OPTION_VAL_144_RPCS3_VBLANK_RATE_AR}, {"240", OPTION_VAL_240_RPCS3_VBLANK_RATE_AR}, {"list", OPTION_VAL_LIST_AR}, {NULL, NULL} },
+        "auto"
     },
     // ==================== SCHEDULING ====================
     {
@@ -1756,8 +1756,8 @@ struct retro_core_option_v2_definition option_defs_ast[] = {
         "rpcs3_vblank_rate", RPCS3_VBLANK_RATE_LABEL_AST, NULL,
         RPCS3_VBLANK_RATE_INFO_0_AST,
         NULL, "gpu",
-        { {"50", OPTION_VAL_50_RPCS3_VBLANK_RATE_AST}, {"60", OPTION_VAL_60_RPCS3_VBLANK_RATE_AST}, {"120", OPTION_VAL_120_RPCS3_VBLANK_RATE_AST}, {"144", OPTION_VAL_144_RPCS3_VBLANK_RATE_AST}, {"240", OPTION_VAL_240_RPCS3_VBLANK_RATE_AST}, {"list", OPTION_VAL_LIST_AST}, {NULL, NULL} },
-        "60"
+        { {"auto", OPTION_VAL_AUTO_AST}, {"50", OPTION_VAL_50_RPCS3_VBLANK_RATE_AST}, {"60", OPTION_VAL_60_RPCS3_VBLANK_RATE_AST}, {"120", OPTION_VAL_120_RPCS3_VBLANK_RATE_AST}, {"144", OPTION_VAL_144_RPCS3_VBLANK_RATE_AST}, {"240", OPTION_VAL_240_RPCS3_VBLANK_RATE_AST}, {"list", OPTION_VAL_LIST_AST}, {NULL, NULL} },
+        "auto"
     },
     // ==================== SCHEDULING ====================
     {
@@ -2799,8 +2799,8 @@ struct retro_core_option_v2_definition option_defs_be[] = {
         "rpcs3_vblank_rate", RPCS3_VBLANK_RATE_LABEL_BE, NULL,
         RPCS3_VBLANK_RATE_INFO_0_BE,
         NULL, "gpu",
-        { {"50", OPTION_VAL_50_RPCS3_VBLANK_RATE_BE}, {"60", OPTION_VAL_60_RPCS3_VBLANK_RATE_BE}, {"120", OPTION_VAL_120_RPCS3_VBLANK_RATE_BE}, {"144", OPTION_VAL_144_RPCS3_VBLANK_RATE_BE}, {"240", OPTION_VAL_240_RPCS3_VBLANK_RATE_BE}, {"list", OPTION_VAL_LIST_BE}, {NULL, NULL} },
-        "60"
+        { {"auto", OPTION_VAL_AUTO_BE}, {"50", OPTION_VAL_50_RPCS3_VBLANK_RATE_BE}, {"60", OPTION_VAL_60_RPCS3_VBLANK_RATE_BE}, {"120", OPTION_VAL_120_RPCS3_VBLANK_RATE_BE}, {"144", OPTION_VAL_144_RPCS3_VBLANK_RATE_BE}, {"240", OPTION_VAL_240_RPCS3_VBLANK_RATE_BE}, {"list", OPTION_VAL_LIST_BE}, {NULL, NULL} },
+        "auto"
     },
     // ==================== SCHEDULING ====================
     {
@@ -3842,8 +3842,8 @@ struct retro_core_option_v2_definition option_defs_bg[] = {
         "rpcs3_vblank_rate", RPCS3_VBLANK_RATE_LABEL_BG, NULL,
         RPCS3_VBLANK_RATE_INFO_0_BG,
         NULL, "gpu",
-        { {"50", OPTION_VAL_50_RPCS3_VBLANK_RATE_BG}, {"60", OPTION_VAL_60_RPCS3_VBLANK_RATE_BG}, {"120", OPTION_VAL_120_RPCS3_VBLANK_RATE_BG}, {"144", OPTION_VAL_144_RPCS3_VBLANK_RATE_BG}, {"240", OPTION_VAL_240_RPCS3_VBLANK_RATE_BG}, {"list", OPTION_VAL_LIST_BG}, {NULL, NULL} },
-        "60"
+        { {"auto", OPTION_VAL_AUTO_BG}, {"50", OPTION_VAL_50_RPCS3_VBLANK_RATE_BG}, {"60", OPTION_VAL_60_RPCS3_VBLANK_RATE_BG}, {"120", OPTION_VAL_120_RPCS3_VBLANK_RATE_BG}, {"144", OPTION_VAL_144_RPCS3_VBLANK_RATE_BG}, {"240", OPTION_VAL_240_RPCS3_VBLANK_RATE_BG}, {"list", OPTION_VAL_LIST_BG}, {NULL, NULL} },
+        "auto"
     },
     // ==================== SCHEDULING ====================
     {
@@ -4885,8 +4885,8 @@ struct retro_core_option_v2_definition option_defs_ca[] = {
         "rpcs3_vblank_rate", RPCS3_VBLANK_RATE_LABEL_CA, NULL,
         RPCS3_VBLANK_RATE_INFO_0_CA,
         NULL, "gpu",
-        { {"50", OPTION_VAL_50_RPCS3_VBLANK_RATE_CA}, {"60", OPTION_VAL_60_RPCS3_VBLANK_RATE_CA}, {"120", OPTION_VAL_120_RPCS3_VBLANK_RATE_CA}, {"144", OPTION_VAL_144_RPCS3_VBLANK_RATE_CA}, {"240", OPTION_VAL_240_RPCS3_VBLANK_RATE_CA}, {"list", OPTION_VAL_LIST_CA}, {NULL, NULL} },
-        "60"
+        { {"auto", OPTION_VAL_AUTO_CA}, {"50", OPTION_VAL_50_RPCS3_VBLANK_RATE_CA}, {"60", OPTION_VAL_60_RPCS3_VBLANK_RATE_CA}, {"120", OPTION_VAL_120_RPCS3_VBLANK_RATE_CA}, {"144", OPTION_VAL_144_RPCS3_VBLANK_RATE_CA}, {"240", OPTION_VAL_240_RPCS3_VBLANK_RATE_CA}, {"list", OPTION_VAL_LIST_CA}, {NULL, NULL} },
+        "auto"
     },
     // ==================== SCHEDULING ====================
     {
@@ -5928,8 +5928,8 @@ struct retro_core_option_v2_definition option_defs_chs[] = {
         "rpcs3_vblank_rate", RPCS3_VBLANK_RATE_LABEL_CHS, NULL,
         RPCS3_VBLANK_RATE_INFO_0_CHS,
         NULL, "gpu",
-        { {"50", OPTION_VAL_50_RPCS3_VBLANK_RATE_CHS}, {"60", OPTION_VAL_60_RPCS3_VBLANK_RATE_CHS}, {"120", OPTION_VAL_120_RPCS3_VBLANK_RATE_CHS}, {"144", OPTION_VAL_144_RPCS3_VBLANK_RATE_CHS}, {"240", OPTION_VAL_240_RPCS3_VBLANK_RATE_CHS}, {"list", OPTION_VAL_LIST_CHS}, {NULL, NULL} },
-        "60"
+        { {"auto", OPTION_VAL_AUTO_CHS}, {"50", OPTION_VAL_50_RPCS3_VBLANK_RATE_CHS}, {"60", OPTION_VAL_60_RPCS3_VBLANK_RATE_CHS}, {"120", OPTION_VAL_120_RPCS3_VBLANK_RATE_CHS}, {"144", OPTION_VAL_144_RPCS3_VBLANK_RATE_CHS}, {"240", OPTION_VAL_240_RPCS3_VBLANK_RATE_CHS}, {"list", OPTION_VAL_LIST_CHS}, {NULL, NULL} },
+        "auto"
     },
     // ==================== SCHEDULING ====================
     {
@@ -6971,8 +6971,8 @@ struct retro_core_option_v2_definition option_defs_cht[] = {
         "rpcs3_vblank_rate", RPCS3_VBLANK_RATE_LABEL_CHT, NULL,
         RPCS3_VBLANK_RATE_INFO_0_CHT,
         NULL, "gpu",
-        { {"50", OPTION_VAL_50_RPCS3_VBLANK_RATE_CHT}, {"60", OPTION_VAL_60_RPCS3_VBLANK_RATE_CHT}, {"120", OPTION_VAL_120_RPCS3_VBLANK_RATE_CHT}, {"144", OPTION_VAL_144_RPCS3_VBLANK_RATE_CHT}, {"240", OPTION_VAL_240_RPCS3_VBLANK_RATE_CHT}, {"list", OPTION_VAL_LIST_CHT}, {NULL, NULL} },
-        "60"
+        { {"auto", OPTION_VAL_AUTO_CHT}, {"50", OPTION_VAL_50_RPCS3_VBLANK_RATE_CHT}, {"60", OPTION_VAL_60_RPCS3_VBLANK_RATE_CHT}, {"120", OPTION_VAL_120_RPCS3_VBLANK_RATE_CHT}, {"144", OPTION_VAL_144_RPCS3_VBLANK_RATE_CHT}, {"240", OPTION_VAL_240_RPCS3_VBLANK_RATE_CHT}, {"list", OPTION_VAL_LIST_CHT}, {NULL, NULL} },
+        "auto"
     },
     // ==================== SCHEDULING ====================
     {
@@ -8014,8 +8014,8 @@ struct retro_core_option_v2_definition option_defs_cs[] = {
         "rpcs3_vblank_rate", RPCS3_VBLANK_RATE_LABEL_CS, NULL,
         RPCS3_VBLANK_RATE_INFO_0_CS,
         NULL, "gpu",
-        { {"50", OPTION_VAL_50_RPCS3_VBLANK_RATE_CS}, {"60", OPTION_VAL_60_RPCS3_VBLANK_RATE_CS}, {"120", OPTION_VAL_120_RPCS3_VBLANK_RATE_CS}, {"144", OPTION_VAL_144_RPCS3_VBLANK_RATE_CS}, {"240", OPTION_VAL_240_RPCS3_VBLANK_RATE_CS}, {"list", OPTION_VAL_LIST_CS}, {NULL, NULL} },
-        "60"
+        { {"auto", OPTION_VAL_AUTO_CS}, {"50", OPTION_VAL_50_RPCS3_VBLANK_RATE_CS}, {"60", OPTION_VAL_60_RPCS3_VBLANK_RATE_CS}, {"120", OPTION_VAL_120_RPCS3_VBLANK_RATE_CS}, {"144", OPTION_VAL_144_RPCS3_VBLANK_RATE_CS}, {"240", OPTION_VAL_240_RPCS3_VBLANK_RATE_CS}, {"list", OPTION_VAL_LIST_CS}, {NULL, NULL} },
+        "auto"
     },
     // ==================== SCHEDULING ====================
     {
@@ -9057,8 +9057,8 @@ struct retro_core_option_v2_definition option_defs_cy[] = {
         "rpcs3_vblank_rate", RPCS3_VBLANK_RATE_LABEL_CY, NULL,
         RPCS3_VBLANK_RATE_INFO_0_CY,
         NULL, "gpu",
-        { {"50", OPTION_VAL_50_RPCS3_VBLANK_RATE_CY}, {"60", OPTION_VAL_60_RPCS3_VBLANK_RATE_CY}, {"120", OPTION_VAL_120_RPCS3_VBLANK_RATE_CY}, {"144", OPTION_VAL_144_RPCS3_VBLANK_RATE_CY}, {"240", OPTION_VAL_240_RPCS3_VBLANK_RATE_CY}, {"list", OPTION_VAL_LIST_CY}, {NULL, NULL} },
-        "60"
+        { {"auto", OPTION_VAL_AUTO_CY}, {"50", OPTION_VAL_50_RPCS3_VBLANK_RATE_CY}, {"60", OPTION_VAL_60_RPCS3_VBLANK_RATE_CY}, {"120", OPTION_VAL_120_RPCS3_VBLANK_RATE_CY}, {"144", OPTION_VAL_144_RPCS3_VBLANK_RATE_CY}, {"240", OPTION_VAL_240_RPCS3_VBLANK_RATE_CY}, {"list", OPTION_VAL_LIST_CY}, {NULL, NULL} },
+        "auto"
     },
     // ==================== SCHEDULING ====================
     {
@@ -10100,8 +10100,8 @@ struct retro_core_option_v2_definition option_defs_da[] = {
         "rpcs3_vblank_rate", RPCS3_VBLANK_RATE_LABEL_DA, NULL,
         RPCS3_VBLANK_RATE_INFO_0_DA,
         NULL, "gpu",
-        { {"50", OPTION_VAL_50_RPCS3_VBLANK_RATE_DA}, {"60", OPTION_VAL_60_RPCS3_VBLANK_RATE_DA}, {"120", OPTION_VAL_120_RPCS3_VBLANK_RATE_DA}, {"144", OPTION_VAL_144_RPCS3_VBLANK_RATE_DA}, {"240", OPTION_VAL_240_RPCS3_VBLANK_RATE_DA}, {"list", OPTION_VAL_LIST_DA}, {NULL, NULL} },
-        "60"
+        { {"auto", OPTION_VAL_AUTO_DA}, {"50", OPTION_VAL_50_RPCS3_VBLANK_RATE_DA}, {"60", OPTION_VAL_60_RPCS3_VBLANK_RATE_DA}, {"120", OPTION_VAL_120_RPCS3_VBLANK_RATE_DA}, {"144", OPTION_VAL_144_RPCS3_VBLANK_RATE_DA}, {"240", OPTION_VAL_240_RPCS3_VBLANK_RATE_DA}, {"list", OPTION_VAL_LIST_DA}, {NULL, NULL} },
+        "auto"
     },
     // ==================== SCHEDULING ====================
     {
@@ -11143,8 +11143,8 @@ struct retro_core_option_v2_definition option_defs_de[] = {
         "rpcs3_vblank_rate", RPCS3_VBLANK_RATE_LABEL_DE, NULL,
         RPCS3_VBLANK_RATE_INFO_0_DE,
         NULL, "gpu",
-        { {"50", OPTION_VAL_50_RPCS3_VBLANK_RATE_DE}, {"60", OPTION_VAL_60_RPCS3_VBLANK_RATE_DE}, {"120", OPTION_VAL_120_RPCS3_VBLANK_RATE_DE}, {"144", OPTION_VAL_144_RPCS3_VBLANK_RATE_DE}, {"240", OPTION_VAL_240_RPCS3_VBLANK_RATE_DE}, {"list", OPTION_VAL_LIST_DE}, {NULL, NULL} },
-        "60"
+        { {"auto", OPTION_VAL_AUTO_DE}, {"50", OPTION_VAL_50_RPCS3_VBLANK_RATE_DE}, {"60", OPTION_VAL_60_RPCS3_VBLANK_RATE_DE}, {"120", OPTION_VAL_120_RPCS3_VBLANK_RATE_DE}, {"144", OPTION_VAL_144_RPCS3_VBLANK_RATE_DE}, {"240", OPTION_VAL_240_RPCS3_VBLANK_RATE_DE}, {"list", OPTION_VAL_LIST_DE}, {NULL, NULL} },
+        "auto"
     },
     // ==================== SCHEDULING ====================
     {
@@ -12186,8 +12186,8 @@ struct retro_core_option_v2_definition option_defs_el[] = {
         "rpcs3_vblank_rate", RPCS3_VBLANK_RATE_LABEL_EL, NULL,
         RPCS3_VBLANK_RATE_INFO_0_EL,
         NULL, "gpu",
-        { {"50", OPTION_VAL_50_RPCS3_VBLANK_RATE_EL}, {"60", OPTION_VAL_60_RPCS3_VBLANK_RATE_EL}, {"120", OPTION_VAL_120_RPCS3_VBLANK_RATE_EL}, {"144", OPTION_VAL_144_RPCS3_VBLANK_RATE_EL}, {"240", OPTION_VAL_240_RPCS3_VBLANK_RATE_EL}, {"list", OPTION_VAL_LIST_EL}, {NULL, NULL} },
-        "60"
+        { {"auto", OPTION_VAL_AUTO_EL}, {"50", OPTION_VAL_50_RPCS3_VBLANK_RATE_EL}, {"60", OPTION_VAL_60_RPCS3_VBLANK_RATE_EL}, {"120", OPTION_VAL_120_RPCS3_VBLANK_RATE_EL}, {"144", OPTION_VAL_144_RPCS3_VBLANK_RATE_EL}, {"240", OPTION_VAL_240_RPCS3_VBLANK_RATE_EL}, {"list", OPTION_VAL_LIST_EL}, {NULL, NULL} },
+        "auto"
     },
     // ==================== SCHEDULING ====================
     {
@@ -13229,8 +13229,8 @@ struct retro_core_option_v2_definition option_defs_en[] = {
         "rpcs3_vblank_rate", RPCS3_VBLANK_RATE_LABEL_EN, NULL,
         RPCS3_VBLANK_RATE_INFO_0_EN,
         NULL, "gpu",
-        { {"50", OPTION_VAL_50_RPCS3_VBLANK_RATE_EN}, {"60", OPTION_VAL_60_RPCS3_VBLANK_RATE_EN}, {"120", OPTION_VAL_120_RPCS3_VBLANK_RATE_EN}, {"144", OPTION_VAL_144_RPCS3_VBLANK_RATE_EN}, {"240", OPTION_VAL_240_RPCS3_VBLANK_RATE_EN}, {"list", OPTION_VAL_LIST_EN}, {NULL, NULL} },
-        "60"
+        { {"auto", OPTION_VAL_AUTO_EN}, {"50", OPTION_VAL_50_RPCS3_VBLANK_RATE_EN}, {"60", OPTION_VAL_60_RPCS3_VBLANK_RATE_EN}, {"120", OPTION_VAL_120_RPCS3_VBLANK_RATE_EN}, {"144", OPTION_VAL_144_RPCS3_VBLANK_RATE_EN}, {"240", OPTION_VAL_240_RPCS3_VBLANK_RATE_EN}, {"list", OPTION_VAL_LIST_EN}, {NULL, NULL} },
+        "auto"
     },
     // ==================== SCHEDULING ====================
     {
@@ -14272,8 +14272,8 @@ struct retro_core_option_v2_definition option_defs_eo[] = {
         "rpcs3_vblank_rate", RPCS3_VBLANK_RATE_LABEL_EO, NULL,
         RPCS3_VBLANK_RATE_INFO_0_EO,
         NULL, "gpu",
-        { {"50", OPTION_VAL_50_RPCS3_VBLANK_RATE_EO}, {"60", OPTION_VAL_60_RPCS3_VBLANK_RATE_EO}, {"120", OPTION_VAL_120_RPCS3_VBLANK_RATE_EO}, {"144", OPTION_VAL_144_RPCS3_VBLANK_RATE_EO}, {"240", OPTION_VAL_240_RPCS3_VBLANK_RATE_EO}, {"list", OPTION_VAL_LIST_EO}, {NULL, NULL} },
-        "60"
+        { {"auto", OPTION_VAL_AUTO_EO}, {"50", OPTION_VAL_50_RPCS3_VBLANK_RATE_EO}, {"60", OPTION_VAL_60_RPCS3_VBLANK_RATE_EO}, {"120", OPTION_VAL_120_RPCS3_VBLANK_RATE_EO}, {"144", OPTION_VAL_144_RPCS3_VBLANK_RATE_EO}, {"240", OPTION_VAL_240_RPCS3_VBLANK_RATE_EO}, {"list", OPTION_VAL_LIST_EO}, {NULL, NULL} },
+        "auto"
     },
     // ==================== SCHEDULING ====================
     {
@@ -15315,8 +15315,8 @@ struct retro_core_option_v2_definition option_defs_es[] = {
         "rpcs3_vblank_rate", RPCS3_VBLANK_RATE_LABEL_ES, NULL,
         RPCS3_VBLANK_RATE_INFO_0_ES,
         NULL, "gpu",
-        { {"50", OPTION_VAL_50_RPCS3_VBLANK_RATE_ES}, {"60", OPTION_VAL_60_RPCS3_VBLANK_RATE_ES}, {"120", OPTION_VAL_120_RPCS3_VBLANK_RATE_ES}, {"144", OPTION_VAL_144_RPCS3_VBLANK_RATE_ES}, {"240", OPTION_VAL_240_RPCS3_VBLANK_RATE_ES}, {"list", OPTION_VAL_LIST_ES}, {NULL, NULL} },
-        "60"
+        { {"auto", OPTION_VAL_AUTO_ES}, {"50", OPTION_VAL_50_RPCS3_VBLANK_RATE_ES}, {"60", OPTION_VAL_60_RPCS3_VBLANK_RATE_ES}, {"120", OPTION_VAL_120_RPCS3_VBLANK_RATE_ES}, {"144", OPTION_VAL_144_RPCS3_VBLANK_RATE_ES}, {"240", OPTION_VAL_240_RPCS3_VBLANK_RATE_ES}, {"list", OPTION_VAL_LIST_ES}, {NULL, NULL} },
+        "auto"
     },
     // ==================== SCHEDULING ====================
     {
@@ -16358,8 +16358,8 @@ struct retro_core_option_v2_definition option_defs_fa[] = {
         "rpcs3_vblank_rate", RPCS3_VBLANK_RATE_LABEL_FA, NULL,
         RPCS3_VBLANK_RATE_INFO_0_FA,
         NULL, "gpu",
-        { {"50", OPTION_VAL_50_RPCS3_VBLANK_RATE_FA}, {"60", OPTION_VAL_60_RPCS3_VBLANK_RATE_FA}, {"120", OPTION_VAL_120_RPCS3_VBLANK_RATE_FA}, {"144", OPTION_VAL_144_RPCS3_VBLANK_RATE_FA}, {"240", OPTION_VAL_240_RPCS3_VBLANK_RATE_FA}, {"list", OPTION_VAL_LIST_FA}, {NULL, NULL} },
-        "60"
+        { {"auto", OPTION_VAL_AUTO_FA}, {"50", OPTION_VAL_50_RPCS3_VBLANK_RATE_FA}, {"60", OPTION_VAL_60_RPCS3_VBLANK_RATE_FA}, {"120", OPTION_VAL_120_RPCS3_VBLANK_RATE_FA}, {"144", OPTION_VAL_144_RPCS3_VBLANK_RATE_FA}, {"240", OPTION_VAL_240_RPCS3_VBLANK_RATE_FA}, {"list", OPTION_VAL_LIST_FA}, {NULL, NULL} },
+        "auto"
     },
     // ==================== SCHEDULING ====================
     {
@@ -17401,8 +17401,8 @@ struct retro_core_option_v2_definition option_defs_fi[] = {
         "rpcs3_vblank_rate", RPCS3_VBLANK_RATE_LABEL_FI, NULL,
         RPCS3_VBLANK_RATE_INFO_0_FI,
         NULL, "gpu",
-        { {"50", OPTION_VAL_50_RPCS3_VBLANK_RATE_FI}, {"60", OPTION_VAL_60_RPCS3_VBLANK_RATE_FI}, {"120", OPTION_VAL_120_RPCS3_VBLANK_RATE_FI}, {"144", OPTION_VAL_144_RPCS3_VBLANK_RATE_FI}, {"240", OPTION_VAL_240_RPCS3_VBLANK_RATE_FI}, {"list", OPTION_VAL_LIST_FI}, {NULL, NULL} },
-        "60"
+        { {"auto", OPTION_VAL_AUTO_FI}, {"50", OPTION_VAL_50_RPCS3_VBLANK_RATE_FI}, {"60", OPTION_VAL_60_RPCS3_VBLANK_RATE_FI}, {"120", OPTION_VAL_120_RPCS3_VBLANK_RATE_FI}, {"144", OPTION_VAL_144_RPCS3_VBLANK_RATE_FI}, {"240", OPTION_VAL_240_RPCS3_VBLANK_RATE_FI}, {"list", OPTION_VAL_LIST_FI}, {NULL, NULL} },
+        "auto"
     },
     // ==================== SCHEDULING ====================
     {
@@ -18444,8 +18444,8 @@ struct retro_core_option_v2_definition option_defs_fr[] = {
         "rpcs3_vblank_rate", RPCS3_VBLANK_RATE_LABEL_FR, NULL,
         RPCS3_VBLANK_RATE_INFO_0_FR,
         NULL, "gpu",
-        { {"50", OPTION_VAL_50_RPCS3_VBLANK_RATE_FR}, {"60", OPTION_VAL_60_RPCS3_VBLANK_RATE_FR}, {"120", OPTION_VAL_120_RPCS3_VBLANK_RATE_FR}, {"144", OPTION_VAL_144_RPCS3_VBLANK_RATE_FR}, {"240", OPTION_VAL_240_RPCS3_VBLANK_RATE_FR}, {"list", OPTION_VAL_LIST_FR}, {NULL, NULL} },
-        "60"
+        { {"auto", OPTION_VAL_AUTO_FR}, {"50", OPTION_VAL_50_RPCS3_VBLANK_RATE_FR}, {"60", OPTION_VAL_60_RPCS3_VBLANK_RATE_FR}, {"120", OPTION_VAL_120_RPCS3_VBLANK_RATE_FR}, {"144", OPTION_VAL_144_RPCS3_VBLANK_RATE_FR}, {"240", OPTION_VAL_240_RPCS3_VBLANK_RATE_FR}, {"list", OPTION_VAL_LIST_FR}, {NULL, NULL} },
+        "auto"
     },
     // ==================== SCHEDULING ====================
     {
@@ -19487,8 +19487,8 @@ struct retro_core_option_v2_definition option_defs_ga[] = {
         "rpcs3_vblank_rate", RPCS3_VBLANK_RATE_LABEL_GA, NULL,
         RPCS3_VBLANK_RATE_INFO_0_GA,
         NULL, "gpu",
-        { {"50", OPTION_VAL_50_RPCS3_VBLANK_RATE_GA}, {"60", OPTION_VAL_60_RPCS3_VBLANK_RATE_GA}, {"120", OPTION_VAL_120_RPCS3_VBLANK_RATE_GA}, {"144", OPTION_VAL_144_RPCS3_VBLANK_RATE_GA}, {"240", OPTION_VAL_240_RPCS3_VBLANK_RATE_GA}, {"list", OPTION_VAL_LIST_GA}, {NULL, NULL} },
-        "60"
+        { {"auto", OPTION_VAL_AUTO_GA}, {"50", OPTION_VAL_50_RPCS3_VBLANK_RATE_GA}, {"60", OPTION_VAL_60_RPCS3_VBLANK_RATE_GA}, {"120", OPTION_VAL_120_RPCS3_VBLANK_RATE_GA}, {"144", OPTION_VAL_144_RPCS3_VBLANK_RATE_GA}, {"240", OPTION_VAL_240_RPCS3_VBLANK_RATE_GA}, {"list", OPTION_VAL_LIST_GA}, {NULL, NULL} },
+        "auto"
     },
     // ==================== SCHEDULING ====================
     {
@@ -20530,8 +20530,8 @@ struct retro_core_option_v2_definition option_defs_gl[] = {
         "rpcs3_vblank_rate", RPCS3_VBLANK_RATE_LABEL_GL, NULL,
         RPCS3_VBLANK_RATE_INFO_0_GL,
         NULL, "gpu",
-        { {"50", OPTION_VAL_50_RPCS3_VBLANK_RATE_GL}, {"60", OPTION_VAL_60_RPCS3_VBLANK_RATE_GL}, {"120", OPTION_VAL_120_RPCS3_VBLANK_RATE_GL}, {"144", OPTION_VAL_144_RPCS3_VBLANK_RATE_GL}, {"240", OPTION_VAL_240_RPCS3_VBLANK_RATE_GL}, {"list", OPTION_VAL_LIST_GL}, {NULL, NULL} },
-        "60"
+        { {"auto", OPTION_VAL_AUTO_GL}, {"50", OPTION_VAL_50_RPCS3_VBLANK_RATE_GL}, {"60", OPTION_VAL_60_RPCS3_VBLANK_RATE_GL}, {"120", OPTION_VAL_120_RPCS3_VBLANK_RATE_GL}, {"144", OPTION_VAL_144_RPCS3_VBLANK_RATE_GL}, {"240", OPTION_VAL_240_RPCS3_VBLANK_RATE_GL}, {"list", OPTION_VAL_LIST_GL}, {NULL, NULL} },
+        "auto"
     },
     // ==================== SCHEDULING ====================
     {
@@ -21573,8 +21573,8 @@ struct retro_core_option_v2_definition option_defs_he[] = {
         "rpcs3_vblank_rate", RPCS3_VBLANK_RATE_LABEL_HE, NULL,
         RPCS3_VBLANK_RATE_INFO_0_HE,
         NULL, "gpu",
-        { {"50", OPTION_VAL_50_RPCS3_VBLANK_RATE_HE}, {"60", OPTION_VAL_60_RPCS3_VBLANK_RATE_HE}, {"120", OPTION_VAL_120_RPCS3_VBLANK_RATE_HE}, {"144", OPTION_VAL_144_RPCS3_VBLANK_RATE_HE}, {"240", OPTION_VAL_240_RPCS3_VBLANK_RATE_HE}, {"list", OPTION_VAL_LIST_HE}, {NULL, NULL} },
-        "60"
+        { {"auto", OPTION_VAL_AUTO_HE}, {"50", OPTION_VAL_50_RPCS3_VBLANK_RATE_HE}, {"60", OPTION_VAL_60_RPCS3_VBLANK_RATE_HE}, {"120", OPTION_VAL_120_RPCS3_VBLANK_RATE_HE}, {"144", OPTION_VAL_144_RPCS3_VBLANK_RATE_HE}, {"240", OPTION_VAL_240_RPCS3_VBLANK_RATE_HE}, {"list", OPTION_VAL_LIST_HE}, {NULL, NULL} },
+        "auto"
     },
     // ==================== SCHEDULING ====================
     {
@@ -22616,8 +22616,8 @@ struct retro_core_option_v2_definition option_defs_hr[] = {
         "rpcs3_vblank_rate", RPCS3_VBLANK_RATE_LABEL_HR, NULL,
         RPCS3_VBLANK_RATE_INFO_0_HR,
         NULL, "gpu",
-        { {"50", OPTION_VAL_50_RPCS3_VBLANK_RATE_HR}, {"60", OPTION_VAL_60_RPCS3_VBLANK_RATE_HR}, {"120", OPTION_VAL_120_RPCS3_VBLANK_RATE_HR}, {"144", OPTION_VAL_144_RPCS3_VBLANK_RATE_HR}, {"240", OPTION_VAL_240_RPCS3_VBLANK_RATE_HR}, {"list", OPTION_VAL_LIST_HR}, {NULL, NULL} },
-        "60"
+        { {"auto", OPTION_VAL_AUTO_HR}, {"50", OPTION_VAL_50_RPCS3_VBLANK_RATE_HR}, {"60", OPTION_VAL_60_RPCS3_VBLANK_RATE_HR}, {"120", OPTION_VAL_120_RPCS3_VBLANK_RATE_HR}, {"144", OPTION_VAL_144_RPCS3_VBLANK_RATE_HR}, {"240", OPTION_VAL_240_RPCS3_VBLANK_RATE_HR}, {"list", OPTION_VAL_LIST_HR}, {NULL, NULL} },
+        "auto"
     },
     // ==================== SCHEDULING ====================
     {
@@ -23659,8 +23659,8 @@ struct retro_core_option_v2_definition option_defs_hu[] = {
         "rpcs3_vblank_rate", RPCS3_VBLANK_RATE_LABEL_HU, NULL,
         RPCS3_VBLANK_RATE_INFO_0_HU,
         NULL, "gpu",
-        { {"50", OPTION_VAL_50_RPCS3_VBLANK_RATE_HU}, {"60", OPTION_VAL_60_RPCS3_VBLANK_RATE_HU}, {"120", OPTION_VAL_120_RPCS3_VBLANK_RATE_HU}, {"144", OPTION_VAL_144_RPCS3_VBLANK_RATE_HU}, {"240", OPTION_VAL_240_RPCS3_VBLANK_RATE_HU}, {"list", OPTION_VAL_LIST_HU}, {NULL, NULL} },
-        "60"
+        { {"auto", OPTION_VAL_AUTO_HU}, {"50", OPTION_VAL_50_RPCS3_VBLANK_RATE_HU}, {"60", OPTION_VAL_60_RPCS3_VBLANK_RATE_HU}, {"120", OPTION_VAL_120_RPCS3_VBLANK_RATE_HU}, {"144", OPTION_VAL_144_RPCS3_VBLANK_RATE_HU}, {"240", OPTION_VAL_240_RPCS3_VBLANK_RATE_HU}, {"list", OPTION_VAL_LIST_HU}, {NULL, NULL} },
+        "auto"
     },
     // ==================== SCHEDULING ====================
     {
@@ -24702,8 +24702,8 @@ struct retro_core_option_v2_definition option_defs_id[] = {
         "rpcs3_vblank_rate", RPCS3_VBLANK_RATE_LABEL_ID, NULL,
         RPCS3_VBLANK_RATE_INFO_0_ID,
         NULL, "gpu",
-        { {"50", OPTION_VAL_50_RPCS3_VBLANK_RATE_ID}, {"60", OPTION_VAL_60_RPCS3_VBLANK_RATE_ID}, {"120", OPTION_VAL_120_RPCS3_VBLANK_RATE_ID}, {"144", OPTION_VAL_144_RPCS3_VBLANK_RATE_ID}, {"240", OPTION_VAL_240_RPCS3_VBLANK_RATE_ID}, {"list", OPTION_VAL_LIST_ID}, {NULL, NULL} },
-        "60"
+        { {"auto", OPTION_VAL_AUTO_ID}, {"50", OPTION_VAL_50_RPCS3_VBLANK_RATE_ID}, {"60", OPTION_VAL_60_RPCS3_VBLANK_RATE_ID}, {"120", OPTION_VAL_120_RPCS3_VBLANK_RATE_ID}, {"144", OPTION_VAL_144_RPCS3_VBLANK_RATE_ID}, {"240", OPTION_VAL_240_RPCS3_VBLANK_RATE_ID}, {"list", OPTION_VAL_LIST_ID}, {NULL, NULL} },
+        "auto"
     },
     // ==================== SCHEDULING ====================
     {
@@ -25745,8 +25745,8 @@ struct retro_core_option_v2_definition option_defs_it[] = {
         "rpcs3_vblank_rate", RPCS3_VBLANK_RATE_LABEL_IT, NULL,
         RPCS3_VBLANK_RATE_INFO_0_IT,
         NULL, "gpu",
-        { {"50", OPTION_VAL_50_RPCS3_VBLANK_RATE_IT}, {"60", OPTION_VAL_60_RPCS3_VBLANK_RATE_IT}, {"120", OPTION_VAL_120_RPCS3_VBLANK_RATE_IT}, {"144", OPTION_VAL_144_RPCS3_VBLANK_RATE_IT}, {"240", OPTION_VAL_240_RPCS3_VBLANK_RATE_IT}, {"list", OPTION_VAL_LIST_IT}, {NULL, NULL} },
-        "60"
+        { {"auto", OPTION_VAL_AUTO_IT}, {"50", OPTION_VAL_50_RPCS3_VBLANK_RATE_IT}, {"60", OPTION_VAL_60_RPCS3_VBLANK_RATE_IT}, {"120", OPTION_VAL_120_RPCS3_VBLANK_RATE_IT}, {"144", OPTION_VAL_144_RPCS3_VBLANK_RATE_IT}, {"240", OPTION_VAL_240_RPCS3_VBLANK_RATE_IT}, {"list", OPTION_VAL_LIST_IT}, {NULL, NULL} },
+        "auto"
     },
     // ==================== SCHEDULING ====================
     {
@@ -26788,8 +26788,8 @@ struct retro_core_option_v2_definition option_defs_ja[] = {
         "rpcs3_vblank_rate", RPCS3_VBLANK_RATE_LABEL_JA, NULL,
         RPCS3_VBLANK_RATE_INFO_0_JA,
         NULL, "gpu",
-        { {"50", OPTION_VAL_50_RPCS3_VBLANK_RATE_JA}, {"60", OPTION_VAL_60_RPCS3_VBLANK_RATE_JA}, {"120", OPTION_VAL_120_RPCS3_VBLANK_RATE_JA}, {"144", OPTION_VAL_144_RPCS3_VBLANK_RATE_JA}, {"240", OPTION_VAL_240_RPCS3_VBLANK_RATE_JA}, {"list", OPTION_VAL_LIST_JA}, {NULL, NULL} },
-        "60"
+        { {"auto", OPTION_VAL_AUTO_JA}, {"50", OPTION_VAL_50_RPCS3_VBLANK_RATE_JA}, {"60", OPTION_VAL_60_RPCS3_VBLANK_RATE_JA}, {"120", OPTION_VAL_120_RPCS3_VBLANK_RATE_JA}, {"144", OPTION_VAL_144_RPCS3_VBLANK_RATE_JA}, {"240", OPTION_VAL_240_RPCS3_VBLANK_RATE_JA}, {"list", OPTION_VAL_LIST_JA}, {NULL, NULL} },
+        "auto"
     },
     // ==================== SCHEDULING ====================
     {
@@ -27831,8 +27831,8 @@ struct retro_core_option_v2_definition option_defs_ko[] = {
         "rpcs3_vblank_rate", RPCS3_VBLANK_RATE_LABEL_KO, NULL,
         RPCS3_VBLANK_RATE_INFO_0_KO,
         NULL, "gpu",
-        { {"50", OPTION_VAL_50_RPCS3_VBLANK_RATE_KO}, {"60", OPTION_VAL_60_RPCS3_VBLANK_RATE_KO}, {"120", OPTION_VAL_120_RPCS3_VBLANK_RATE_KO}, {"144", OPTION_VAL_144_RPCS3_VBLANK_RATE_KO}, {"240", OPTION_VAL_240_RPCS3_VBLANK_RATE_KO}, {"list", OPTION_VAL_LIST_KO}, {NULL, NULL} },
-        "60"
+        { {"auto", OPTION_VAL_AUTO_KO}, {"50", OPTION_VAL_50_RPCS3_VBLANK_RATE_KO}, {"60", OPTION_VAL_60_RPCS3_VBLANK_RATE_KO}, {"120", OPTION_VAL_120_RPCS3_VBLANK_RATE_KO}, {"144", OPTION_VAL_144_RPCS3_VBLANK_RATE_KO}, {"240", OPTION_VAL_240_RPCS3_VBLANK_RATE_KO}, {"list", OPTION_VAL_LIST_KO}, {NULL, NULL} },
+        "auto"
     },
     // ==================== SCHEDULING ====================
     {
@@ -28874,8 +28874,8 @@ struct retro_core_option_v2_definition option_defs_nl[] = {
         "rpcs3_vblank_rate", RPCS3_VBLANK_RATE_LABEL_NL, NULL,
         RPCS3_VBLANK_RATE_INFO_0_NL,
         NULL, "gpu",
-        { {"50", OPTION_VAL_50_RPCS3_VBLANK_RATE_NL}, {"60", OPTION_VAL_60_RPCS3_VBLANK_RATE_NL}, {"120", OPTION_VAL_120_RPCS3_VBLANK_RATE_NL}, {"144", OPTION_VAL_144_RPCS3_VBLANK_RATE_NL}, {"240", OPTION_VAL_240_RPCS3_VBLANK_RATE_NL}, {"list", OPTION_VAL_LIST_NL}, {NULL, NULL} },
-        "60"
+        { {"auto", OPTION_VAL_AUTO_NL}, {"50", OPTION_VAL_50_RPCS3_VBLANK_RATE_NL}, {"60", OPTION_VAL_60_RPCS3_VBLANK_RATE_NL}, {"120", OPTION_VAL_120_RPCS3_VBLANK_RATE_NL}, {"144", OPTION_VAL_144_RPCS3_VBLANK_RATE_NL}, {"240", OPTION_VAL_240_RPCS3_VBLANK_RATE_NL}, {"list", OPTION_VAL_LIST_NL}, {NULL, NULL} },
+        "auto"
     },
     // ==================== SCHEDULING ====================
     {
@@ -29917,8 +29917,8 @@ struct retro_core_option_v2_definition option_defs_no[] = {
         "rpcs3_vblank_rate", RPCS3_VBLANK_RATE_LABEL_NO, NULL,
         RPCS3_VBLANK_RATE_INFO_0_NO,
         NULL, "gpu",
-        { {"50", OPTION_VAL_50_RPCS3_VBLANK_RATE_NO}, {"60", OPTION_VAL_60_RPCS3_VBLANK_RATE_NO}, {"120", OPTION_VAL_120_RPCS3_VBLANK_RATE_NO}, {"144", OPTION_VAL_144_RPCS3_VBLANK_RATE_NO}, {"240", OPTION_VAL_240_RPCS3_VBLANK_RATE_NO}, {"list", OPTION_VAL_LIST_NO}, {NULL, NULL} },
-        "60"
+        { {"auto", OPTION_VAL_AUTO_NO}, {"50", OPTION_VAL_50_RPCS3_VBLANK_RATE_NO}, {"60", OPTION_VAL_60_RPCS3_VBLANK_RATE_NO}, {"120", OPTION_VAL_120_RPCS3_VBLANK_RATE_NO}, {"144", OPTION_VAL_144_RPCS3_VBLANK_RATE_NO}, {"240", OPTION_VAL_240_RPCS3_VBLANK_RATE_NO}, {"list", OPTION_VAL_LIST_NO}, {NULL, NULL} },
+        "auto"
     },
     // ==================== SCHEDULING ====================
     {
@@ -30960,8 +30960,8 @@ struct retro_core_option_v2_definition option_defs_or[] = {
         "rpcs3_vblank_rate", RPCS3_VBLANK_RATE_LABEL_OR, NULL,
         RPCS3_VBLANK_RATE_INFO_0_OR,
         NULL, "gpu",
-        { {"50", OPTION_VAL_50_RPCS3_VBLANK_RATE_OR}, {"60", OPTION_VAL_60_RPCS3_VBLANK_RATE_OR}, {"120", OPTION_VAL_120_RPCS3_VBLANK_RATE_OR}, {"144", OPTION_VAL_144_RPCS3_VBLANK_RATE_OR}, {"240", OPTION_VAL_240_RPCS3_VBLANK_RATE_OR}, {"list", OPTION_VAL_LIST_OR}, {NULL, NULL} },
-        "60"
+        { {"auto", OPTION_VAL_AUTO_OR}, {"50", OPTION_VAL_50_RPCS3_VBLANK_RATE_OR}, {"60", OPTION_VAL_60_RPCS3_VBLANK_RATE_OR}, {"120", OPTION_VAL_120_RPCS3_VBLANK_RATE_OR}, {"144", OPTION_VAL_144_RPCS3_VBLANK_RATE_OR}, {"240", OPTION_VAL_240_RPCS3_VBLANK_RATE_OR}, {"list", OPTION_VAL_LIST_OR}, {NULL, NULL} },
+        "auto"
     },
     // ==================== SCHEDULING ====================
     {
@@ -32003,8 +32003,8 @@ struct retro_core_option_v2_definition option_defs_pl[] = {
         "rpcs3_vblank_rate", RPCS3_VBLANK_RATE_LABEL_PL, NULL,
         RPCS3_VBLANK_RATE_INFO_0_PL,
         NULL, "gpu",
-        { {"50", OPTION_VAL_50_RPCS3_VBLANK_RATE_PL}, {"60", OPTION_VAL_60_RPCS3_VBLANK_RATE_PL}, {"120", OPTION_VAL_120_RPCS3_VBLANK_RATE_PL}, {"144", OPTION_VAL_144_RPCS3_VBLANK_RATE_PL}, {"240", OPTION_VAL_240_RPCS3_VBLANK_RATE_PL}, {"list", OPTION_VAL_LIST_PL}, {NULL, NULL} },
-        "60"
+        { {"auto", OPTION_VAL_AUTO_PL}, {"50", OPTION_VAL_50_RPCS3_VBLANK_RATE_PL}, {"60", OPTION_VAL_60_RPCS3_VBLANK_RATE_PL}, {"120", OPTION_VAL_120_RPCS3_VBLANK_RATE_PL}, {"144", OPTION_VAL_144_RPCS3_VBLANK_RATE_PL}, {"240", OPTION_VAL_240_RPCS3_VBLANK_RATE_PL}, {"list", OPTION_VAL_LIST_PL}, {NULL, NULL} },
+        "auto"
     },
     // ==================== SCHEDULING ====================
     {
@@ -33046,8 +33046,8 @@ struct retro_core_option_v2_definition option_defs_pt_br[] = {
         "rpcs3_vblank_rate", RPCS3_VBLANK_RATE_LABEL_PT_BR, NULL,
         RPCS3_VBLANK_RATE_INFO_0_PT_BR,
         NULL, "gpu",
-        { {"50", OPTION_VAL_50_RPCS3_VBLANK_RATE_PT_BR}, {"60", OPTION_VAL_60_RPCS3_VBLANK_RATE_PT_BR}, {"120", OPTION_VAL_120_RPCS3_VBLANK_RATE_PT_BR}, {"144", OPTION_VAL_144_RPCS3_VBLANK_RATE_PT_BR}, {"240", OPTION_VAL_240_RPCS3_VBLANK_RATE_PT_BR}, {"list", OPTION_VAL_LIST_PT_BR}, {NULL, NULL} },
-        "60"
+        { {"auto", OPTION_VAL_AUTO_PT_BR}, {"50", OPTION_VAL_50_RPCS3_VBLANK_RATE_PT_BR}, {"60", OPTION_VAL_60_RPCS3_VBLANK_RATE_PT_BR}, {"120", OPTION_VAL_120_RPCS3_VBLANK_RATE_PT_BR}, {"144", OPTION_VAL_144_RPCS3_VBLANK_RATE_PT_BR}, {"240", OPTION_VAL_240_RPCS3_VBLANK_RATE_PT_BR}, {"list", OPTION_VAL_LIST_PT_BR}, {NULL, NULL} },
+        "auto"
     },
     // ==================== SCHEDULING ====================
     {
@@ -34089,8 +34089,8 @@ struct retro_core_option_v2_definition option_defs_pt_pt[] = {
         "rpcs3_vblank_rate", RPCS3_VBLANK_RATE_LABEL_PT_PT, NULL,
         RPCS3_VBLANK_RATE_INFO_0_PT_PT,
         NULL, "gpu",
-        { {"50", OPTION_VAL_50_RPCS3_VBLANK_RATE_PT_PT}, {"60", OPTION_VAL_60_RPCS3_VBLANK_RATE_PT_PT}, {"120", OPTION_VAL_120_RPCS3_VBLANK_RATE_PT_PT}, {"144", OPTION_VAL_144_RPCS3_VBLANK_RATE_PT_PT}, {"240", OPTION_VAL_240_RPCS3_VBLANK_RATE_PT_PT}, {"list", OPTION_VAL_LIST_PT_PT}, {NULL, NULL} },
-        "60"
+        { {"auto", OPTION_VAL_AUTO_PT_PT}, {"50", OPTION_VAL_50_RPCS3_VBLANK_RATE_PT_PT}, {"60", OPTION_VAL_60_RPCS3_VBLANK_RATE_PT_PT}, {"120", OPTION_VAL_120_RPCS3_VBLANK_RATE_PT_PT}, {"144", OPTION_VAL_144_RPCS3_VBLANK_RATE_PT_PT}, {"240", OPTION_VAL_240_RPCS3_VBLANK_RATE_PT_PT}, {"list", OPTION_VAL_LIST_PT_PT}, {NULL, NULL} },
+        "auto"
     },
     // ==================== SCHEDULING ====================
     {
@@ -35132,8 +35132,8 @@ struct retro_core_option_v2_definition option_defs_ru[] = {
         "rpcs3_vblank_rate", RPCS3_VBLANK_RATE_LABEL_RU, NULL,
         RPCS3_VBLANK_RATE_INFO_0_RU,
         NULL, "gpu",
-        { {"50", OPTION_VAL_50_RPCS3_VBLANK_RATE_RU}, {"60", OPTION_VAL_60_RPCS3_VBLANK_RATE_RU}, {"120", OPTION_VAL_120_RPCS3_VBLANK_RATE_RU}, {"144", OPTION_VAL_144_RPCS3_VBLANK_RATE_RU}, {"240", OPTION_VAL_240_RPCS3_VBLANK_RATE_RU}, {"list", OPTION_VAL_LIST_RU}, {NULL, NULL} },
-        "60"
+        { {"auto", OPTION_VAL_AUTO_RU}, {"50", OPTION_VAL_50_RPCS3_VBLANK_RATE_RU}, {"60", OPTION_VAL_60_RPCS3_VBLANK_RATE_RU}, {"120", OPTION_VAL_120_RPCS3_VBLANK_RATE_RU}, {"144", OPTION_VAL_144_RPCS3_VBLANK_RATE_RU}, {"240", OPTION_VAL_240_RPCS3_VBLANK_RATE_RU}, {"list", OPTION_VAL_LIST_RU}, {NULL, NULL} },
+        "auto"
     },
     // ==================== SCHEDULING ====================
     {
@@ -36175,8 +36175,8 @@ struct retro_core_option_v2_definition option_defs_sk[] = {
         "rpcs3_vblank_rate", RPCS3_VBLANK_RATE_LABEL_SK, NULL,
         RPCS3_VBLANK_RATE_INFO_0_SK,
         NULL, "gpu",
-        { {"50", OPTION_VAL_50_RPCS3_VBLANK_RATE_SK}, {"60", OPTION_VAL_60_RPCS3_VBLANK_RATE_SK}, {"120", OPTION_VAL_120_RPCS3_VBLANK_RATE_SK}, {"144", OPTION_VAL_144_RPCS3_VBLANK_RATE_SK}, {"240", OPTION_VAL_240_RPCS3_VBLANK_RATE_SK}, {"list", OPTION_VAL_LIST_SK}, {NULL, NULL} },
-        "60"
+        { {"auto", OPTION_VAL_AUTO_SK}, {"50", OPTION_VAL_50_RPCS3_VBLANK_RATE_SK}, {"60", OPTION_VAL_60_RPCS3_VBLANK_RATE_SK}, {"120", OPTION_VAL_120_RPCS3_VBLANK_RATE_SK}, {"144", OPTION_VAL_144_RPCS3_VBLANK_RATE_SK}, {"240", OPTION_VAL_240_RPCS3_VBLANK_RATE_SK}, {"list", OPTION_VAL_LIST_SK}, {NULL, NULL} },
+        "auto"
     },
     // ==================== SCHEDULING ====================
     {
@@ -37218,8 +37218,8 @@ struct retro_core_option_v2_definition option_defs_sr[] = {
         "rpcs3_vblank_rate", RPCS3_VBLANK_RATE_LABEL_SR, NULL,
         RPCS3_VBLANK_RATE_INFO_0_SR,
         NULL, "gpu",
-        { {"50", OPTION_VAL_50_RPCS3_VBLANK_RATE_SR}, {"60", OPTION_VAL_60_RPCS3_VBLANK_RATE_SR}, {"120", OPTION_VAL_120_RPCS3_VBLANK_RATE_SR}, {"144", OPTION_VAL_144_RPCS3_VBLANK_RATE_SR}, {"240", OPTION_VAL_240_RPCS3_VBLANK_RATE_SR}, {"list", OPTION_VAL_LIST_SR}, {NULL, NULL} },
-        "60"
+        { {"auto", OPTION_VAL_AUTO_SR}, {"50", OPTION_VAL_50_RPCS3_VBLANK_RATE_SR}, {"60", OPTION_VAL_60_RPCS3_VBLANK_RATE_SR}, {"120", OPTION_VAL_120_RPCS3_VBLANK_RATE_SR}, {"144", OPTION_VAL_144_RPCS3_VBLANK_RATE_SR}, {"240", OPTION_VAL_240_RPCS3_VBLANK_RATE_SR}, {"list", OPTION_VAL_LIST_SR}, {NULL, NULL} },
+        "auto"
     },
     // ==================== SCHEDULING ====================
     {
@@ -38261,8 +38261,8 @@ struct retro_core_option_v2_definition option_defs_sv[] = {
         "rpcs3_vblank_rate", RPCS3_VBLANK_RATE_LABEL_SV, NULL,
         RPCS3_VBLANK_RATE_INFO_0_SV,
         NULL, "gpu",
-        { {"50", OPTION_VAL_50_RPCS3_VBLANK_RATE_SV}, {"60", OPTION_VAL_60_RPCS3_VBLANK_RATE_SV}, {"120", OPTION_VAL_120_RPCS3_VBLANK_RATE_SV}, {"144", OPTION_VAL_144_RPCS3_VBLANK_RATE_SV}, {"240", OPTION_VAL_240_RPCS3_VBLANK_RATE_SV}, {"list", OPTION_VAL_LIST_SV}, {NULL, NULL} },
-        "60"
+        { {"auto", OPTION_VAL_AUTO_SV}, {"50", OPTION_VAL_50_RPCS3_VBLANK_RATE_SV}, {"60", OPTION_VAL_60_RPCS3_VBLANK_RATE_SV}, {"120", OPTION_VAL_120_RPCS3_VBLANK_RATE_SV}, {"144", OPTION_VAL_144_RPCS3_VBLANK_RATE_SV}, {"240", OPTION_VAL_240_RPCS3_VBLANK_RATE_SV}, {"list", OPTION_VAL_LIST_SV}, {NULL, NULL} },
+        "auto"
     },
     // ==================== SCHEDULING ====================
     {
@@ -39304,8 +39304,8 @@ struct retro_core_option_v2_definition option_defs_th[] = {
         "rpcs3_vblank_rate", RPCS3_VBLANK_RATE_LABEL_TH, NULL,
         RPCS3_VBLANK_RATE_INFO_0_TH,
         NULL, "gpu",
-        { {"50", OPTION_VAL_50_RPCS3_VBLANK_RATE_TH}, {"60", OPTION_VAL_60_RPCS3_VBLANK_RATE_TH}, {"120", OPTION_VAL_120_RPCS3_VBLANK_RATE_TH}, {"144", OPTION_VAL_144_RPCS3_VBLANK_RATE_TH}, {"240", OPTION_VAL_240_RPCS3_VBLANK_RATE_TH}, {"list", OPTION_VAL_LIST_TH}, {NULL, NULL} },
-        "60"
+        { {"auto", OPTION_VAL_AUTO_TH}, {"50", OPTION_VAL_50_RPCS3_VBLANK_RATE_TH}, {"60", OPTION_VAL_60_RPCS3_VBLANK_RATE_TH}, {"120", OPTION_VAL_120_RPCS3_VBLANK_RATE_TH}, {"144", OPTION_VAL_144_RPCS3_VBLANK_RATE_TH}, {"240", OPTION_VAL_240_RPCS3_VBLANK_RATE_TH}, {"list", OPTION_VAL_LIST_TH}, {NULL, NULL} },
+        "auto"
     },
     // ==================== SCHEDULING ====================
     {
@@ -40347,8 +40347,8 @@ struct retro_core_option_v2_definition option_defs_tr[] = {
         "rpcs3_vblank_rate", RPCS3_VBLANK_RATE_LABEL_TR, NULL,
         RPCS3_VBLANK_RATE_INFO_0_TR,
         NULL, "gpu",
-        { {"50", OPTION_VAL_50_RPCS3_VBLANK_RATE_TR}, {"60", OPTION_VAL_60_RPCS3_VBLANK_RATE_TR}, {"120", OPTION_VAL_120_RPCS3_VBLANK_RATE_TR}, {"144", OPTION_VAL_144_RPCS3_VBLANK_RATE_TR}, {"240", OPTION_VAL_240_RPCS3_VBLANK_RATE_TR}, {"list", OPTION_VAL_LIST_TR}, {NULL, NULL} },
-        "60"
+        { {"auto", OPTION_VAL_AUTO_TR}, {"50", OPTION_VAL_50_RPCS3_VBLANK_RATE_TR}, {"60", OPTION_VAL_60_RPCS3_VBLANK_RATE_TR}, {"120", OPTION_VAL_120_RPCS3_VBLANK_RATE_TR}, {"144", OPTION_VAL_144_RPCS3_VBLANK_RATE_TR}, {"240", OPTION_VAL_240_RPCS3_VBLANK_RATE_TR}, {"list", OPTION_VAL_LIST_TR}, {NULL, NULL} },
+        "auto"
     },
     // ==================== SCHEDULING ====================
     {
@@ -41390,8 +41390,8 @@ struct retro_core_option_v2_definition option_defs_tt[] = {
         "rpcs3_vblank_rate", RPCS3_VBLANK_RATE_LABEL_TT, NULL,
         RPCS3_VBLANK_RATE_INFO_0_TT,
         NULL, "gpu",
-        { {"50", OPTION_VAL_50_RPCS3_VBLANK_RATE_TT}, {"60", OPTION_VAL_60_RPCS3_VBLANK_RATE_TT}, {"120", OPTION_VAL_120_RPCS3_VBLANK_RATE_TT}, {"144", OPTION_VAL_144_RPCS3_VBLANK_RATE_TT}, {"240", OPTION_VAL_240_RPCS3_VBLANK_RATE_TT}, {"list", OPTION_VAL_LIST_TT}, {NULL, NULL} },
-        "60"
+        { {"auto", OPTION_VAL_AUTO_TT}, {"50", OPTION_VAL_50_RPCS3_VBLANK_RATE_TT}, {"60", OPTION_VAL_60_RPCS3_VBLANK_RATE_TT}, {"120", OPTION_VAL_120_RPCS3_VBLANK_RATE_TT}, {"144", OPTION_VAL_144_RPCS3_VBLANK_RATE_TT}, {"240", OPTION_VAL_240_RPCS3_VBLANK_RATE_TT}, {"list", OPTION_VAL_LIST_TT}, {NULL, NULL} },
+        "auto"
     },
     // ==================== SCHEDULING ====================
     {
@@ -42433,8 +42433,8 @@ struct retro_core_option_v2_definition option_defs_uk[] = {
         "rpcs3_vblank_rate", RPCS3_VBLANK_RATE_LABEL_UK, NULL,
         RPCS3_VBLANK_RATE_INFO_0_UK,
         NULL, "gpu",
-        { {"50", OPTION_VAL_50_RPCS3_VBLANK_RATE_UK}, {"60", OPTION_VAL_60_RPCS3_VBLANK_RATE_UK}, {"120", OPTION_VAL_120_RPCS3_VBLANK_RATE_UK}, {"144", OPTION_VAL_144_RPCS3_VBLANK_RATE_UK}, {"240", OPTION_VAL_240_RPCS3_VBLANK_RATE_UK}, {"list", OPTION_VAL_LIST_UK}, {NULL, NULL} },
-        "60"
+        { {"auto", OPTION_VAL_AUTO_UK}, {"50", OPTION_VAL_50_RPCS3_VBLANK_RATE_UK}, {"60", OPTION_VAL_60_RPCS3_VBLANK_RATE_UK}, {"120", OPTION_VAL_120_RPCS3_VBLANK_RATE_UK}, {"144", OPTION_VAL_144_RPCS3_VBLANK_RATE_UK}, {"240", OPTION_VAL_240_RPCS3_VBLANK_RATE_UK}, {"list", OPTION_VAL_LIST_UK}, {NULL, NULL} },
+        "auto"
     },
     // ==================== SCHEDULING ====================
     {
@@ -43476,8 +43476,8 @@ struct retro_core_option_v2_definition option_defs_val[] = {
         "rpcs3_vblank_rate", RPCS3_VBLANK_RATE_LABEL_VAL, NULL,
         RPCS3_VBLANK_RATE_INFO_0_VAL,
         NULL, "gpu",
-        { {"50", OPTION_VAL_50_RPCS3_VBLANK_RATE_VAL}, {"60", OPTION_VAL_60_RPCS3_VBLANK_RATE_VAL}, {"120", OPTION_VAL_120_RPCS3_VBLANK_RATE_VAL}, {"144", OPTION_VAL_144_RPCS3_VBLANK_RATE_VAL}, {"240", OPTION_VAL_240_RPCS3_VBLANK_RATE_VAL}, {"list", OPTION_VAL_LIST_VAL}, {NULL, NULL} },
-        "60"
+        { {"auto", OPTION_VAL_AUTO_VAL}, {"50", OPTION_VAL_50_RPCS3_VBLANK_RATE_VAL}, {"60", OPTION_VAL_60_RPCS3_VBLANK_RATE_VAL}, {"120", OPTION_VAL_120_RPCS3_VBLANK_RATE_VAL}, {"144", OPTION_VAL_144_RPCS3_VBLANK_RATE_VAL}, {"240", OPTION_VAL_240_RPCS3_VBLANK_RATE_VAL}, {"list", OPTION_VAL_LIST_VAL}, {NULL, NULL} },
+        "auto"
     },
     // ==================== SCHEDULING ====================
     {
@@ -44519,8 +44519,8 @@ struct retro_core_option_v2_definition option_defs_vn[] = {
         "rpcs3_vblank_rate", RPCS3_VBLANK_RATE_LABEL_VN, NULL,
         RPCS3_VBLANK_RATE_INFO_0_VN,
         NULL, "gpu",
-        { {"50", OPTION_VAL_50_RPCS3_VBLANK_RATE_VN}, {"60", OPTION_VAL_60_RPCS3_VBLANK_RATE_VN}, {"120", OPTION_VAL_120_RPCS3_VBLANK_RATE_VN}, {"144", OPTION_VAL_144_RPCS3_VBLANK_RATE_VN}, {"240", OPTION_VAL_240_RPCS3_VBLANK_RATE_VN}, {"list", OPTION_VAL_LIST_VN}, {NULL, NULL} },
-        "60"
+        { {"auto", OPTION_VAL_AUTO_VN}, {"50", OPTION_VAL_50_RPCS3_VBLANK_RATE_VN}, {"60", OPTION_VAL_60_RPCS3_VBLANK_RATE_VN}, {"120", OPTION_VAL_120_RPCS3_VBLANK_RATE_VN}, {"144", OPTION_VAL_144_RPCS3_VBLANK_RATE_VN}, {"240", OPTION_VAL_240_RPCS3_VBLANK_RATE_VN}, {"list", OPTION_VAL_LIST_VN}, {NULL, NULL} },
+        "auto"
     },
     // ==================== SCHEDULING ====================
     {

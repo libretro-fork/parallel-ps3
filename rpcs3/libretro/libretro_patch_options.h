@@ -43,6 +43,12 @@ void patch_options_update_display(retro_environment_t cb, patch_options_get_t ge
  * call */
 const patch_config_choice_t *patch_options_choices(patch_options_get_t get, void *user, size_t *count);
 
+/* The frame rate the patches that are on ask for, for VBlank Frequency
+ * "Auto": of their values named for it ("FPS", "Frame Rate"), the highest
+ * number a picked label starts its digits with ("120 FPS"), or the value
+ * itself when the label has none. 0 when no patch asks for one. */
+unsigned patch_options_frame_rate(patch_options_get_t get, void *user);
+
 #ifdef __cplusplus
 }
 #endif

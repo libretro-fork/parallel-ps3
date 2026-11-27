@@ -367,10 +367,10 @@ struct retro_core_option_v2_definition option_defs_us[] = {
     },
     {
         "rpcs3_vblank_rate", "VBlank Frequency", NULL,
-        "The PS3's refresh rate in Hz. It is also the frame rate the core asks RetroArch for, which takes effect when content is loaded; games that can run above 60 FPS need a display that refreshes that fast. \"From List\" doubles Vblank rate for supported games listed in vblank_unlock.txt found in system/parallel-ps3. You may need to apply per-game patches.",
+        "The PS3's refresh rate in Hz. It is also the frame rate the core asks RetroArch for, which takes effect when content is loaded; games that can run above 60 FPS need a display that refreshes that fast. \"Auto\" is 60 Hz, or the frame rate a patch turned on in the Patch Manager is set to (its \"Frame Rate\" or \"FPS\" value) when that is higher. \"From List\" doubles Vblank rate for supported games listed in vblank_unlock.txt found in system/parallel-ps3. You may need to apply per-game patches.",
         NULL, "gpu",
-        { {"50", "50 Hz (PAL)"}, {"60", "60 Hz (NTSC)"}, {"120", "120 Hz"}, {"144", "144 Hz"}, {"240", "240 Hz"}, {"list", "From List"}, {NULL, NULL} },
-        "60"
+        { {"auto", "Auto"}, {"50", "50 Hz (PAL)"}, {"60", "60 Hz (NTSC)"}, {"120", "120 Hz"}, {"144", "144 Hz"}, {"240", "240 Hz"}, {"list", "From List"}, {NULL, NULL} },
+        "auto"
     },
     // ==================== SCHEDULING ====================
     {

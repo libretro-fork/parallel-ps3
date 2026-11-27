@@ -686,6 +686,68 @@ void patch_options_update_display(retro_environment_t cb, patch_options_get_t ge
    }
 }
 
+/* Whether @name has @word in it, whatever the case; @word in lower case */
+static int name_has(patch_str_t name, const char *word)
+{
+   size_t i, j, n = strlen(word);
+   for (i = 0; i + n <= name.len; i++)
+   {
+      for (j = 0; j < n; j++)
+      {
+         char c = name.s[i + j];
+         if (c >= 'A' && c <= 'Z')
+            c = (char)(c - 'A' + 'a');
+         if (c != word[j])
+            break;
+      }
+      if (j == n)
+         return 1;
+   }
+   return 0;
+}
+
+unsigned patch_options_frame_rate(patch_options_get_t get, void *user)
+{
+   size_t i, k, v;
+   unsigned best = 0;
+
+   for (i = 0; i < s.num_options; i++)
+   {
+      const patch_option_t *o = &s.options[i];
+      if (!is_on(get, user, o->key))
+         continue;
+      for (v = o->first_value; v < o->first_value + o->num_values; v++)
+      {
+         const value_option_t *vo = &s.values[v];
+         const char *label = get(user, vo->key);
+         if (!label || (!name_has(vo->name, "fps") && !name_has(vo->name, "frame rate")
+               && !name_has(vo->name, "framerate")))
+            continue;
+         for (k = vo->first; k < vo->first + vo->count; k++)
+         {
+            const char *c = label;
+            unsigned rate = 0;
+            if (strcmp(s.labels[k], label) != 0)
+               continue;
+            /* The label's first number, else the value when it is a rate */
+            while (*c && (*c < '0' || *c > '9'))
+               c++;
+            if (*c)
+            {
+               while (*c >= '0' && *c <= '9' && rate < 100000)
+                  rate = rate * 10 + (unsigned)(*c++ - '0');
+            }
+            else if (s.numbers[k] >= 20.0 && s.numbers[k] <= 1000.0)
+               rate = (unsigned)s.numbers[k];
+            if (rate >= 20 && rate <= 1000 && rate > best)
+               best = rate;
+            break;
+         }
+      }
+   }
+   return best;
+}
+
 const patch_config_choice_t *patch_options_choices(patch_options_get_t get, void *user, size_t *count)
 {
    size_t i, j, k, v;

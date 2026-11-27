@@ -66,6 +66,39 @@ static const char s_file[] =
    "          Low: 1\n"
    "          High: 2\n"
    "    Patch:\n"
+   "      - [ byte, 0x1, Mode ]\n"
+   "  Speed:\n"
+   "    Games:\n"
+   "      Game C:\n"
+   "        BLES00009: [ 01.00 ]\n"
+   "    Configurable Values:\n"
+   "      Frame Rate:\n"
+   "        Type: double_enum\n"
+   "        Value: 0.016666668\n"
+   "        Allowed Values:\n"
+   "          \"60 FPS\": 0.016666668\n"
+   "          \"120 FPS (Vblank Rate 120)\": 0.008333334\n"
+   "    Patch:\n"
+   "      - [ bef32, 0x0, Frame Rate ]\n"
+   "  Cap:\n"
+   "    Games:\n"
+   "      Game C:\n"
+   "        BLES00009: [ 01.00 ]\n"
+   "    Configurable Values:\n"
+   "      Target FPS:\n"
+   "        Type: long_enum\n"
+   "        Value: 30\n"
+   "        Allowed Values:\n"
+   "          Half: 30\n"
+   "          Full: 90\n"
+   "      Mode:\n"
+   "        Type: long_enum\n"
+   "        Value: 240\n"
+   "        Allowed Values:\n"
+   "          Odd: 240\n"
+   "          Even: 241\n"
+   "    Patch:\n"
+   "      - [ byte, 0x0, Target FPS ]\n"
    "      - [ byte, 0x1, Mode ]\n";
 
 /* The frontend's values */
@@ -235,6 +268,43 @@ int main(void)
       set(defs[0].key, "enabled");
       choices = patch_options_choices(get, NULL, &count);
       TEST_CHECK(count == 1 && strcmp(choices[0].serial_key, "All") == 0);
+   }
+
+   /* The frame rate the patches that are on ask for: a label's number, or
+    * the value where the label has none; only of values named for it */
+   patch_options_collect(&db, "BLES00009");
+   defs = patch_options_definitions(&count);
+   TEST_CHECK(count == 5);
+   if (count == 5)
+   {
+      size_t speed = 5, rate = 5, cap = 5, fps = 5, d;
+      for (d = 0; d < 5; d++)
+      {
+         if (!strcmp(defs[d].desc, "Speed")) speed = d;
+         else if (!strcmp(defs[d].desc, "Speed: Frame Rate")) rate = d;
+         else if (!strcmp(defs[d].desc, "Cap")) cap = d;
+         else if (!strcmp(defs[d].desc, "Cap: Target FPS")) fps = d;
+      }
+      TEST_CHECK(speed < 5 && rate < 5 && cap < 5 && fps < 5);
+      if (speed < 5 && rate < 5 && cap < 5 && fps < 5)
+      {
+         set(defs[speed].key, "disabled");
+         set(defs[cap].key, "disabled");
+         set(defs[rate].key, "120 FPS (Vblank Rate 120)");
+         set(defs[fps].key, "Full");
+         TEST_CHECK(patch_options_frame_rate(get, NULL) == 0);
+         set(defs[speed].key, "enabled");
+         TEST_CHECK(patch_options_frame_rate(get, NULL) == 120);
+         set(defs[rate].key, "60 FPS");
+         TEST_CHECK(patch_options_frame_rate(get, NULL) == 60);
+         set(defs[cap].key, "enabled");
+         TEST_CHECK(patch_options_frame_rate(get, NULL) == 90);
+         set(defs[rate].key, "120 FPS (Vblank Rate 120)");
+         TEST_CHECK(patch_options_frame_rate(get, NULL) == 120);
+         set(defs[speed].key, "disabled");
+         set(defs[fps].key, "Half");
+         TEST_CHECK(patch_options_frame_rate(get, NULL) == 30);
+      }
    }
 
    /* Games with none */
