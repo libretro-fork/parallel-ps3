@@ -266,6 +266,113 @@ static u32 spu_analysis(const std::string& cache, spu_block_size_type size, u32&
 	return crc;
 }
 
+// The PPU analyser on a real executable, when one is named: the decrypted
+// ELF in PPU_ANALYSE_ELF (none is in the tree). Loaded as the loader does -
+// its LOAD segments, its PROGBITS sections - and analysed; what was found
+// is counted and summed up, to compare before and after a change, and the
+// analysis timed.
+static void ppu_analysis()
+{
+	const char* const path = std::getenv("PPU_ANALYSE_ELF");
+	if (!path || !*path)
+		return;
+
+	std::vector<u8> elf;
+	if (fs::file f{path, fs::read})
+		elf = f.to_vector<u8>();
+	if (elf.size() < 0x40 || std::memcmp(elf.data(), "\x7f" "ELF\x02\x02", 6) != 0)
+	{
+		std::printf("test_llvm_jit: PPU_ANALYSE_ELF is not a big-endian ELF64\n");
+		return;
+	}
+
+	const auto be16 = [&](usz at) { return static_cast<u32>(elf[at] << 8 | elf[at + 1]); };
+	const auto be32 = [&](usz at) { return be16(at) << 16 | be16(at + 2); };
+	const auto be64 = [&](usz at) { return u64{be32(at)} << 32 | be32(at + 4); };
+
+	const u64 entry = be64(0x18), phoff = be64(0x20), shoff = be64(0x28);
+	const u32 phentsize = be16(0x36), phnum = be16(0x38), shentsize = be16(0x3a), shnum = be16(0x3c);
+
+	// The segments' memory: the file's bytes, zeroes after them
+	std::vector<std::unique_ptr<u8[]>> memory;
+
+	for (u32 run = 0; run < 3; run++)
+	{
+		ppu_module<lv2_obj> mod{};
+
+		for (u32 i = 0; i < phnum; i++)
+		{
+			const usz ph = phoff + usz{i} * phentsize;
+			if (ph + 0x38 > elf.size())
+				break;
+			ppu_segment seg{};
+			seg.type = be32(ph);
+			seg.flags = be32(ph + 4);
+			const u64 offset = be64(ph + 8);
+			seg.addr = static_cast<u32>(be64(ph + 0x10));
+			seg.filesz = static_cast<u32>(be64(ph + 0x20));
+			seg.size = static_cast<u32>(be64(ph + 0x28));
+			if (seg.type != 1 || !seg.size || offset + seg.filesz > elf.size())
+				continue;
+			if (run == 0)
+			{
+				const usz room = utils::align<usz>(seg.size, 0x10000) + 0x10000;
+				memory.emplace_back(new u8[room]());
+				std::memcpy(memory.back().get(), elf.data() + offset, seg.filesz);
+			}
+			seg.ptr = memory[mod.segs.size()].get();
+			mod.segs.emplace_back(seg);
+			mod.addr_to_seg_index.emplace(seg.addr, ::size32(mod.segs) - 1);
+		}
+
+		if (mod.segs.empty())
+		{
+			std::printf("test_llvm_jit: PPU_ANALYSE_ELF has no segments to load\n");
+			return;
+		}
+
+		u32 end = 0;
+		for (u32 i = 0; i < shnum; i++)
+		{
+			const usz sh = shoff + usz{i} * shentsize;
+			if (!shoff || sh + 0x40 > elf.size())
+				break;
+			if (be32(sh + 4) != 1) // PROGBITS
+				continue;
+			ppu_segment sec{};
+			sec.type = 1;
+			sec.flags = static_cast<u32>(be64(sh + 8) & 7);
+			sec.addr = static_cast<u32>(be64(sh + 0x10));
+			sec.size = static_cast<u32>(be64(sh + 0x20));
+			if (!sec.addr || !sec.size)
+				continue;
+			mod.secs.emplace_back(sec);
+			if (sec.flags & 4 && sec.addr >= mod.segs[0].addr && sec.addr + sec.size <= mod.segs[0].addr + mod.segs[0].size)
+				end = std::max<u32>(end, sec.addr + sec.size);
+		}
+
+		const double a = stopwatch();
+		const bool done = mod.analyse(0, static_cast<u32>(entry), end, {});
+		const double ms = stopwatch() - a;
+
+		usz blocks = 0;
+		u32 crc = 0;
+		for (const ppu_function& func : mod.funcs)
+		{
+			const u32 head[3] = {func.addr, func.toc, func.size};
+			crc = encoding_crc32(crc, reinterpret_cast<const u8*>(head), sizeof(head));
+			for (const auto& [addr, size] : func.blocks)
+			{
+				const u32 block[2] = {addr, size};
+				crc = encoding_crc32(crc, reinterpret_cast<const u8*>(block), sizeof(block));
+				blocks++;
+			}
+		}
+
+		std::printf("test_llvm_jit: PPU analysis %s: %zu functions, %zu blocks, crc32 %08x, %.0f ms\n", done ? "done" : "refused", mod.funcs.size(), blocks, crc, ms);
+	}
+}
+
 static double stopwatch()
 {
 	timespec t;
@@ -525,6 +632,10 @@ static void llvm_hashes()
 
 int main()
 {
+	ppu_analysis();
+	if (std::getenv("PPU_ANALYSE_ONLY"))
+		return failures != 0;
+
 	llvm_hashes();
 	threads_in_llvm();
 

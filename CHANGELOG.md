@@ -4,6 +4,12 @@ What changed in the libretro core of this fork, newest first. Changes that come 
 
 ## Unreleased
 
+- **PPU analyser: a function's blocks and a module's segments in sorted arrays; analysis about a quarter faster.** Not yet run on a game.
+  - **What changed:** every PPU function kept its basic blocks in a `std::map<u32, u32>` (address to size), and a module its segments in another. A game has tens of thousands of functions, most with one block: a tree node allocated for each. They are in `util/addr_sizes.c` now (C89): the pairs sorted in one array, the first two inside the list itself, so most functions allocate nothing. A module's memory is found through its segment list on every instruction the analyser reads; that lookup is a search of a few words now, not a tree walk.
+    - The analyser's large working maps (`fmap`, `addr_heap`) are left: thousands of entries added in no order is what a sorted array is wrong for.
+  - **Measured:** analysing Demon's Souls' executable takes about 1.3 s, from about 1.7 s (six runs each, alternated), and finds the same functions and blocks (same count, same crc32 of every function's address, TOC, size and blocks).
+  - **Tests:** `test_addr_sizes` checks the list against a model over 200,000 random steps. `test_llvm_jit` runs the PPU analyser on an executable named in `PPU_ANALYSE_ELF` (none is in the tree) and prints what it found and how long it took.
+
 - **SPU LLVM recompiler: function chunks found by address, block edges in a small list.** Not yet run on a game.
   - **What changed:** the recompiler's function chunks (`m_functions`) were a `std::unordered_map` by address and each block carried another one for its edge blocks (`block_edges`), constructed and destroyed with every block though most blocks have none. The chunks are a `pc_map` now (`util/pc_slots.c`) and the edges a `util/pair_list.c` list, which allocates nothing until a block has more than two.
     - The blocks themselves (`m_blocks`) are left as they were: the order that map is walked in decides the order register stores are moved between blocks, so changing it changes the code that comes out (same size, different bytes). That is a change to make on its own, with a game run.

@@ -1819,7 +1819,7 @@ bool ppu_module<lv2_obj>::analyse(u32 lib_toc, u32 entry, const u32 sec_end, con
 			return umax;
 		};
 
-		std::map<u32, u32> preserve_blocks;
+		addr_size_map preserve_blocks;
 
 		if (is_function_caller_analysis)
 		{

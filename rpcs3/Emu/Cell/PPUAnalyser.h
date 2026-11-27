@@ -7,6 +7,7 @@
 #include "util/types.hpp"
 #include "util/asm.hpp"
 #include "util/to_endian.hpp"
+#include "util/addr_sizes.hpp"
 
 #include "Utilities/bit_set.h"
 #include "PPUOpcodes.h"
@@ -29,17 +30,17 @@ struct ppu_function
 	u32 toc = 0;
 	u32 size = 0;
 
-	std::map<u32, u32> blocks{}; // Basic blocks: addr -> size
+	addr_size_map blocks{}; // Basic blocks: addr -> size (util/addr_sizes.c)
 
 	struct iterator
 	{
 		const ppu_function* _this;
-		typename std::map<u32, u32>::const_iterator it;
+		addr_size_map::const_iterator it;
 		usz index = 0;
 
 		std::pair<const u32, u32> operator*() const
 		{
-			return _this->blocks.empty() ? std::pair<const u32, u32>(_this->addr, _this->size) : *it;
+			return _this->blocks.empty() ? std::pair<const u32, u32>(_this->addr, _this->size) : std::pair<const u32, u32>(it->first, it->second);
 		}
 
 		iterator& operator++()
@@ -139,7 +140,7 @@ struct ppu_module : public Type
 	std::vector<ppu_function> funcs{}; // Function list
 	std::vector<u32> applied_patches; // Patch addresses
 	std::vector<std::shared_ptr<void>> allocations; // Segment memory allocations (held, never looked through)
-	std::map<u32, u32> addr_to_seg_index; // address->segment ordered translator map
+	addr_size_map addr_to_seg_index; // address->segment ordered translator map (util/addr_sizes.c)
 	ppu_module* parent = nullptr; // For compilation: refers to original structure (is whole, not partitioned) 
 	std::pair<u32, u32> local_bounds{0, u32{umax}}; // Module addresses range
 	std::shared_ptr<std::pair<u32, u32>> jit_bounds; // JIT instance modules addresses range

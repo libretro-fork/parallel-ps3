@@ -525,6 +525,7 @@ SOURCES_RPCS3 := \
 	$(CORE_DIR)/rpcs3/util/tsc_cpuid.c \
 	$(CORE_DIR)/rpcs3/util/build_word.c \
 	$(CORE_DIR)/rpcs3/util/key_list.c \
+	$(CORE_DIR)/rpcs3/util/addr_sizes.c \
 	$(CORE_DIR)/rpcs3/util/node_list.c \
 	$(CORE_DIR)/rpcs3/util/page_words.c \
 	$(CORE_DIR)/rpcs3/util/pc_lists.c \

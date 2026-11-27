@@ -82,6 +82,7 @@ target_sources(rpcs3_emu PRIVATE
     ../util/key_list.c
     ../util/node_list.c
     ../util/page_words.c
+    ../util/addr_sizes.c
     ../util/pc_lists.c
     ../util/pc_slots.c
     ../util/view_cache.c
