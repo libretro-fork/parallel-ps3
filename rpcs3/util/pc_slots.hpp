@@ -148,6 +148,12 @@ public:
 		return {iterator{&m_t, mem}, true};
 	}
 
+	template <typename... Args>
+	std::pair<iterator, bool> emplace(u32 pc, Args&&... args)
+	{
+		return try_emplace(pc, std::forward<Args>(args)...);
+	}
+
 	T& operator[](u32 pc)
 	{
 		return try_emplace(pc).first->second;

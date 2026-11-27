@@ -10,31 +10,39 @@
 typedef struct pc_slots_slab
 {
    struct pc_slots_slab *next;
+   uint32_t              cap;   /* objects it holds */
 } pc_slots_slab_t;
 
-#define PC_SLOTS_SLAB_BYTES 0x10000u   /* about what a slab takes */
+#define PC_SLOTS_SLAB_BYTES 0x10000u   /* about what a full-size slab takes */
+#define PC_SLOTS_SLAB_FIRST 8u         /* objects in the first slab */
 
 void pc_slots_init(pc_slots_t *t, size_t size)
 {
    t->stride   = (uint32_t)((size + (PC_SLOTS_ALIGN - 1u)) & ~(size_t)(PC_SLOTS_ALIGN - 1u));
    t->per_slab = PC_SLOTS_SLAB_BYTES / t->stride;
-   if (t->per_slab < 8u)
-      t->per_slab = 8u;
+   if (t->per_slab < PC_SLOTS_SLAB_FIRST)
+      t->per_slab = PC_SLOTS_SLAB_FIRST;
 }
 
 static void *pc_slots_object(pc_slots_t *t)
 {
    pc_slots_slab_t *slab = t->in_use;
 
-   if (!slab || t->used == t->per_slab)
+   if (!slab || t->used == slab->cap)
    {
       pc_slots_slab_t *next = slab ? slab->next : t->first;
       if (!next)
       {
-         next = (pc_slots_slab_t*)malloc(PC_SLOTS_ALIGN + (size_t)t->stride * t->per_slab);
+         /* The first is small - a table of a few objects takes little -
+          * and each one after twice the last, up to the full size */
+         uint32_t cap = slab ? slab->cap * 2u : PC_SLOTS_SLAB_FIRST;
+         if (cap > t->per_slab)
+            cap = t->per_slab;
+         next = (pc_slots_slab_t*)malloc(PC_SLOTS_ALIGN + (size_t)t->stride * cap);
          if (!next)
             return NULL;
          next->next = NULL;
+         next->cap  = cap;
          if (slab)
             slab->next = next;
          else

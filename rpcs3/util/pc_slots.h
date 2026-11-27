@@ -8,7 +8,7 @@
  *
  * An address's object is found by itself: its pointer is one of 256 in
  * the leaf for its kilobyte. The objects are of one size, cut from slabs
- * and never moved, so a pointer to one holds while others are added, as
+ * (a small one first, then larger) and never moved, so a pointer to one holds while others are added, as
  * a reference into the map did. Clearing keeps the leaves and the slabs:
  * after the first programs nothing is allocated. The table does not look
  * inside an object; whoever owns it builds one where it is handed out
@@ -41,7 +41,7 @@ typedef struct pc_slots
    uint16_t              leaf_live[PC_SLOTS_LEAVES];   /* objects in each leaf */
    uint32_t              count;                        /* objects */
    uint32_t              stride;                       /* an object's size, rounded up to the alignment */
-   uint32_t              per_slab;                     /* objects in a slab */
+   uint32_t              per_slab;                     /* objects in a full-size slab */
    uint32_t              used;                         /* objects handed out of the slab in use */
    struct pc_slots_slab *first;                        /* every slab, in the order they fill */
    struct pc_slots_slab *in_use;                       /* the one being handed out of */

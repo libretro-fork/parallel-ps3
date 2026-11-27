@@ -2980,11 +2980,11 @@ struct block_reg_info
 	}
 
 	// Evaluate registers state
-	std::array<reg_state_t, s_reg_max>& evaluate_start_state(const std::map<u32, std::unique_ptr<block_reg_info>>& map, bool extensive_evaluation);
+	std::array<reg_state_t, s_reg_max>& evaluate_start_state(const pc_map<std::unique_ptr<block_reg_info>>& map, bool extensive_evaluation);
 
 	// This function creates new node if not found and links the proceeding node to the old node
 	// In a manner in which no duplicate paths are formed
-	static void create_node(u32 pc_rhs, u32 parent_pc, std::map<u32, std::unique_ptr<block_reg_info>>& map)
+	static void create_node(u32 pc_rhs, u32 parent_pc, pc_map<std::unique_ptr<block_reg_info>>& map)
 	{
 		//ensure(parent_node != pc_rhs);
 		ensure(map[parent_pc]);
@@ -5243,7 +5243,7 @@ spu_program spu_recompiler_base::analyse(const be_t<u32>* ls, u32 entry_point, s
 	// Reset tags
 	reg_state_t::alloc_tag(true);
 
-	std::map<u32, std::unique_ptr<block_reg_info>> infos;
+	pc_map<std::unique_ptr<block_reg_info>> infos;
 	infos.emplace(entry_point, block_reg_info::create(entry_point));
 
 	struct block_reg_state_iterator
@@ -5274,12 +5274,23 @@ spu_program spu_recompiler_base::analyse(const be_t<u32>* ls, u32 entry_point, s
 
 	std::vector<block_reg_state_iterator> reg_state_it;
 
-	std::map<u32, atomic16_t> atomic16_all; // RdAtomicStat location -> atomic loop optimization state
-	std::map<u32, rchcnt_loop_t> rchcnt_loop_all; // RDCH/RCHCNT location -> channel read loop optimization state
-	std::map<u32, reduced_loop_t> reduced_loop_all;
-	std::map<u32, bool> getllar_starts; // True for failed loops
-	std::map<u32, bool> run_on_block;
-	std::map<u32, bool> logged_block;
+	pc_map<atomic16_t> atomic16_all; // RdAtomicStat location -> atomic loop optimization state
+	pc_map<rchcnt_loop_t> rchcnt_loop_all; // RDCH/RCHCNT location -> channel read loop optimization state
+	pc_map<reduced_loop_t> reduced_loop_all;
+	pc_map<bool> getllar_starts; // True for failed loops
+	// A bit for each instruction of local storage
+	struct pc_bits
+	{
+		u64 words[SPU_LS_SIZE / 4 / 64 + 1]{};
+
+		bool test(u32 i) const { return (words[i / 64] >> (i % 64)) & 1; }
+		void set(u32 i) { words[i / 64] |= u64{1} << (i % 64); }
+		bool test_and_set(u32 i) { const bool was = test(i); set(i); return was; }
+		void clear() { std::memset(words, 0, sizeof(words)); }
+	};
+
+	pc_bits run_on_block;
+	pc_bits logged_block;
 
 	std::array<reg_state_t, s_reg_max>* true_state_walkby = nullptr;
 
@@ -5320,7 +5331,7 @@ spu_program spu_recompiler_base::analyse(const be_t<u32>* ls, u32 entry_point, s
 
 	// Initialize
 	reg_state_it.emplace_back(entry_point);
-	run_on_block[entry_point / 4] = true;
+	run_on_block.set(entry_point / 4);
 
 	enum spu_addr_mask_t : u32
 	{
@@ -5920,7 +5931,7 @@ spu_program spu_recompiler_base::analyse(const be_t<u32>* ls, u32 entry_point, s
 
 							if (count == (state_it->atomic16.active ? 25 : 12))
 							{
-								if (state_it->atomic16.active && !std::exchange(logged_block[target_pc / 4], true))
+								if (state_it->atomic16.active && !logged_block.test_and_set(target_pc / 4))
 								{
 									spu_log.notice("SPU Blcok Analysis is too extensive at 0x%x", entry_pc);
 								}
@@ -5997,7 +6008,7 @@ spu_program spu_recompiler_base::analyse(const be_t<u32>* ls, u32 entry_point, s
 
 						if (is_skipable)
 						{
-							if (!std::exchange(logged_block[target_pc / 4], true))
+							if (!logged_block.test_and_set(target_pc / 4))
 							{
 								spu_log.notice("SPU block is a loop at [0x%05x -> 0x%05x]", state_it->pc, target_pc);
 							}
@@ -6006,7 +6017,7 @@ spu_program spu_recompiler_base::analyse(const be_t<u32>* ls, u32 entry_point, s
 							continue;
 						}
 
-						if (is_loop_connector && !std::exchange(logged_block[target_pc / 4], true))
+						if (is_loop_connector && !logged_block.test_and_set(target_pc / 4))
 						{
 							spu_log.notice("SPU block analysis is too repetitive at [0x%05x -> 0x%05x]", state_it->pc, target_pc);
 						}
@@ -6016,7 +6027,7 @@ spu_program spu_recompiler_base::analyse(const be_t<u32>* ls, u32 entry_point, s
 						// Test if the code is an opening to external code (start of the function is always respected because it is already assumed to have no origin)
 						is_code_backdoor = m_ret_info[target_pc / 4] || (m_entry_info[target_pc / 4] && target_pc != entry_point);
 
-						if (run_on_block[target_pc / 4])
+						if (run_on_block.test(target_pc / 4))
 						{
 							insert_entry = false;
 						}
@@ -6033,7 +6044,7 @@ spu_program spu_recompiler_base::analyse(const be_t<u32>* ls, u32 entry_point, s
 							}
 
 							// Allow the block to run only once, to avoid unnecessary iterations
-							run_on_block[target_pc / 4] = true;
+							run_on_block.set(target_pc / 4);
 						}
 
 						state_it->parent_target_index++;
@@ -6255,10 +6266,10 @@ spu_program spu_recompiler_base::analyse(const be_t<u32>* ls, u32 entry_point, s
 
 				block_reg_info::create_node(target, bpc, infos);
 
-				if (!run_on_block[target / 4])
+				if (!run_on_block.test(target / 4))
 				{
 					reg_state_it.emplace_back(target).iterator_id = iterator_id_alloc++;
-					run_on_block[target / 4] = true;
+					run_on_block.set(target / 4);
 				}
 			}
 		};
@@ -9783,7 +9794,7 @@ std::unique_ptr<spu_recompiler_base> spu_recompiler_base::make_fast_llvm_recompi
 	return std::make_unique<spu_fast>();
 }
 
-std::array<reg_state_t, s_reg_max>& block_reg_info::evaluate_start_state(const std::map<u32, std::unique_ptr<block_reg_info>>& map, bool extensive_evaluation)
+std::array<reg_state_t, s_reg_max>& block_reg_info::evaluate_start_state(const pc_map<std::unique_ptr<block_reg_info>>& map, bool extensive_evaluation)
 {
 	if (!has_true_state)
 	{

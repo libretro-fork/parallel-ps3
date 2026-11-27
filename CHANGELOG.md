@@ -4,6 +4,11 @@ What changed in the libretro core of this fork, newest first. Changes that come 
 
 ## Unreleased
 
+- **SPU analyser: its working tables found by address too; analysis about 30% faster.** Not yet run on a game.
+  - **What changed:** the pattern search in `spu_recompiler_base::analyse` kept seven more `std::map`s for the length of one analysis: each block's register state (`infos`), the atomic, channel-read and reduced-loop findings, the GETLLAR starts, and two maps of `bool` used as "seen this block" marks. The first five are `pc_map` now (`util/pc_slots.c`, as the blocks and functions are); the two marks are plain bit arrays. The table's first slab is small now, so one that holds a few entries takes little.
+  - **Measured:** 3000 analyses of branching programs take about 700 ms, from about 1000 ms (three runs each, alternated).
+  - **Tests:** `test_llvm_jit`'s checks of the analyser's dump pass, and the 900 branching programs compile to the same bytes as before (the test now prints the pack's size and crc32 after them; same before and after).
+
 - **SPU analyser: basic blocks, functions and patterns found by address, no `std::map`.** Not yet run on a game.
   - **What changed:** the analyser's blocks (`m_bbs`), functions (`m_funcs`) and patterns (`m_patterns`) were each a `std::map` by address: a tree node allocated per entry, every lookup a walk down the tree, all of it freed after each function. They are in `util/pc_slots.c` now (C89): an entry is found by its address in 256-entry leaves, and the entries are cut from slabs that are kept between functions. Order is the same as the map's (rising address), and an entry never moves, so references held across insertions stay good as they did.
   - **Measured:** no speed difference. 3000 analyses of branching programs take about 1040 ms before and after (five runs each, alternated); the time goes elsewhere in the analyser. What this removes is the allocations and the STL containers.

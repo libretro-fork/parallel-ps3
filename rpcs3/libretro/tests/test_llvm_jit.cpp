@@ -803,6 +803,15 @@ int main()
 			std::printf("test_llvm_jit: 300 branching SPU programs analysed: crc32 %08x safe, %08x mega, %08x giga; compiled %u, %u, %u; 3000 analyses by function in %.0f ms\n", safe, mega, giga, made_safe, made_mega, made_giga, giga_ms);
 			CHECK(safe == 0x137a08bfu && mega == 0x52de2a20u && giga == 0x232d31ebu);
 			CHECK(made_safe == 300 && made_mega == 300 && made_giga == 300);
+
+			// What they compiled to (it differs by host CPU, so it is shown,
+			// not checked): the same before and after a change to the
+			// analyser that is not meant to change its findings
+			jit_compiler::close_object_packs();
+			usz branch_notes = 0, branch_size = 0;
+			u32 branch_crc = 0;
+			const usz branch_count = pack_objects(pack, branch_notes, branch_size, branch_crc);
+			std::printf("test_llvm_jit: the pack now holds %zu objects, %zu bytes, crc32 %08x\n", branch_count, branch_size, branch_crc);
 		}
 
 		g_fxo->clear();
