@@ -4,6 +4,12 @@ What changed in the libretro core of this fork, newest first. Changes that come 
 
 ## Unreleased
 
+- **Dark Souls: two audio latency patches in the Patch Manager.** Not yet run on a game.
+  - **What they are:** Dark Souls uses the same sound engine as Demon's Souls (MagicOrchestra over FMOD), but its built-in setup text has none of the mixer keys Demon's Souls' "Reduce Audio Latency" changes, and its output ring is already the smallest (8 blocks).
+    - "Double Sound Update Rate" (all Dark Souls serials the text is found in): the engine's `MainThreadUpdateTime` goes from 33333 to 16666 microseconds, rewritten in the setup text as the executable loads, so it does not depend on the build of the game.
+    - "Reduce Audio Latency" (BLES01765, the executable `PPU-d764d35c...`): FMOD's PS3 output mixes 7 blocks (37 ms) ahead of the block being played, the most the ring allows. A "Blocks Ahead" value sets that: 7 (the game's), 6, 5 (the default), 4 or 3. It is one instruction at 0x000B3550. Too few blocks will break the sound up; that is what the choice is for.
+  - **Tests:** both applied to the decrypted executable and read back. `test_game_text_patch` has the case of a key rewritten as itself; `test_patch_options` and `test_game_patches` pass.
+
 - **Dark Souls: Prepare to Die Edition (EU): 30 FPS at the bonfire with Unlock FPS.** Not yet run on a game.
   - **What was wrong:** with Unlock FPS (which runs, confirmed on the user's machine) the bonfire menu could close after kindling with the character left sitting, unable to get up, sound and picture carrying on. The PC version has the same fault with unlocked frame rates (its "bonfire input glitch"), and does not have it at 30.
   - **What changed:** the patch's per-frame code now also sets the flip mode: the retail 30 FPS mode while the bonfire's talk script has the character seated, 60FPS(NO SKIP) otherwise. It reads the game's own flag for that, a byte the talk script's StartBonfireAnimLoop command sets (0x006FD1C0) and its EndBonfireKindleAnimLoop clears (0x006FD230), named in Smithbox's catalogue of DS1 talk commands. The frame time already follows the real time between frames, so nothing else changes speed.

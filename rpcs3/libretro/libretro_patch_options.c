@@ -102,7 +102,15 @@ static const text_patch_t s_text_patches[] = {
      "The sound engine mixes into a ring of 8 blocks of 256 samples instead of 16, refilled every 2 blocks instead of every 4: the engine's PS3MixerBlockSize and PS3MixerUpdateFrewuency, set in the sound setup built into the game's executable.",
      "BLUS30443 BLES00932 BCJS30022 BCAS20071 BLUD80018",
      "PS3MixerCHStreap8Num",
-     { { "PS3MixerPriority", "PS3MixerBlockSize", 8 }, { "PS3MultiStreamSpuPriority", "PS3MixerUpdateFrewuency", 2 } } }
+     { { "PS3MixerPriority", "PS3MixerBlockSize", 8 }, { "PS3MultiStreamSpuPriority", "PS3MixerUpdateFrewuency", 2 } } },
+   /* Dark Souls: the same sound engine (MagicOrchestra over FMOD), with no
+    * mixer keys in its setup text; what it has is how often the engine's
+    * own thread runs. The line is rewritten as itself with the new value */
+   { "Double Sound Update Rate",
+     "The sound engine's thread takes the game's sound requests every 16.7 ms instead of every 33.3 ms, so a sound starts up to a frame sooner: the engine's MainThreadUpdateTime, set in the sound setup built into the game's executable.",
+     "BLES01765 BLES01402 BLES01396 BLUS30782 BLJM60363",
+     "FmodMultiChannnelDataPath",
+     { { "MainThreadUpdateTime", "MainThreadUpdateTime", 16666 }, { NULL, NULL, 0 } } }
 };
 
 #define NUM_TEXT_PATCHES (sizeof(s_text_patches) / sizeof(s_text_patches[0]))

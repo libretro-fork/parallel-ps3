@@ -182,6 +182,16 @@ int main(void)
       TEST_CHECK(!strcmp(crlf, "PS3MixerBlockSize    = 8\r\nX = 1\r\n"));
    }
 
+   /* A key rewritten as itself with another value (Dark Souls'
+    * MainThreadUpdateTime): the line keeps its length, its neighbours
+    * are untouched, and a longer key that starts the same is not taken
+    * for it */
+   {
+      char same[] = "MainThreadUpdateTimeX\t= 1\nFmodStreamBuffSize\t\t\t= 196608\nMainThreadUpdateTime\t\t= 33333\nUseFmodLoader\t\t\t\t= FALSE\n";
+      TEST_CHECK(game_text_patch_replace_line(same, strlen(same), "MainThreadUpdateTime", "MainThreadUpdateTime", 16666) == 1);
+      TEST_CHECK(!strcmp(same, "MainThreadUpdateTimeX\t= 1\nFmodStreamBuffSize\t\t\t= 196608\nMainThreadUpdateTime  = 16666\nUseFmodLoader\t\t\t\t= FALSE\n"));
+   }
+
    game_text_patch_clear();
    TEST_CHECK(game_text_patch_count() == 0);
    make_segment(seg);

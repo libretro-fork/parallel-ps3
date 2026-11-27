@@ -436,3 +436,28 @@ PPU-d764d35ca136442f72228ab715a629f26994e641:
       - [ be32, 0x00000000, 0x39600001 ] # li r11, 1 // both flags that go with mode 3 (the game's tables at 0x015E6B58 and 0x015E6B50)
       - [ be32, 0x00000000, 0x997F071D ] # stb r11, 0x71d(r31)
       - [ be32, 0x00000000, 0x997F071E ] # stb r11, 0x71e(r31)
+  "Reduce Audio Latency":
+    Games:
+      "Dark Souls: Prepare to Die Edition":
+        BLES01765: [ All ]
+    Author: "LibretroAdmin"
+    Notes: >-
+      FMOD mixes sound into the console's 8-block output ring (256 samples a block, 5.3 ms) as far ahead of what is
+      being played as the ring allows: 7 blocks, 37 ms (if the game's FMOD setup takes nothing off it, which has
+      not been checked on a running game). This sets how far ahead it mixes. Fewer blocks is less
+      delay between a sound being asked for and heard; too few and the sound breaks up, so go back up a step if
+      it crackles. With "Double Sound Update Rate" on as well, the sound engine also takes requests twice as often.
+    Configurable Values:
+      "Blocks Ahead":
+        Type: long_enum
+        Value: 0x20000005
+        Allowed Values:
+          "7 blocks, 37 ms (the game's)": 0x20000007
+          "6 blocks, 32 ms": 0x20000006
+          "5 blocks, 27 ms": 0x20000005
+          "4 blocks, 21 ms": 0x20000004
+          "3 blocks, 16 ms": 0x20000003
+    Patch Version: 1.0
+    Patch:
+      # FMOD's PS3 output, as it starts: how far past the block being played it mixes (0x2c0 of its object, read by its mixing thread at 0x000B3B8C)
+      - [ be32, 0x000B3550, "Blocks Ahead" ] # subfic r0, r0, N // Original subfic r0, r0, 7: the number less a value from the game's FMOD setup (taken to be 0; not checked on a running game)
