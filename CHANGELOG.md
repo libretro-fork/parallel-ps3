@@ -4,6 +4,11 @@ What changed in the libretro core of this fork, newest first. Changes that come 
 
 ## Unreleased
 
+- **Dark Souls: Prepare to Die Edition (EU): Unlock FPS for the disc's executable.** Not yet run on a game.
+  - **What was wrong:** the Patch Manager offered "Unlock FPS" for BLES01765 and turning it on did nothing. RPCS3's patch is for one build of the game (`PPU-03679186...`); the executable here is another (`PPU-d764d35c...`), where the patched addresses hold other code, so the patch engine rightly did not apply it.
+  - **What changed:** the core's own patch file has the patch for this executable, under the same name, so the option already shown (and already on) now applies. The same two changes, found again in this build: the game's 60FPS(NO SKIP) flip mode set where its object is made (0x00149CDC), and the fixed 1/30 s step at 0x00145A18 replaced by the time since the last frame, kept between 4 ms and 50 ms. Both in caves the patch engine allocates; the last frame's time is kept in the unused end of the executable's data.
+  - **Tests:** applied to the decrypted executable with the core's patch parser and the code read back: both hooks branch to their caves and the caves disassemble as written. `test_game_patches` passes.
+
 - **PPU analyser: a function's blocks and a module's segments in sorted arrays; analysis about a quarter faster.** Not yet run on a game.
   - **What changed:** every PPU function kept its basic blocks in a `std::map<u32, u32>` (address to size), and a module its segments in another. A game has tens of thousands of functions, most with one block: a tree node allocated for each. They are in `util/addr_sizes.c` now (C89): the pairs sorted in one array, the first two inside the list itself, so most functions allocate nothing. A module's memory is found through its segment list on every instruction the analyser reads; that lookup is a search of a few words now, not a tree walk.
     - The analyser's large working maps (`fmap`, `addr_heap`) are left: thousands of entries added in no order is what a sorted array is wrong for.

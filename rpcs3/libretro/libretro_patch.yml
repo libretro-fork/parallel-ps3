@@ -362,3 +362,54 @@ PPU-83681f6110d33442329073b72b8dc88a2f677172:
       - [ be32, 0x00000000, 0x7C0803A6 ] # mtlr r0
       - [ be32, 0x00000000, 0x382100C0 ] # addi r1, r1, 0xc0
       - [ be32, 0x00000000, 0x4E800020 ] # blr 
+
+# Dark Souls: Prepare to Die Edition (EU disc, BLES01765): Unlock FPS for the executable RPCS3's patch.yml has
+# no patch for (its own is for another build of the game, PPU-03679186..., and does nothing on this one)
+
+PPU-d764d35ca136442f72228ab715a629f26994e641:
+  "Unlock FPS":
+    Games:
+      "Dark Souls: Prepare to Die Edition":
+        BLES01765: [ All ]
+    Author: "Pappapatu (the patch for the other build), LibretroAdmin (this build)"
+    Notes: >-
+      The game runs at 60 frames a second and moves by the time each frame took. The same two changes as the
+      Unlock FPS of the other build of this game, found again in this executable: the game's own 60FPS(NO SKIP)
+      flip mode set as it starts, and the fixed 1/30 s step replaced by the time since the last frame (4 ms to
+      50 ms). The code is in caves the patch engine allocates.
+    Patch Version: 1.0
+    Patch:
+      # The frame's time: in place of the load of the constant 1/30 (0x01876870) into f31 at 0x00145A18
+      - [ calloc, 0x00145A1A, 25 ] # Hook 0x00145A18 // Original lfs f31, -0x7f48(r30); returns to 0x00145A1C
+      - [ be32, 0x00000000, 0x7D4C42E6 ] # mftb r10 // the timebase: 80,000,000 ticks a second of the guest's time
+      - [ be32, 0x00000000, 0x3D2001BD ] # lis r9, 0x1bd // r9 = 0x01BD3F00, in the last page of the executable's zeroed data, past its end (0x01BD34C8): the timebase at the last frame
+      - [ be32, 0x00000000, 0x61293F00 ] # ori r9, r9, 0x3f00
+      - [ be32, 0x00000000, 0xE9690000 ] # ld r11, 0(r9)
+      - [ be32, 0x00000000, 0xF9490000 ] # std r10, 0(r9)
+      - [ be32, 0x00000000, 0x7D8B5050 ] # subf r12, r11, r10 // ticks since the last frame
+      - [ be32, 0x00000000, 0x3D60003D ] # lis r11, 0x3d // 4,000,000 ticks: 50 ms, the longest step (also the first frame's)
+      - [ be32, 0x00000000, 0x616B0900 ] # ori r11, r11, 0x900
+      - [ be32, 0x00000000, 0x7FAC5840 ] # cmpld cr7, r12, r11
+      - [ be32, 0x00000000, 0x409D0008 ] # ble cr7, +8
+      - [ be32, 0x00000000, 0x7D6C5B78 ] # mr r12, r11
+      - [ be32, 0x00000000, 0x3D600004 ] # lis r11, 4 // 320,000 ticks: 4 ms, the shortest step (two frames in one tick of the clock are not a step of 0)
+      - [ be32, 0x00000000, 0x616BE200 ] # ori r11, r11, 0xe200
+      - [ be32, 0x00000000, 0x7FAC5840 ] # cmpld cr7, r12, r11
+      - [ be32, 0x00000000, 0x409C0008 ] # bge cr7, +8
+      - [ be32, 0x00000000, 0x7D6C5B78 ] # mr r12, r11
+      - [ be32, 0x00000000, 0xF981FFF8 ] # std r12, -8(r1)
+      - [ be32, 0x00000000, 0xC801FFF8 ] # lfd f0, -8(r1)
+      - [ be32, 0x00000000, 0xFC00069C ] # fcfid f0, f0
+      - [ be32, 0x00000000, 0x3D6004C4 ] # lis r11, 0x4c4 // 80,000,000
+      - [ be32, 0x00000000, 0x616BB400 ] # ori r11, r11, 0xb400
+      - [ be32, 0x00000000, 0xF961FFF8 ] # std r11, -8(r1)
+      - [ be32, 0x00000000, 0xC841FFF8 ] # lfd f2, -8(r1)
+      - [ be32, 0x00000000, 0xFC40169C ] # fcfid f2, f2
+      - [ be32, 0x00000000, 0xEFE01024 ] # fdivs f31, f0, f2 // f31 = the frame's time in seconds
+      # The flip mode: in place of the last of the three stores that set it to 0 as its object is made
+      - [ calloc, 0x00149CDE, 5 ] # Hook 0x00149CDC // Original stb r11, 0x71e(r31); returns to 0x00149CE0
+      - [ be32, 0x00000000, 0x39600003 ] # li r11, 3 // FlipMode 3: 60FPS(NO SKIP)
+      - [ be32, 0x00000000, 0x997F071C ] # stb r11, 0x71c(r31)
+      - [ be32, 0x00000000, 0x39600001 ] # li r11, 1 // both flags that go with mode 3 (the game's tables at 0x015E6B58 and 0x015E6B50)
+      - [ be32, 0x00000000, 0x997F071D ] # stb r11, 0x71d(r31)
+      - [ be32, 0x00000000, 0x997F071E ] # stb r11, 0x71e(r31)
