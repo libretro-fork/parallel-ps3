@@ -470,6 +470,33 @@ PPU-d764d35ca136442f72228ab715a629f26994e641:
       - [ be32, 0x00000000, 0x38000000 ] # li r0, 0
       - [ be32, 0x00000000, 0xF80B0000 ] # std r0, 0(r11)
       - [ be32, 0x00000000, 0xFC20F890 ] # fmr f1, f31 // the instruction the hook took the place of
+  "LOD/Texture Detail":
+    Games:
+      "Dark Souls: Prepare to Die Edition":
+        BLES01765: [ All ]
+    Author: "LibretroAdmin"
+    Notes: >-
+      The game draws characters and objects from one of three versions of their model, picked by distance from
+      the camera (the distances come from each area's LOD parameters), so detail drops as they move away.
+      "Highest" always draws the most detailed version. "Game Default" changes nothing.
+    Configurable Values:
+      "Detail":
+        Type: long_enum
+        Value: 0x38000000
+        Allowed Values:
+          "Game Default": 0x38000000
+          "Highest": 0x38000001
+    Patch Version: 1.0
+    Patch:
+      # The model's LOD pick (0x001DDFF0: the distance in f1 against the area's LOD_BANK row, with the model's own
+      # scale at 0x250 and bias at 0x254; returns level 0, 1 or 2): with "Highest" it returns 0 at once
+      - [ calloc, 0x001DDFF2, 6 ] # Hook 0x001DDFF0 // Original stdu r1, -0xb0(r1) (the cave's last instruction); returns to 0x001DDFF4
+      - [ be32, 0x00000000, "Detail" ] # li r0, N // 0 the game's, 1 highest
+      - [ be32, 0x00000000, 0x2F800000 ] # cmpwi cr7, r0, 0
+      - [ be32, 0x00000000, 0x419E000C ] # beq cr7, 0x14
+      - [ be32, 0x00000000, 0x38600000 ] # li r3, 0 // the most detailed level
+      - [ be32, 0x00000000, 0x4E800020 ] # blr
+      - [ be32, 0x00000000, 0xF821FF51 ] # stdu r1, -0xb0(r1)
   "Reduce Audio Latency":
     Games:
       "Dark Souls: Prepare to Die Edition":

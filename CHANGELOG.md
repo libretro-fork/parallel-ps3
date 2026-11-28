@@ -4,6 +4,12 @@ What changed in the libretro core of this fork, newest first. Changes that come 
 
 ## Unreleased
 
+- **Dark Souls: Prepare to Die Edition (EU): "LOD/Texture Detail" patch, with characters and objects always at their most detailed model on "Highest".** Not yet run on a game.
+  - **Why:** the game swaps characters and objects to simpler versions of their model as they get further from the camera, which shows as detail dropping in and out.
+  - **What changed:** a new patch in the Patch Manager with one setting, "Game Default" (nothing changes) or "Highest". The model's LOD pick (0x001DDFF0) compares the distance with the area's LOD_BANK row (two distances, each with a margin so the level does not flicker) and returns level 0, 1 or 2; on "Highest" it returns 0 at once.
+    - Not in it yet: the water. Its surface is drawn into a 512x360 target (made at 0x00378734 from two numbers in the game's data) and the mirrored scene into a quarter-size one, each over a depth buffer of its own small size, so the size cannot be raised by changing those numbers alone.
+  - **Tests:** the patch applied to the decrypted executable with each setting and read back; `test_game_patches` passes.
+
 - **Dark Souls: Prepare to Die Edition (EU): the bonfire softlock is caught by what it is, inside "Unlock FPS".** Not yet run on a game.
   - **What was wrong:** with "Unlock FPS", after Reverse Hollowing the character stays seated every time the bonfire menu is left with circle. The "Bonfire Softlock Watchdog" patch never stepped in. A reading of the game's state in the softlock (taken on the user's machine) shows why: the bonfire script's seated byte is already 0 and no menu is open, so the script has ended normally and the watchdog, which waited for "seated byte set, no menu", had nothing to see. It was also a separate switch that was off.
   - **What changed:** the separate patch is gone and "Unlock FPS" (version 1.4) carries the check. Each frame it reads the player's loop animation id (the word the script's `PlayLoopAnimation` writes at 0x003EF8A8 and `StopLoopAnimation` sets to -1 at 0x003EF778; the player is found as that native finds it). One of the three seated loops (7701, 7711, 7721, the ids the PC fixes look for) still set while the script's seated byte is 0 is the softlock. When that has lasted a second, the character's own stop of its loop animation (0x003EF684) is called, the function `StopLoopAnimation` calls. No menu words and no prompt timing are read any more.
