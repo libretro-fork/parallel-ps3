@@ -4,6 +4,12 @@ What changed in the libretro core of this fork, newest first. Changes that come 
 
 ## Unreleased
 
+- **Dark Souls: Prepare to Die Edition (EU): "LOD/Texture Detail" stretches the model distances in steps instead of always drawing the most detailed version.** Not yet run on a game.
+  - **What was wrong:** on "Highest" a far character was drawn with parts missing that the game's own choice shows (the user's two screenshots of the same view, patch on and off). The patch made the LOD pick return the most detailed level at any distance, and that version of a model is evidently not made to be drawn from far away. Why its parts go missing there has not been found.
+  - **What changed:** the setting now has four values: "Game Default", "High", "Very High" and "Highest". The three above the default halve the distance the pick is given once, twice or three times, so each version of a model is kept 2, 4 or 8 times as far and the far ones are still used beyond that. The water at full resolution is unchanged and comes with all three. The setting is still one instruction; its low two bits are the water's shift and the rest the number of halvings.
+    - Not known until it is run: how far "Highest" can go before the same parts go missing; that is what the two lower steps are for.
+  - **Tests:** the patch applied to the decrypted executable with three of the settings and the changed code read back through a disassembler; `test_game_patches` passes.
+
 - **Dark Souls: Prepare to Die Edition (EU): Unlock FPS's three movement numbers follow each frame's time.** Not yet run on a game.
   - **What was wrong:** the pull down a slope, ground friction and the momentum kept in the air are applied once a frame, and Unlock FPS set them once, for 60 frames a second. At 120 (VBlank frequency 120 Hz) they were applied twice as often as they were set for: a roll or a walk off a ledge fell short again, and slopes and friction were twice as strong.
   - **What changed:** "Unlock FPS" (version 1.6) writes the three each frame from the frame's real time, beside the stuck test's numbers: the slope's pull times the frame time in 30ths of a second, and 0.65 and 0.95 to that power. The three fixed values are gone from the patch.

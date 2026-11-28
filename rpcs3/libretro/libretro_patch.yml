@@ -580,40 +580,50 @@ PPU-d764d35ca136442f72228ab715a629f26994e641:
         BLES01765: [ All ]
     Author: "LibretroAdmin"
     Notes: >-
-      "Game Default" changes nothing. "Highest" does two things. Characters and objects are always drawn from
-      the most detailed of the three versions of their model, where the game picks one by distance from the
-      camera. And the water is drawn at the game's full resolution: the mirrored scene it reflects (a quarter
-      of the screen's width and height in the game, 256x180) and the picture of its surface (half, 512x360)
-      both become 1024x720, which costs some speed where there is water.
+      "Game Default" changes nothing. The other settings do two things. Characters and objects keep the more
+      detailed versions of their model further away: the game picks one of three versions by distance from the
+      camera, and High, Very High and Highest make it pick as if things were 2, 4 and 8 times nearer. And the
+      water is drawn at the game's full resolution: the mirrored scene it reflects (a quarter of the screen's
+      width and height in the game, 256x180) and the picture of its surface (half, 512x360) both become
+      1024x720, which costs some speed where there is water. If far characters are drawn with parts missing,
+      go down a step: the most detailed version was not made to be drawn from far away.
     Configurable Values:
       "Detail":
         Type: long_enum
         Value: 0x38000002
         Allowed Values:
           "Game Default": 0x38000002
-          "Highest": 0x38000000
-    Patch Version: 1.1
+          "High": 0x38000004
+          "Very High": 0x38000008
+          "Highest": 0x3800000C
+    Patch Version: 1.2
     Patch:
-      # The setting is one instruction, li r0, N (2 the game's, 0 highest), used at each place below
-      # The model's LOD pick (0x001DDFF0: the distance in f1 against the area's LOD_BANK row, with the model's own
-      # scale at 0x250 and bias at 0x254; returns level 0, 1 or 2): with "Highest" it returns 0 at once
-      - [ calloc, 0x001DDFF2, 6 ] # Hook 0x001DDFF0 // Original stdu r1, -0xb0(r1) (the cave's last instruction); returns to 0x001DDFF4
+      # The setting is one instruction, li r0, N, used at each place below. The low two bits of N are the shift the water's
+      # targets are made with (2 the game's, 0 full size); the rest is how many times the models' distance is halved
+      # The model's LOD pick (0x001DDFF0: the distance in f1 against the area's LOD_BANK row; returns level 0, 1 or 2): the
+      # distance it is given is halved that many times first. (Version 1.1 returned level 0 always, and far characters were
+      # drawn with parts missing.)
+      - [ calloc, 0x001DDFF2, 10 ] # Hook 0x001DDFF0 // Original stdu r1, -0xb0(r1) (the cave's last instruction); returns to 0x001DDFF4
       - [ be32, 0x00000000, "Detail" ] # li r0, N
-      - [ be32, 0x00000000, 0x2F800002 ] # cmpwi cr7, r0, 2
-      - [ be32, 0x00000000, 0x419E000C ] # beq cr7, 0x14
-      - [ be32, 0x00000000, 0x38600000 ] # li r3, 0 // the most detailed level
-      - [ be32, 0x00000000, 0x4E800020 ] # blr
+      - [ be32, 0x00000000, 0x7C001671 ] # srawi. r0, r0, 2
+      - [ be32, 0x00000000, 0x4182001C ] # beq 0x24
+      - [ be32, 0x00000000, 0x3D803F00 ] # lis r12, 0x3f00 // 0.5, by way of the stack's red zone
+      - [ be32, 0x00000000, 0x9181FFF8 ] # stw r12, -8(r1)
+      - [ be32, 0x00000000, 0xC001FFF8 ] # lfs f0, -8(r1)
+      - [ be32, 0x00000000, 0x7C0903A6 ] # mtctr r0
+      - [ be32, 0x00000000, 0xEC210032 ] # fmuls f1, f1, f0
+      - [ be32, 0x00000000, 0x4200FFFC ] # bdnz 0x1c
       - [ be32, 0x00000000, 0xF821FF51 ] # stdu r1, -0xb0(r1)
       # The mirrored scene's depth buffer, as the game makes its render targets: the screen's size shifted right by 2. The shift is by N now
       - [ be32, 0x0022A9D4, "Detail" ] # li r0, N // Original srawi r4, r4, 2
-      - [ be32, 0x0022A9D8, 0x7C840630 ] # sraw r4, r4, r0 // Original addze r4, r4
-      - [ be32, 0x0022A9DC, 0x7CA50630 ] # sraw r5, r5, r0 // Original srawi r5, r5, 2
-      - [ be32, 0x0022A9E0, 0x60000000 ] # nop // Original addze r5, r5
+      - [ be32, 0x0022A9D8, 0x70000003 ] # andi. r0, r0, 3 // Original addze r4, r4
+      - [ be32, 0x0022A9DC, 0x7C840630 ] # sraw r4, r4, r0 // Original srawi r5, r5, 2
+      - [ be32, 0x0022A9E0, 0x7CA50630 ] # sraw r5, r5, r0 // Original addze r5, r5
       # The mirrored scene's colour target (the first of the three quarter-size ones; the mirror pass at 0x003755BC draws into it and the water reads it at 0x0036D7D0)
       - [ be32, 0x0022AA64, "Detail" ] # li r0, N // Original srawi r4, r4, 2
-      - [ be32, 0x0022AA68, 0x7C840630 ] # sraw r4, r4, r0 // Original addze r4, r4
-      - [ be32, 0x0022AA6C, 0x7CA50630 ] # sraw r5, r5, r0 // Original srawi r5, r5, 2
-      - [ be32, 0x0022AA70, 0x60000000 ] # nop // Original addze r5, r5
+      - [ be32, 0x0022AA68, 0x70000003 ] # andi. r0, r0, 3 // Original addze r4, r4
+      - [ be32, 0x0022AA6C, 0x7C840630 ] # sraw r4, r4, r0 // Original srawi r5, r5, 2
+      - [ be32, 0x0022AA70, 0x7CA50630 ] # sraw r5, r5, r0 // Original addze r5, r5
       # The water surface's target: its size (512x360, at 0x019F3EFC) is copied as the game starts to the two words its
       # target is made from (0x00378734) and its shader is told (0x0036D30C). With "Highest" both are doubled
       - [ calloc, 0x00319F1A, 8 ] # Hook 0x00319F18 // Original lwz r10, 0(r7); returns to 0x00319F1C
