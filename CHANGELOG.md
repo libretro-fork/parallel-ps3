@@ -4,6 +4,12 @@ What changed in the libretro core of this fork, newest first. Changes that come 
 
 ## Unreleased
 
+- **Dark Souls: Prepare to Die Edition (EU): kick and jumping attack at high frame rates (Unlock FPS).** Not yet run on a game.
+  - **What was wrong:** forward with R1 (kick) or R2 (jumping attack) needs a "flick" of the stick: past 0.3 on a frame after a frame where it was neutral (within 0.2). In 1/30 s a quick push gets from 0.2 to 0.3 between two frames; at 120 frames a second a frame usually lands in between, the game forgets the stick was neutral and no flick is made. The PC game has the same problem at high frame rates.
+  - **What changed:** "Unlock FPS" (version 1.7) keeps the game's "was neutral" mark until the stick has been out of neutral for 0.03 s of real time, one frame at 30 frames a second, so the same push makes a flick at any frame rate. At 30 frames a second nothing changes: the first frame out of neutral is already longer than that.
+    - Not done: the PC mods also hold a fresh R1 or R2 press for a moment while the stick is still on its way out, because at 30 frames a second a press up to a frame early still counts. Pressing slightly before the stick may give a normal attack more often than at 30.
+  - **Tests:** the patch applied to the decrypted executable and the two pieces of new code read back through a disassembler; `test_game_patches` passes.
+
 - **Dark Souls: Prepare to Die Edition (EU): "LOD/Texture Detail" stretches the model distances in steps instead of always drawing the most detailed version.** Not yet run on a game.
   - **What was wrong:** on "Highest" a far character was drawn with parts missing that the game's own choice shows (the user's two screenshots of the same view, patch on and off). The patch made the LOD pick return the most detailed level at any distance, and that version of a model is evidently not made to be drawn from far away. Why its parts go missing there has not been found.
   - **What changed:** the setting now has four values: "Game Default", "High", "Very High" and "Highest". The three above the default halve the distance the pick is given once, twice or three times, so each version of a model is kept 2, 4 or 8 times as far and the far ones are still used beyond that. The water at full resolution is unchanged and comes with all three. The setting is still one instruction; its low two bits are the water's shift and the rest the number of halvings.

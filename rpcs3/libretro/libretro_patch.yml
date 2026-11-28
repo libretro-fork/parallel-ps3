@@ -384,8 +384,10 @@ PPU-d764d35ca136442f72228ab715a629f26994e641:
       caves the patch engine allocates. Above about 95 frames a second a character that had been slowed
       against a wall stayed slow until the stick was let go: the game's test for "stuck" counts a frame's move
       as if frames were 1/30 s, so the small moves of short frames at half speed never passed it. The test
-      and the rates it slows and recovers at go by the real frame time now.
-    Patch Version: 1.6
+      and the rates it slows and recovers at go by the real frame time now. The kick and the jumping attack
+      (forward with R1 or R2) need the stick to go from neutral to pushed between two frames; the stick now
+      counts as having been neutral for 0.03 s after it leaves neutral, so short frames do not lose them.
+    Patch Version: 1.7
     Patch:
       # The frame's time: in place of the load of the constant 1/30 (0x01876870) into f31 at 0x00145A18
       - [ calloc, 0x00145A1A, 25 ] # Hook 0x00145A18 // Original lfs f31, -0x7f48(r30); returns to 0x00145A1C
@@ -574,6 +576,29 @@ PPU-d764d35ca136442f72228ab715a629f26994e641:
       - [ be32, 0x00000000, 0x2F8C0000 ] # cmpwi cr7, r12, 0
       - [ be32, 0x00000000, 0x409E0008 ] # bne cr7, 0x1c // 0 before the first frame: then the game's own number
       - [ be32, 0x00000000, 0xC01E81D0 ] # lfs f0, -0x7e30(r30)
+      # Kick and jumping attack (forward with R1 or R2): the stick's flick (0x004B50A0). A flick starts when the stick is past
+      # 0.3 and was neutral (within 0.2) on the frame before, so the stick must get from 0.2 to 0.3 between two frames: easy
+      # in 1/30 s, and missed at a high frame rate whenever a frame lands in between. The "was neutral" byte (0x22d of the
+      # pad's object) is now kept until the stick has been out of neutral for 0.03 s of real time (0x01BD3F30 counts it),
+      # which is one frame at 30 frames a second, as in the game
+      - [ calloc, 0x004B5272, 4 ] # Hook 0x004B5270 // Original li r11, 1; returns to 0x004B5274
+      - [ be32, 0x00000000, 0x39600001 ] # li r11, 1
+      - [ be32, 0x00000000, 0x38000000 ] # li r0, 0 // neutral: the count starts again
+      - [ be32, 0x00000000, 0x3D2001BD ] # lis r9, 0x1bd
+      - [ be32, 0x00000000, 0x90093F30 ] # stw r0, 0x3f30(r9)
+      - [ calloc, 0x004B52E6, 12 ] # Hook 0x004B52E4 // Original li r0, 0; returns to 0x004B52E8
+      - [ be32, 0x00000000, 0x3D2001BD ] # lis r9, 0x1bd
+      - [ be32, 0x00000000, 0xC0093F30 ] # lfs f0, 0x3f30(r9)
+      - [ be32, 0x00000000, 0xEC00082A ] # fadds f0, f0, f1 // not neutral: for how long (f1 is the frame time)
+      - [ be32, 0x00000000, 0xD0093F30 ] # stfs f0, 0x3f30(r9)
+      - [ be32, 0x00000000, 0x3C003CF5 ] # lis r0, 0x3cf5 // 0.03
+      - [ be32, 0x00000000, 0x6000C28F ] # ori r0, r0, 0xc28f
+      - [ be32, 0x00000000, 0x9001FF10 ] # stw r0, -0xf0(r1)
+      - [ be32, 0x00000000, 0xC1A1FF10 ] # lfs f13, -0xf0(r1)
+      - [ be32, 0x00000000, 0xFF806800 ] # fcmpu cr7, f0, f13
+      - [ be32, 0x00000000, 0x38000000 ] # li r0, 0 // the game's: the byte is cleared
+      - [ be32, 0x00000000, 0x409C0008 ] # bge cr7, 0x30
+      - [ be32, 0x00000000, 0x8804022D ] # lbz r0, 0x22d(r4) // not yet: the byte stays as it is
   "LOD/Texture Detail":
     Games:
       "Dark Souls: Prepare to Die Edition":
