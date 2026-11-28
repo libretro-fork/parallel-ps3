@@ -4,6 +4,11 @@ What changed in the libretro core of this fork, newest first. Changes that come 
 
 ## Unreleased
 
+- **Dark Souls: Prepare to Die Edition (EU): the turn-around when a run is reversed, at high frame rates (Unlock FPS).** Not yet run on a game.
+  - **What was wrong:** the turn code keeps the stick's direction of the last 2 frames, and the movement code plays the turn-around when the direction swung more than 105 degrees since the older one. That is 1/30 s in the game; at 120 frames a second it is 1/120 s, in which a quick reversal almost never swings that far, so the turn-around hardly ever played.
+  - **What changed:** "Unlock FPS" (version 1.9) takes a new place in that ring only when 0.03 s have passed since the last one (the time is kept per character, in the ring's unused last place) and writes over the newest direction until then. Because the check now sees the same swing on several frames, where it answers yes the ring is set to the newest direction, so it answers once, as in the game. At 30 frames a second neither changes anything.
+  - **Tests:** the patch applied to the decrypted executable and the two pieces of new code read back through a disassembler; `test_game_patches` passes.
+
 - **Dark Souls: Prepare to Die Edition (EU): roll direction at high frame rates (Unlock FPS).** Not yet run on a game.
   - **What was wrong:** the pad code keeps the stick's last 6 values, one a frame, and a roll goes the way the strongest of the newest 5 points. At 30 frames a second that is 0.13 s of stick; at 120 it is 0.04 s, so a push let go just before the roll button gave a backstep (or nothing) instead of a roll that way.
   - **What changed:** "Unlock FPS" (version 1.8) takes a new place in that list only when 0.03 s of real time have passed since the last one; until then the newest value is written over. The 5 values span the same time as at 30 frames a second, and at 30 nothing changes.

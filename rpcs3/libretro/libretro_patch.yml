@@ -388,8 +388,10 @@ PPU-d764d35ca136442f72228ab715a629f26994e641:
       (forward with R1 or R2) need the stick to go from neutral to pushed between two frames; the stick now
       counts as having been neutral for 0.03 s after it leaves neutral, so short frames do not lose them. A
       roll goes the way the stick pointed over its last few values; those are now kept 0.03 s apart, as at 30
-      frames a second, so a push let go just before the button still rolls that way.
-    Patch Version: 1.8
+      frames a second, so a push let go just before the button still rolls that way. The same for the
+      turn-around when a run is reversed: the stick's direction is compared with the one 0.03 s ago, not one
+      short frame ago.
+    Patch Version: 1.9
     Patch:
       # The frame's time: in place of the load of the constant 1/30 (0x01876870) into f31 at 0x00145A18
       - [ calloc, 0x00145A1A, 25 ] # Hook 0x00145A18 // Original lfs f31, -0x7f48(r30); returns to 0x00145A1C
@@ -619,6 +621,36 @@ PPU-d764d35ca136442f72228ab715a629f26994e641:
       - [ be32, 0x00000000, 0x39290001 ] # addi r9, r9, 1 // the game's: the next place
       - [ be32, 0x00000000, 0xEC000028 ] # fsubs f0, f0, f0
       - [ be32, 0x00000000, 0xD00C3F34 ] # stfs f0, 0x3f34(r12)
+      # The turn-around when a run or sprint is reversed. The turn code keeps the stick's direction of the last 2 frames (a
+      # ring at 0x70 of its object, the place written at 0x160, the length at 0x164) and the movement code plays the
+      # turn-around when the direction swung more than 105 degrees since the older one (0x004C4F10): one frame, 1/30 s in the
+      # game and 1/120 s at 120, where a quick reversal almost never swings that far. A new place in the ring is now taken
+      # only when 0.03 s have passed since the last one (the timebase then is kept in the ring's unused last place, 0xe4 of
+      # the object); until then the newest direction is written over
+      - [ calloc, 0x004C69B6, 10 ] # Hook 0x004C69B4 // Original addi r9, r9, 1; returns to 0x004C69B8
+      - [ be32, 0x00000000, 0x7D4C42E6 ] # mftb r10 // now, in 80,000,000ths of a second
+      - [ be32, 0x00000000, 0x801D00E4 ] # lwz r0, 0xe4(r29)
+      - [ be32, 0x00000000, 0x7C005050 ] # subf r0, r0, r10
+      - [ be32, 0x00000000, 0x78000020 ] # clrldi r0, r0, 32
+      - [ be32, 0x00000000, 0x3D800024 ] # lis r12, 0x24 // 0.03 s
+      - [ be32, 0x00000000, 0x618C9F00 ] # ori r12, r12, 0x9f00
+      - [ be32, 0x00000000, 0x7FA06040 ] # cmpld cr7, r0, r12
+      - [ be32, 0x00000000, 0x419C000C ] # blt cr7, 0x28 // not yet: the same place again
+      - [ be32, 0x00000000, 0x39290001 ] # addi r9, r9, 1 // the game's: the next place
+      - [ be32, 0x00000000, 0x915D00E4 ] # stw r10, 0xe4(r29)
+      # The check can now see the same swing on several frames. Where it answers yes, every direction in the ring is set to
+      # the newest, so it answers once, as in the game, where the older direction is replaced on the next frame
+      - [ calloc, 0x004C50C6, 10 ] # Hook 0x004C50C4 // Original li r3, 1; returns to 0x004C50C8
+      - [ be32, 0x00000000, 0x810C0160 ] # lwz r8, 0x160(r12) // r12 is the turn object, r11 the ring's length
+      - [ be32, 0x00000000, 0x5508103A ] # slwi r8, r8, 2
+      - [ be32, 0x00000000, 0x39080070 ] # addi r8, r8, 0x70
+      - [ be32, 0x00000000, 0x7C0C442E ] # lfsx f0, r12, r8
+      - [ be32, 0x00000000, 0x7D6903A6 ] # mtctr r11
+      - [ be32, 0x00000000, 0x390C0070 ] # addi r8, r12, 0x70
+      - [ be32, 0x00000000, 0xD0080000 ] # stfs f0, 0(r8)
+      - [ be32, 0x00000000, 0x39080004 ] # addi r8, r8, 4
+      - [ be32, 0x00000000, 0x4200FFF8 ] # bdnz 0x18
+      - [ be32, 0x00000000, 0x38600001 ] # li r3, 1
   "LOD/Texture Detail":
     Games:
       "Dark Souls: Prepare to Die Edition":
