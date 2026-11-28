@@ -4,6 +4,12 @@ What changed in the libretro core of this fork, newest first. Changes that come 
 
 ## Unreleased
 
+- **Dark Souls: Prepare to Die Edition (EU): the bonfire softlock is caught by what it is, inside "Unlock FPS".** Not yet run on a game.
+  - **What was wrong:** with "Unlock FPS", after Reverse Hollowing the character stays seated every time the bonfire menu is left with circle. The "Bonfire Softlock Watchdog" patch never stepped in. A reading of the game's state in the softlock (taken on the user's machine) shows why: the bonfire script's seated byte is already 0 and no menu is open, so the script has ended normally and the watchdog, which waited for "seated byte set, no menu", had nothing to see. It was also a separate switch that was off.
+  - **What changed:** the separate patch is gone and "Unlock FPS" (version 1.4) carries the check. Each frame it reads the player's loop animation id (the word the script's `PlayLoopAnimation` writes at 0x003EF8A8 and `StopLoopAnimation` sets to -1 at 0x003EF778; the player is found as that native finds it). One of the three seated loops (7701, 7711, 7721, the ids the PC fixes look for) still set while the script's seated byte is 0 is the softlock. When that has lasted a second, the character's own stop of its loop animation (0x003EF684) is called, the function `StopLoopAnimation` calls. No menu words and no prompt timing are read any more.
+    - Not known until it is run: that the loop id is what is left set in the softlock (the PC fixes clear the same id there, and the seated byte reading fits it, but it was not read on this build), and whether a warp from a bonfire can meet the condition for a second before the screen is dark (the character would stand up early).
+  - **Tests:** the patch applied to the decrypted executable and read back, every word of the new code checked against a disassembler; `test_game_patches` passes.
+
 - **A refused save state says in the log what the game's threads were doing.** Not yet run on a game.
   - **Why:** in Dark Souls, with SPU Compatible Mode on, Save State is refused every time with "Game saving is in progress". RPCS3 shows that for any system call that holds its savestate guard, not only a game save, and nothing said which one. Reading the code did not find a call that keeps the guard.
   - **What changed:** when a state is refused, the line in the frontend's log now gives the guard's count and, for each of the game's PPU threads, the system call it is in (or was last in). Only on that path; nothing is added while the game runs.

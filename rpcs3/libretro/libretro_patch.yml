@@ -371,16 +371,18 @@ PPU-d764d35ca136442f72228ab715a629f26994e641:
     Games:
       "Dark Souls: Prepare to Die Edition":
         BLES01765: [ All ]
-    Author: "Pappapatu (the patch for the other build), LibretroAdmin (this build)"
+    Author: "Pappapatu (the patch for the other build), LibretroAdmin (this build; the bonfire watchdog after FPSFix, FPSFix+ and DS1-FPS-Unlock)"
     Notes: >-
       The game runs at 60 frames a second and moves by the time each frame took. The same two changes as the
       Unlock FPS of the other build of this game, found again in this executable: the game's own 60FPS(NO SKIP)
       flip mode set as it starts, and the fixed 1/30 s step replaced by the time since the last frame (4 ms to
       50 ms). Three numbers the movement code applies once a frame are set for 60 frames a second too: the
       momentum kept in the air (so a roll or a walk off a ledge carries as far as at 30), ground friction and
-      the pull down a slope. The code is in caves the patch engine allocates. Turn "Bonfire Softlock Watchdog"
-      on with it: at a high frame rate the bonfire menu can close with the character left sitting.
-    Patch Version: 1.3
+      the pull down a slope. It also undoes the bonfire softlock, where after Reverse Hollowing or Kindle the
+      character stays seated once the menu is closed: when the seated loop animation is still set a second
+      after the bonfire's script has ended, the game's own stop of that animation is called. The code is in
+      caves the patch engine allocates.
+    Patch Version: 1.4
     Patch:
       # The frame's time: in place of the load of the constant 1/30 (0x01876870) into f31 at 0x00145A18
       - [ calloc, 0x00145A1A, 25 ] # Hook 0x00145A18 // Original lfs f31, -0x7f48(r30); returns to 0x00145A1C
@@ -420,78 +422,53 @@ PPU-d764d35ca136442f72228ab715a629f26994e641:
       - [ be32, 0x00000000, 0x39600001 ] # li r11, 1 // both flags that go with mode 3 (the game's tables at 0x015E6B58 and 0x015E6B50)
       - [ be32, 0x00000000, 0x997F071D ] # stb r11, 0x71d(r31)
       - [ be32, 0x00000000, 0x997F071E ] # stb r11, 0x71e(r31)
-  "Bonfire Softlock Watchdog":
-    Games:
-      "Dark Souls: Prepare to Die Edition":
-        BLES01765: [ All ]
-    Author: "LibretroAdmin, after NullBy7e's FPSFix, Sean Pesce's FPSFix+ and zofrea1's DS1-FPS-Unlock"
-    Notes: >-
-      After resting at a bonfire, most often after Kindle or Reverse Hollowing, its menu can fail to come back:
-      the character stays seated and nothing responds. It is rare at 30 frames a second and common above it.
-      Each frame this looks at the game's own state: when the character has been seated with no bonfire menu,
-      prompt or its sub-menus open for 4 seconds (and at least 9 seconds after a Kindle or Reverse Hollowing
-      prompt, whose action plays with no menu), it has the character stand up the way the bonfire's script
-      does when you leave. The game keeps its frame rate at the bonfire.
-    Patch Version: 1.0
-    Patch:
-      # Each frame: in place of the instruction after the frame time's load, so it works with Unlock FPS on or off
-      - [ calloc, 0x00145A1E, 57 ] # Hook 0x00145A1C // Original fmr f1, f31 (the cave's last instruction); returns to 0x00145A20
-      - [ be32, 0x00000000, 0x3D2001B5 ] # lis r9, 0x1b5 // the game's talk object (its pointer is at 0x01B48C4C)
-      - [ be32, 0x00000000, 0x81298C4C ] # lwz r9, -0x73b4(r9)
+      # The bonfire softlock, each frame: in place of the instruction after the frame time's load. The softlock is the
+      # player's seated loop animation (7701, 7711 or 7721) still set after the bonfire's script has ended (its seated
+      # byte is 0 again). When that has lasted a second, the character's own stop of its loop animation is called
+      - [ calloc, 0x00145A1E, 44 ] # Hook 0x00145A1C // Original fmr f1, f31 (the cave's last instruction); returns to 0x00145A20
+      - [ be32, 0x00000000, 0x3D2001B4 ] # lis r9, 0x1b4 // the world's characters (the pointer is at 0x01B43610); the player is at 0x30, as the script's StopLoopAnimation finds it (0x00666BF0)
+      - [ be32, 0x00000000, 0x81293610 ] # lwz r9, 0x3610(r9)
       - [ be32, 0x00000000, 0x2B890000 ] # cmplwi cr7, r9, 0
-      - [ be32, 0x00000000, 0x419E00D4 ] # beq cr7, 0xe0
-      - [ be32, 0x00000000, 0x7D4C42E6 ] # mftb r10 // now, in 80,000,000ths of a second
-      - [ be32, 0x00000000, 0x3D6001BD ] # lis r11, 0x1bd // r11 = 0x01BD3F10, in the unused end of the executable's data: when the character was last not seated or had a menu, then when the yes/no prompt was last open
-      - [ be32, 0x00000000, 0x616B3F10 ] # ori r11, r11, 0x3f10
-      - [ be32, 0x00000000, 0x898907BC ] # lbz r12, 0x7bc(r9) // 1 from the bonfire's StartBonfireAnimLoop to its EndBonfireKindleAnimLoop (set at 0x006FD1C0, cleared at 0x006FD230): seated
-      - [ be32, 0x00000000, 0x2B8C0000 ] # cmplwi cr7, r12, 0
-      - [ be32, 0x00000000, 0x419E00B8 ] # beq cr7, 0xdc
-      - [ be32, 0x00000000, 0x3D8001B5 ] # lis r12, 0x1b5 // the menu manager (its pointer is at 0x01B530D4): a word for each kind of menu from 0x1c on, as the game's IsMenuOpen (0x00AB0D24) reads them
-      - [ be32, 0x00000000, 0x818C30D4 ] # lwz r12, 0x30d4(r12)
-      - [ be32, 0x00000000, 0x2B8C0000 ] # cmplwi cr7, r12, 0
-      - [ be32, 0x00000000, 0x419E00A8 ] # beq cr7, 0xdc
-      - [ be32, 0x00000000, 0x800C0060 ] # lwz r0, 0x60(r12) // kind 17, the yes/no prompt (reverse hollowing, kindle)
-      - [ be32, 0x00000000, 0x2F800000 ] # cmpwi cr7, r0, 0
-      - [ be32, 0x00000000, 0x419E0008 ] # beq cr7, 0x48
-      - [ be32, 0x00000000, 0xF94B0008 ] # std r10, 8(r11)
-      - [ be32, 0x00000000, 0x806C0040 ] # lwz r3, 0x40(r12) // kind 9, the bonfire menu
-      - [ be32, 0x00000000, 0x7C001B78 ] # or r0, r0, r3
-      - [ be32, 0x00000000, 0x806C004C ] # lwz r3, 0x4c(r12) // 12 repair
-      - [ be32, 0x00000000, 0x7C001B78 ] # or r0, r0, r3
-      - [ be32, 0x00000000, 0x806C0050 ] # lwz r3, 0x50(r12) // 13 reinforce
-      - [ be32, 0x00000000, 0x7C001B78 ] # or r0, r0, r3
-      - [ be32, 0x00000000, 0x806C0078 ] # lwz r3, 0x78(r12) // 23 level up
-      - [ be32, 0x00000000, 0x7C001B78 ] # or r0, r0, r3
-      - [ be32, 0x00000000, 0x806C0080 ] # lwz r3, 0x80(r12) // 25 attune
-      - [ be32, 0x00000000, 0x7C001B78 ] # or r0, r0, r3
-      - [ be32, 0x00000000, 0x806C0084 ] # lwz r3, 0x84(r12) // 26 the bottomless box
-      - [ be32, 0x00000000, 0x7C001B78 ] # or r0, r0, r3
-      - [ be32, 0x00000000, 0x806C00AC ] # lwz r3, 0xac(r12) // 36 warp
-      - [ be32, 0x00000000, 0x7C001B78 ] # or r0, r0, r3
-      - [ be32, 0x00000000, 0x2F800000 ] # cmpwi cr7, r0, 0
-      - [ be32, 0x00000000, 0x409E0058 ] # bne cr7, 0xdc
-      - [ be32, 0x00000000, 0xE86B0000 ] # ld r3, 0(r11) // seated with no menu: for how long
-      - [ be32, 0x00000000, 0x7C635050 ] # subf r3, r3, r10
-      - [ be32, 0x00000000, 0x3C801312 ] # lis r4, 0x1312 // 4 seconds
-      - [ be32, 0x00000000, 0x6084D000 ] # ori r4, r4, 0xd000
-      - [ be32, 0x00000000, 0x7FA32040 ] # cmpld cr7, r3, r4
-      - [ be32, 0x00000000, 0x419C0044 ] # blt cr7, 0xe0
-      - [ be32, 0x00000000, 0xE86B0008 ] # ld r3, 8(r11) // and how long since the prompt: its action plays about 6 seconds with no menu
-      - [ be32, 0x00000000, 0x7C635050 ] # subf r3, r3, r10
-      - [ be32, 0x00000000, 0x3C802AEA ] # lis r4, 0x2aea // 9 seconds
-      - [ be32, 0x00000000, 0x60845400 ] # ori r4, r4, 0x5400
-      - [ be32, 0x00000000, 0x7FA32040 ] # cmpld cr7, r3, r4
-      - [ be32, 0x00000000, 0x419C002C ] # blt cr7, 0xe0
-      - [ be32, 0x00000000, 0xF94B0000 ] # std r10, 0(r11) // the count starts again
-      - [ be32, 0x00000000, 0x3C6001B4 ] # lis r3, 0x1b4 // what the script's EndBonfireKindleAnimLoop does (0x006FD214): the event script's Lua_BonfireLoopAnimEnd, and the seated byte cleared
-      - [ be32, 0x00000000, 0x806364F0 ] # lwz r3, 0x64f0(r3)
+      - [ be32, 0x00000000, 0x419E00A0 ] # beq cr7 0xac
+      - [ be32, 0x00000000, 0x80690030 ] # lwz r3, 0x30(r9)
       - [ be32, 0x00000000, 0x2B830000 ] # cmplwi cr7, r3, 0
-      - [ be32, 0x00000000, 0x419E0018 ] # beq cr7, 0xe0
+      - [ be32, 0x00000000, 0x419E0094 ] # beq cr7 0xac
+      - [ be32, 0x00000000, 0x81230010 ] # lwz r9, 0x10(r3) // the player's loop animation: its id is at 4 there (written at 0x003EF8A8, set to -1 by the stop at 0x003EF778)
+      - [ be32, 0x00000000, 0x2B890000 ] # cmplwi cr7, r9, 0
+      - [ be32, 0x00000000, 0x419E0088 ] # beq cr7 0xac
+      - [ be32, 0x00000000, 0x80090004 ] # lwz r0, 4(r9)
+      - [ be32, 0x00000000, 0x3D6001BD ] # lis r11, 0x1bd // r11 = 0x01BD3F10, in the unused end of the executable's data: since when the character has been seated with the script gone
+      - [ be32, 0x00000000, 0x616B3F10 ] # ori r11, r11, 0x3f10
+      - [ be32, 0x00000000, 0x2F801E15 ] # cmpwi cr7, r0, 7701 // the three seated loops: 7701, 7711, 7721
+      - [ be32, 0x00000000, 0x419E0014 ] # beq cr7 0x4c
+      - [ be32, 0x00000000, 0x2F801E1F ] # cmpwi cr7, r0, 7711
+      - [ be32, 0x00000000, 0x419E000C ] # beq cr7 0x4c
+      - [ be32, 0x00000000, 0x2F801E29 ] # cmpwi cr7, r0, 7721
+      - [ be32, 0x00000000, 0x409E005C ] # bne cr7 0xa4
+      - [ be32, 0x00000000, 0x3D8001B5 ] # lis r12, 0x1b5 // the game's talk object (its pointer is at 0x01B48C4C)
+      - [ be32, 0x00000000, 0x818C8C4C ] # lwz r12, -0x73b4(r12)
+      - [ be32, 0x00000000, 0x2B8C0000 ] # cmplwi cr7, r12, 0
+      - [ be32, 0x00000000, 0x419E004C ] # beq cr7 0xa4
+      - [ be32, 0x00000000, 0x880C07BC ] # lbz r0, 0x7bc(r12) // 1 from the bonfire's StartBonfireAnimLoop to its EndBonfireKindleAnimLoop (set at 0x006FD1C0, cleared at 0x006FD230): the bonfire's script has the character seated
+      - [ be32, 0x00000000, 0x2F800000 ] # cmpwi cr7, r0, 0
+      - [ be32, 0x00000000, 0x409E0040 ] # bne cr7 0xa4
+      - [ be32, 0x00000000, 0x7D4C42E6 ] # mftb r10 // seated, and the script has let go: now, in 80,000,000ths of a second
+      - [ be32, 0x00000000, 0xE88B0000 ] # ld r4, 0(r11)
+      - [ be32, 0x00000000, 0x2FA40000 ] # cmpdi cr7, r4, 0
+      - [ be32, 0x00000000, 0x409E000C ] # bne cr7 0x80
+      - [ be32, 0x00000000, 0xF94B0000 ] # std r10, 0(r11) // the count starts
+      - [ be32, 0x00000000, 0x48000030 ] # b 0xac
+      - [ be32, 0x00000000, 0x7C845050 ] # subf r4, r4, r10
+      - [ be32, 0x00000000, 0x3CA004C4 ] # lis r5, 0x4c4 // 1 second
+      - [ be32, 0x00000000, 0x60A5B400 ] # ori r5, r5, 0xb400
+      - [ be32, 0x00000000, 0x7FA42840 ] # cmpld cr7, r4, r5
+      - [ be32, 0x00000000, 0x419C001C ] # blt cr7 0xac
       - [ be32, 0x00000000, 0x38000000 ] # li r0, 0
-      - [ be32, 0x00000000, 0x980907BC ] # stb r0, 0x7bc(r9)
-      - [ be32, 0x00000000, 0x48675A93 ] # bla 0x675a90
-      - [ be32, 0x00000000, 0x48000008 ] # b 0xe0
-      - [ be32, 0x00000000, 0xF94B0000 ] # std r10, 0(r11)
+      - [ be32, 0x00000000, 0xF80B0000 ] # std r0, 0(r11)
+      - [ be32, 0x00000000, 0x483EF687 ] # bla 0x3ef684 // the character's own stop of its loop animation, what the script's StopLoopAnimation calls (r3 = the player)
+      - [ be32, 0x00000000, 0x4800000C ] # b 0xac
+      - [ be32, 0x00000000, 0x38000000 ] # li r0, 0
+      - [ be32, 0x00000000, 0xF80B0000 ] # std r0, 0(r11)
       - [ be32, 0x00000000, 0xFC20F890 ] # fmr f1, f31 // the instruction the hook took the place of
   "Reduce Audio Latency":
     Games:
