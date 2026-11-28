@@ -4,6 +4,11 @@ What changed in the libretro core of this fork, newest first. Changes that come 
 
 ## Unreleased
 
+- **Dark Souls: Prepare to Die Edition (EU): script memory at high frame rates (Unlock FPS).** Not yet run on a game.
+  - **Why:** the game's Lua scripts never clear out their used memory on their own; the game does it when a countdown runs out, every 0.5 s for the enemies' AI and every 1 s for the other script state. The scripts make their garbage every frame, so at 120 frames a second four times as much built up between two clear-outs as at 30. The PC frame-rate mod found the script memory could run out in crowded places and the game closed itself.
+  - **What changed:** "Unlock FPS" (version 1.22): both countdowns take off at least 1/30 s a frame, so a clear-out comes at least every 15 and 30 frames as at 30 frames a second; below that rate it stays every 0.5 s and 1 s.
+  - **Tests:** the patch applied to the decrypted executable; `test_game_patches` passes.
+
 - **Dark Souls: Prepare to Die Edition (EU): walls lifting characters at high frame rates (Unlock FPS).** Not yet run on a game.
   - **Why:** when the look for ground under a character starts inside a wall beside it, it finds "ground" at the height the step lifted the character to, so the character ends the step higher than before, a step on every frame while the wall is there: four times as high at 120 frames a second as at 30 (in the PC game the thief of the Lower Undead Burg's door ambush, pressed against the wall by its door, rose metres into the air).
   - **What changed:** "Unlock FPS" (version 1.21): above 30 frames a second a lifted step whose put-down offset comes out above 0 puts the lift back, as when no ground is found (the rule of the PC frame-rate mod). At 30 frames a second and below nothing changes.

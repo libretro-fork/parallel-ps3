@@ -402,7 +402,7 @@ PPU-d764d35ca136442f72228ab715a629f26994e641:
       the game, not once a frame. Effects that made a particle every frame (smoke, sparks, embers) make them
       30 times a second, as Dark Souls Remastered's effect files do, and swaying particles change direction as
       often as at 30.
-    Patch Version: 1.21
+    Patch Version: 1.22
     Patch:
       # The frame's time: in place of the load of the constant 1/30 (0x01876870) into f31 at 0x00145A18
       - [ calloc, 0x00145A1A, 25 ] # Hook 0x00145A18 // Original lfs f31, -0x7f48(r30); returns to 0x00145A1C
@@ -1565,6 +1565,28 @@ PPU-d764d35ca136442f72228ab715a629f26994e641:
       - [ be32, 0x00000000, 0xEDAC3028 ] # fsubs f13, f12, f6
       - [ be32, 0x00000000, 0xFD8D332E ] # fsel f12, f13, f12, f6 // at least a 20th of it
       - [ be32, 0x00000000, 0xD185000C ] # stfs f12, 0xc(r5)
+      # Script memory. The game's scripts (Lua) never clear out their used memory on their own; the game does it in full
+      # when a countdown beside each script state runs out: every 0.5 s for the enemies' AI (0x008527AC, the time left at
+      # 0xc) and every 1 s for the other state (0x00687CC0, at 0x58). The scripts make their garbage every frame, so at
+      # 120 frames a second four times as much built up between two clear-outs as at 30, and in crowded places the
+      # script memory could run out. Each countdown now takes off at least 1/30 s a frame: a clear-out at least every 15
+      # and 30 frames as at 30 frames a second, and every 0.5 s and 1 s below that as before
+      - [ calloc, 0x008527C6, 7 ] # Hook 0x008527C4 // Original fsubs f0, f0, f1; returns to 0x008527C8
+      - [ be32, 0x00000000, 0x3C003D08 ] # lis r0, 0x3d08 // 1/30
+      - [ be32, 0x00000000, 0x60008889 ] # ori r0, r0, 0x8889
+      - [ be32, 0x00000000, 0x9001FFF8 ] # stw r0, -8(r1)
+      - [ be32, 0x00000000, 0xC181FFF8 ] # lfs f12, -8(r1)
+      - [ be32, 0x00000000, 0xEDA16028 ] # fsubs f13, f1, f12
+      - [ be32, 0x00000000, 0xFDAD606E ] # fsel f13, f13, f1, f12 // the frame time, or 1/30 s if that is more
+      - [ be32, 0x00000000, 0xEC006828 ] # fsubs f0, f0, f13 // the instruction the hook took the place of, with that
+      - [ calloc, 0x00687CDA, 7 ] # Hook 0x00687CD8 // Original fsubs f0, f0, f1; returns to 0x00687CDC
+      - [ be32, 0x00000000, 0x3C003D08 ] # lis r0, 0x3d08 // 1/30
+      - [ be32, 0x00000000, 0x60008889 ] # ori r0, r0, 0x8889
+      - [ be32, 0x00000000, 0x9001FFF8 ] # stw r0, -8(r1)
+      - [ be32, 0x00000000, 0xC181FFF8 ] # lfs f12, -8(r1)
+      - [ be32, 0x00000000, 0xEDA16028 ] # fsubs f13, f1, f12
+      - [ be32, 0x00000000, 0xFDAD606E ] # fsel f13, f13, f1, f12 // the frame time, or 1/30 s if that is more
+      - [ be32, 0x00000000, 0xEC006828 ] # fsubs f0, f0, f13 // the instruction the hook took the place of, with that
   "LOD/Texture Detail":
     Games:
       "Dark Souls: Prepare to Die Edition":
