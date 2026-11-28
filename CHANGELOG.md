@@ -4,6 +4,11 @@ What changed in the libretro core of this fork, newest first. Changes that come 
 
 ## Unreleased
 
+- **Dark Souls: Prepare to Die Edition (EU): roll direction at high frame rates (Unlock FPS).** Not yet run on a game.
+  - **What was wrong:** the pad code keeps the stick's last 6 values, one a frame, and a roll goes the way the strongest of the newest 5 points. At 30 frames a second that is 0.13 s of stick; at 120 it is 0.04 s, so a push let go just before the roll button gave a backstep (or nothing) instead of a roll that way.
+  - **What changed:** "Unlock FPS" (version 1.8) takes a new place in that list only when 0.03 s of real time have passed since the last one; until then the newest value is written over. The 5 values span the same time as at 30 frames a second, and at 30 nothing changes.
+  - **Tests:** the patch applied to the decrypted executable and the new code read back through a disassembler; `test_game_patches` passes.
+
 - **Dark Souls: Prepare to Die Edition (EU): kick and jumping attack at high frame rates (Unlock FPS).** Not yet run on a game.
   - **What was wrong:** forward with R1 (kick) or R2 (jumping attack) needs a "flick" of the stick: past 0.3 on a frame after a frame where it was neutral (within 0.2). In 1/30 s a quick push gets from 0.2 to 0.3 between two frames; at 120 frames a second a frame usually lands in between, the game forgets the stick was neutral and no flick is made. The PC game has the same problem at high frame rates.
   - **What changed:** "Unlock FPS" (version 1.7) keeps the game's "was neutral" mark until the stick has been out of neutral for 0.03 s of real time, one frame at 30 frames a second, so the same push makes a flick at any frame rate. At 30 frames a second nothing changes: the first frame out of neutral is already longer than that.

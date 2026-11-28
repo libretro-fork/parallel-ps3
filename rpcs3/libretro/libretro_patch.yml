@@ -386,8 +386,10 @@ PPU-d764d35ca136442f72228ab715a629f26994e641:
       as if frames were 1/30 s, so the small moves of short frames at half speed never passed it. The test
       and the rates it slows and recovers at go by the real frame time now. The kick and the jumping attack
       (forward with R1 or R2) need the stick to go from neutral to pushed between two frames; the stick now
-      counts as having been neutral for 0.03 s after it leaves neutral, so short frames do not lose them.
-    Patch Version: 1.7
+      counts as having been neutral for 0.03 s after it leaves neutral, so short frames do not lose them. A
+      roll goes the way the stick pointed over its last few values; those are now kept 0.03 s apart, as at 30
+      frames a second, so a push let go just before the button still rolls that way.
+    Patch Version: 1.8
     Patch:
       # The frame's time: in place of the load of the constant 1/30 (0x01876870) into f31 at 0x00145A18
       - [ calloc, 0x00145A1A, 25 ] # Hook 0x00145A18 // Original lfs f31, -0x7f48(r30); returns to 0x00145A1C
@@ -599,6 +601,24 @@ PPU-d764d35ca136442f72228ab715a629f26994e641:
       - [ be32, 0x00000000, 0x38000000 ] # li r0, 0 // the game's: the byte is cleared
       - [ be32, 0x00000000, 0x409C0008 ] # bge cr7, 0x30
       - [ be32, 0x00000000, 0x8804022D ] # lbz r0, 0x22d(r4) // not yet: the byte stays as it is
+      # Roll direction. The pad's update (0x004B5C3C on) keeps the stick's last 6 values, one a frame (the place it writes is
+      # 0x2e4 of the pad's object), and a roll goes the way the strongest of the newest 5 points: 0.13 s of stick at 30
+      # frames a second, but 0.04 s at 120, so a push let go just before the button gave a backstep. A new place is now
+      # taken only when 0.03 s have passed since the last one (0x01BD3F34 counts; f25 is the frame time); until then the
+      # newest value is written over, so the 5 values span the same time as at 30
+      - [ calloc, 0x004B5D32, 12 ] # Hook 0x004B5D30 // Original addi r9, r9, 1; returns to 0x004B5D34
+      - [ be32, 0x00000000, 0x3D8001BD ] # lis r12, 0x1bd
+      - [ be32, 0x00000000, 0xC00C3F34 ] # lfs f0, 0x3f34(r12)
+      - [ be32, 0x00000000, 0xEC00C82A ] # fadds f0, f0, f25
+      - [ be32, 0x00000000, 0x3C003CF5 ] # lis r0, 0x3cf5 // 0.03
+      - [ be32, 0x00000000, 0x6000C28F ] # ori r0, r0, 0xc28f
+      - [ be32, 0x00000000, 0x900C3F38 ] # stw r0, 0x3f38(r12)
+      - [ be32, 0x00000000, 0xC1AC3F38 ] # lfs f13, 0x3f38(r12)
+      - [ be32, 0x00000000, 0xFF806800 ] # fcmpu cr7, f0, f13
+      - [ be32, 0x00000000, 0x419C000C ] # blt cr7, 0x2c // not yet: the same place again
+      - [ be32, 0x00000000, 0x39290001 ] # addi r9, r9, 1 // the game's: the next place
+      - [ be32, 0x00000000, 0xEC000028 ] # fsubs f0, f0, f0
+      - [ be32, 0x00000000, 0xD00C3F34 ] # stfs f0, 0x3f34(r12)
   "LOD/Texture Detail":
     Games:
       "Dark Souls: Prepare to Die Edition":
