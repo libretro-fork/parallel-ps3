@@ -402,7 +402,7 @@ PPU-d764d35ca136442f72228ab715a629f26994e641:
       the game, not once a frame. Effects that made a particle every frame (smoke, sparks, embers) make them
       30 times a second, as Dark Souls Remastered's effect files do, and swaying particles change direction as
       often as at 30.
-    Patch Version: 1.17
+    Patch Version: 1.18
     Patch:
       # The frame's time: in place of the load of the constant 1/30 (0x01876870) into f31 at 0x00145A18
       - [ calloc, 0x00145A1A, 25 ] # Hook 0x00145A18 // Original lfs f31, -0x7f48(r30); returns to 0x00145A1C
@@ -1228,38 +1228,25 @@ PPU-d764d35ca136442f72228ab715a629f26994e641:
       # Roll direction. The pad's update (0x004B5C3C on) keeps the stick's last 6 values, one a frame (the place it writes is
       # 0x2e4 of the pad's object), and a roll goes the way the strongest of the newest 5 points: 0.13 s of stick at 30
       # frames a second, but 0.04 s at 120, so a push let go just before the button gave a backstep. A new place is now
-      # taken only when 0.03 s have passed since the last one (0x01BD3F34 counts; f25 is the frame time); until then the
+      # taken only on a frame in which a 30th of a second ended (the count Unlock FPS keeps at 0x01BD3FA8); on the others the
       # newest value is written over, so the 5 values span the same time as at 30
-      - [ calloc, 0x004B5D32, 12 ] # Hook 0x004B5D30 // Original addi r9, r9, 1; returns to 0x004B5D34
+      - [ calloc, 0x004B5D32, 5 ] # Hook 0x004B5D30 // Original addi r9, r9, 1; returns to 0x004B5D34
       - [ be32, 0x00000000, 0x3D8001BD ] # lis r12, 0x1bd
-      - [ be32, 0x00000000, 0xC00C3F34 ] # lfs f0, 0x3f34(r12)
-      - [ be32, 0x00000000, 0xEC00C82A ] # fadds f0, f0, f25
-      - [ be32, 0x00000000, 0x3C003CF5 ] # lis r0, 0x3cf5 // 0.03
-      - [ be32, 0x00000000, 0x6000C28F ] # ori r0, r0, 0xc28f
-      - [ be32, 0x00000000, 0x900C3F38 ] # stw r0, 0x3f38(r12)
-      - [ be32, 0x00000000, 0xC1AC3F38 ] # lfs f13, 0x3f38(r12)
-      - [ be32, 0x00000000, 0xFF806800 ] # fcmpu cr7, f0, f13
-      - [ be32, 0x00000000, 0x419C000C ] # blt cr7, 0x2c // not yet: the same place again
+      - [ be32, 0x00000000, 0x818C3FA8 ] # lwz r12, 0x3fa8(r12) // the 30ths of a second that ended in this frame
+      - [ be32, 0x00000000, 0x2F8C0000 ] # cmpwi cr7, r12, 0
+      - [ be32, 0x00000000, 0x419E0008 ] # beq cr7, 0x14 // none: the same place again
       - [ be32, 0x00000000, 0x39290001 ] # addi r9, r9, 1 // the game's: the next place
-      - [ be32, 0x00000000, 0xEC000028 ] # fsubs f0, f0, f0
-      - [ be32, 0x00000000, 0xD00C3F34 ] # stfs f0, 0x3f34(r12)
       # The turn-around when a run or sprint is reversed. The turn code keeps the stick's direction of the last 2 frames (a
       # ring at 0x70 of its object, the place written at 0x160, the length at 0x164) and the movement code plays the
       # turn-around when the direction swung more than 105 degrees since the older one (0x004C4F10): one frame, 1/30 s in the
       # game and 1/120 s at 120, where a quick reversal almost never swings that far. A new place in the ring is now taken
-      # only when 0.03 s have passed since the last one (the timebase then is kept in the ring's unused last place, 0xe4 of
-      # the object); until then the newest direction is written over
-      - [ calloc, 0x004C69B6, 10 ] # Hook 0x004C69B4 // Original addi r9, r9, 1; returns to 0x004C69B8
-      - [ be32, 0x00000000, 0x7D4C42E6 ] # mftb r10 // now, in 80,000,000ths of a second
-      - [ be32, 0x00000000, 0x801D00E4 ] # lwz r0, 0xe4(r29)
-      - [ be32, 0x00000000, 0x7C005050 ] # subf r0, r0, r10
-      - [ be32, 0x00000000, 0x78000020 ] # clrldi r0, r0, 32
-      - [ be32, 0x00000000, 0x3D800024 ] # lis r12, 0x24 // 0.03 s
-      - [ be32, 0x00000000, 0x618C9F00 ] # ori r12, r12, 0x9f00
-      - [ be32, 0x00000000, 0x7FA06040 ] # cmpld cr7, r0, r12
-      - [ be32, 0x00000000, 0x419C000C ] # blt cr7, 0x28 // not yet: the same place again
+      # only on a frame in which a 30th of a second ended (0x01BD3FA8); on the others the newest direction is written over
+      - [ calloc, 0x004C69B6, 5 ] # Hook 0x004C69B4 // Original addi r9, r9, 1; returns to 0x004C69B8
+      - [ be32, 0x00000000, 0x3D8001BD ] # lis r12, 0x1bd
+      - [ be32, 0x00000000, 0x818C3FA8 ] # lwz r12, 0x3fa8(r12) // the 30ths of a second that ended in this frame
+      - [ be32, 0x00000000, 0x2F8C0000 ] # cmpwi cr7, r12, 0
+      - [ be32, 0x00000000, 0x419E0008 ] # beq cr7, 0x14 // none: the same place again
       - [ be32, 0x00000000, 0x39290001 ] # addi r9, r9, 1 // the game's: the next place
-      - [ be32, 0x00000000, 0x915D00E4 ] # stw r10, 0xe4(r29)
       # The check can now see the same swing on several frames. Where it answers yes, every direction in the ring is set to
       # the newest, so it answers once, as in the game, where the older direction is replaced on the next frame
       - [ calloc, 0x004C50C6, 10 ] # Hook 0x004C50C4 // Original li r3, 1; returns to 0x004C50C8
@@ -1310,24 +1297,13 @@ PPU-d764d35ca136442f72228ab715a629f26994e641:
       - [ be32, 0x00000000, 0xFD800850 ] # fneg f12, f1
       # The souls counter of the HUD (its update is 0x009A4BDC). Once a frame it adds a step to the number shown (0x108 of
       # the dialog), bigger the more is still to count, so a pickup counted up four times as fast at 120 frames a second.
-      # The step is added only when 0.03 s have passed since the last one (0x01BD3FA0 counts; f31 is the frame time), 30
-      # times a second as in the game; on the frames between, nothing is added
-      - [ calloc, 0x009A4CEE, 15 ] # Hook 0x009A4CEC // Original add r5, r9, r5; returns to 0x009A4CF0
+      # The step is added once for each 30th of a second that ended in the frame (0x01BD3FA8), 30 times a second as in the
+      # game; on the frames between, nothing is added
+      - [ calloc, 0x009A4CEE, 4 ] # Hook 0x009A4CEC // Original add r5, r9, r5; returns to 0x009A4CF0
       - [ be32, 0x00000000, 0x3D8001BD ] # lis r12, 0x1bd
-      - [ be32, 0x00000000, 0xC00C3FA0 ] # lfs f0, 0x3fa0(r12)
-      - [ be32, 0x00000000, 0xEC00F82A ] # fadds f0, f0, f31
-      - [ be32, 0x00000000, 0x3C003CF5 ] # lis r0, 0x3cf5 // 0.03
-      - [ be32, 0x00000000, 0x6000C28F ] # ori r0, r0, 0xc28f
-      - [ be32, 0x00000000, 0x900C3FA4 ] # stw r0, 0x3fa4(r12)
-      - [ be32, 0x00000000, 0xC1AC3FA4 ] # lfs f13, 0x3fa4(r12)
-      - [ be32, 0x00000000, 0xFF806800 ] # fcmpu cr7, f0, f13
-      - [ be32, 0x00000000, 0x409C000C ] # bge cr7, 0x2c
-      - [ be32, 0x00000000, 0x39200000 ] # li r9, 0 // not yet: no step this frame
-      - [ be32, 0x00000000, 0x48000008 ] # b 0x30
-      - [ be32, 0x00000000, 0xEC000028 ] # fsubs f0, f0, f0
-      - [ be32, 0x00000000, 0xD00C3FA0 ] # stfs f0, 0x3fa0(r12)
+      - [ be32, 0x00000000, 0x818C3FA8 ] # lwz r12, 0x3fa8(r12) // the 30ths of a second that ended in this frame
+      - [ be32, 0x00000000, 0x7D2961D6 ] # mullw r9, r9, r12 // that many steps (none on most frames at a high frame rate)
       - [ be32, 0x00000000, 0x7CA92A14 ] # add r5, r9, r5 // the instruction the hook took the place of
-      - [ be32, 0x00000000, 0x2F880000 ] # cmpwi cr7, r8, 0 // and the compare before it again, which the test above overwrote
       # How thick smoke, sparks and embers are. An effect's emitters have a time between particles, and the effects were made
       # with 1/60 s or 0 for "one every frame" at 30 frames a second, so at 120 the same effects gave four times the
       # particles. Dark Souls Remastered raised every such time under 1/30 s to 1/30 s in its effect files and changed

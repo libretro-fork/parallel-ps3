@@ -4,6 +4,11 @@ What changed in the libretro core of this fork, newest first. Changes that come 
 
 ## Unreleased
 
+- **Dark Souls: Prepare to Die Edition (EU): roll direction, the turn-around and the souls counter keep exact time (Unlock FPS).** Not yet run on a game.
+  - **Why:** those three were held back to 30 times a second by waiting until 0.03 s had passed since the last time, each with a timer of its own. At frame rates that do not divide evenly (144, say: five frames are 34.7 ms) that ran about 4% slow, and the roll's timer was one for every pad object.
+  - **What changed:** "Unlock FPS" (version 1.18) uses the count it now keeps of the 30ths of a second that ended in each frame, which is exact at any frame rate: the roll's list and the turn's ring take a new place on a frame where one ended, and the souls counter adds its step once for each. The three timers are gone (the turn's was kept in an unused place of the turn object).
+  - **Tests:** the patch applied to the decrypted executable; `test_game_patches` passes. The count itself was run in a CPU emulator for 0680: 30 a second at every frame rate tried.
+
 - **Dark Souls: Prepare to Die Edition (EU): swaying effect particles at high frame rates (Unlock FPS).** Not yet run on a game.
   - **What was wrong:** most of an effect runs on real time, but two of the effect library's particle movements (the swaying one and the one that also follows its owner) count frames: a counter goes up by one every frame and, past the effect's limit of 10 or 20, every particle is turned by a random angle. At 120 frames a second they turned four times as often; on PC the magma tentacle of Blighttown's spider offspring ended in a jitter stretched far behind it.
   - **What changed:** "Unlock FPS" (version 1.17) counts, each frame, the 30ths of a second that ended in it (0 or 1 at a high frame rate, 2 on a long frame), and the two counters (0x014CB250, 0x014CB948) go up by that in place of 1.
