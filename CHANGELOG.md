@@ -4,6 +4,12 @@ What changed in the libretro core of this fork, newest first. Changes that come 
 
 ## Unreleased
 
+- **Dark Souls: Prepare to Die Edition (EU): swaying effect particles at high frame rates (Unlock FPS).** Not yet run on a game.
+  - **What was wrong:** most of an effect runs on real time, but two of the effect library's particle movements (the swaying one and the one that also follows its owner) count frames: a counter goes up by one every frame and, past the effect's limit of 10 or 20, every particle is turned by a random angle. At 120 frames a second they turned four times as often; on PC the magma tentacle of Blighttown's spider offspring ended in a jitter stretched far behind it.
+  - **What changed:** "Unlock FPS" (version 1.17) counts, each frame, the 30ths of a second that ended in it (0 or 1 at a high frame rate, 2 on a long frame), and the two counters (0x014CB250, 0x014CB948) go up by that in place of 1.
+    - Not found: a third counter of the same kind, for effects that jitter around what they are attached to.
+  - **Tests:** the per-frame code run in a CPU emulator for ten seconds at 20, 30, 60, 120, 144 and 240 frames a second: 300 counts each time, never more than one a frame at 30 and above. Its other values still match their formulas. The patch applied to the decrypted executable; `test_game_patches` passes.
+
 - **Dark Souls: Prepare to Die Edition (EU): how thick effects are at high frame rates (Unlock FPS).** Not yet run on a game.
   - **What was wrong:** an effect's emitters have a time between particles, and the effects were made with 1/60 s or 0 where "one every frame" was meant at 30 frames a second. At 120 those emitters gave four times the particles: thicker smoke, sparks and embers, and more to draw. Dark Souls Remastered fixed it in its data: every such time under 1/30 s was raised to 1/30 s (the PC mods counted 3,329 of 1/60 and 200 of 0) and nothing else changed.
   - **What changed:** "Unlock FPS" (version 1.16) does that to each effect file as the game loads it, in the loader after the file's header is checked and before it is copied (0x01470E8C). It goes through the file's table of pointers; where the 20 bytes before a pointer are the rest of an emitter's record and the pointer leads to a spawner of kind 2 or 3, that spawner's time, if under 1/30 s, becomes 0.95/30 s. That value and the way of finding the records are the PC mods'.
