@@ -4,6 +4,11 @@ What changed in the libretro core of this fork, newest first. Changes that come 
 
 ## Unreleased
 
+- **Dark Souls: Prepare to Die Edition (EU): no more slow run after touching a wall at high frame rates (Unlock FPS).** Not yet run on a game.
+  - **What was wrong:** at 120 frames a second (VBlank frequency 120 Hz), running into a wall and away from it left the character moving slowly until the stick was let go. The movement code has a test for "stuck" (0x004855F0): a frame's move times 30 is the speed, and under 1 the character's speed factor is multiplied by 0.8 a frame down to 0.5; otherwise by 1.2 up to 1. The 30 is the game's frame rate. Against a wall the factor drops to 0.5; away from it, at 120 frames a second a frame's move at half speed times 30 is still under 1, so the test keeps failing and the factor never comes back. The frame rate where that starts depends on the run's speed (about 95 for a run of about 6.3 units a second). The PC game has the same bug, fixed the same way by the PC frame rate mods ("graze check").
+  - **What changed:** "Unlock FPS" (version 1.5) works the three numbers out each frame from the frame's real time (1 / the frame time, and 0.8 and 1.2 to the power of the frame time in 30ths of a second, so slowing and recovery take as long as at 30) and the test loads them in place of its constants. Until the first frame has set them it uses the game's own.
+  - **Tests:** the patch applied to the decrypted executable, the three changed loads and the new code read back through a disassembler; the power series used for 0.8^x and 1.2^x is within 0.0005 of the real value up to x = 1.5; `test_game_patches` passes.
+
 - **Dark Souls: Prepare to Die Edition (EU): "Skip Intro Logos" patch.** Not yet run on a game.
   - **What changed:** a new patch in the Patch Manager, like Demon's Souls' "Skip Intro Videos". The three logos at startup are one dialog with a small state machine (fade in, hold, fade out, next logo); after the third it closes itself, which lets the title screen follow. The patch makes its step go straight to that closing code (one branch at 0x00AA2814).
     - Not known until it is run: whether a logo shows for a frame before the dialog is gone.
