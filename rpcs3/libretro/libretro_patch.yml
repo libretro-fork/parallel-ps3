@@ -402,7 +402,7 @@ PPU-d764d35ca136442f72228ab715a629f26994e641:
       the game, not once a frame. Effects that made a particle every frame (smoke, sparks, embers) make them
       30 times a second, as Dark Souls Remastered's effect files do, and swaying particles change direction as
       often as at 30.
-    Patch Version: 1.24
+    Patch Version: 1.25
     Patch:
       # The frame's time: in place of the load of the constant 1/30 (0x01876870) into f31 at 0x00145A18
       - [ calloc, 0x00145A1A, 25 ] # Hook 0x00145A18 // Original lfs f31, -0x7f48(r30); returns to 0x00145A1C
@@ -1848,6 +1848,124 @@ PPU-d764d35ca136442f72228ab715a629f26994e641:
       - [ be32, 0x00000000, 0x9181FFF8 ] # stw r12, -8(r1)
       - [ be32, 0x00000000, 0xC121FFF8 ] # lfs f9, -8(r1)
       - [ be32, 0x00000000, 0xEC0A4AFA ] # fmadds f0, f10, f11, f9 // 0.6 ^ x
+      # How long status effects last. An effect's time left (0 of its entry) is counted down by the frame time once a
+      # frame (0x0057CE0C); the frame that finds it at or below 0 marks it ended, and the next one puts its follow-up
+      # effect in its place. So an effect lasts whole frames, one more than its time takes to count down. The floor of
+      # Blighttown's swamp gives a 0.06 s effect every frame whose follow-up builds up poison: 3 frames a turn at 30
+      # frames a second (0.1 s) but 9 at 120 (0.075 s), so the swamp poisoned a third faster; every short effect kept up
+      # by being given again (floors, areas, auras) goes the same way. Where an effect's time is set, when it is new
+      # (0x0057DE48) and when it is given again (0x0057D8F4), the time left is now set so that it ends when it would at
+      # 30 frames a second: with n the steps of 1/30 s that count its time down, (n + 1) / 30 s less a frame and a half.
+      # The whole length kept beside it (4, for the icons) stays the game's. On frames of 0.8 of 1/30 s and longer
+      # nothing changes (the rule of the PC frame-rate mod)
+      - [ calloc, 0x0057DEB2, 53 ] # Hook 0x0057DEB0 // Original stfs f0, 4(r31); returns to 0x0057DEB4
+      - [ be32, 0x00000000, 0xD01F0004 ] # stfs f0, 4(r31) // the instruction the hook took the place of: the whole length
+      - [ be32, 0x00000000, 0x3D8001BD ] # lis r12, 0x1bd
+      - [ be32, 0x00000000, 0xC02C3F44 ] # lfs f1, 0x3f44(r12) // x: the frame time times 30
+      - [ be32, 0x00000000, 0x3D603F4C ] # lis r11, 0x3f4c // 0.8
+      - [ be32, 0x00000000, 0x616BCCCD ] # ori r11, r11, 0xcccd
+      - [ be32, 0x00000000, 0x916C3F2C ] # stw r11, 0x3f2c(r12)
+      - [ be32, 0x00000000, 0xC04C3F2C ] # lfs f2, 0x3f2c(r12)
+      - [ be32, 0x00000000, 0xEC621028 ] # fsubs f3, f2, f2 // 0
+      - [ be32, 0x00000000, 0xFF811800 ] # fcmpu cr7, f1, f3
+      - [ be32, 0x00000000, 0x409D00B0 ] # ble cr7, 0xd4
+      - [ be32, 0x00000000, 0xFF811000 ] # fcmpu cr7, f1, f2
+      - [ be32, 0x00000000, 0x409C00A8 ] # bge cr7, 0xd4
+      - [ be32, 0x00000000, 0xFF801800 ] # fcmpu cr7, f0, f3
+      - [ be32, 0x00000000, 0x409D00A0 ] # ble cr7, 0xd4
+      - [ be32, 0x00000000, 0x3D603D08 ] # lis r11, 0x3d08 // 1/30
+      - [ be32, 0x00000000, 0x616B8889 ] # ori r11, r11, 0x8889
+      - [ be32, 0x00000000, 0x916C3F2C ] # stw r11, 0x3f2c(r12)
+      - [ be32, 0x00000000, 0xC08C3F2C ] # lfs f4, 0x3f2c(r12)
+      - [ be32, 0x00000000, 0x3D603F80 ] # lis r11, 0x3f80 // 1.0
+      - [ be32, 0x00000000, 0x916C3F2C ] # stw r11, 0x3f2c(r12)
+      - [ be32, 0x00000000, 0xC12C3F2C ] # lfs f9, 0x3f2c(r12)
+      - [ be32, 0x00000000, 0x39600000 ] # li r11, 0
+      - [ be32, 0x00000000, 0xFCA00090 ] # fmr f5, f0
+      - [ be32, 0x00000000, 0xFD001890 ] # fmr f8, f3
+      - [ be32, 0x00000000, 0xECA52028 ] # fsubs f5, f5, f4 // n (f8): the steps of 1/30 that bring the time to 0 or below
+      - [ be32, 0x00000000, 0xED08482A ] # fadds f8, f8, f9
+      - [ be32, 0x00000000, 0x396B0001 ] # addi r11, r11, 1
+      - [ be32, 0x00000000, 0xFF851800 ] # fcmpu cr7, f5, f3
+      - [ be32, 0x00000000, 0x409D002C ] # ble cr7, 0x9c
+      - [ be32, 0x00000000, 0x2F8B0800 ] # cmpwi cr7, r11, 2048
+      - [ be32, 0x00000000, 0x419CFFE8 ] # blt cr7, 0x60
+      - [ be32, 0x00000000, 0x3D6041F0 ] # lis r11, 0x41f0 // longer than 2048 steps: the time times 30 and a half
+      - [ be32, 0x00000000, 0x916C3F2C ] # stw r11, 0x3f2c(r12)
+      - [ be32, 0x00000000, 0xC0CC3F2C ] # lfs f6, 0x3f2c(r12)
+      - [ be32, 0x00000000, 0xED0001B2 ] # fmuls f8, f0, f6
+      - [ be32, 0x00000000, 0x3D603F00 ] # lis r11, 0x3f00
+      - [ be32, 0x00000000, 0x916C3F2C ] # stw r11, 0x3f2c(r12)
+      - [ be32, 0x00000000, 0xC0CC3F2C ] # lfs f6, 0x3f2c(r12)
+      - [ be32, 0x00000000, 0xED08302A ] # fadds f8, f8, f6
+      - [ be32, 0x00000000, 0xED08482A ] # fadds f8, f8, f9 // n + 1
+      - [ be32, 0x00000000, 0xECA80132 ] # fmuls f5, f8, f4 // (n + 1) / 30
+      - [ be32, 0x00000000, 0xC0CC3F40 ] # lfs f6, 0x3f40(r12) // the frame time
+      - [ be32, 0x00000000, 0x3D603FC0 ] # lis r11, 0x3fc0 // 1.5
+      - [ be32, 0x00000000, 0x916C3F2C ] # stw r11, 0x3f2c(r12)
+      - [ be32, 0x00000000, 0xC0EC3F2C ] # lfs f7, 0x3f2c(r12)
+      - [ be32, 0x00000000, 0xECA629FC ] # fnmsubs f5, f6, f7, f5 // less a frame and a half
+      - [ be32, 0x00000000, 0x3D603F00 ] # lis r11, 0x3f00 // only if that leaves more than half a frame
+      - [ be32, 0x00000000, 0x916C3F2C ] # stw r11, 0x3f2c(r12)
+      - [ be32, 0x00000000, 0xC0EC3F2C ] # lfs f7, 0x3f2c(r12)
+      - [ be32, 0x00000000, 0xECE701B2 ] # fmuls f7, f7, f6
+      - [ be32, 0x00000000, 0xFF853800 ] # fcmpu cr7, f5, f7
+      - [ be32, 0x00000000, 0x409D0008 ] # ble cr7, 0xd4
+      - [ be32, 0x00000000, 0xD0BF0000 ] # stfs f5, 0(r31) // the time left
+      - [ calloc, 0x0057D96E, 53 ] # Hook 0x0057D96C // Original stfs f0, 4(r31); returns to 0x0057D970
+      - [ be32, 0x00000000, 0xD01F0004 ] # stfs f0, 4(r31) // the instruction the hook took the place of: the whole length
+      - [ be32, 0x00000000, 0x3D8001BD ] # lis r12, 0x1bd
+      - [ be32, 0x00000000, 0xC02C3F44 ] # lfs f1, 0x3f44(r12) // x: the frame time times 30
+      - [ be32, 0x00000000, 0x3D603F4C ] # lis r11, 0x3f4c // 0.8
+      - [ be32, 0x00000000, 0x616BCCCD ] # ori r11, r11, 0xcccd
+      - [ be32, 0x00000000, 0x916C3F2C ] # stw r11, 0x3f2c(r12)
+      - [ be32, 0x00000000, 0xC04C3F2C ] # lfs f2, 0x3f2c(r12)
+      - [ be32, 0x00000000, 0xEC621028 ] # fsubs f3, f2, f2 // 0
+      - [ be32, 0x00000000, 0xFF811800 ] # fcmpu cr7, f1, f3
+      - [ be32, 0x00000000, 0x409D00B0 ] # ble cr7, 0xd4
+      - [ be32, 0x00000000, 0xFF811000 ] # fcmpu cr7, f1, f2
+      - [ be32, 0x00000000, 0x409C00A8 ] # bge cr7, 0xd4
+      - [ be32, 0x00000000, 0xFF801800 ] # fcmpu cr7, f0, f3
+      - [ be32, 0x00000000, 0x409D00A0 ] # ble cr7, 0xd4
+      - [ be32, 0x00000000, 0x3D603D08 ] # lis r11, 0x3d08 // 1/30
+      - [ be32, 0x00000000, 0x616B8889 ] # ori r11, r11, 0x8889
+      - [ be32, 0x00000000, 0x916C3F2C ] # stw r11, 0x3f2c(r12)
+      - [ be32, 0x00000000, 0xC08C3F2C ] # lfs f4, 0x3f2c(r12)
+      - [ be32, 0x00000000, 0x3D603F80 ] # lis r11, 0x3f80 // 1.0
+      - [ be32, 0x00000000, 0x916C3F2C ] # stw r11, 0x3f2c(r12)
+      - [ be32, 0x00000000, 0xC12C3F2C ] # lfs f9, 0x3f2c(r12)
+      - [ be32, 0x00000000, 0x39600000 ] # li r11, 0
+      - [ be32, 0x00000000, 0xFCA00090 ] # fmr f5, f0
+      - [ be32, 0x00000000, 0xFD001890 ] # fmr f8, f3
+      - [ be32, 0x00000000, 0xECA52028 ] # fsubs f5, f5, f4 // n (f8): the steps of 1/30 that bring the time to 0 or below
+      - [ be32, 0x00000000, 0xED08482A ] # fadds f8, f8, f9
+      - [ be32, 0x00000000, 0x396B0001 ] # addi r11, r11, 1
+      - [ be32, 0x00000000, 0xFF851800 ] # fcmpu cr7, f5, f3
+      - [ be32, 0x00000000, 0x409D002C ] # ble cr7, 0x9c
+      - [ be32, 0x00000000, 0x2F8B0800 ] # cmpwi cr7, r11, 2048
+      - [ be32, 0x00000000, 0x419CFFE8 ] # blt cr7, 0x60
+      - [ be32, 0x00000000, 0x3D6041F0 ] # lis r11, 0x41f0 // longer than 2048 steps: the time times 30 and a half
+      - [ be32, 0x00000000, 0x916C3F2C ] # stw r11, 0x3f2c(r12)
+      - [ be32, 0x00000000, 0xC0CC3F2C ] # lfs f6, 0x3f2c(r12)
+      - [ be32, 0x00000000, 0xED0001B2 ] # fmuls f8, f0, f6
+      - [ be32, 0x00000000, 0x3D603F00 ] # lis r11, 0x3f00
+      - [ be32, 0x00000000, 0x916C3F2C ] # stw r11, 0x3f2c(r12)
+      - [ be32, 0x00000000, 0xC0CC3F2C ] # lfs f6, 0x3f2c(r12)
+      - [ be32, 0x00000000, 0xED08302A ] # fadds f8, f8, f6
+      - [ be32, 0x00000000, 0xED08482A ] # fadds f8, f8, f9 // n + 1
+      - [ be32, 0x00000000, 0xECA80132 ] # fmuls f5, f8, f4 // (n + 1) / 30
+      - [ be32, 0x00000000, 0xC0CC3F40 ] # lfs f6, 0x3f40(r12) // the frame time
+      - [ be32, 0x00000000, 0x3D603FC0 ] # lis r11, 0x3fc0 // 1.5
+      - [ be32, 0x00000000, 0x916C3F2C ] # stw r11, 0x3f2c(r12)
+      - [ be32, 0x00000000, 0xC0EC3F2C ] # lfs f7, 0x3f2c(r12)
+      - [ be32, 0x00000000, 0xECA629FC ] # fnmsubs f5, f6, f7, f5 // less a frame and a half
+      - [ be32, 0x00000000, 0x3D603F00 ] # lis r11, 0x3f00 // only if that leaves more than half a frame
+      - [ be32, 0x00000000, 0x916C3F2C ] # stw r11, 0x3f2c(r12)
+      - [ be32, 0x00000000, 0xC0EC3F2C ] # lfs f7, 0x3f2c(r12)
+      - [ be32, 0x00000000, 0xECE701B2 ] # fmuls f7, f7, f6
+      - [ be32, 0x00000000, 0xFF853800 ] # fcmpu cr7, f5, f7
+      - [ be32, 0x00000000, 0x409D0008 ] # ble cr7, 0xd4
+      - [ be32, 0x00000000, 0xD0BF0000 ] # stfs f5, 0(r31) // the time left
   "LOD/Texture Detail":
     Games:
       "Dark Souls: Prepare to Die Edition":
