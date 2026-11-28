@@ -398,8 +398,9 @@ PPU-d764d35ca136442f72228ab715a629f26994e641:
       could fling bodies and what stood on them), and an item's glow fades in and out in its own time. The
       follow camera's smoothing (turning, the point it looks at, its distance, the stick) takes as long as at
       30: its weights, applied once a frame, are worked out for each frame's time. The same for the body's
-      turn toward a locked-on target (hips, spine, head).
-    Patch Version: 1.14
+      turn toward a locked-on target (hips, spine, head). The souls counter counts up 30 times a second as in
+      the game, not once a frame.
+    Patch Version: 1.15
     Patch:
       # The frame's time: in place of the load of the constant 1/30 (0x01876870) into f31 at 0x00145A18
       - [ calloc, 0x00145A1A, 25 ] # Hook 0x00145A18 // Original lfs f31, -0x7f48(r30); returns to 0x00145A1C
@@ -1275,6 +1276,26 @@ PPU-d764d35ca136442f72228ab715a629f26994e641:
       - [ be32, 0x00000000, 0xED6B0332 ] # fmuls f11, f11, f12
       - [ be32, 0x00000000, 0xEC215AFA ] # fmadds f1, f1, f11, f11
       - [ be32, 0x00000000, 0xFD800850 ] # fneg f12, f1
+      # The souls counter of the HUD (its update is 0x009A4BDC). Once a frame it adds a step to the number shown (0x108 of
+      # the dialog), bigger the more is still to count, so a pickup counted up four times as fast at 120 frames a second.
+      # The step is added only when 0.03 s have passed since the last one (0x01BD3FA0 counts; f31 is the frame time), 30
+      # times a second as in the game; on the frames between, nothing is added
+      - [ calloc, 0x009A4CEE, 15 ] # Hook 0x009A4CEC // Original add r5, r9, r5; returns to 0x009A4CF0
+      - [ be32, 0x00000000, 0x3D8001BD ] # lis r12, 0x1bd
+      - [ be32, 0x00000000, 0xC00C3FA0 ] # lfs f0, 0x3fa0(r12)
+      - [ be32, 0x00000000, 0xEC00F82A ] # fadds f0, f0, f31
+      - [ be32, 0x00000000, 0x3C003CF5 ] # lis r0, 0x3cf5 // 0.03
+      - [ be32, 0x00000000, 0x6000C28F ] # ori r0, r0, 0xc28f
+      - [ be32, 0x00000000, 0x900C3FA4 ] # stw r0, 0x3fa4(r12)
+      - [ be32, 0x00000000, 0xC1AC3FA4 ] # lfs f13, 0x3fa4(r12)
+      - [ be32, 0x00000000, 0xFF806800 ] # fcmpu cr7, f0, f13
+      - [ be32, 0x00000000, 0x409C000C ] # bge cr7, 0x2c
+      - [ be32, 0x00000000, 0x39200000 ] # li r9, 0 // not yet: no step this frame
+      - [ be32, 0x00000000, 0x48000008 ] # b 0x30
+      - [ be32, 0x00000000, 0xEC000028 ] # fsubs f0, f0, f0
+      - [ be32, 0x00000000, 0xD00C3FA0 ] # stfs f0, 0x3fa0(r12)
+      - [ be32, 0x00000000, 0x7CA92A14 ] # add r5, r9, r5 // the instruction the hook took the place of
+      - [ be32, 0x00000000, 0x2F880000 ] # cmpwi cr7, r8, 0 // and the compare before it again, which the test above overwrote
   "LOD/Texture Detail":
     Games:
       "Dark Souls: Prepare to Die Edition":

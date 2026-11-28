@@ -4,6 +4,11 @@ What changed in the libretro core of this fork, newest first. Changes that come 
 
 ## Unreleased
 
+- **Dark Souls: Prepare to Die Edition (EU): the souls counter at high frame rates (Unlock FPS).** Not yet run on a game.
+  - **What was wrong:** the HUD's souls counter adds a step to the number shown once a frame (a bigger step the more is still to count), so a pickup counted up four times as fast at 120 frames a second. The PC game has the same problem (fixed in DSfix 3.0).
+  - **What changed:** "Unlock FPS" (version 1.15) adds the step only when 0.03 s have passed since the last one, so the counter moves 30 times a second as in the game; on the frames between, nothing is added. At 30 frames a second nothing changes.
+  - **Tests:** the new code run in a CPU emulator for one second at 30, 60, 120 and 240 frames a second: 30 steps each time. The patch applied to the decrypted executable; `test_game_patches` passes.
+
 - **Dark Souls: Prepare to Die Edition (EU): the body's turn toward a locked-on target at high frame rates (Unlock FPS).** Not yet run on a game.
   - **What was wrong:** with a target locked, the character's hips, spine and head are turned toward it by bone controllers whose update moves the angle toward its target by a weight once a frame (0.6 for the hips while turning, 0.2 for the head, 0.1 for the spine), with no frame time in it: at 120 frames a second the torso and head faced the target four times as fast.
   - **What changed:** "Unlock FPS" (version 1.14) takes the weight where the update uses it (0x005E5258) as 1 - (1 - w) to the power of the frame time in 30ths of a second, with the same factors the camera's weights use. A weight of 0, or over 0.75, is left as it is. At 30 frames a second it is the game's weight.
