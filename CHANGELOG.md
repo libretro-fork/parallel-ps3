@@ -4,6 +4,12 @@ What changed in the libretro core of this fork, newest first. Changes that come 
 
 ## Unreleased
 
+- **Dark Souls: Prepare to Die Edition (EU): steering on a slide at high frame rates (Unlock FPS).** Not yet run on a game.
+  - **What was wrong:** turning while sliding down a slope starts the turn's animation again every frame, so the only animation playing is one frame old. The animation library (Havok) scales a character's movement down when the animations' total blend weight is under 0.1, and a blend one frame old weighs about 0.104 after 1/30 s but about 0.012 after 1/144 s (the PC mods' figures): the legs play the turn and the body barely moves. The PC game has the same problem (fixed in DSfix 3.0 and the PC frame rate mods).
+  - **What changed:** "Unlock FPS" (version 1.10) works out that mark each frame, 0.1 times the square of the frame time in 30ths of a second (never more than 0.1), and the two places the library's blended-movement function loads it (0x0121D9EC, 0x0121DE28) take that. At 30 frames a second it is the library's 0.1.
+    - It takes the mark to be 0.1 for every skeleton, which is the library's default; the game was not seen to set another.
+  - **Tests:** the patch applied to the decrypted executable and the new code read back through a disassembler; `test_game_patches` passes.
+
 - **Core option "VBlank NTSC Fixup" is in the menu, under GPU beside "VBlank Frequency".**
   - **Why:** with VBlank Frequency at 120 Hz the core reports 119.8801 frames a second, not 120: the fixup, on by default as in RPCS3, runs the rate at 1000/1001 of the number (59.94 for 60). The option that turns it off existed but was kept out of the menu, so it could only be changed in the options file.
   - **What changed:** the option is shown, in the GPU category right after "VBlank Frequency", and its text says what it does to 120 Hz and when to turn it off (a display at exactly 60 or 120 Hz). The translated option tables still have it under Core with the old text until the next translation sync.
