@@ -372,6 +372,13 @@ struct retro_core_option_v2_definition option_defs_us[] = {
         { {"auto", "Auto"}, {"50", "50 Hz (PAL)"}, {"60", "60 Hz (NTSC)"}, {"120", "120 Hz"}, {"144", "144 Hz"}, {"240", "240 Hz"}, {"list", "From List"}, {NULL, NULL} },
         "auto"
     },
+    {
+        "rpcs3_vblank_ntsc", "VBlank NTSC Fixup", NULL,
+        "Run the VBlank Frequency at the NTSC rate, 1000/1001 of the number: 59.94 Hz for 60, 119.88 for 120. On by default, as in RPCS3. Off, the rate is the round number, which is what a display running at exactly 60 or 120 Hz wants. Takes effect when content is loaded.",
+        NULL, "gpu",
+        { {"enabled", NULL}, {"disabled", NULL}, {NULL, NULL} },
+        "enabled"
+    },
     // ==================== SCHEDULING ====================
     {
         "rpcs3_thread_scheduler", "Thread Scheduler", NULL,
@@ -722,13 +729,6 @@ struct retro_core_option_v2_definition option_defs_us[] = {
         NULL, "core",
         { {"0", "0"}, {"1", "1"}, {"2", "2"}, {"3", "3 (Default)"}, {"4", "4"}, {"5", "5"}, {NULL, NULL} },
         "3"
-    },
-    {
-        "rpcs3_vblank_ntsc", "VBlank NTSC Fixup", NULL,
-        "Run the VBlank Frequency at the NTSC rate (59.94 Hz for 60) instead of the round number. On by default, as in RPCS3.",
-        NULL, "core",
-        { {"enabled", NULL}, {"disabled", NULL}, {NULL, NULL} },
-        "enabled"
     },
     {
         "rpcs3_hle_lwmutex", "HLE lwmutex", NULL,

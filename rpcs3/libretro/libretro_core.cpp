@@ -1514,7 +1514,7 @@ static void publish_core_options(retro_environment_t cb)
     // .opt file still sets them (the HIDDEN block in libretro_core_options.h)
     for (const char* key : {"rpcs3_spu_cache", "rpcs3_accurate_dfma", "rpcs3_spu_verification",
             "rpcs3_driver_recovery_timeout", "rpcs3_mfc_shuffling", "rpcs3_spu_delay_penalty",
-            "rpcs3_vblank_ntsc", "rpcs3_hle_lwmutex"})
+            "rpcs3_hle_lwmutex"})
     {
         struct retro_core_option_display display{key, false};
         cb(RETRO_ENVIRONMENT_SET_CORE_OPTIONS_DISPLAY, &display);

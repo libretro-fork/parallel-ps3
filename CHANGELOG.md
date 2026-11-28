@@ -4,6 +4,11 @@ What changed in the libretro core of this fork, newest first. Changes that come 
 
 ## Unreleased
 
+- **Core option "VBlank NTSC Fixup" is in the menu, under GPU beside "VBlank Frequency".**
+  - **Why:** with VBlank Frequency at 120 Hz the core reports 119.8801 frames a second, not 120: the fixup, on by default as in RPCS3, runs the rate at 1000/1001 of the number (59.94 for 60). The option that turns it off existed but was kept out of the menu, so it could only be changed in the options file.
+  - **What changed:** the option is shown, in the GPU category right after "VBlank Frequency", and its text says what it does to 120 Hz and when to turn it off (a display at exactly 60 or 120 Hz). The translated option tables still have it under Core with the old text until the next translation sync.
+  - **Tests:** the full build passes.
+
 - **Dark Souls: Prepare to Die Edition (EU): the turn-around when a run is reversed, at high frame rates (Unlock FPS).** Not yet run on a game.
   - **What was wrong:** the turn code keeps the stick's direction of the last 2 frames, and the movement code plays the turn-around when the direction swung more than 105 degrees since the older one. That is 1/30 s in the game; at 120 frames a second it is 1/120 s, in which a quick reversal almost never swings that far, so the turn-around hardly ever played.
   - **What changed:** "Unlock FPS" (version 1.9) takes a new place in that ring only when 0.03 s have passed since the last one (the time is kept per character, in the ring's unused last place) and writes over the newest direction until then. Because the check now sees the same swing on several frames, where it answers yes the ring is set to the newest direction, so it answers once, as in the game. At 30 frames a second neither changes anything.
