@@ -399,8 +399,9 @@ PPU-d764d35ca136442f72228ab715a629f26994e641:
       follow camera's smoothing (turning, the point it looks at, its distance, the stick) takes as long as at
       30: its weights, applied once a frame, are worked out for each frame's time. The same for the body's
       turn toward a locked-on target (hips, spine, head). The souls counter counts up 30 times a second as in
-      the game, not once a frame.
-    Patch Version: 1.15
+      the game, not once a frame. Effects that made a particle every frame (smoke, sparks, embers) make them
+      30 times a second, as Dark Souls Remastered's effect files do.
+    Patch Version: 1.16
     Patch:
       # The frame's time: in place of the load of the constant 1/30 (0x01876870) into f31 at 0x00145A18
       - [ calloc, 0x00145A1A, 25 ] # Hook 0x00145A18 // Original lfs f31, -0x7f48(r30); returns to 0x00145A1C
@@ -1296,6 +1297,70 @@ PPU-d764d35ca136442f72228ab715a629f26994e641:
       - [ be32, 0x00000000, 0xD00C3FA0 ] # stfs f0, 0x3fa0(r12)
       - [ be32, 0x00000000, 0x7CA92A14 ] # add r5, r9, r5 // the instruction the hook took the place of
       - [ be32, 0x00000000, 0x2F880000 ] # cmpwi cr7, r8, 0 // and the compare before it again, which the test above overwrote
+      # How thick smoke, sparks and embers are. An effect's emitters have a time between particles, and the effects were made
+      # with 1/60 s or 0 for "one every frame" at 30 frames a second, so at 120 the same effects gave four times the
+      # particles. Dark Souls Remastered raised every such time under 1/30 s to 1/30 s in its effect files and changed
+      # nothing else. The same is done to each effect file as the game loads it (0x01470E8C, after its header is checked and
+      # before it is copied): for every pointer its table lists, if the 20 bytes before it are the rest of an emitter's
+      # record (a pointer, a count twice, three flags of 0 or 1 and a 0, a pointer) and it leads to a spawner of kind 2 or 3,
+      # that spawner's time (at 0x10 or 0xc), if under 1/30 s, becomes 0.95/30 s (just under, so a frame that comes a hair
+      # early still gets its particle, as the PC mods found)
+      - [ calloc, 0x01470E8E, 55 ] # Hook 0x01470E8C // Original lwz r10, 0(r5); returns to 0x01470E90
+      - [ be32, 0x00000000, 0x80C3000C ] # lwz r6, 0xc(r3) // r3 is the file: where its table of pointers is
+      - [ be32, 0x00000000, 0x80E30010 ] # lwz r7, 0x10(r3) // and how many
+      - [ be32, 0x00000000, 0x2B870000 ] # cmplwi cr7, r7, 0
+      - [ be32, 0x00000000, 0x419E00CC ] # beq cr7, 0xd8
+      - [ be32, 0x00000000, 0x7CE903A6 ] # mtctr r7
+      - [ be32, 0x00000000, 0x7D033214 ] # add r8, r3, r6
+      - [ be32, 0x00000000, 0x81280000 ] # lwz r9, 0(r8) // where this pointer is in the file
+      - [ be32, 0x00000000, 0x39080004 ] # addi r8, r8, 4
+      - [ be32, 0x00000000, 0x2B890014 ] # cmplwi cr7, r9, 0x14
+      - [ be32, 0x00000000, 0x419C00B0 ] # blt cr7, 0xd4
+      - [ be32, 0x00000000, 0x7F893040 ] # cmplw cr7, r9, r6
+      - [ be32, 0x00000000, 0x409C00A8 ] # bge cr7, 0xd4
+      - [ be32, 0x00000000, 0x7D434A14 ] # add r10, r3, r9
+      - [ be32, 0x00000000, 0x816AFFF0 ] # lwz r11, -0x10(r10) // the count, twice
+      - [ be32, 0x00000000, 0x818AFFF4 ] # lwz r12, -0xc(r10)
+      - [ be32, 0x00000000, 0x7F8B6040 ] # cmplw cr7, r11, r12
+      - [ be32, 0x00000000, 0x409E0094 ] # bne cr7, 0xd4
+      - [ be32, 0x00000000, 0x2B8B1000 ] # cmplwi cr7, r11, 4096
+      - [ be32, 0x00000000, 0x409C008C ] # bge cr7, 0xd4
+      - [ be32, 0x00000000, 0x816AFFF8 ] # lwz r11, -8(r10) // three flags of 0 or 1 and a 0
+      - [ be32, 0x00000000, 0x3D80FEFE ] # lis r12, 0xfefe
+      - [ be32, 0x00000000, 0x618CFEFF ] # ori r12, r12, 0xfeff
+      - [ be32, 0x00000000, 0x7D6B6039 ] # and. r11, r11, r12
+      - [ be32, 0x00000000, 0x40820078 ] # bne 0xd4
+      - [ be32, 0x00000000, 0x816AFFEC ] # lwz r11, -0x14(r10) // the two pointers before it: inside the file
+      - [ be32, 0x00000000, 0x7F8B3040 ] # cmplw cr7, r11, r6
+      - [ be32, 0x00000000, 0x409C006C ] # bge cr7, 0xd4
+      - [ be32, 0x00000000, 0x816AFFFC ] # lwz r11, -4(r10)
+      - [ be32, 0x00000000, 0x7F8B3040 ] # cmplw cr7, r11, r6
+      - [ be32, 0x00000000, 0x409C0060 ] # bge cr7, 0xd4
+      - [ be32, 0x00000000, 0x816A0000 ] # lwz r11, 0(r10) // where it leads
+      - [ be32, 0x00000000, 0x2B8B0020 ] # cmplwi cr7, r11, 0x20
+      - [ be32, 0x00000000, 0x419C0054 ] # blt cr7, 0xd4
+      - [ be32, 0x00000000, 0x3986FFE8 ] # addi r12, r6, -0x18
+      - [ be32, 0x00000000, 0x7F8B6040 ] # cmplw cr7, r11, r12
+      - [ be32, 0x00000000, 0x419D0048 ] # bgt cr7, 0xd4
+      - [ be32, 0x00000000, 0x7D635A14 ] # add r11, r3, r11
+      - [ be32, 0x00000000, 0x818B0000 ] # lwz r12, 0(r11) // the kind of spawner
+      - [ be32, 0x00000000, 0x2B8C0002 ] # cmplwi cr7, r12, 2
+      - [ be32, 0x00000000, 0x419E0014 ] # beq cr7, 0xb0
+      - [ be32, 0x00000000, 0x2B8C0003 ] # cmplwi cr7, r12, 3
+      - [ be32, 0x00000000, 0x409E0030 ] # bne cr7, 0xd4
+      - [ be32, 0x00000000, 0x396B000C ] # addi r11, r11, 0xc
+      - [ be32, 0x00000000, 0x48000008 ] # b 0xb4
+      - [ be32, 0x00000000, 0x396B0010 ] # addi r11, r11, 0x10
+      - [ be32, 0x00000000, 0x818B0000 ] # lwz r12, 0(r11) // its time, as an integer: from 0 to just under 1/30
+      - [ be32, 0x00000000, 0x3C003D08 ] # lis r0, 0x3d08
+      - [ be32, 0x00000000, 0x60008800 ] # ori r0, r0, 0x8800
+      - [ be32, 0x00000000, 0x7F8C0040 ] # cmplw cr7, r12, r0
+      - [ be32, 0x00000000, 0x409C0010 ] # bge cr7, 0xd4
+      - [ be32, 0x00000000, 0x3C003D01 ] # lis r0, 0x3d01 // 0.95/30
+      - [ be32, 0x00000000, 0x6000B4E8 ] # ori r0, r0, 0xb4e8
+      - [ be32, 0x00000000, 0x900B0000 ] # stw r0, 0(r11)
+      - [ be32, 0x00000000, 0x4200FF44 ] # bdnz 0x18
+      - [ be32, 0x00000000, 0x81450000 ] # lwz r10, 0(r5) // the instruction the hook took the place of
   "LOD/Texture Detail":
     Games:
       "Dark Souls: Prepare to Die Edition":

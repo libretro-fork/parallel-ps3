@@ -4,6 +4,12 @@ What changed in the libretro core of this fork, newest first. Changes that come 
 
 ## Unreleased
 
+- **Dark Souls: Prepare to Die Edition (EU): how thick effects are at high frame rates (Unlock FPS).** Not yet run on a game.
+  - **What was wrong:** an effect's emitters have a time between particles, and the effects were made with 1/60 s or 0 where "one every frame" was meant at 30 frames a second. At 120 those emitters gave four times the particles: thicker smoke, sparks and embers, and more to draw. Dark Souls Remastered fixed it in its data: every such time under 1/30 s was raised to 1/30 s (the PC mods counted 3,329 of 1/60 and 200 of 0) and nothing else changed.
+  - **What changed:** "Unlock FPS" (version 1.16) does that to each effect file as the game loads it, in the loader after the file's header is checked and before it is copied (0x01470E8C). It goes through the file's table of pointers; where the 20 bytes before a pointer are the rest of an emitter's record and the pointer leads to a spawner of kind 2 or 3, that spawner's time, if under 1/30 s, becomes 0.95/30 s. That value and the way of finding the records are the PC mods'.
+    - Not known until it is run: that the PS3's effect files have these records laid out as the PC's do (the loader reads the same header and table). If they do not, nothing matches and effects stay as they were. The PC mods also check that the two other pointers of a record are in the table; here they are only checked to point inside the file.
+  - **Tests:** the new code run in a CPU emulator on 20 made-up effect files (records of every kind, good and broken, with times from negative to 0.05 s): it changed exactly the times it should and nothing else. The patch applied to the decrypted executable; `test_game_patches` passes.
+
 - **Dark Souls: Prepare to Die Edition (EU): the souls counter at high frame rates (Unlock FPS).** Not yet run on a game.
   - **What was wrong:** the HUD's souls counter adds a step to the number shown once a frame (a bigger step the more is still to count), so a pickup counted up four times as fast at 120 frames a second. The PC game has the same problem (fixed in DSfix 3.0).
   - **What changed:** "Unlock FPS" (version 1.15) adds the step only when 0.03 s have passed since the last one, so the counter moves 30 times a second as in the game; on the frames between, nothing is added. At 30 frames a second nothing changes.
