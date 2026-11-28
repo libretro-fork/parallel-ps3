@@ -402,7 +402,7 @@ PPU-d764d35ca136442f72228ab715a629f26994e641:
       the game, not once a frame. Effects that made a particle every frame (smoke, sparks, embers) make them
       30 times a second, as Dark Souls Remastered's effect files do, and swaying particles change direction as
       often as at 30.
-    Patch Version: 1.23
+    Patch Version: 1.24
     Patch:
       # The frame's time: in place of the load of the constant 1/30 (0x01876870) into f31 at 0x00145A18
       - [ calloc, 0x00145A1A, 25 ] # Hook 0x00145A18 // Original lfs f31, -0x7f48(r30); returns to 0x00145A1C
@@ -1749,6 +1749,105 @@ PPU-d764d35ca136442f72228ab715a629f26994e641:
       - [ be32, 0x00000000, 0xEDA16028 ] # fsubs f13, f1, f12
       - [ be32, 0x00000000, 0xFDAD606E ] # fsel f13, f13, f1, f12 // the frame time, or 1/30 s if that is more
       - [ be32, 0x00000000, 0xEC006828 ] # fsubs f0, f0, f13 // the instruction the hook took the place of, with that
+      # Foot placement on stairs and slopes. The hips are lowered so both feet reach the ground: the offset (0x2c4 or 0x2bc
+      # of the character's controller, in its two kinds: 0x0048D50C and 0x0048FF9C) moves toward the legs' error by 0.2 of
+      # it a frame, and with no foot on the ground shrinks to 0.6 of itself a frame. Four times a 30th of a second that
+      # made the hips follow each step of a staircase about three times as fast, so the body bobbed on stairs. Both are
+      # now taken for the frame's time: 1 - 0.8 ^ x and 0.6 ^ x, x the frame time times 30 (0.2 and 0.6 at 30 frames a
+      # second). The follow of the first kind
+      - [ calloc, 0x0048D79A, 11 ] # Hook 0x0048D798 // Original lfs f13, -0x7f38(r30); returns to 0x0048D79C
+      - [ be32, 0x00000000, 0x3D8001BD ] # lis r12, 0x1bd
+      - [ be32, 0x00000000, 0x818C3F24 ] # lwz r12, 0x3f24(r12) // 0 until the first frame has set the numbers: the game's own then
+      - [ be32, 0x00000000, 0x2F8C0000 ] # cmpwi cr7, r12, 0
+      - [ be32, 0x00000000, 0xC1BE80C8 ] # lfs f13, -0x7f38(r30) // 0.2
+      - [ be32, 0x00000000, 0x419E001C ] # beq cr7, 0x2c
+      - [ be32, 0x00000000, 0x3D8001BD ] # lis r12, 0x1bd
+      - [ be32, 0x00000000, 0xC16C3F24 ] # lfs f11, 0x3f24(r12) // 0.8 ^ x, x the frame time times 30
+      - [ be32, 0x00000000, 0x3D803F80 ] # lis r12, 0x3f80
+      - [ be32, 0x00000000, 0x9181FFF8 ] # stw r12, -8(r1)
+      - [ be32, 0x00000000, 0xC141FFF8 ] # lfs f10, -8(r1)
+      - [ be32, 0x00000000, 0xEDAA5828 ] # fsubs f13, f10, f11 // 1 - 0.8 ^ x
+      # Its shrinking
+      - [ calloc, 0x0048D832, 30 ] # Hook 0x0048D830 // Original lfs f13, -0x7f30(r30); returns to 0x0048D834
+      - [ be32, 0x00000000, 0x3D8001BD ] # lis r12, 0x1bd
+      - [ be32, 0x00000000, 0x818C3F24 ] # lwz r12, 0x3f24(r12) // 0 until the first frame has set the numbers: the game's own then
+      - [ be32, 0x00000000, 0x2F8C0000 ] # cmpwi cr7, r12, 0
+      - [ be32, 0x00000000, 0xC1BE80D0 ] # lfs f13, -0x7f30(r30) // 0.6
+      - [ be32, 0x00000000, 0x419E0068 ] # beq cr7, 0x78
+      - [ be32, 0x00000000, 0x3D8001BD ] # lis r12, 0x1bd
+      - [ be32, 0x00000000, 0xC16C3F44 ] # lfs f11, 0x3f44(r12) // x
+      - [ be32, 0x00000000, 0x3D803B39 ] # lis r12, 0x3b39 // 0.6 ^ x as 1 + x (a + x (b + x (c + x d))): d
+      - [ be32, 0x00000000, 0x618CEF2B ] # ori r12, r12, 0xef2b
+      - [ be32, 0x00000000, 0x9181FFF8 ] # stw r12, -8(r1)
+      - [ be32, 0x00000000, 0xC141FFF8 ] # lfs f10, -8(r1)
+      - [ be32, 0x00000000, 0x3D80BCB5 ] # lis r12, 0xbcb5 // c
+      - [ be32, 0x00000000, 0x618CFE6D ] # ori r12, r12, 0xfe6d
+      - [ be32, 0x00000000, 0x9181FFF8 ] # stw r12, -8(r1)
+      - [ be32, 0x00000000, 0xC121FFF8 ] # lfs f9, -8(r1)
+      - [ be32, 0x00000000, 0xED4A4AFA ] # fmadds f10, f10, f11, f9
+      - [ be32, 0x00000000, 0x3D803E05 ] # lis r12, 0x3e05 // b
+      - [ be32, 0x00000000, 0x618C9A4C ] # ori r12, r12, 0x9a4c
+      - [ be32, 0x00000000, 0x9181FFF8 ] # stw r12, -8(r1)
+      - [ be32, 0x00000000, 0xC121FFF8 ] # lfs f9, -8(r1)
+      - [ be32, 0x00000000, 0xED4A4AFA ] # fmadds f10, f10, f11, f9
+      - [ be32, 0x00000000, 0x3D80BF02 ] # lis r12, 0xbf02 // a: ln 0.6
+      - [ be32, 0x00000000, 0x618CC578 ] # ori r12, r12, 0xc578
+      - [ be32, 0x00000000, 0x9181FFF8 ] # stw r12, -8(r1)
+      - [ be32, 0x00000000, 0xC121FFF8 ] # lfs f9, -8(r1)
+      - [ be32, 0x00000000, 0xED4A4AFA ] # fmadds f10, f10, f11, f9
+      - [ be32, 0x00000000, 0x3D803F80 ] # lis r12, 0x3f80
+      - [ be32, 0x00000000, 0x9181FFF8 ] # stw r12, -8(r1)
+      - [ be32, 0x00000000, 0xC121FFF8 ] # lfs f9, -8(r1)
+      - [ be32, 0x00000000, 0xEDAA4AFA ] # fmadds f13, f10, f11, f9 // 0.6 ^ x
+      # The follow of the second kind
+      - [ calloc, 0x004902D2, 11 ] # Hook 0x004902D0 // Original lfs f13, -0x7f28(r30); returns to 0x004902D4
+      - [ be32, 0x00000000, 0x3D8001BD ] # lis r12, 0x1bd
+      - [ be32, 0x00000000, 0x818C3F24 ] # lwz r12, 0x3f24(r12) // 0 until the first frame has set the numbers: the game's own then
+      - [ be32, 0x00000000, 0x2F8C0000 ] # cmpwi cr7, r12, 0
+      - [ be32, 0x00000000, 0xC1BE80D8 ] # lfs f13, -0x7f28(r30) // 0.2
+      - [ be32, 0x00000000, 0x419E001C ] # beq cr7, 0x2c
+      - [ be32, 0x00000000, 0x3D8001BD ] # lis r12, 0x1bd
+      - [ be32, 0x00000000, 0xC16C3F24 ] # lfs f11, 0x3f24(r12) // 0.8 ^ x, x the frame time times 30
+      - [ be32, 0x00000000, 0x3D803F80 ] # lis r12, 0x3f80
+      - [ be32, 0x00000000, 0x9181FFF8 ] # stw r12, -8(r1)
+      - [ be32, 0x00000000, 0xC141FFF8 ] # lfs f10, -8(r1)
+      - [ be32, 0x00000000, 0xEDAA5828 ] # fsubs f13, f10, f11 // 1 - 0.8 ^ x
+      # Its shrinking, by the number the controller keeps (0x2e0): only while that is the game's 0.6
+      - [ calloc, 0x00490346, 34 ] # Hook 0x00490344 // Original lfs f0, 0x2e0(r31); returns to 0x00490348
+      - [ be32, 0x00000000, 0x3D8001BD ] # lis r12, 0x1bd
+      - [ be32, 0x00000000, 0x818C3F24 ] # lwz r12, 0x3f24(r12) // 0 until the first frame has set the numbers: the game's own then
+      - [ be32, 0x00000000, 0x2F8C0000 ] # cmpwi cr7, r12, 0
+      - [ be32, 0x00000000, 0xC01F02E0 ] # lfs f0, 0x2e0(r31)
+      - [ be32, 0x00000000, 0x419E0078 ] # beq cr7, 0x88
+      - [ be32, 0x00000000, 0x819F02E0 ] # lwz r12, 0x2e0(r31)
+      - [ be32, 0x00000000, 0x6D8C3F19 ] # xoris r12, r12, 0x3f19
+      - [ be32, 0x00000000, 0x2B8C999A ] # cmplwi cr7, r12, 0x999a
+      - [ be32, 0x00000000, 0x409E0068 ] # bne cr7, 0x88
+      - [ be32, 0x00000000, 0x3D8001BD ] # lis r12, 0x1bd
+      - [ be32, 0x00000000, 0xC16C3F44 ] # lfs f11, 0x3f44(r12) // x
+      - [ be32, 0x00000000, 0x3D803B39 ] # lis r12, 0x3b39 // 0.6 ^ x as 1 + x (a + x (b + x (c + x d))): d
+      - [ be32, 0x00000000, 0x618CEF2B ] # ori r12, r12, 0xef2b
+      - [ be32, 0x00000000, 0x9181FFF8 ] # stw r12, -8(r1)
+      - [ be32, 0x00000000, 0xC141FFF8 ] # lfs f10, -8(r1)
+      - [ be32, 0x00000000, 0x3D80BCB5 ] # lis r12, 0xbcb5 // c
+      - [ be32, 0x00000000, 0x618CFE6D ] # ori r12, r12, 0xfe6d
+      - [ be32, 0x00000000, 0x9181FFF8 ] # stw r12, -8(r1)
+      - [ be32, 0x00000000, 0xC121FFF8 ] # lfs f9, -8(r1)
+      - [ be32, 0x00000000, 0xED4A4AFA ] # fmadds f10, f10, f11, f9
+      - [ be32, 0x00000000, 0x3D803E05 ] # lis r12, 0x3e05 // b
+      - [ be32, 0x00000000, 0x618C9A4C ] # ori r12, r12, 0x9a4c
+      - [ be32, 0x00000000, 0x9181FFF8 ] # stw r12, -8(r1)
+      - [ be32, 0x00000000, 0xC121FFF8 ] # lfs f9, -8(r1)
+      - [ be32, 0x00000000, 0xED4A4AFA ] # fmadds f10, f10, f11, f9
+      - [ be32, 0x00000000, 0x3D80BF02 ] # lis r12, 0xbf02 // a: ln 0.6
+      - [ be32, 0x00000000, 0x618CC578 ] # ori r12, r12, 0xc578
+      - [ be32, 0x00000000, 0x9181FFF8 ] # stw r12, -8(r1)
+      - [ be32, 0x00000000, 0xC121FFF8 ] # lfs f9, -8(r1)
+      - [ be32, 0x00000000, 0xED4A4AFA ] # fmadds f10, f10, f11, f9
+      - [ be32, 0x00000000, 0x3D803F80 ] # lis r12, 0x3f80
+      - [ be32, 0x00000000, 0x9181FFF8 ] # stw r12, -8(r1)
+      - [ be32, 0x00000000, 0xC121FFF8 ] # lfs f9, -8(r1)
+      - [ be32, 0x00000000, 0xEC0A4AFA ] # fmadds f0, f10, f11, f9 // 0.6 ^ x
   "LOD/Texture Detail":
     Games:
       "Dark Souls: Prepare to Die Edition":
