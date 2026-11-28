@@ -402,7 +402,7 @@ PPU-d764d35ca136442f72228ab715a629f26994e641:
       the game, not once a frame. Effects that made a particle every frame (smoke, sparks, embers) make them
       30 times a second, as Dark Souls Remastered's effect files do, and swaying particles change direction as
       often as at 30.
-    Patch Version: 1.20
+    Patch Version: 1.21
     Patch:
       # The frame's time: in place of the load of the constant 1/30 (0x01876870) into f31 at 0x00145A18
       - [ calloc, 0x00145A1A, 25 ] # Hook 0x00145A18 // Original lfs f31, -0x7f48(r30); returns to 0x00145A1C
@@ -1384,6 +1384,10 @@ PPU-d764d35ca136442f72228ab715a629f26994e641:
       # body's own value is put back as soon as the ground has been found. What was pulled is kept per body in the unused
       # end of the executable's data (0x01BD3500, 128 places of 16 bytes: the body, the pull in this 30th of a second and
       # in the one before, the next step's reach).
+      # Walls lifting characters: when the look for ground starts inside a wall beside the body it finds "ground" at the
+      # lifted height, the offset comes out above 0 and the body ends the step higher than before, on every frame while
+      # the wall is there: a step a frame, so four times as high at 120 frames a second as at 30. Above 30 frames a second
+      # such a step puts the lift back as if no ground had been found.
       # At 30 frames a second and below nothing changes.
       # First, the lift notes whose body it raised (0x01BD3FB0) and how far (0x01BD3FC0)
       - [ calloc, 0x003538DA, 4 ] # Hook 0x003538D8 // Original stfs f1, 0xc4(r1); returns to 0x003538DC
@@ -1438,7 +1442,7 @@ PPU-d764d35ca136442f72228ab715a629f26994e641:
       # pulled, 0x01BD3FBC the clock at its last step without the lift. For the reach: what this step pulled beyond its
       # lift goes into this 30th of a second's sum (0x01BD3FA8 says how many of those ended in this frame, 0x01BD3FAC how
       # far into the current one the frame ends), and the next step's reach is made from the sums
-      - [ calloc, 0x0035376E, 107 ] # Hook 0x0035376C // Original lfs f0, 0x84(r1); returns to 0x00353770
+      - [ calloc, 0x0035376E, 122 ] # Hook 0x0035376C // Original lfs f0, 0x84(r1); returns to 0x00353770
       - [ be32, 0x00000000, 0xC0010084 ] # lfs f0, 0x84(r1) // the offset (the instruction the hook took the place of)
       - [ be32, 0x00000000, 0x3D8001BD ] # lis r12, 0x1bd
       - [ be32, 0x00000000, 0xC12C3FC0 ] # lfs f9, 0x3fc0(r12) // this step's lift, 0 without one
@@ -1448,11 +1452,26 @@ PPU-d764d35ca136442f72228ab715a629f26994e641:
       - [ be32, 0x00000000, 0x90CC3FC0 ] # stw r6, 0x3fc0(r12)
       - [ be32, 0x00000000, 0x80EC3FB4 ] # lwz r7, 0x3fb4(r12)
       - [ be32, 0x00000000, 0x7F85F800 ] # cmpw cr7, r5, r31
-      - [ be32, 0x00000000, 0x409E0014 ] # bne cr7, 0x38
-      - [ be32, 0x00000000, 0x7F87F800 ] # cmpw cr7, r7, r31 // lifted: this body starts counting again
-      - [ be32, 0x00000000, 0x409E009C ] # bne cr7, 0xc8
+      - [ be32, 0x00000000, 0x409E0050 ] # bne cr7, 0x74
+      - [ be32, 0x00000000, 0x80AC3F44 ] # lwz r5, 0x3f44(r12) // lifted. Walls lifting characters: above 30 frames a second (the frame time times 30 above 0 and below 0.999)
+      - [ be32, 0x00000000, 0x2F850000 ] # cmpwi cr7, r5, 0
+      - [ be32, 0x00000000, 0x409D0030 ] # ble cr7, 0x60
+      - [ be32, 0x00000000, 0x3CC03F7F ] # lis r6, 0x3f7f
+      - [ be32, 0x00000000, 0x60C6BE77 ] # ori r6, r6, 0xbe77
+      - [ be32, 0x00000000, 0x7F853000 ] # cmpw cr7, r5, r6
+      - [ be32, 0x00000000, 0x409C0020 ] # bge cr7, 0x60
+      - [ be32, 0x00000000, 0x3CC03A03 ] # lis r6, 0x3a03 // 0.0005
+      - [ be32, 0x00000000, 0x60C6126F ] # ori r6, r6, 0x126f
+      - [ be32, 0x00000000, 0x90CC3F2C ] # stw r6, 0x3f2c(r12)
+      - [ be32, 0x00000000, 0xC02C3F2C ] # lfs f1, 0x3f2c(r12)
+      - [ be32, 0x00000000, 0xFF800800 ] # fcmpu cr7, f0, f1 // an offset above 0 leaves the body higher than its lift put it
+      - [ be32, 0x00000000, 0x409D0008 ] # ble cr7, 0x60
+      - [ be32, 0x00000000, 0xFC004850 ] # fneg f0, f9 // put the lift back, as when no ground is found
+      - [ be32, 0x00000000, 0x38C00000 ] # li r6, 0
+      - [ be32, 0x00000000, 0x7F87F800 ] # cmpw cr7, r7, r31 // this body starts counting again
+      - [ be32, 0x00000000, 0x409E009C ] # bne cr7, 0x104
       - [ be32, 0x00000000, 0x90CC3FB8 ] # stw r6, 0x3fb8(r12)
-      - [ be32, 0x00000000, 0x48000094 ] # b 0xc8
+      - [ be32, 0x00000000, 0x48000094 ] # b 0x104
       - [ be32, 0x00000000, 0xED294828 ] # fsubs f9, f9, f9 // no lift for this body
       - [ be32, 0x00000000, 0xC02C3F44 ] # lfs f1, 0x3f44(r12) // the frame time times 30
       - [ be32, 0x00000000, 0x3CA03F80 ] # lis r5, 0x3f80 // 1.0
@@ -1460,17 +1479,17 @@ PPU-d764d35ca136442f72228ab715a629f26994e641:
       - [ be32, 0x00000000, 0xC04C3F2C ] # lfs f2, 0x3f2c(r12)
       - [ be32, 0x00000000, 0xED021028 ] # fsubs f8, f2, f2 // 0
       - [ be32, 0x00000000, 0xFF814000 ] # fcmpu cr7, f1, f8 // not set yet (the first frame): the game's own offset
-      - [ be32, 0x00000000, 0x409D0074 ] # ble cr7, 0xc8
+      - [ be32, 0x00000000, 0x409D0074 ] # ble cr7, 0x104
       - [ be32, 0x00000000, 0xFF811000 ] # fcmpu cr7, f1, f2 // 30 frames a second or fewer: the game's own offset
-      - [ be32, 0x00000000, 0x409C006C ] # bge cr7, 0xc8
+      - [ be32, 0x00000000, 0x409C006C ] # bge cr7, 0x104
       - [ be32, 0x00000000, 0x80CC3F04 ] # lwz r6, 0x3f04(r12) // this frame's clock (80,000,000 ticks a second)
       - [ be32, 0x00000000, 0x7F87F800 ] # cmpw cr7, r7, r31
-      - [ be32, 0x00000000, 0x409E0018 ] # bne cr7, 0x80
+      - [ be32, 0x00000000, 0x409E0018 ] # bne cr7, 0xbc
       - [ be32, 0x00000000, 0x80EC3FBC ] # lwz r7, 0x3fbc(r12)
       - [ be32, 0x00000000, 0x7CE73050 ] # subf r7, r7, r6
       - [ be32, 0x00000000, 0x3CA00131 ] # lis r5, 0x131 // a quarter of a second
       - [ be32, 0x00000000, 0x7F872840 ] # cmplw cr7, r7, r5
-      - [ be32, 0x00000000, 0x409D0010 ] # ble cr7, 0x8c
+      - [ be32, 0x00000000, 0x409D0010 ] # ble cr7, 0xc8
       - [ be32, 0x00000000, 0x93EC3FB4 ] # stw r31, 0x3fb4(r12)
       - [ be32, 0x00000000, 0x38A00000 ] # li r5, 0
       - [ be32, 0x00000000, 0x90AC3FB8 ] # stw r5, 0x3fb8(r12)
@@ -1491,7 +1510,7 @@ PPU-d764d35ca136442f72228ab715a629f26994e641:
       - [ be32, 0x00000000, 0xEC0001F2 ] # fmuls f0, f0, f7 // the offset, cut to that part
       - [ be32, 0x00000000, 0x80AC3FC8 ] # lwz r5, 0x3fc8(r12) // the body's place in the list, if it has one this step
       - [ be32, 0x00000000, 0x2F850000 ] # cmpwi cr7, r5, 0
-      - [ be32, 0x00000000, 0x419E00DC ] # beq cr7, 0x1ac
+      - [ be32, 0x00000000, 0x419E00DC ] # beq cr7, 0x1e8
       - [ be32, 0x00000000, 0x38C00000 ] # li r6, 0
       - [ be32, 0x00000000, 0x90CC3FC8 ] # stw r6, 0x3fc8(r12)
       - [ be32, 0x00000000, 0xED094828 ] # fsubs f8, f9, f9 // 0
@@ -1502,10 +1521,10 @@ PPU-d764d35ca136442f72228ab715a629f26994e641:
       - [ be32, 0x00000000, 0xC0850008 ] # lfs f4, 8(r5) // and of the one before
       - [ be32, 0x00000000, 0x80CC3FA8 ] # lwz r6, 0x3fa8(r12)
       - [ be32, 0x00000000, 0x2F860000 ] # cmpwi cr7, r6, 0
-      - [ be32, 0x00000000, 0x419E0018 ] # beq cr7, 0x114
+      - [ be32, 0x00000000, 0x419E0018 ] # beq cr7, 0x150
       - [ be32, 0x00000000, 0xFC801890 ] # fmr f4, f3 // one ended in this frame: its sum becomes the one before
       - [ be32, 0x00000000, 0x2F860001 ] # cmpwi cr7, r6, 1
-      - [ be32, 0x00000000, 0x419E0008 ] # beq cr7, 0x110
+      - [ be32, 0x00000000, 0x419E0008 ] # beq cr7, 0x14c
       - [ be32, 0x00000000, 0xFC804090 ] # fmr f4, f8 // more than one ended: nothing was pulled in the one before
       - [ be32, 0x00000000, 0xFC604090 ] # fmr f3, f8
       - [ be32, 0x00000000, 0xEC63502A ] # fadds f3, f3, f10

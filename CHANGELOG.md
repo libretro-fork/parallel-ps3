@@ -4,6 +4,11 @@ What changed in the libretro core of this fork, newest first. Changes that come 
 
 ## Unreleased
 
+- **Dark Souls: Prepare to Die Edition (EU): walls lifting characters at high frame rates (Unlock FPS).** Not yet run on a game.
+  - **Why:** when the look for ground under a character starts inside a wall beside it, it finds "ground" at the height the step lifted the character to, so the character ends the step higher than before, a step on every frame while the wall is there: four times as high at 120 frames a second as at 30 (in the PC game the thief of the Lower Undead Burg's door ambush, pressed against the wall by its door, rose metres into the air).
+  - **What changed:** "Unlock FPS" (version 1.21): above 30 frames a second a lifted step whose put-down offset comes out above 0 puts the lift back, as when no ground is found (the rule of the PC frame-rate mod). At 30 frames a second and below nothing changes.
+  - **Tests:** the patch applied to the decrypted executable; `test_game_patches` passes. In a CPU emulator an offset of +0.01 stays at 30 frames a second and becomes minus the lift at 120; offsets of 0 and below are untouched, and the tests of 0682 and 0683 still pass.
+
 - **Dark Souls: Prepare to Die Edition (EU): riding a rounded edge down at high frame rates (Unlock FPS).** Not yet run on a game.
   - **Why:** after each physics step the character is put down on the ground found below, at most its reach (0.4 for the player) under where the step left it. That is a limit per step, so 0.4 in 1/30 s; with four steps in that time the ground could fall away four times as fast and still hold the character, which kept it glued to rounded edges and carried it down them.
   - **What changed:** "Unlock FPS" (version 1.20) sets each step's reach to 1.2 times the body's own, less what the steps of the last 1/30 s already pulled it down, between a 20th of its own and all of it (the rule of the PC frame-rate mod, with the last 1/30 s kept as two sums in place of a list of frames). The body's own value is put back as soon as the ground has been found. At 30 frames a second and below nothing changes.
