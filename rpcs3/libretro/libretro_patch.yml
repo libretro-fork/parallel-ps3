@@ -402,7 +402,7 @@ PPU-d764d35ca136442f72228ab715a629f26994e641:
       the game, not once a frame. Effects that made a particle every frame (smoke, sparks, embers) make them
       30 times a second, as Dark Souls Remastered's effect files do, and swaying particles change direction as
       often as at 30.
-    Patch Version: 1.22
+    Patch Version: 1.23
     Patch:
       # The frame's time: in place of the load of the constant 1/30 (0x01876870) into f31 at 0x00145A18
       - [ calloc, 0x00145A1A, 25 ] # Hook 0x00145A18 // Original lfs f31, -0x7f48(r30); returns to 0x00145A1C
@@ -1397,32 +1397,35 @@ PPU-d764d35ca136442f72228ab715a629f26994e641:
       - [ be32, 0x00000000, 0xD02100C4 ] # stfs f1, 0xc4(r1) // the instruction the hook took the place of
       # Before the ground is looked for: the body's place in the list (kept at 0x01BD3FC8 for the rest of the step) and,
       # if it has a reach for this step, that reach in place of its own (kept at 0x01BD3FC4)
-      - [ calloc, 0x00353722, 30 ] # Hook 0x00353720 // Original mr r3, r26; returns to 0x00353724
+      - [ calloc, 0x00353722, 33 ] # Hook 0x00353720 // Original mr r3, r26; returns to 0x00353724
       - [ be32, 0x00000000, 0x3D8001BD ] # lis r12, 0x1bd
       - [ be32, 0x00000000, 0x38000000 ] # li r0, 0
       - [ be32, 0x00000000, 0x900C3FC8 ] # stw r0, 0x3fc8(r12)
+      - [ be32, 0x00000000, 0x816C3D18 ] # lwz r11, 0x3d18(r12) // a move of the player made as at 30 frames a second (see below): the game is left alone
+      - [ be32, 0x00000000, 0x2F8B0000 ] # cmpwi cr7, r11, 0
+      - [ be32, 0x00000000, 0x409E006C ] # bne cr7, 0x80
       - [ be32, 0x00000000, 0x816C3F44 ] # lwz r11, 0x3f44(r12) // the frame time times 30, as a whole number: above 0 and below 1.0, or the game is left alone
       - [ be32, 0x00000000, 0x2F8B0000 ] # cmpwi cr7, r11, 0
-      - [ be32, 0x00000000, 0x409D0060 ] # ble cr7, 0x74
+      - [ be32, 0x00000000, 0x409D0060 ] # ble cr7, 0x80
       - [ be32, 0x00000000, 0x3C003F80 ] # lis r0, 0x3f80
       - [ be32, 0x00000000, 0x7F8B0000 ] # cmpw cr7, r11, r0
-      - [ be32, 0x00000000, 0x409C0054 ] # bge cr7, 0x74
+      - [ be32, 0x00000000, 0x409C0054 ] # bge cr7, 0x80
       - [ be32, 0x00000000, 0x57EB0576 ] # rlwinm r11, r31, 0, 21, 27 // the place: bits 4 to 10 of the body's address, times 16
       - [ be32, 0x00000000, 0x7D6B6214 ] # add r11, r11, r12
       - [ be32, 0x00000000, 0x396B3500 ] # addi r11, r11, 0x3500
       - [ be32, 0x00000000, 0x916C3FC8 ] # stw r11, 0x3fc8(r12)
       - [ be32, 0x00000000, 0x800B0000 ] # lwz r0, 0(r11)
       - [ be32, 0x00000000, 0x7F80F800 ] # cmpw cr7, r0, r31
-      - [ be32, 0x00000000, 0x419E001C ] # beq cr7, 0x58
+      - [ be32, 0x00000000, 0x419E001C ] # beq cr7, 0x64
       - [ be32, 0x00000000, 0x93EB0000 ] # stw r31, 0(r11) // another body's place, or an empty one: start again
       - [ be32, 0x00000000, 0x38000000 ] # li r0, 0
       - [ be32, 0x00000000, 0x900B0004 ] # stw r0, 4(r11)
       - [ be32, 0x00000000, 0x900B0008 ] # stw r0, 8(r11)
       - [ be32, 0x00000000, 0x900B000C ] # stw r0, 0xc(r11)
-      - [ be32, 0x00000000, 0x48000020 ] # b 0x74
+      - [ be32, 0x00000000, 0x48000020 ] # b 0x80
       - [ be32, 0x00000000, 0x800B000C ] # lwz r0, 0xc(r11)
       - [ be32, 0x00000000, 0x2F800000 ] # cmpwi cr7, r0, 0
-      - [ be32, 0x00000000, 0x409D0014 ] # ble cr7, 0x74
+      - [ be32, 0x00000000, 0x409D0014 ] # ble cr7, 0x80
       - [ be32, 0x00000000, 0x801F0208 ] # lwz r0, 0x208(r31)
       - [ be32, 0x00000000, 0x900C3FC4 ] # stw r0, 0x3fc4(r12)
       - [ be32, 0x00000000, 0x800B000C ] # lwz r0, 0xc(r11)
@@ -1442,7 +1445,7 @@ PPU-d764d35ca136442f72228ab715a629f26994e641:
       # pulled, 0x01BD3FBC the clock at its last step without the lift. For the reach: what this step pulled beyond its
       # lift goes into this 30th of a second's sum (0x01BD3FA8 says how many of those ended in this frame, 0x01BD3FAC how
       # far into the current one the frame ends), and the next step's reach is made from the sums
-      - [ calloc, 0x0035376E, 122 ] # Hook 0x0035376C // Original lfs f0, 0x84(r1); returns to 0x00353770
+      - [ calloc, 0x0035376E, 125 ] # Hook 0x0035376C // Original lfs f0, 0x84(r1); returns to 0x00353770
       - [ be32, 0x00000000, 0xC0010084 ] # lfs f0, 0x84(r1) // the offset (the instruction the hook took the place of)
       - [ be32, 0x00000000, 0x3D8001BD ] # lis r12, 0x1bd
       - [ be32, 0x00000000, 0xC12C3FC0 ] # lfs f9, 0x3fc0(r12) // this step's lift, 0 without one
@@ -1450,28 +1453,31 @@ PPU-d764d35ca136442f72228ab715a629f26994e641:
       - [ be32, 0x00000000, 0x38C00000 ] # li r6, 0
       - [ be32, 0x00000000, 0x90CC3FB0 ] # stw r6, 0x3fb0(r12)
       - [ be32, 0x00000000, 0x90CC3FC0 ] # stw r6, 0x3fc0(r12)
+      - [ be32, 0x00000000, 0x80EC3D18 ] # lwz r7, 0x3d18(r12) // a move of the player made as at 30 frames a second (see below): the game's own offset
+      - [ be32, 0x00000000, 0x2F870000 ] # cmpwi cr7, r7, 0
+      - [ be32, 0x00000000, 0x409E00EC ] # bne cr7, 0x110
       - [ be32, 0x00000000, 0x80EC3FB4 ] # lwz r7, 0x3fb4(r12)
       - [ be32, 0x00000000, 0x7F85F800 ] # cmpw cr7, r5, r31
-      - [ be32, 0x00000000, 0x409E0050 ] # bne cr7, 0x74
+      - [ be32, 0x00000000, 0x409E0050 ] # bne cr7, 0x80
       - [ be32, 0x00000000, 0x80AC3F44 ] # lwz r5, 0x3f44(r12) // lifted. Walls lifting characters: above 30 frames a second (the frame time times 30 above 0 and below 0.999)
       - [ be32, 0x00000000, 0x2F850000 ] # cmpwi cr7, r5, 0
-      - [ be32, 0x00000000, 0x409D0030 ] # ble cr7, 0x60
+      - [ be32, 0x00000000, 0x409D0030 ] # ble cr7, 0x6c
       - [ be32, 0x00000000, 0x3CC03F7F ] # lis r6, 0x3f7f
       - [ be32, 0x00000000, 0x60C6BE77 ] # ori r6, r6, 0xbe77
       - [ be32, 0x00000000, 0x7F853000 ] # cmpw cr7, r5, r6
-      - [ be32, 0x00000000, 0x409C0020 ] # bge cr7, 0x60
+      - [ be32, 0x00000000, 0x409C0020 ] # bge cr7, 0x6c
       - [ be32, 0x00000000, 0x3CC03A03 ] # lis r6, 0x3a03 // 0.0005
       - [ be32, 0x00000000, 0x60C6126F ] # ori r6, r6, 0x126f
       - [ be32, 0x00000000, 0x90CC3F2C ] # stw r6, 0x3f2c(r12)
       - [ be32, 0x00000000, 0xC02C3F2C ] # lfs f1, 0x3f2c(r12)
       - [ be32, 0x00000000, 0xFF800800 ] # fcmpu cr7, f0, f1 // an offset above 0 leaves the body higher than its lift put it
-      - [ be32, 0x00000000, 0x409D0008 ] # ble cr7, 0x60
+      - [ be32, 0x00000000, 0x409D0008 ] # ble cr7, 0x6c
       - [ be32, 0x00000000, 0xFC004850 ] # fneg f0, f9 // put the lift back, as when no ground is found
       - [ be32, 0x00000000, 0x38C00000 ] # li r6, 0
       - [ be32, 0x00000000, 0x7F87F800 ] # cmpw cr7, r7, r31 // this body starts counting again
-      - [ be32, 0x00000000, 0x409E009C ] # bne cr7, 0x104
+      - [ be32, 0x00000000, 0x409E009C ] # bne cr7, 0x110
       - [ be32, 0x00000000, 0x90CC3FB8 ] # stw r6, 0x3fb8(r12)
-      - [ be32, 0x00000000, 0x48000094 ] # b 0x104
+      - [ be32, 0x00000000, 0x48000094 ] # b 0x110
       - [ be32, 0x00000000, 0xED294828 ] # fsubs f9, f9, f9 // no lift for this body
       - [ be32, 0x00000000, 0xC02C3F44 ] # lfs f1, 0x3f44(r12) // the frame time times 30
       - [ be32, 0x00000000, 0x3CA03F80 ] # lis r5, 0x3f80 // 1.0
@@ -1479,17 +1485,17 @@ PPU-d764d35ca136442f72228ab715a629f26994e641:
       - [ be32, 0x00000000, 0xC04C3F2C ] # lfs f2, 0x3f2c(r12)
       - [ be32, 0x00000000, 0xED021028 ] # fsubs f8, f2, f2 // 0
       - [ be32, 0x00000000, 0xFF814000 ] # fcmpu cr7, f1, f8 // not set yet (the first frame): the game's own offset
-      - [ be32, 0x00000000, 0x409D0074 ] # ble cr7, 0x104
+      - [ be32, 0x00000000, 0x409D0074 ] # ble cr7, 0x110
       - [ be32, 0x00000000, 0xFF811000 ] # fcmpu cr7, f1, f2 // 30 frames a second or fewer: the game's own offset
-      - [ be32, 0x00000000, 0x409C006C ] # bge cr7, 0x104
+      - [ be32, 0x00000000, 0x409C006C ] # bge cr7, 0x110
       - [ be32, 0x00000000, 0x80CC3F04 ] # lwz r6, 0x3f04(r12) // this frame's clock (80,000,000 ticks a second)
       - [ be32, 0x00000000, 0x7F87F800 ] # cmpw cr7, r7, r31
-      - [ be32, 0x00000000, 0x409E0018 ] # bne cr7, 0xbc
+      - [ be32, 0x00000000, 0x409E0018 ] # bne cr7, 0xc8
       - [ be32, 0x00000000, 0x80EC3FBC ] # lwz r7, 0x3fbc(r12)
       - [ be32, 0x00000000, 0x7CE73050 ] # subf r7, r7, r6
       - [ be32, 0x00000000, 0x3CA00131 ] # lis r5, 0x131 // a quarter of a second
       - [ be32, 0x00000000, 0x7F872840 ] # cmplw cr7, r7, r5
-      - [ be32, 0x00000000, 0x409D0010 ] # ble cr7, 0xc8
+      - [ be32, 0x00000000, 0x409D0010 ] # ble cr7, 0xd4
       - [ be32, 0x00000000, 0x93EC3FB4 ] # stw r31, 0x3fb4(r12)
       - [ be32, 0x00000000, 0x38A00000 ] # li r5, 0
       - [ be32, 0x00000000, 0x90AC3FB8 ] # stw r5, 0x3fb8(r12)
@@ -1510,7 +1516,7 @@ PPU-d764d35ca136442f72228ab715a629f26994e641:
       - [ be32, 0x00000000, 0xEC0001F2 ] # fmuls f0, f0, f7 // the offset, cut to that part
       - [ be32, 0x00000000, 0x80AC3FC8 ] # lwz r5, 0x3fc8(r12) // the body's place in the list, if it has one this step
       - [ be32, 0x00000000, 0x2F850000 ] # cmpwi cr7, r5, 0
-      - [ be32, 0x00000000, 0x419E00DC ] # beq cr7, 0x1e8
+      - [ be32, 0x00000000, 0x419E00DC ] # beq cr7, 0x1f4
       - [ be32, 0x00000000, 0x38C00000 ] # li r6, 0
       - [ be32, 0x00000000, 0x90CC3FC8 ] # stw r6, 0x3fc8(r12)
       - [ be32, 0x00000000, 0xED094828 ] # fsubs f8, f9, f9 // 0
@@ -1521,10 +1527,10 @@ PPU-d764d35ca136442f72228ab715a629f26994e641:
       - [ be32, 0x00000000, 0xC0850008 ] # lfs f4, 8(r5) // and of the one before
       - [ be32, 0x00000000, 0x80CC3FA8 ] # lwz r6, 0x3fa8(r12)
       - [ be32, 0x00000000, 0x2F860000 ] # cmpwi cr7, r6, 0
-      - [ be32, 0x00000000, 0x419E0018 ] # beq cr7, 0x150
+      - [ be32, 0x00000000, 0x419E0018 ] # beq cr7, 0x15c
       - [ be32, 0x00000000, 0xFC801890 ] # fmr f4, f3 // one ended in this frame: its sum becomes the one before
       - [ be32, 0x00000000, 0x2F860001 ] # cmpwi cr7, r6, 1
-      - [ be32, 0x00000000, 0x419E0008 ] # beq cr7, 0x14c
+      - [ be32, 0x00000000, 0x419E0008 ] # beq cr7, 0x158
       - [ be32, 0x00000000, 0xFC804090 ] # fmr f4, f8 // more than one ended: nothing was pulled in the one before
       - [ be32, 0x00000000, 0xFC604090 ] # fmr f3, f8
       - [ be32, 0x00000000, 0xEC63502A ] # fadds f3, f3, f10
@@ -1565,6 +1571,162 @@ PPU-d764d35ca136442f72228ab715a629f26994e641:
       - [ be32, 0x00000000, 0xEDAC3028 ] # fsubs f13, f12, f6
       - [ be32, 0x00000000, 0xFD8D332E ] # fsel f12, f13, f12, f6 // at least a 20th of it
       - [ be32, 0x00000000, 0xD185000C ] # stfs f12, 0xc(r5)
+      # Lips a little above a step. A lip up to the step height is stepped over; a higher one with a rounded or sloped edge
+      # is climbed by creeping: each physics step the lifted body rides a little way up the edge and is left there, until
+      # it is far enough over to come up onto the lip. How far one step's move gets decides it, and at 120 frames a second
+      # a step's move is a quarter of one at 30, so such lips could not be climbed at all (the PC frame-rate mod found a
+      # hollow in the Great Hollow that could not be left). The player's body, while it is pushing but hardly moving, is
+      # now moved as at 30 frames a second: its physics step (0x00353EB8) still works out the frame's speed every frame,
+      # but the move itself is made only on a frame in which a 30th of a second ended, with all the time since the last
+      # move. Pushing but hardly moving is: over a 30th of a second less than 30% of the distance the speed asked for (and
+      # that more than 2 cm) was covered; it ends when a move covers half of its distance or more, in the air, on a
+      # ladder, and at 30 frames a second or below, where nothing changes. Kept at 0x01BD3D00: the player's body, whether
+      # it is held to 30 moves a second (4), the time since its last move (8), the distance asked for since the last 30th
+      # of a second ended (0xc), where it was then (0x10 x, 0x14 z), whether this step is such a move (0x18; the
+      # ground-pull code above then leaves the step alone, as at 30 frames a second) and the clock of its last step (0x1c).
+      # First, where the movement code calls the physics step: the body is the player's if the character it belongs to
+      # (4 of the movement object) is the player (0x30 of the object at 0x01B43610)
+      - [ calloc, 0x0048561A, 10 ] # Hook 0x00485618 // Original lfs f1, 0x340(r9); returns to 0x0048561C
+      - [ be32, 0x00000000, 0x3D8001B4 ] # lis r12, 0x1b4
+      - [ be32, 0x00000000, 0x816C3610 ] # lwz r11, 0x3610(r12)
+      - [ be32, 0x00000000, 0x2F8B0000 ] # cmpwi cr7, r11, 0
+      - [ be32, 0x00000000, 0x419E0018 ] # beq cr7, 0x24
+      - [ be32, 0x00000000, 0x816B0030 ] # lwz r11, 0x30(r11)
+      - [ be32, 0x00000000, 0x7F8B4800 ] # cmpw cr7, r11, r9
+      - [ be32, 0x00000000, 0x409E000C ] # bne cr7, 0x24
+      - [ be32, 0x00000000, 0x3D8001BD ] # lis r12, 0x1bd
+      - [ be32, 0x00000000, 0x906C3D00 ] # stw r3, 0x3d00(r12)
+      - [ be32, 0x00000000, 0xC0290340 ] # lfs f1, 0x340(r9) // the instruction the hook took the place of
+      # Then in the physics step, after the frame's speed has been worked out (v31) and before the move: r31 is the body,
+      # f29 the frame time, 0x100 and 0x110 of the stack the time and 1 / time the move is made with
+      - [ calloc, 0x0035414A, 127 ] # Hook 0x00354148 // Original lbz r29, 0x1d6(r31); returns to 0x0035414C
+      - [ be32, 0x00000000, 0x3D8001BD ] # lis r12, 0x1bd
+      - [ be32, 0x00000000, 0x38000000 ] # li r0, 0
+      - [ be32, 0x00000000, 0x900C3D18 ] # stw r0, 0x3d18(r12)
+      - [ be32, 0x00000000, 0x816C3D00 ] # lwz r11, 0x3d00(r12)
+      - [ be32, 0x00000000, 0x7F8BF800 ] # cmpw cr7, r11, r31
+      - [ be32, 0x00000000, 0x409E01E4 ] # bne cr7, 0x1f8
+      - [ be32, 0x00000000, 0x816C3F44 ] # lwz r11, 0x3f44(r12) // the frame time times 30: above 0 and below 0.999
+      - [ be32, 0x00000000, 0x2F8B0000 ] # cmpwi cr7, r11, 0
+      - [ be32, 0x00000000, 0x409D01B8 ] # ble cr7, 0x1d8
+      - [ be32, 0x00000000, 0x3D403F7F ] # lis r10, 0x3f7f
+      - [ be32, 0x00000000, 0x614ABE77 ] # ori r10, r10, 0xbe77
+      - [ be32, 0x00000000, 0x7F8B5000 ] # cmpw cr7, r11, r10
+      - [ be32, 0x00000000, 0x409C01A8 ] # bge cr7, 0x1d8
+      - [ be32, 0x00000000, 0x897F01D4 ] # lbz r11, 0x1d4(r31) // not on a ladder
+      - [ be32, 0x00000000, 0x2F8B0000 ] # cmpwi cr7, r11, 0
+      - [ be32, 0x00000000, 0x409E019C ] # bne cr7, 0x1d8
+      - [ be32, 0x00000000, 0x817F0194 ] # lwz r11, 0x194(r31) // on the ground: no time in the air
+      - [ be32, 0x00000000, 0x2F8B0000 ] # cmpwi cr7, r11, 0
+      - [ be32, 0x00000000, 0x419D0190 ] # bgt cr7, 0x1d8
+      - [ be32, 0x00000000, 0x814C3F04 ] # lwz r10, 0x3f04(r12) // this frame's clock (80,000,000 ticks a second)
+      - [ be32, 0x00000000, 0x816C3D1C ] # lwz r11, 0x3d1c(r12)
+      - [ be32, 0x00000000, 0x914C3D1C ] # stw r10, 0x3d1c(r12)
+      - [ be32, 0x00000000, 0x7D6B5050 ] # subf r11, r11, r10
+      - [ be32, 0x00000000, 0x3D400131 ] # lis r10, 0x131 // a quarter of a second without a step: start again
+      - [ be32, 0x00000000, 0x7F8B5040 ] # cmplw cr7, r11, r10
+      - [ be32, 0x00000000, 0x409D0020 ] # ble cr7, 0x84
+      - [ be32, 0x00000000, 0x900C3D04 ] # stw r0, 0x3d04(r12)
+      - [ be32, 0x00000000, 0x900C3D08 ] # stw r0, 0x3d08(r12)
+      - [ be32, 0x00000000, 0x900C3D0C ] # stw r0, 0x3d0c(r12)
+      - [ be32, 0x00000000, 0x815F0010 ] # lwz r10, 0x10(r31)
+      - [ be32, 0x00000000, 0x914C3D10 ] # stw r10, 0x3d10(r12)
+      - [ be32, 0x00000000, 0x815F0018 ] # lwz r10, 0x18(r31)
+      - [ be32, 0x00000000, 0x914C3D14 ] # stw r10, 0x3d14(r12)
+      - [ be32, 0x00000000, 0x3800FFE0 ] # li r0, -0x20
+      - [ be32, 0x00000000, 0x7FE101CE ] # stvx v31, r1, r0 // the frame's speed, below the stack
+      - [ be32, 0x00000000, 0xC021FFE0 ] # lfs f1, -0x20(r1)
+      - [ be32, 0x00000000, 0xC041FFE8 ] # lfs f2, -0x18(r1)
+      - [ be32, 0x00000000, 0xEC210072 ] # fmuls f1, f1, f1
+      - [ be32, 0x00000000, 0xEC2208BA ] # fmadds f1, f2, f2, f1
+      - [ be32, 0x00000000, 0xEC20082C ] # fsqrts f1, f1 // along the ground
+      - [ be32, 0x00000000, 0x3D404248 ] # lis r10, 0x4248 // 50
+      - [ be32, 0x00000000, 0x914C3F2C ] # stw r10, 0x3f2c(r12)
+      - [ be32, 0x00000000, 0xC06C3F2C ] # lfs f3, 0x3f2c(r12)
+      - [ be32, 0x00000000, 0xFF811800 ] # fcmpu cr7, f1, f3
+      - [ be32, 0x00000000, 0x409C0128 ] # bge cr7, 0x1d8
+      - [ be32, 0x00000000, 0xC08C3D08 ] # lfs f4, 0x3d08(r12)
+      - [ be32, 0x00000000, 0xEC84E82A ] # fadds f4, f4, f29 // the time since the last move
+      - [ be32, 0x00000000, 0xD08C3D08 ] # stfs f4, 0x3d08(r12)
+      - [ be32, 0x00000000, 0xC0AC3D0C ] # lfs f5, 0x3d0c(r12) // the distance asked for
+      - [ be32, 0x00000000, 0x812C3D04 ] # lwz r9, 0x3d04(r12) // held to 30 moves a second so far
+      - [ be32, 0x00000000, 0x816C3FA8 ] # lwz r11, 0x3fa8(r12) // the 30ths of a second that ended in this frame
+      - [ be32, 0x00000000, 0x2F8B0000 ] # cmpwi cr7, r11, 0
+      - [ be32, 0x00000000, 0x419E00BC ] # beq cr7, 0x18c
+      - [ be32, 0x00000000, 0xC0DF0010 ] # lfs f6, 0x10(r31) // one ended: how far the body got since the last
+      - [ be32, 0x00000000, 0xC0EC3D10 ] # lfs f7, 0x3d10(r12)
+      - [ be32, 0x00000000, 0xECC63828 ] # fsubs f6, f6, f7
+      - [ be32, 0x00000000, 0xC0FF0018 ] # lfs f7, 0x18(r31)
+      - [ be32, 0x00000000, 0xC10C3D14 ] # lfs f8, 0x3d14(r12)
+      - [ be32, 0x00000000, 0xECE74028 ] # fsubs f7, f7, f8
+      - [ be32, 0x00000000, 0xECC601B2 ] # fmuls f6, f6, f6
+      - [ be32, 0x00000000, 0xECC731FA ] # fmadds f6, f7, f7, f6
+      - [ be32, 0x00000000, 0xECC0302C ] # fsqrts f6, f6
+      - [ be32, 0x00000000, 0x815F0010 ] # lwz r10, 0x10(r31)
+      - [ be32, 0x00000000, 0x914C3D10 ] # stw r10, 0x3d10(r12)
+      - [ be32, 0x00000000, 0x815F0018 ] # lwz r10, 0x18(r31)
+      - [ be32, 0x00000000, 0x914C3D14 ] # stw r10, 0x3d14(r12)
+      - [ be32, 0x00000000, 0x2F890000 ] # cmpwi cr7, r9, 0
+      - [ be32, 0x00000000, 0x409E0044 ] # bne cr7, 0x150
+      - [ be32, 0x00000000, 0x3D403CA3 ] # lis r10, 0x3ca3 // free: held from now on if more than 0.02 was asked for
+      - [ be32, 0x00000000, 0x614AD70A ] # ori r10, r10, 0xd70a
+      - [ be32, 0x00000000, 0x914C3F2C ] # stw r10, 0x3f2c(r12)
+      - [ be32, 0x00000000, 0xC0EC3F2C ] # lfs f7, 0x3f2c(r12)
+      - [ be32, 0x00000000, 0xFF853800 ] # fcmpu cr7, f5, f7
+      - [ be32, 0x00000000, 0x409D0064 ] # ble cr7, 0x188
+      - [ be32, 0x00000000, 0x3D403E99 ] # lis r10, 0x3e99 // and less than 0.3 of it covered
+      - [ be32, 0x00000000, 0x614A999A ] # ori r10, r10, 0x999a
+      - [ be32, 0x00000000, 0x914C3F2C ] # stw r10, 0x3f2c(r12)
+      - [ be32, 0x00000000, 0xC0EC3F2C ] # lfs f7, 0x3f2c(r12)
+      - [ be32, 0x00000000, 0xECE70172 ] # fmuls f7, f7, f5
+      - [ be32, 0x00000000, 0xFF863800 ] # fcmpu cr7, f6, f7
+      - [ be32, 0x00000000, 0x409C0048 ] # bge cr7, 0x188
+      - [ be32, 0x00000000, 0x39400001 ] # li r10, 1
+      - [ be32, 0x00000000, 0x914C3D04 ] # stw r10, 0x3d04(r12)
+      - [ be32, 0x00000000, 0x4800003C ] # b 0x188
+      - [ be32, 0x00000000, 0x3D403ADE ] # lis r10, 0x3ade // held: free again if next to nothing was asked for (0.05 a second)
+      - [ be32, 0x00000000, 0x614AD289 ] # ori r10, r10, 0xd289
+      - [ be32, 0x00000000, 0x914C3F2C ] # stw r10, 0x3f2c(r12)
+      - [ be32, 0x00000000, 0xC0EC3F2C ] # lfs f7, 0x3f2c(r12)
+      - [ be32, 0x00000000, 0xFF853800 ] # fcmpu cr7, f5, f7
+      - [ be32, 0x00000000, 0x409D001C ] # ble cr7, 0x180
+      - [ be32, 0x00000000, 0x3D403F00 ] # lis r10, 0x3f00 // or half of it or more was covered
+      - [ be32, 0x00000000, 0x914C3F2C ] # stw r10, 0x3f2c(r12)
+      - [ be32, 0x00000000, 0xC0EC3F2C ] # lfs f7, 0x3f2c(r12)
+      - [ be32, 0x00000000, 0xECE70172 ] # fmuls f7, f7, f5
+      - [ be32, 0x00000000, 0xFF863800 ] # fcmpu cr7, f6, f7
+      - [ be32, 0x00000000, 0x419C000C ] # blt cr7, 0x188
+      - [ be32, 0x00000000, 0x39400000 ] # li r10, 0
+      - [ be32, 0x00000000, 0x914C3D04 ] # stw r10, 0x3d04(r12)
+      - [ be32, 0x00000000, 0xECA52828 ] # fsubs f5, f5, f5
+      - [ be32, 0x00000000, 0xECA12F7A ] # fmadds f5, f1, f29, f5 // this frame's distance asked for
+      - [ be32, 0x00000000, 0xD0AC3D0C ] # stfs f5, 0x3d0c(r12)
+      - [ be32, 0x00000000, 0x814C3D04 ] # lwz r10, 0x3d04(r12)
+      - [ be32, 0x00000000, 0x7D4A4B79 ] # or. r10, r10, r9 // held now or until this frame
+      - [ be32, 0x00000000, 0x41820030 ] # beq 0x1cc
+      - [ be32, 0x00000000, 0x2F8B0000 ] # cmpwi cr7, r11, 0
+      - [ be32, 0x00000000, 0x409E0008 ] # bne cr7, 0x1ac
+      - [ be32, 0x00000000, 0x48354286 ] # ba 0x354284 // held and no 30th of a second ended: no move this frame (the end of the physics step)
+      - [ be32, 0x00000000, 0xD0810100 ] # stfs f4, 0x100(r1) // the move of all the time since the last one
+      - [ be32, 0x00000000, 0x3D403F80 ] # lis r10, 0x3f80 // 1.0
+      - [ be32, 0x00000000, 0x914C3F2C ] # stw r10, 0x3f2c(r12)
+      - [ be32, 0x00000000, 0xC0EC3F2C ] # lfs f7, 0x3f2c(r12)
+      - [ be32, 0x00000000, 0xECE72024 ] # fdivs f7, f7, f4
+      - [ be32, 0x00000000, 0xD0E10110 ] # stfs f7, 0x110(r1)
+      - [ be32, 0x00000000, 0x39400001 ] # li r10, 1
+      - [ be32, 0x00000000, 0x914C3D18 ] # stw r10, 0x3d18(r12)
+      - [ be32, 0x00000000, 0x39400000 ] # li r10, 0
+      - [ be32, 0x00000000, 0x914C3D08 ] # stw r10, 0x3d08(r12)
+      - [ be32, 0x00000000, 0x48000024 ] # b 0x1f8
+      - [ be32, 0x00000000, 0x38000000 ] # li r0, 0
+      - [ be32, 0x00000000, 0x900C3D04 ] # stw r0, 0x3d04(r12)
+      - [ be32, 0x00000000, 0x900C3D08 ] # stw r0, 0x3d08(r12)
+      - [ be32, 0x00000000, 0x900C3D0C ] # stw r0, 0x3d0c(r12)
+      - [ be32, 0x00000000, 0x815F0010 ] # lwz r10, 0x10(r31)
+      - [ be32, 0x00000000, 0x914C3D10 ] # stw r10, 0x3d10(r12)
+      - [ be32, 0x00000000, 0x815F0018 ] # lwz r10, 0x18(r31)
+      - [ be32, 0x00000000, 0x914C3D14 ] # stw r10, 0x3d14(r12)
+      - [ be32, 0x00000000, 0x8BBF01D6 ] # lbz r29, 0x1d6(r31) // the instruction the hook took the place of
       # Script memory. The game's scripts (Lua) never clear out their used memory on their own; the game does it in full
       # when a countdown beside each script state runs out: every 0.5 s for the enemies' AI (0x008527AC, the time left at
       # 0xc) and every 1 s for the other state (0x00687CC0, at 0x58). The scripts make their garbage every frame, so at
