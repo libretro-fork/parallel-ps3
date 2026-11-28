@@ -529,6 +529,20 @@ PPU-d764d35ca136442f72228ab715a629f26994e641:
       - [ be32, 0x00000000, 0x2F800002 ] # cmpwi cr7, r0, 2
       - [ be32, 0x00000000, 0x419E0008 ] # beq cr7, 0x14
       - [ be32, 0x00000000, 0x834B0120 ] # lwz r26, 0x120(r11)
+  "Skip Intro Logos":
+    Games:
+      "Dark Souls: Prepare to Die Edition":
+        BLES01765: [ All ]
+    Author: "LibretroAdmin (after GalCiv's Skip Intro Videos for Demon's Souls)"
+    Notes: >-
+      Skips the three logo screens shown as the game starts. They are one dialog that fades each logo in, holds
+      it and fades it out; when the last has gone it closes itself and the title screen follows. With this
+      patch it closes itself at once.
+    Patch Version: 1.0
+    Patch:
+      # The logo dialog's step (0x00AA27EC), where it picks what to do by its state (0x100 of it): straight to its end,
+      # which closes the dialog (menu 0x3c) as it does after the third logo (0x00AA2B38), and returns
+      - [ be32, 0x00AA2814, 0x48000324 ] # b 0xaa2b38 // Original cmpwi cr7, r0, 1
   "Reduce Audio Latency":
     Games:
       "Dark Souls: Prepare to Die Edition":

@@ -4,6 +4,11 @@ What changed in the libretro core of this fork, newest first. Changes that come 
 
 ## Unreleased
 
+- **Dark Souls: Prepare to Die Edition (EU): "Skip Intro Logos" patch.** Not yet run on a game.
+  - **What changed:** a new patch in the Patch Manager, like Demon's Souls' "Skip Intro Videos". The three logos at startup are one dialog with a small state machine (fade in, hold, fade out, next logo); after the third it closes itself, which lets the title screen follow. The patch makes its step go straight to that closing code (one branch at 0x00AA2814).
+    - Not known until it is run: whether a logo shows for a frame before the dialog is gone.
+  - **Tests:** the patch applied to the decrypted executable and the branch read back; `test_game_patches` passes.
+
 - **Dark Souls: Prepare to Die Edition (EU): "LOD/Texture Detail" on "Highest" also draws the water's reflection and surface at full resolution.** Not yet run on a game.
   - **What the game does:** the scene mirrored in water is drawn into a target a quarter of the screen's width and height (256x180 at the game's 1024x720), with a depth buffer of that size; only the mirror pass (0x003755BC) draws into them and only the water reads the result (0x0036D7D0). The water's surface is drawn into a 512x360 target of its own, over the half-size depth buffer the effects also use, which it clears first.
   - **What changed on "Highest":** the mirror's colour target and depth buffer are made at the screen's size (the shift by 2 where they are made is by 0), and the surface's target is 1024x720 (its size is doubled where the game copies it at startup, so the target and the size its shader is told both follow). The surface's pass needs a depth buffer as big as its target, so it takes the mirror's, full-size too now, in place of the effects' half-size one; both passes clear it before they draw. "Game Default" leaves all of it as it was. The setting is one instruction (`li r0, N`) used at each place, so the two values differ in nothing else.
