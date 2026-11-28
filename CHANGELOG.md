@@ -4,6 +4,11 @@ What changed in the libretro core of this fork, newest first. Changes that come 
 
 ## Unreleased
 
+- **Dark Souls: Prepare to Die Edition (EU): the body's turn toward a locked-on target at high frame rates (Unlock FPS).** Not yet run on a game.
+  - **What was wrong:** with a target locked, the character's hips, spine and head are turned toward it by bone controllers whose update moves the angle toward its target by a weight once a frame (0.6 for the hips while turning, 0.2 for the head, 0.1 for the spine), with no frame time in it: at 120 frames a second the torso and head faced the target four times as fast.
+  - **What changed:** "Unlock FPS" (version 1.14) takes the weight where the update uses it (0x005E5258) as 1 - (1 - w) to the power of the frame time in 30ths of a second, with the same factors the camera's weights use. A weight of 0, or over 0.75, is left as it is. At 30 frames a second it is the game's weight.
+  - **Tests:** the new code run in a CPU emulator at 20 to 240 frames a second for weights from 0 to 1 and compared with the formula (within 0.004 at 0.7, closer below); the patch applied to the decrypted executable; `test_game_patches` passes.
+
 - **Dark Souls: Prepare to Die Edition (EU): the follow camera's smoothing at high frame rates (Unlock FPS).** Not yet run on a game.
   - **What was wrong:** the follow camera moves toward where it should be by weights applied once a frame and set for 30 frames a second: its turn, settling back, the point it looks at (locked on or not), its distance, changes of its settings, the stick's smoothing and the turn toward where the character walks. At 120 frames a second each was applied four times as often: a pan finished in a quarter of the time and switching lock-on target snapped. The PC game has the same problem.
   - **What changed:** "Unlock FPS" (version 1.13) works each weight out for the frame's time as the camera's update starts (0x00295070): a weight w becomes 1 - (1 - w) to the power of the frame time in 30ths of a second. Ten weights of the camera object (they sit at the same places as in the PC game) and two fixed ones (1/30, which two of the weights themselves ease by, and 0.1 for the distance) go into a table, and the 18 places the update loaded them load from it. A weight of 0, or over 0.5, is left as it is. At 30 frames a second every weight is the game's.

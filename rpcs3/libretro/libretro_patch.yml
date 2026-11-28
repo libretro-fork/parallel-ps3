@@ -397,8 +397,9 @@ PPU-d764d35ca136442f72228ab715a629f26994e641:
       A ragdoll's body is pulled to its pose as hard per second as at 30 (four times as hard at 120 before, which
       could fling bodies and what stood on them), and an item's glow fades in and out in its own time. The
       follow camera's smoothing (turning, the point it looks at, its distance, the stick) takes as long as at
-      30: its weights, applied once a frame, are worked out for each frame's time.
-    Patch Version: 1.13
+      30: its weights, applied once a frame, are worked out for each frame's time. The same for the body's
+      turn toward a locked-on target (hips, spine, head).
+    Patch Version: 1.14
     Patch:
       # The frame's time: in place of the load of the constant 1/30 (0x01876870) into f31 at 0x00145A18
       - [ calloc, 0x00145A1A, 25 ] # Hook 0x00145A18 // Original lfs f31, -0x7f48(r30); returns to 0x00145A1C
@@ -1239,6 +1240,41 @@ PPU-d764d35ca136442f72228ab715a629f26994e641:
       - [ be32, 0x00000000, 0x39080004 ] # addi r8, r8, 4
       - [ be32, 0x00000000, 0x4200FFF8 ] # bdnz 0x18
       - [ be32, 0x00000000, 0x38600001 ] # li r3, 1
+      # Turning the body toward a locked-on target. The bones (hips, spine, head) are turned by controllers whose update
+      # (0x005E5258) moves the angle (0x14 of the controller) toward its target (0x10) by a weight (0x20: 0.6 for the hips
+      # while turning, 0.2 for the head, 0.1 for the spine) once a frame, so the body faced the target four times as fast at
+      # 120 frames a second. The weight w is taken as 1 - (1 - w) ^ x for this frame, with the factors the camera's weights
+      # use (0x01BD3F58 on); a weight of 0, or over 0.75, is left as it is
+      - [ calloc, 0x005E525A, 29 ] # Hook 0x005E5258 // Original lfs f12, 0x20(r31); returns to 0x005E525C
+      - [ be32, 0x00000000, 0xC19F0020 ] # lfs f12, 0x20(r31)
+      - [ be32, 0x00000000, 0x3D8001BD ] # lis r12, 0x1bd
+      - [ be32, 0x00000000, 0x800C3F58 ] # lwz r0, 0x3f58(r12)
+      - [ be32, 0x00000000, 0x2F800000 ] # cmpwi cr7, r0, 0
+      - [ be32, 0x00000000, 0x419E0064 ] # beq cr7, 0x74 // the factors are not set before the first frame
+      - [ be32, 0x00000000, 0x817F0020 ] # lwz r11, 0x20(r31)
+      - [ be32, 0x00000000, 0x396BFFFF ] # addi r11, r11, -1
+      - [ be32, 0x00000000, 0x3C003F40 ] # lis r0, 0x3f40 // 0.75 as an integer
+      - [ be32, 0x00000000, 0x7F8B0040 ] # cmplw cr7, r11, r0
+      - [ be32, 0x00000000, 0x409C0050 ] # bge cr7, 0x74
+      - [ be32, 0x00000000, 0xFD806050 ] # fneg f12, f12
+      - [ be32, 0x00000000, 0xC16C3F6C ] # lfs f11, 0x3f6c(r12)
+      - [ be32, 0x00000000, 0xEC2B0332 ] # fmuls f1, f11, f12
+      - [ be32, 0x00000000, 0xC16C3F68 ] # lfs f11, 0x3f68(r12)
+      - [ be32, 0x00000000, 0xED6B0332 ] # fmuls f11, f11, f12
+      - [ be32, 0x00000000, 0xEC215AFA ] # fmadds f1, f1, f11, f11
+      - [ be32, 0x00000000, 0xC16C3F64 ] # lfs f11, 0x3f64(r12)
+      - [ be32, 0x00000000, 0xED6B0332 ] # fmuls f11, f11, f12
+      - [ be32, 0x00000000, 0xEC215AFA ] # fmadds f1, f1, f11, f11
+      - [ be32, 0x00000000, 0xC16C3F60 ] # lfs f11, 0x3f60(r12)
+      - [ be32, 0x00000000, 0xED6B0332 ] # fmuls f11, f11, f12
+      - [ be32, 0x00000000, 0xEC215AFA ] # fmadds f1, f1, f11, f11
+      - [ be32, 0x00000000, 0xC16C3F5C ] # lfs f11, 0x3f5c(r12)
+      - [ be32, 0x00000000, 0xED6B0332 ] # fmuls f11, f11, f12
+      - [ be32, 0x00000000, 0xEC215AFA ] # fmadds f1, f1, f11, f11
+      - [ be32, 0x00000000, 0xC16C3F58 ] # lfs f11, 0x3f58(r12)
+      - [ be32, 0x00000000, 0xED6B0332 ] # fmuls f11, f11, f12
+      - [ be32, 0x00000000, 0xEC215AFA ] # fmadds f1, f1, f11, f11
+      - [ be32, 0x00000000, 0xFD800850 ] # fneg f12, f1
   "LOD/Texture Detail":
     Games:
       "Dark Souls: Prepare to Die Edition":
