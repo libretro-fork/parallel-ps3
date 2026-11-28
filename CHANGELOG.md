@@ -4,6 +4,11 @@ What changed in the libretro core of this fork, newest first. Changes that come 
 
 ## Unreleased
 
+- **Dark Souls: Prepare to Die Edition (EU): sliding off a ladder into the void at high frame rates (Unlock FPS).** Not yet run on a game.
+  - **Why:** each physics step of a character's body lifts it by its step height, moves it, then pulls it back down 0.3. At the bottom of a ladder slide the lift is left out but the pull is still made on every frame until the body finds ground: once at 30 frames a second, four times as often at 120, which took the character through the floor.
+  - **What changed:** "Unlock FPS" (version 1.19) notes at the lift whose body was raised. A step without the lift pulls by the frame's share of 0.3, and by no more than 0.3 in all until a lifted step, or a quarter of a second without such steps, starts the count again (the rule of the PC frame-rate mod). At 30 frames a second and below the game's own pull is left alone.
+  - **Tests:** the patch applied to the decrypted executable; `test_game_patches` passes. The two code pieces were run in a CPU emulator: twelve steps without the lift pull 3.6 in all at 30 frames a second (the game's own) and 0.3 at 60, 120 and 240.
+
 - **Dark Souls: Prepare to Die Edition (EU): roll direction, the turn-around and the souls counter keep exact time (Unlock FPS).** Not yet run on a game.
   - **Why:** those three were held back to 30 times a second by waiting until 0.03 s had passed since the last time, each with a timer of its own. At frame rates that do not divide evenly (144, say: five frames are 34.7 ms) that ran about 4% slow, and the roll's timer was one for every pad object.
   - **What changed:** "Unlock FPS" (version 1.18) uses the count it now keeps of the 30ths of a second that ended in each frame, which is exact at any frame rate: the roll's list and the turn's ring take a new place on a frame where one ended, and the souls counter adds its step once for each. The three timers are gone (the turn's was kept in an unused place of the turn object).
