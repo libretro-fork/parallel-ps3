@@ -402,7 +402,7 @@ PPU-d764d35ca136442f72228ab715a629f26994e641:
       the game, not once a frame. Effects that made a particle every frame (smoke, sparks, embers) make them
       30 times a second, as Dark Souls Remastered's effect files do, and swaying particles change direction as
       often as at 30.
-    Patch Version: 1.25
+    Patch Version: 1.26
     Patch:
       # The frame's time: in place of the load of the constant 1/30 (0x01876870) into f31 at 0x00145A18
       - [ calloc, 0x00145A1A, 25 ] # Hook 0x00145A18 // Original lfs f31, -0x7f48(r30); returns to 0x00145A1C
@@ -1966,6 +1966,47 @@ PPU-d764d35ca136442f72228ab715a629f26994e641:
       - [ be32, 0x00000000, 0xFF853800 ] # fcmpu cr7, f5, f7
       - [ be32, 0x00000000, 0x409D0008 ] # ble cr7, 0xd4
       - [ be32, 0x00000000, 0xD0BF0000 ] # stfs f5, 0(r31) // the time left
+      # Status effects that act at intervals (lava's damage every 0.1 s, the heals over time, the drains). The update of an
+      # effect (0x0057DCF8) acts when its interval timer (8 of its entry) is at or below 0, then sets the timer back to the
+      # interval and counts it down by the frame time. So each interval waits whole frames: three of 1/30 s for 0.1 s,
+      # seven for 0.2 s. At other frame rates the rounding differs (0.1 s: 8% less often at 120 frames a second; 0.2 s:
+      # 17% more often), and with the real frame time, a hair more or less than 1/30 s, a 0.1 s interval waits a fourth
+      # frame about half of the time even at 30 frames a second. The timer is now set to the interval's whole 30ths of a
+      # second less how late this turn came (at most a frame), so the turns keep the game's own period on average at
+      # any frame rate (the rule of the PC frame-rate mod). r3 is the entry, f0 the interval, f1 the frame time
+      - [ calloc, 0x0057DE42, 32 ] # Hook 0x0057DE40 // Original stfs f0, 8(r3); returns to 0x0057DE44
+      - [ be32, 0x00000000, 0x3D8001BD ] # lis r12, 0x1bd
+      - [ be32, 0x00000000, 0x812C3F44 ] # lwz r9, 0x3f44(r12) // not before the first frame has set the numbers
+      - [ be32, 0x00000000, 0x2F890000 ] # cmpwi cr7, r9, 0
+      - [ be32, 0x00000000, 0x409D0070 ] # ble cr7, 0x7c
+      - [ be32, 0x00000000, 0xEC610828 ] # fsubs f3, f1, f1 // 0
+      - [ be32, 0x00000000, 0xFF801800 ] # fcmpu cr7, f0, f3
+      - [ be32, 0x00000000, 0x409D0064 ] # ble cr7, 0x7c
+      - [ be32, 0x00000000, 0x3D203D08 ] # lis r9, 0x3d08 // 1/30
+      - [ be32, 0x00000000, 0x61298889 ] # ori r9, r9, 0x8889
+      - [ be32, 0x00000000, 0x912C3F2C ] # stw r9, 0x3f2c(r12)
+      - [ be32, 0x00000000, 0xC08C3F2C ] # lfs f4, 0x3f2c(r12)
+      - [ be32, 0x00000000, 0x3D203F80 ] # lis r9, 0x3f80 // 1.0
+      - [ be32, 0x00000000, 0x912C3F2C ] # stw r9, 0x3f2c(r12)
+      - [ be32, 0x00000000, 0xC12C3F2C ] # lfs f9, 0x3f2c(r12)
+      - [ be32, 0x00000000, 0x39200000 ] # li r9, 0
+      - [ be32, 0x00000000, 0xFCA00090 ] # fmr f5, f0
+      - [ be32, 0x00000000, 0xFD001890 ] # fmr f8, f3
+      - [ be32, 0x00000000, 0xECA52028 ] # fsubs f5, f5, f4 // n (f8): the steps of 1/30 that bring the interval to 0 or below
+      - [ be32, 0x00000000, 0xED08482A ] # fadds f8, f8, f9
+      - [ be32, 0x00000000, 0x39290001 ] # addi r9, r9, 1
+      - [ be32, 0x00000000, 0xFF851800 ] # fcmpu cr7, f5, f3
+      - [ be32, 0x00000000, 0x409D000C ] # ble cr7, 0x60
+      - [ be32, 0x00000000, 0x2F890800 ] # cmpwi cr7, r9, 2048
+      - [ be32, 0x00000000, 0x419CFFE8 ] # blt cr7, 0x44
+      - [ be32, 0x00000000, 0xECA80132 ] # fmuls f5, f8, f4 // n / 30
+      - [ be32, 0x00000000, 0xC0C30008 ] # lfs f6, 8(r3) // how late: minus the timer, from 0 to a frame
+      - [ be32, 0x00000000, 0xFCC03050 ] # fneg f6, f6
+      - [ be32, 0x00000000, 0xFCC619AE ] # fsel f6, f6, f6, f3
+      - [ be32, 0x00000000, 0xECE60828 ] # fsubs f7, f6, f1
+      - [ be32, 0x00000000, 0xFCC7306E ] # fsel f6, f7, f1, f6
+      - [ be32, 0x00000000, 0xEC053028 ] # fsubs f0, f5, f6
+      - [ be32, 0x00000000, 0xD0030008 ] # stfs f0, 8(r3) // the instruction the hook took the place of
   "LOD/Texture Detail":
     Games:
       "Dark Souls: Prepare to Die Edition":
