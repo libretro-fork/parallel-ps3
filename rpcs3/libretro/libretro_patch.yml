@@ -476,27 +476,59 @@ PPU-d764d35ca136442f72228ab715a629f26994e641:
         BLES01765: [ All ]
     Author: "LibretroAdmin"
     Notes: >-
-      The game draws characters and objects from one of three versions of their model, picked by distance from
-      the camera (the distances come from each area's LOD parameters), so detail drops as they move away.
-      "Highest" always draws the most detailed version. "Game Default" changes nothing.
+      "Game Default" changes nothing. "Highest" does two things. Characters and objects are always drawn from
+      the most detailed of the three versions of their model, where the game picks one by distance from the
+      camera. And the water is drawn at the game's full resolution: the mirrored scene it reflects (a quarter
+      of the screen's width and height in the game, 256x180) and the picture of its surface (half, 512x360)
+      both become 1024x720, which costs some speed where there is water.
     Configurable Values:
       "Detail":
         Type: long_enum
-        Value: 0x38000000
+        Value: 0x38000002
         Allowed Values:
-          "Game Default": 0x38000000
-          "Highest": 0x38000001
-    Patch Version: 1.0
+          "Game Default": 0x38000002
+          "Highest": 0x38000000
+    Patch Version: 1.1
     Patch:
+      # The setting is one instruction, li r0, N (2 the game's, 0 highest), used at each place below
       # The model's LOD pick (0x001DDFF0: the distance in f1 against the area's LOD_BANK row, with the model's own
       # scale at 0x250 and bias at 0x254; returns level 0, 1 or 2): with "Highest" it returns 0 at once
       - [ calloc, 0x001DDFF2, 6 ] # Hook 0x001DDFF0 // Original stdu r1, -0xb0(r1) (the cave's last instruction); returns to 0x001DDFF4
-      - [ be32, 0x00000000, "Detail" ] # li r0, N // 0 the game's, 1 highest
-      - [ be32, 0x00000000, 0x2F800000 ] # cmpwi cr7, r0, 0
+      - [ be32, 0x00000000, "Detail" ] # li r0, N
+      - [ be32, 0x00000000, 0x2F800002 ] # cmpwi cr7, r0, 2
       - [ be32, 0x00000000, 0x419E000C ] # beq cr7, 0x14
       - [ be32, 0x00000000, 0x38600000 ] # li r3, 0 // the most detailed level
       - [ be32, 0x00000000, 0x4E800020 ] # blr
       - [ be32, 0x00000000, 0xF821FF51 ] # stdu r1, -0xb0(r1)
+      # The mirrored scene's depth buffer, as the game makes its render targets: the screen's size shifted right by 2. The shift is by N now
+      - [ be32, 0x0022A9D4, "Detail" ] # li r0, N // Original srawi r4, r4, 2
+      - [ be32, 0x0022A9D8, 0x7C840630 ] # sraw r4, r4, r0 // Original addze r4, r4
+      - [ be32, 0x0022A9DC, 0x7CA50630 ] # sraw r5, r5, r0 // Original srawi r5, r5, 2
+      - [ be32, 0x0022A9E0, 0x60000000 ] # nop // Original addze r5, r5
+      # The mirrored scene's colour target (the first of the three quarter-size ones; the mirror pass at 0x003755BC draws into it and the water reads it at 0x0036D7D0)
+      - [ be32, 0x0022AA64, "Detail" ] # li r0, N // Original srawi r4, r4, 2
+      - [ be32, 0x0022AA68, 0x7C840630 ] # sraw r4, r4, r0 // Original addze r4, r4
+      - [ be32, 0x0022AA6C, 0x7CA50630 ] # sraw r5, r5, r0 // Original srawi r5, r5, 2
+      - [ be32, 0x0022AA70, 0x60000000 ] # nop // Original addze r5, r5
+      # The water surface's target: its size (512x360, at 0x019F3EFC) is copied as the game starts to the two words its
+      # target is made from (0x00378734) and its shader is told (0x0036D30C). With "Highest" both are doubled
+      - [ calloc, 0x00319F1A, 8 ] # Hook 0x00319F18 // Original lwz r10, 0(r7); returns to 0x00319F1C
+      - [ be32, 0x00000000, "Detail" ] # li r0, N
+      - [ be32, 0x00000000, 0x81470000 ] # lwz r10, 0(r7) // the height
+      - [ be32, 0x00000000, 0x81080000 ] # lwz r8, 0(r8) // the width again (r0 had it)
+      - [ be32, 0x00000000, 0x2F800002 ] # cmpwi cr7, r0, 2
+      - [ be32, 0x00000000, 0x419E000C ] # beq cr7, 0x1c
+      - [ be32, 0x00000000, 0x5508083C ] # slwi r8, r8, 1
+      - [ be32, 0x00000000, 0x554A083C ] # slwi r10, r10, 1
+      - [ be32, 0x00000000, 0x7D004378 ] # mr r0, r8
+      # The water surface's pass (0x00373F3C) draws over the half-size depth buffer the effects use (0x100 of the targets) and
+      # clears it first. A full-size picture needs a full-size depth: with "Highest" it takes the mirrored scene's (0x120), full-size too now
+      - [ calloc, 0x00373F8E, 5 ] # Hook 0x00373F8C // Original lwz r26, 0x100(r11); returns to 0x00373F90
+      - [ be32, 0x00000000, "Detail" ] # li r0, N
+      - [ be32, 0x00000000, 0x834B0100 ] # lwz r26, 0x100(r11)
+      - [ be32, 0x00000000, 0x2F800002 ] # cmpwi cr7, r0, 2
+      - [ be32, 0x00000000, 0x419E0008 ] # beq cr7, 0x14
+      - [ be32, 0x00000000, 0x834B0120 ] # lwz r26, 0x120(r11)
   "Reduce Audio Latency":
     Games:
       "Dark Souls: Prepare to Die Edition":

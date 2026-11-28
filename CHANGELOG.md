@@ -4,6 +4,12 @@ What changed in the libretro core of this fork, newest first. Changes that come 
 
 ## Unreleased
 
+- **Dark Souls: Prepare to Die Edition (EU): "LOD/Texture Detail" on "Highest" also draws the water's reflection and surface at full resolution.** Not yet run on a game.
+  - **What the game does:** the scene mirrored in water is drawn into a target a quarter of the screen's width and height (256x180 at the game's 1024x720), with a depth buffer of that size; only the mirror pass (0x003755BC) draws into them and only the water reads the result (0x0036D7D0). The water's surface is drawn into a 512x360 target of its own, over the half-size depth buffer the effects also use, which it clears first.
+  - **What changed on "Highest":** the mirror's colour target and depth buffer are made at the screen's size (the shift by 2 where they are made is by 0), and the surface's target is 1024x720 (its size is doubled where the game copies it at startup, so the target and the size its shader is told both follow). The surface's pass needs a depth buffer as big as its target, so it takes the mirror's, full-size too now, in place of the effects' half-size one; both passes clear it before they draw. "Game Default" leaves all of it as it was. The setting is one instruction (`li r0, N`) used at each place, so the two values differ in nothing else.
+    - Not known until it is run: that the passes take their viewport from the target they are given (nothing in either pass sets a size of its own, as far as read), that the mirror pass clears its depth buffer itself, and that the video memory has room for the three bigger buffers (about 8 MB more).
+  - **Tests:** the patch applied to the decrypted executable with each setting, every changed word and all three pieces of new code read back through a disassembler; `test_game_patches` passes.
+
 - **Dark Souls: Prepare to Die Edition (EU): "LOD/Texture Detail" patch, with characters and objects always at their most detailed model on "Highest".** Not yet run on a game.
   - **Why:** the game swaps characters and objects to simpler versions of their model as they get further from the camera, which shows as detail dropping in and out.
   - **What changed:** a new patch in the Patch Manager with one setting, "Game Default" (nothing changes) or "Highest". The model's LOD pick (0x001DDFF0) compares the distance with the area's LOD_BANK row (two distances, each with a margin so the level does not flicker) and returns level 0, 1 or 2; on "Highest" it returns 0 at once.
