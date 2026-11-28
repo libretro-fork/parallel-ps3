@@ -395,8 +395,10 @@ PPU-d764d35ca136442f72228ab715a629f26994e641:
       an animation that young); the mark it scales under follows the frame time. Four timers that counted
       1/30 s a frame count the frame's real time, and the HUD's bars fill and drain at the speed they do at 30.
       A ragdoll's body is pulled to its pose as hard per second as at 30 (four times as hard at 120 before, which
-      could fling bodies and what stood on them), and an item's glow fades in and out in its own time.
-    Patch Version: 1.12
+      could fling bodies and what stood on them), and an item's glow fades in and out in its own time. The
+      follow camera's smoothing (turning, the point it looks at, its distance, the stick) takes as long as at
+      30: its weights, applied once a frame, are worked out for each frame's time.
+    Patch Version: 1.13
     Patch:
       # The frame's time: in place of the load of the constant 1/30 (0x01876870) into f31 at 0x00145A18
       - [ calloc, 0x00145A1A, 25 ] # Hook 0x00145A18 // Original lfs f31, -0x7f48(r30); returns to 0x00145A1C
@@ -434,7 +436,7 @@ PPU-d764d35ca136442f72228ab715a629f26994e641:
       - [ be32, 0x00000000, 0x997F071E ] # stb r11, 0x71e(r31)
       # Each frame, in place of the instruction after the frame time's load: the numbers of the movement code's stuck
       # test for this frame's time, then the bonfire softlock check
-      - [ calloc, 0x00145A1E, 175 ] # Hook 0x00145A1C // Original fmr f1, f31 (the cave's last instruction); returns to 0x00145A20
+      - [ calloc, 0x00145A1E, 221 ] # Hook 0x00145A1C // Original fmr f1, f31 (the cave's last instruction); returns to 0x00145A20
       - [ be32, 0x00000000, 0x3D6001BD ] # lis r11, 0x1bd // r11 = 0x01BD3F20, in the unused end of the executable's data: what the movement code's stuck test (0x004855F0) uses this frame (the word at 0xc is for making the numbers)
       - [ be32, 0x00000000, 0x616B3F20 ] # ori r11, r11, 0x3f20
       - [ be32, 0x00000000, 0x3C003F80 ] # lis r0, 0x3f80 // 1.0
@@ -556,6 +558,52 @@ PPU-d764d35ca136442f72228ab715a629f26994e641:
       - [ be32, 0x00000000, 0xD18B0030 ] # stfs f12, 0x30(r11)
       - [ be32, 0x00000000, 0xFD806050 ] # fneg f12, f12
       - [ be32, 0x00000000, 0xD18B0034 ] # stfs f12, 0x34(r11)
+      - [ be32, 0x00000000, 0xD00B0038 ] # stfs f0, 0x38(r11) // the camera (see its update below): a weight w applied once a frame becomes 1 - (1 - w) ^ x, by six terms of the binomial series. Its six factors for this frame, (x - k + 1) / k for k = 1 to 6, at 0x01BD3F58 on
+      - [ be32, 0x00000000, 0xED806828 ] # fsubs f12, f0, f13
+      - [ be32, 0x00000000, 0x3C003F00 ] # lis r0, 0x3f00
+      - [ be32, 0x00000000, 0x900B000C ] # stw r0, 0xc(r11)
+      - [ be32, 0x00000000, 0xC16B000C ] # lfs f11, 0xc(r11)
+      - [ be32, 0x00000000, 0xED8C02F2 ] # fmuls f12, f12, f11
+      - [ be32, 0x00000000, 0xD18B003C ] # stfs f12, 0x3c(r11)
+      - [ be32, 0x00000000, 0x3C004000 ] # lis r0, 0x4000
+      - [ be32, 0x00000000, 0x900B000C ] # stw r0, 0xc(r11)
+      - [ be32, 0x00000000, 0xC16B000C ] # lfs f11, 0xc(r11)
+      - [ be32, 0x00000000, 0xED805828 ] # fsubs f12, f0, f11
+      - [ be32, 0x00000000, 0x3C003EAA ] # lis r0, 0x3eaa
+      - [ be32, 0x00000000, 0x6000AAAB ] # ori r0, r0, 0xaaab
+      - [ be32, 0x00000000, 0x900B000C ] # stw r0, 0xc(r11)
+      - [ be32, 0x00000000, 0xC16B000C ] # lfs f11, 0xc(r11)
+      - [ be32, 0x00000000, 0xED8C02F2 ] # fmuls f12, f12, f11
+      - [ be32, 0x00000000, 0xD18B0040 ] # stfs f12, 0x40(r11)
+      - [ be32, 0x00000000, 0x3C004040 ] # lis r0, 0x4040
+      - [ be32, 0x00000000, 0x900B000C ] # stw r0, 0xc(r11)
+      - [ be32, 0x00000000, 0xC16B000C ] # lfs f11, 0xc(r11)
+      - [ be32, 0x00000000, 0xED805828 ] # fsubs f12, f0, f11
+      - [ be32, 0x00000000, 0x3C003E80 ] # lis r0, 0x3e80
+      - [ be32, 0x00000000, 0x900B000C ] # stw r0, 0xc(r11)
+      - [ be32, 0x00000000, 0xC16B000C ] # lfs f11, 0xc(r11)
+      - [ be32, 0x00000000, 0xED8C02F2 ] # fmuls f12, f12, f11
+      - [ be32, 0x00000000, 0xD18B0044 ] # stfs f12, 0x44(r11)
+      - [ be32, 0x00000000, 0x3C004080 ] # lis r0, 0x4080
+      - [ be32, 0x00000000, 0x900B000C ] # stw r0, 0xc(r11)
+      - [ be32, 0x00000000, 0xC16B000C ] # lfs f11, 0xc(r11)
+      - [ be32, 0x00000000, 0xED805828 ] # fsubs f12, f0, f11
+      - [ be32, 0x00000000, 0x3C003E4C ] # lis r0, 0x3e4c
+      - [ be32, 0x00000000, 0x6000CCCD ] # ori r0, r0, 0xcccd
+      - [ be32, 0x00000000, 0x900B000C ] # stw r0, 0xc(r11)
+      - [ be32, 0x00000000, 0xC16B000C ] # lfs f11, 0xc(r11)
+      - [ be32, 0x00000000, 0xED8C02F2 ] # fmuls f12, f12, f11
+      - [ be32, 0x00000000, 0xD18B0048 ] # stfs f12, 0x48(r11)
+      - [ be32, 0x00000000, 0x3C0040A0 ] # lis r0, 0x40a0
+      - [ be32, 0x00000000, 0x900B000C ] # stw r0, 0xc(r11)
+      - [ be32, 0x00000000, 0xC16B000C ] # lfs f11, 0xc(r11)
+      - [ be32, 0x00000000, 0xED805828 ] # fsubs f12, f0, f11
+      - [ be32, 0x00000000, 0x3C003E2A ] # lis r0, 0x3e2a
+      - [ be32, 0x00000000, 0x6000AAAB ] # ori r0, r0, 0xaaab
+      - [ be32, 0x00000000, 0x900B000C ] # stw r0, 0xc(r11)
+      - [ be32, 0x00000000, 0xC16B000C ] # lfs f11, 0xc(r11)
+      - [ be32, 0x00000000, 0xED8C02F2 ] # fmuls f12, f12, f11
+      - [ be32, 0x00000000, 0xD18B004C ] # stfs f12, 0x4c(r11)
       - [ be32, 0x00000000, 0xFF806800 ] # fcmpu cr7, f0, f13 // steering on a slide. A slide's turn starts its animation again every frame, so its blend weight is one frame old: just over the animation library's 0.1 after 1/30 s and far under it after a short frame, and under it the character's movement is scaled down (0x0121D9EC, 0x0121DE28). The 0.1 for this frame: 0.1 times (x, at most 1) squared
       - [ be32, 0x00000000, 0x409D0008 ] # ble cr7, +8
       - [ be32, 0x00000000, 0xFC006890 ] # fmr f0, f13
@@ -569,44 +617,44 @@ PPU-d764d35ca136442f72228ab715a629f26994e641:
       - [ be32, 0x00000000, 0x3D2001B4 ] # lis r9, 0x1b4 // the bonfire softlock. The world's characters (the pointer is at 0x01B43610); the player is at 0x30, as the script's StopLoopAnimation finds it (0x00666BF0)
       - [ be32, 0x00000000, 0x81293610 ] # lwz r9, 0x3610(r9)
       - [ be32, 0x00000000, 0x2B890000 ] # cmplwi cr7, r9, 0
-      - [ be32, 0x00000000, 0x419E00A0 ] # beq cr7, 0x2b8
+      - [ be32, 0x00000000, 0x419E00A0 ] # beq cr7, 0x370
       - [ be32, 0x00000000, 0x80690030 ] # lwz r3, 0x30(r9)
       - [ be32, 0x00000000, 0x2B830000 ] # cmplwi cr7, r3, 0
-      - [ be32, 0x00000000, 0x419E0094 ] # beq cr7, 0x2b8
+      - [ be32, 0x00000000, 0x419E0094 ] # beq cr7, 0x370
       - [ be32, 0x00000000, 0x81230010 ] # lwz r9, 0x10(r3) // the player's loop animation: its id is at 4 there (written at 0x003EF8A8, set to -1 by the stop at 0x003EF778)
       - [ be32, 0x00000000, 0x2B890000 ] # cmplwi cr7, r9, 0
-      - [ be32, 0x00000000, 0x419E0088 ] # beq cr7, 0x2b8
+      - [ be32, 0x00000000, 0x419E0088 ] # beq cr7, 0x370
       - [ be32, 0x00000000, 0x80090004 ] # lwz r0, 4(r9)
       - [ be32, 0x00000000, 0x3D6001BD ] # lis r11, 0x1bd // r11 = 0x01BD3F10: since when the character has been seated with the script gone
       - [ be32, 0x00000000, 0x616B3F10 ] # ori r11, r11, 0x3f10
       - [ be32, 0x00000000, 0x2F801E15 ] # cmpwi cr7, r0, 7701 // the three seated loops: 7701, 7711, 7721
-      - [ be32, 0x00000000, 0x419E0014 ] # beq cr7, 0x258
+      - [ be32, 0x00000000, 0x419E0014 ] # beq cr7, 0x310
       - [ be32, 0x00000000, 0x2F801E1F ] # cmpwi cr7, r0, 7711
-      - [ be32, 0x00000000, 0x419E000C ] # beq cr7, 0x258
+      - [ be32, 0x00000000, 0x419E000C ] # beq cr7, 0x310
       - [ be32, 0x00000000, 0x2F801E29 ] # cmpwi cr7, r0, 7721
-      - [ be32, 0x00000000, 0x409E005C ] # bne cr7, 0x2b0
+      - [ be32, 0x00000000, 0x409E005C ] # bne cr7, 0x368
       - [ be32, 0x00000000, 0x3D8001B5 ] # lis r12, 0x1b5 // the game's talk object (its pointer is at 0x01B48C4C)
       - [ be32, 0x00000000, 0x818C8C4C ] # lwz r12, -0x73b4(r12)
       - [ be32, 0x00000000, 0x2B8C0000 ] # cmplwi cr7, r12, 0
-      - [ be32, 0x00000000, 0x419E004C ] # beq cr7, 0x2b0
+      - [ be32, 0x00000000, 0x419E004C ] # beq cr7, 0x368
       - [ be32, 0x00000000, 0x880C07BC ] # lbz r0, 0x7bc(r12) // 1 from the bonfire's StartBonfireAnimLoop to its EndBonfireKindleAnimLoop (set at 0x006FD1C0, cleared at 0x006FD230): the bonfire's script has the character seated
       - [ be32, 0x00000000, 0x2F800000 ] # cmpwi cr7, r0, 0
-      - [ be32, 0x00000000, 0x409E0040 ] # bne cr7, 0x2b0
+      - [ be32, 0x00000000, 0x409E0040 ] # bne cr7, 0x368
       - [ be32, 0x00000000, 0x7D4C42E6 ] # mftb r10 // seated, and the script has let go: now, in 80,000,000ths of a second
       - [ be32, 0x00000000, 0xE88B0000 ] # ld r4, 0(r11)
       - [ be32, 0x00000000, 0x2FA40000 ] # cmpdi cr7, r4, 0
-      - [ be32, 0x00000000, 0x409E000C ] # bne cr7, 0x28c
+      - [ be32, 0x00000000, 0x409E000C ] # bne cr7, 0x344
       - [ be32, 0x00000000, 0xF94B0000 ] # std r10, 0(r11) // the count starts
-      - [ be32, 0x00000000, 0x48000030 ] # b 0x2b8
+      - [ be32, 0x00000000, 0x48000030 ] # b 0x370
       - [ be32, 0x00000000, 0x7C845050 ] # subf r4, r4, r10
       - [ be32, 0x00000000, 0x3CA004C4 ] # lis r5, 0x4c4 // 1 second
       - [ be32, 0x00000000, 0x60A5B400 ] # ori r5, r5, 0xb400
       - [ be32, 0x00000000, 0x7FA42840 ] # cmpld cr7, r4, r5
-      - [ be32, 0x00000000, 0x419C001C ] # blt cr7, 0x2b8
+      - [ be32, 0x00000000, 0x419C001C ] # blt cr7, 0x370
       - [ be32, 0x00000000, 0x38000000 ] # li r0, 0
       - [ be32, 0x00000000, 0xF80B0000 ] # std r0, 0(r11)
       - [ be32, 0x00000000, 0x483EF687 ] # bla 0x3ef684 // the character's own stop of its loop animation, what the script's StopLoopAnimation calls (r3 = the player)
-      - [ be32, 0x00000000, 0x4800000C ] # b 0x2b8
+      - [ be32, 0x00000000, 0x4800000C ] # b 0x370
       - [ be32, 0x00000000, 0x38000000 ] # li r0, 0
       - [ be32, 0x00000000, 0xF80B0000 ] # std r0, 0(r11)
       - [ be32, 0x00000000, 0xFC20F890 ] # fmr f1, f31 // the instruction the hook took the place of
@@ -722,6 +770,404 @@ PPU-d764d35ca136442f72228ab715a629f26994e641:
       - [ be32, 0x00000000, 0x2F8C0000 ] # cmpwi cr7, r12, 0
       - [ be32, 0x00000000, 0x409E0008 ] # bne cr7, 0x18 // 0 before the first frame: then the game's own number
       - [ be32, 0x00000000, 0xC01E80E8 ] # lfs f0, -0x7f18(r30)
+      # The follow camera (its update is 0x00295070). It moves toward where it should be by weights applied once a frame and
+      # set for 30 frames a second: turning (0x238 of the camera, 0.3), settling back (0x1a0), the point looked at, locked on
+      # (0x1c0, 0x1c4) and not (0x1a4, 0x1b0), the distance (0x1bc, and a fixed 0.1), changes of its settings (0x320), the
+      # stick (0x288), the turn toward where the character walks (0x234), and a fixed 1/30 for two of the weights themselves.
+      # At 120 frames a second a pan was over in a quarter of the time and a change of lock-on target snapped. As the update
+      # starts, each weight is worked out for this frame's time into a table at 0x01BD3F70; a weight of 0, or over 0.5, is
+      # left as it is. Each place the update loaded a weight loads it from the table
+      - [ calloc, 0x0029515A, 336 ] # Hook 0x00295158 // Original lwz r3, 0x314(r3); returns to 0x0029515C
+      - [ be32, 0x00000000, 0x3D8001BD ] # lis r12, 0x1bd
+      - [ be32, 0x00000000, 0x3C003F80 ] # lis r0, 0x3f80 // 1.0, by way of the stack below this frame
+      - [ be32, 0x00000000, 0x9001FFF8 ] # stw r0, -8(r1)
+      - [ be32, 0x00000000, 0xC1A1FFF8 ] # lfs f13, -8(r1)
+      - [ be32, 0x00000000, 0x3C603F00 ] # lis r3, 0x3f00 // 0.5 as an integer: the most a weight may be to be worked out
+      - [ be32, 0x00000000, 0x800C3F58 ] # lwz r0, 0x3f58(r12)
+      - [ be32, 0x00000000, 0x2F800000 ] # cmpwi cr7, r0, 0
+      - [ be32, 0x00000000, 0x409E0008 ] # bne cr7, +8 // the factors are not set before the first frame: then no weight is worked out
+      - [ be32, 0x00000000, 0x38600000 ] # li r3, 0
+      - [ be32, 0x00000000, 0x817F0238 ] # lwz r11, 0x238(r31) // the weight at 0x238
+      - [ be32, 0x00000000, 0x916C3F70 ] # stw r11, 0x3f70(r12)
+      - [ be32, 0x00000000, 0x9161FFF8 ] # stw r11, -8(r1)
+      - [ be32, 0x00000000, 0x396BFFFF ] # addi r11, r11, -1
+      - [ be32, 0x00000000, 0x7F8B1840 ] # cmplw cr7, r11, r3
+      - [ be32, 0x00000000, 0x409C0058 ] # bge cr7, 0x90
+      - [ be32, 0x00000000, 0xC001FFF8 ] # lfs f0, -8(r1)
+      - [ be32, 0x00000000, 0xFC000050 ] # fneg f0, f0
+      - [ be32, 0x00000000, 0xC16C3F6C ] # lfs f11, 0x3f6c(r12)
+      - [ be32, 0x00000000, 0xED8B683A ] # fmadds f12, f11, f0, f13
+      - [ be32, 0x00000000, 0xC16C3F68 ] # lfs f11, 0x3f68(r12)
+      - [ be32, 0x00000000, 0xED6B0032 ] # fmuls f11, f11, f0
+      - [ be32, 0x00000000, 0xED8C6AFA ] # fmadds f12, f12, f11, f13
+      - [ be32, 0x00000000, 0xC16C3F64 ] # lfs f11, 0x3f64(r12)
+      - [ be32, 0x00000000, 0xED6B0032 ] # fmuls f11, f11, f0
+      - [ be32, 0x00000000, 0xED8C6AFA ] # fmadds f12, f12, f11, f13
+      - [ be32, 0x00000000, 0xC16C3F60 ] # lfs f11, 0x3f60(r12)
+      - [ be32, 0x00000000, 0xED6B0032 ] # fmuls f11, f11, f0
+      - [ be32, 0x00000000, 0xED8C6AFA ] # fmadds f12, f12, f11, f13
+      - [ be32, 0x00000000, 0xC16C3F5C ] # lfs f11, 0x3f5c(r12)
+      - [ be32, 0x00000000, 0xED6B0032 ] # fmuls f11, f11, f0
+      - [ be32, 0x00000000, 0xED8C6AFA ] # fmadds f12, f12, f11, f13
+      - [ be32, 0x00000000, 0xC16C3F58 ] # lfs f11, 0x3f58(r12)
+      - [ be32, 0x00000000, 0xED6B0032 ] # fmuls f11, f11, f0
+      - [ be32, 0x00000000, 0xED8C6AFA ] # fmadds f12, f12, f11, f13
+      - [ be32, 0x00000000, 0xED8D6028 ] # fsubs f12, f13, f12
+      - [ be32, 0x00000000, 0xD18C3F70 ] # stfs f12, 0x3f70(r12)
+      - [ be32, 0x00000000, 0x817F01A0 ] # lwz r11, 0x1a0(r31) // the weight at 0x1a0
+      - [ be32, 0x00000000, 0x916C3F74 ] # stw r11, 0x3f74(r12)
+      - [ be32, 0x00000000, 0x9161FFF8 ] # stw r11, -8(r1)
+      - [ be32, 0x00000000, 0x396BFFFF ] # addi r11, r11, -1
+      - [ be32, 0x00000000, 0x7F8B1840 ] # cmplw cr7, r11, r3
+      - [ be32, 0x00000000, 0x409C0058 ] # bge cr7, 0xfc
+      - [ be32, 0x00000000, 0xC001FFF8 ] # lfs f0, -8(r1)
+      - [ be32, 0x00000000, 0xFC000050 ] # fneg f0, f0
+      - [ be32, 0x00000000, 0xC16C3F6C ] # lfs f11, 0x3f6c(r12)
+      - [ be32, 0x00000000, 0xED8B683A ] # fmadds f12, f11, f0, f13
+      - [ be32, 0x00000000, 0xC16C3F68 ] # lfs f11, 0x3f68(r12)
+      - [ be32, 0x00000000, 0xED6B0032 ] # fmuls f11, f11, f0
+      - [ be32, 0x00000000, 0xED8C6AFA ] # fmadds f12, f12, f11, f13
+      - [ be32, 0x00000000, 0xC16C3F64 ] # lfs f11, 0x3f64(r12)
+      - [ be32, 0x00000000, 0xED6B0032 ] # fmuls f11, f11, f0
+      - [ be32, 0x00000000, 0xED8C6AFA ] # fmadds f12, f12, f11, f13
+      - [ be32, 0x00000000, 0xC16C3F60 ] # lfs f11, 0x3f60(r12)
+      - [ be32, 0x00000000, 0xED6B0032 ] # fmuls f11, f11, f0
+      - [ be32, 0x00000000, 0xED8C6AFA ] # fmadds f12, f12, f11, f13
+      - [ be32, 0x00000000, 0xC16C3F5C ] # lfs f11, 0x3f5c(r12)
+      - [ be32, 0x00000000, 0xED6B0032 ] # fmuls f11, f11, f0
+      - [ be32, 0x00000000, 0xED8C6AFA ] # fmadds f12, f12, f11, f13
+      - [ be32, 0x00000000, 0xC16C3F58 ] # lfs f11, 0x3f58(r12)
+      - [ be32, 0x00000000, 0xED6B0032 ] # fmuls f11, f11, f0
+      - [ be32, 0x00000000, 0xED8C6AFA ] # fmadds f12, f12, f11, f13
+      - [ be32, 0x00000000, 0xED8D6028 ] # fsubs f12, f13, f12
+      - [ be32, 0x00000000, 0xD18C3F74 ] # stfs f12, 0x3f74(r12)
+      - [ be32, 0x00000000, 0x817F01C0 ] # lwz r11, 0x1c0(r31) // the weight at 0x1c0
+      - [ be32, 0x00000000, 0x916C3F78 ] # stw r11, 0x3f78(r12)
+      - [ be32, 0x00000000, 0x9161FFF8 ] # stw r11, -8(r1)
+      - [ be32, 0x00000000, 0x396BFFFF ] # addi r11, r11, -1
+      - [ be32, 0x00000000, 0x7F8B1840 ] # cmplw cr7, r11, r3
+      - [ be32, 0x00000000, 0x409C0058 ] # bge cr7, 0x168
+      - [ be32, 0x00000000, 0xC001FFF8 ] # lfs f0, -8(r1)
+      - [ be32, 0x00000000, 0xFC000050 ] # fneg f0, f0
+      - [ be32, 0x00000000, 0xC16C3F6C ] # lfs f11, 0x3f6c(r12)
+      - [ be32, 0x00000000, 0xED8B683A ] # fmadds f12, f11, f0, f13
+      - [ be32, 0x00000000, 0xC16C3F68 ] # lfs f11, 0x3f68(r12)
+      - [ be32, 0x00000000, 0xED6B0032 ] # fmuls f11, f11, f0
+      - [ be32, 0x00000000, 0xED8C6AFA ] # fmadds f12, f12, f11, f13
+      - [ be32, 0x00000000, 0xC16C3F64 ] # lfs f11, 0x3f64(r12)
+      - [ be32, 0x00000000, 0xED6B0032 ] # fmuls f11, f11, f0
+      - [ be32, 0x00000000, 0xED8C6AFA ] # fmadds f12, f12, f11, f13
+      - [ be32, 0x00000000, 0xC16C3F60 ] # lfs f11, 0x3f60(r12)
+      - [ be32, 0x00000000, 0xED6B0032 ] # fmuls f11, f11, f0
+      - [ be32, 0x00000000, 0xED8C6AFA ] # fmadds f12, f12, f11, f13
+      - [ be32, 0x00000000, 0xC16C3F5C ] # lfs f11, 0x3f5c(r12)
+      - [ be32, 0x00000000, 0xED6B0032 ] # fmuls f11, f11, f0
+      - [ be32, 0x00000000, 0xED8C6AFA ] # fmadds f12, f12, f11, f13
+      - [ be32, 0x00000000, 0xC16C3F58 ] # lfs f11, 0x3f58(r12)
+      - [ be32, 0x00000000, 0xED6B0032 ] # fmuls f11, f11, f0
+      - [ be32, 0x00000000, 0xED8C6AFA ] # fmadds f12, f12, f11, f13
+      - [ be32, 0x00000000, 0xED8D6028 ] # fsubs f12, f13, f12
+      - [ be32, 0x00000000, 0xD18C3F78 ] # stfs f12, 0x3f78(r12)
+      - [ be32, 0x00000000, 0x817F01C4 ] # lwz r11, 0x1c4(r31) // the weight at 0x1c4
+      - [ be32, 0x00000000, 0x916C3F7C ] # stw r11, 0x3f7c(r12)
+      - [ be32, 0x00000000, 0x9161FFF8 ] # stw r11, -8(r1)
+      - [ be32, 0x00000000, 0x396BFFFF ] # addi r11, r11, -1
+      - [ be32, 0x00000000, 0x7F8B1840 ] # cmplw cr7, r11, r3
+      - [ be32, 0x00000000, 0x409C0058 ] # bge cr7, 0x1d4
+      - [ be32, 0x00000000, 0xC001FFF8 ] # lfs f0, -8(r1)
+      - [ be32, 0x00000000, 0xFC000050 ] # fneg f0, f0
+      - [ be32, 0x00000000, 0xC16C3F6C ] # lfs f11, 0x3f6c(r12)
+      - [ be32, 0x00000000, 0xED8B683A ] # fmadds f12, f11, f0, f13
+      - [ be32, 0x00000000, 0xC16C3F68 ] # lfs f11, 0x3f68(r12)
+      - [ be32, 0x00000000, 0xED6B0032 ] # fmuls f11, f11, f0
+      - [ be32, 0x00000000, 0xED8C6AFA ] # fmadds f12, f12, f11, f13
+      - [ be32, 0x00000000, 0xC16C3F64 ] # lfs f11, 0x3f64(r12)
+      - [ be32, 0x00000000, 0xED6B0032 ] # fmuls f11, f11, f0
+      - [ be32, 0x00000000, 0xED8C6AFA ] # fmadds f12, f12, f11, f13
+      - [ be32, 0x00000000, 0xC16C3F60 ] # lfs f11, 0x3f60(r12)
+      - [ be32, 0x00000000, 0xED6B0032 ] # fmuls f11, f11, f0
+      - [ be32, 0x00000000, 0xED8C6AFA ] # fmadds f12, f12, f11, f13
+      - [ be32, 0x00000000, 0xC16C3F5C ] # lfs f11, 0x3f5c(r12)
+      - [ be32, 0x00000000, 0xED6B0032 ] # fmuls f11, f11, f0
+      - [ be32, 0x00000000, 0xED8C6AFA ] # fmadds f12, f12, f11, f13
+      - [ be32, 0x00000000, 0xC16C3F58 ] # lfs f11, 0x3f58(r12)
+      - [ be32, 0x00000000, 0xED6B0032 ] # fmuls f11, f11, f0
+      - [ be32, 0x00000000, 0xED8C6AFA ] # fmadds f12, f12, f11, f13
+      - [ be32, 0x00000000, 0xED8D6028 ] # fsubs f12, f13, f12
+      - [ be32, 0x00000000, 0xD18C3F7C ] # stfs f12, 0x3f7c(r12)
+      - [ be32, 0x00000000, 0x817F01BC ] # lwz r11, 0x1bc(r31) // the weight at 0x1bc
+      - [ be32, 0x00000000, 0x916C3F80 ] # stw r11, 0x3f80(r12)
+      - [ be32, 0x00000000, 0x9161FFF8 ] # stw r11, -8(r1)
+      - [ be32, 0x00000000, 0x396BFFFF ] # addi r11, r11, -1
+      - [ be32, 0x00000000, 0x7F8B1840 ] # cmplw cr7, r11, r3
+      - [ be32, 0x00000000, 0x409C0058 ] # bge cr7, 0x240
+      - [ be32, 0x00000000, 0xC001FFF8 ] # lfs f0, -8(r1)
+      - [ be32, 0x00000000, 0xFC000050 ] # fneg f0, f0
+      - [ be32, 0x00000000, 0xC16C3F6C ] # lfs f11, 0x3f6c(r12)
+      - [ be32, 0x00000000, 0xED8B683A ] # fmadds f12, f11, f0, f13
+      - [ be32, 0x00000000, 0xC16C3F68 ] # lfs f11, 0x3f68(r12)
+      - [ be32, 0x00000000, 0xED6B0032 ] # fmuls f11, f11, f0
+      - [ be32, 0x00000000, 0xED8C6AFA ] # fmadds f12, f12, f11, f13
+      - [ be32, 0x00000000, 0xC16C3F64 ] # lfs f11, 0x3f64(r12)
+      - [ be32, 0x00000000, 0xED6B0032 ] # fmuls f11, f11, f0
+      - [ be32, 0x00000000, 0xED8C6AFA ] # fmadds f12, f12, f11, f13
+      - [ be32, 0x00000000, 0xC16C3F60 ] # lfs f11, 0x3f60(r12)
+      - [ be32, 0x00000000, 0xED6B0032 ] # fmuls f11, f11, f0
+      - [ be32, 0x00000000, 0xED8C6AFA ] # fmadds f12, f12, f11, f13
+      - [ be32, 0x00000000, 0xC16C3F5C ] # lfs f11, 0x3f5c(r12)
+      - [ be32, 0x00000000, 0xED6B0032 ] # fmuls f11, f11, f0
+      - [ be32, 0x00000000, 0xED8C6AFA ] # fmadds f12, f12, f11, f13
+      - [ be32, 0x00000000, 0xC16C3F58 ] # lfs f11, 0x3f58(r12)
+      - [ be32, 0x00000000, 0xED6B0032 ] # fmuls f11, f11, f0
+      - [ be32, 0x00000000, 0xED8C6AFA ] # fmadds f12, f12, f11, f13
+      - [ be32, 0x00000000, 0xED8D6028 ] # fsubs f12, f13, f12
+      - [ be32, 0x00000000, 0xD18C3F80 ] # stfs f12, 0x3f80(r12)
+      - [ be32, 0x00000000, 0x817F0320 ] # lwz r11, 0x320(r31) // the weight at 0x320
+      - [ be32, 0x00000000, 0x916C3F84 ] # stw r11, 0x3f84(r12)
+      - [ be32, 0x00000000, 0x9161FFF8 ] # stw r11, -8(r1)
+      - [ be32, 0x00000000, 0x396BFFFF ] # addi r11, r11, -1
+      - [ be32, 0x00000000, 0x7F8B1840 ] # cmplw cr7, r11, r3
+      - [ be32, 0x00000000, 0x409C0058 ] # bge cr7, 0x2ac
+      - [ be32, 0x00000000, 0xC001FFF8 ] # lfs f0, -8(r1)
+      - [ be32, 0x00000000, 0xFC000050 ] # fneg f0, f0
+      - [ be32, 0x00000000, 0xC16C3F6C ] # lfs f11, 0x3f6c(r12)
+      - [ be32, 0x00000000, 0xED8B683A ] # fmadds f12, f11, f0, f13
+      - [ be32, 0x00000000, 0xC16C3F68 ] # lfs f11, 0x3f68(r12)
+      - [ be32, 0x00000000, 0xED6B0032 ] # fmuls f11, f11, f0
+      - [ be32, 0x00000000, 0xED8C6AFA ] # fmadds f12, f12, f11, f13
+      - [ be32, 0x00000000, 0xC16C3F64 ] # lfs f11, 0x3f64(r12)
+      - [ be32, 0x00000000, 0xED6B0032 ] # fmuls f11, f11, f0
+      - [ be32, 0x00000000, 0xED8C6AFA ] # fmadds f12, f12, f11, f13
+      - [ be32, 0x00000000, 0xC16C3F60 ] # lfs f11, 0x3f60(r12)
+      - [ be32, 0x00000000, 0xED6B0032 ] # fmuls f11, f11, f0
+      - [ be32, 0x00000000, 0xED8C6AFA ] # fmadds f12, f12, f11, f13
+      - [ be32, 0x00000000, 0xC16C3F5C ] # lfs f11, 0x3f5c(r12)
+      - [ be32, 0x00000000, 0xED6B0032 ] # fmuls f11, f11, f0
+      - [ be32, 0x00000000, 0xED8C6AFA ] # fmadds f12, f12, f11, f13
+      - [ be32, 0x00000000, 0xC16C3F58 ] # lfs f11, 0x3f58(r12)
+      - [ be32, 0x00000000, 0xED6B0032 ] # fmuls f11, f11, f0
+      - [ be32, 0x00000000, 0xED8C6AFA ] # fmadds f12, f12, f11, f13
+      - [ be32, 0x00000000, 0xED8D6028 ] # fsubs f12, f13, f12
+      - [ be32, 0x00000000, 0xD18C3F84 ] # stfs f12, 0x3f84(r12)
+      - [ be32, 0x00000000, 0x817F01A4 ] # lwz r11, 0x1a4(r31) // the weight at 0x1a4
+      - [ be32, 0x00000000, 0x916C3F88 ] # stw r11, 0x3f88(r12)
+      - [ be32, 0x00000000, 0x9161FFF8 ] # stw r11, -8(r1)
+      - [ be32, 0x00000000, 0x396BFFFF ] # addi r11, r11, -1
+      - [ be32, 0x00000000, 0x7F8B1840 ] # cmplw cr7, r11, r3
+      - [ be32, 0x00000000, 0x409C0058 ] # bge cr7, 0x318
+      - [ be32, 0x00000000, 0xC001FFF8 ] # lfs f0, -8(r1)
+      - [ be32, 0x00000000, 0xFC000050 ] # fneg f0, f0
+      - [ be32, 0x00000000, 0xC16C3F6C ] # lfs f11, 0x3f6c(r12)
+      - [ be32, 0x00000000, 0xED8B683A ] # fmadds f12, f11, f0, f13
+      - [ be32, 0x00000000, 0xC16C3F68 ] # lfs f11, 0x3f68(r12)
+      - [ be32, 0x00000000, 0xED6B0032 ] # fmuls f11, f11, f0
+      - [ be32, 0x00000000, 0xED8C6AFA ] # fmadds f12, f12, f11, f13
+      - [ be32, 0x00000000, 0xC16C3F64 ] # lfs f11, 0x3f64(r12)
+      - [ be32, 0x00000000, 0xED6B0032 ] # fmuls f11, f11, f0
+      - [ be32, 0x00000000, 0xED8C6AFA ] # fmadds f12, f12, f11, f13
+      - [ be32, 0x00000000, 0xC16C3F60 ] # lfs f11, 0x3f60(r12)
+      - [ be32, 0x00000000, 0xED6B0032 ] # fmuls f11, f11, f0
+      - [ be32, 0x00000000, 0xED8C6AFA ] # fmadds f12, f12, f11, f13
+      - [ be32, 0x00000000, 0xC16C3F5C ] # lfs f11, 0x3f5c(r12)
+      - [ be32, 0x00000000, 0xED6B0032 ] # fmuls f11, f11, f0
+      - [ be32, 0x00000000, 0xED8C6AFA ] # fmadds f12, f12, f11, f13
+      - [ be32, 0x00000000, 0xC16C3F58 ] # lfs f11, 0x3f58(r12)
+      - [ be32, 0x00000000, 0xED6B0032 ] # fmuls f11, f11, f0
+      - [ be32, 0x00000000, 0xED8C6AFA ] # fmadds f12, f12, f11, f13
+      - [ be32, 0x00000000, 0xED8D6028 ] # fsubs f12, f13, f12
+      - [ be32, 0x00000000, 0xD18C3F88 ] # stfs f12, 0x3f88(r12)
+      - [ be32, 0x00000000, 0x817F01B0 ] # lwz r11, 0x1b0(r31) // the weight at 0x1b0
+      - [ be32, 0x00000000, 0x916C3F8C ] # stw r11, 0x3f8c(r12)
+      - [ be32, 0x00000000, 0x9161FFF8 ] # stw r11, -8(r1)
+      - [ be32, 0x00000000, 0x396BFFFF ] # addi r11, r11, -1
+      - [ be32, 0x00000000, 0x7F8B1840 ] # cmplw cr7, r11, r3
+      - [ be32, 0x00000000, 0x409C0058 ] # bge cr7, 0x384
+      - [ be32, 0x00000000, 0xC001FFF8 ] # lfs f0, -8(r1)
+      - [ be32, 0x00000000, 0xFC000050 ] # fneg f0, f0
+      - [ be32, 0x00000000, 0xC16C3F6C ] # lfs f11, 0x3f6c(r12)
+      - [ be32, 0x00000000, 0xED8B683A ] # fmadds f12, f11, f0, f13
+      - [ be32, 0x00000000, 0xC16C3F68 ] # lfs f11, 0x3f68(r12)
+      - [ be32, 0x00000000, 0xED6B0032 ] # fmuls f11, f11, f0
+      - [ be32, 0x00000000, 0xED8C6AFA ] # fmadds f12, f12, f11, f13
+      - [ be32, 0x00000000, 0xC16C3F64 ] # lfs f11, 0x3f64(r12)
+      - [ be32, 0x00000000, 0xED6B0032 ] # fmuls f11, f11, f0
+      - [ be32, 0x00000000, 0xED8C6AFA ] # fmadds f12, f12, f11, f13
+      - [ be32, 0x00000000, 0xC16C3F60 ] # lfs f11, 0x3f60(r12)
+      - [ be32, 0x00000000, 0xED6B0032 ] # fmuls f11, f11, f0
+      - [ be32, 0x00000000, 0xED8C6AFA ] # fmadds f12, f12, f11, f13
+      - [ be32, 0x00000000, 0xC16C3F5C ] # lfs f11, 0x3f5c(r12)
+      - [ be32, 0x00000000, 0xED6B0032 ] # fmuls f11, f11, f0
+      - [ be32, 0x00000000, 0xED8C6AFA ] # fmadds f12, f12, f11, f13
+      - [ be32, 0x00000000, 0xC16C3F58 ] # lfs f11, 0x3f58(r12)
+      - [ be32, 0x00000000, 0xED6B0032 ] # fmuls f11, f11, f0
+      - [ be32, 0x00000000, 0xED8C6AFA ] # fmadds f12, f12, f11, f13
+      - [ be32, 0x00000000, 0xED8D6028 ] # fsubs f12, f13, f12
+      - [ be32, 0x00000000, 0xD18C3F8C ] # stfs f12, 0x3f8c(r12)
+      - [ be32, 0x00000000, 0x817F0288 ] # lwz r11, 0x288(r31) // the weight at 0x288
+      - [ be32, 0x00000000, 0x916C3F90 ] # stw r11, 0x3f90(r12)
+      - [ be32, 0x00000000, 0x9161FFF8 ] # stw r11, -8(r1)
+      - [ be32, 0x00000000, 0x396BFFFF ] # addi r11, r11, -1
+      - [ be32, 0x00000000, 0x7F8B1840 ] # cmplw cr7, r11, r3
+      - [ be32, 0x00000000, 0x409C0058 ] # bge cr7, 0x3f0
+      - [ be32, 0x00000000, 0xC001FFF8 ] # lfs f0, -8(r1)
+      - [ be32, 0x00000000, 0xFC000050 ] # fneg f0, f0
+      - [ be32, 0x00000000, 0xC16C3F6C ] # lfs f11, 0x3f6c(r12)
+      - [ be32, 0x00000000, 0xED8B683A ] # fmadds f12, f11, f0, f13
+      - [ be32, 0x00000000, 0xC16C3F68 ] # lfs f11, 0x3f68(r12)
+      - [ be32, 0x00000000, 0xED6B0032 ] # fmuls f11, f11, f0
+      - [ be32, 0x00000000, 0xED8C6AFA ] # fmadds f12, f12, f11, f13
+      - [ be32, 0x00000000, 0xC16C3F64 ] # lfs f11, 0x3f64(r12)
+      - [ be32, 0x00000000, 0xED6B0032 ] # fmuls f11, f11, f0
+      - [ be32, 0x00000000, 0xED8C6AFA ] # fmadds f12, f12, f11, f13
+      - [ be32, 0x00000000, 0xC16C3F60 ] # lfs f11, 0x3f60(r12)
+      - [ be32, 0x00000000, 0xED6B0032 ] # fmuls f11, f11, f0
+      - [ be32, 0x00000000, 0xED8C6AFA ] # fmadds f12, f12, f11, f13
+      - [ be32, 0x00000000, 0xC16C3F5C ] # lfs f11, 0x3f5c(r12)
+      - [ be32, 0x00000000, 0xED6B0032 ] # fmuls f11, f11, f0
+      - [ be32, 0x00000000, 0xED8C6AFA ] # fmadds f12, f12, f11, f13
+      - [ be32, 0x00000000, 0xC16C3F58 ] # lfs f11, 0x3f58(r12)
+      - [ be32, 0x00000000, 0xED6B0032 ] # fmuls f11, f11, f0
+      - [ be32, 0x00000000, 0xED8C6AFA ] # fmadds f12, f12, f11, f13
+      - [ be32, 0x00000000, 0xED8D6028 ] # fsubs f12, f13, f12
+      - [ be32, 0x00000000, 0xD18C3F90 ] # stfs f12, 0x3f90(r12)
+      - [ be32, 0x00000000, 0x817F0234 ] # lwz r11, 0x234(r31) // the weight at 0x234
+      - [ be32, 0x00000000, 0x916C3F94 ] # stw r11, 0x3f94(r12)
+      - [ be32, 0x00000000, 0x9161FFF8 ] # stw r11, -8(r1)
+      - [ be32, 0x00000000, 0x396BFFFF ] # addi r11, r11, -1
+      - [ be32, 0x00000000, 0x7F8B1840 ] # cmplw cr7, r11, r3
+      - [ be32, 0x00000000, 0x409C0058 ] # bge cr7, 0x45c
+      - [ be32, 0x00000000, 0xC001FFF8 ] # lfs f0, -8(r1)
+      - [ be32, 0x00000000, 0xFC000050 ] # fneg f0, f0
+      - [ be32, 0x00000000, 0xC16C3F6C ] # lfs f11, 0x3f6c(r12)
+      - [ be32, 0x00000000, 0xED8B683A ] # fmadds f12, f11, f0, f13
+      - [ be32, 0x00000000, 0xC16C3F68 ] # lfs f11, 0x3f68(r12)
+      - [ be32, 0x00000000, 0xED6B0032 ] # fmuls f11, f11, f0
+      - [ be32, 0x00000000, 0xED8C6AFA ] # fmadds f12, f12, f11, f13
+      - [ be32, 0x00000000, 0xC16C3F64 ] # lfs f11, 0x3f64(r12)
+      - [ be32, 0x00000000, 0xED6B0032 ] # fmuls f11, f11, f0
+      - [ be32, 0x00000000, 0xED8C6AFA ] # fmadds f12, f12, f11, f13
+      - [ be32, 0x00000000, 0xC16C3F60 ] # lfs f11, 0x3f60(r12)
+      - [ be32, 0x00000000, 0xED6B0032 ] # fmuls f11, f11, f0
+      - [ be32, 0x00000000, 0xED8C6AFA ] # fmadds f12, f12, f11, f13
+      - [ be32, 0x00000000, 0xC16C3F5C ] # lfs f11, 0x3f5c(r12)
+      - [ be32, 0x00000000, 0xED6B0032 ] # fmuls f11, f11, f0
+      - [ be32, 0x00000000, 0xED8C6AFA ] # fmadds f12, f12, f11, f13
+      - [ be32, 0x00000000, 0xC16C3F58 ] # lfs f11, 0x3f58(r12)
+      - [ be32, 0x00000000, 0xED6B0032 ] # fmuls f11, f11, f0
+      - [ be32, 0x00000000, 0xED8C6AFA ] # fmadds f12, f12, f11, f13
+      - [ be32, 0x00000000, 0xED8D6028 ] # fsubs f12, f13, f12
+      - [ be32, 0x00000000, 0xD18C3F94 ] # stfs f12, 0x3f94(r12)
+      - [ be32, 0x00000000, 0x3D603D08 ] # lis r11, 0x3d08 // the fixed 1/30
+      - [ be32, 0x00000000, 0x616B8889 ] # ori r11, r11, 0x8889
+      - [ be32, 0x00000000, 0x916C3F98 ] # stw r11, 0x3f98(r12)
+      - [ be32, 0x00000000, 0x9161FFF8 ] # stw r11, -8(r1)
+      - [ be32, 0x00000000, 0x396BFFFF ] # addi r11, r11, -1
+      - [ be32, 0x00000000, 0x7F8B1840 ] # cmplw cr7, r11, r3
+      - [ be32, 0x00000000, 0x409C0058 ] # bge cr7, 0x4cc
+      - [ be32, 0x00000000, 0xC001FFF8 ] # lfs f0, -8(r1)
+      - [ be32, 0x00000000, 0xFC000050 ] # fneg f0, f0
+      - [ be32, 0x00000000, 0xC16C3F6C ] # lfs f11, 0x3f6c(r12)
+      - [ be32, 0x00000000, 0xED8B683A ] # fmadds f12, f11, f0, f13
+      - [ be32, 0x00000000, 0xC16C3F68 ] # lfs f11, 0x3f68(r12)
+      - [ be32, 0x00000000, 0xED6B0032 ] # fmuls f11, f11, f0
+      - [ be32, 0x00000000, 0xED8C6AFA ] # fmadds f12, f12, f11, f13
+      - [ be32, 0x00000000, 0xC16C3F64 ] # lfs f11, 0x3f64(r12)
+      - [ be32, 0x00000000, 0xED6B0032 ] # fmuls f11, f11, f0
+      - [ be32, 0x00000000, 0xED8C6AFA ] # fmadds f12, f12, f11, f13
+      - [ be32, 0x00000000, 0xC16C3F60 ] # lfs f11, 0x3f60(r12)
+      - [ be32, 0x00000000, 0xED6B0032 ] # fmuls f11, f11, f0
+      - [ be32, 0x00000000, 0xED8C6AFA ] # fmadds f12, f12, f11, f13
+      - [ be32, 0x00000000, 0xC16C3F5C ] # lfs f11, 0x3f5c(r12)
+      - [ be32, 0x00000000, 0xED6B0032 ] # fmuls f11, f11, f0
+      - [ be32, 0x00000000, 0xED8C6AFA ] # fmadds f12, f12, f11, f13
+      - [ be32, 0x00000000, 0xC16C3F58 ] # lfs f11, 0x3f58(r12)
+      - [ be32, 0x00000000, 0xED6B0032 ] # fmuls f11, f11, f0
+      - [ be32, 0x00000000, 0xED8C6AFA ] # fmadds f12, f12, f11, f13
+      - [ be32, 0x00000000, 0xED8D6028 ] # fsubs f12, f13, f12
+      - [ be32, 0x00000000, 0xD18C3F98 ] # stfs f12, 0x3f98(r12)
+      - [ be32, 0x00000000, 0x3D603DCC ] # lis r11, 0x3dcc // the fixed 0.1
+      - [ be32, 0x00000000, 0x616BCCCD ] # ori r11, r11, 0xcccd
+      - [ be32, 0x00000000, 0x916C3F9C ] # stw r11, 0x3f9c(r12)
+      - [ be32, 0x00000000, 0x9161FFF8 ] # stw r11, -8(r1)
+      - [ be32, 0x00000000, 0x396BFFFF ] # addi r11, r11, -1
+      - [ be32, 0x00000000, 0x7F8B1840 ] # cmplw cr7, r11, r3
+      - [ be32, 0x00000000, 0x409C0058 ] # bge cr7, 0x53c
+      - [ be32, 0x00000000, 0xC001FFF8 ] # lfs f0, -8(r1)
+      - [ be32, 0x00000000, 0xFC000050 ] # fneg f0, f0
+      - [ be32, 0x00000000, 0xC16C3F6C ] # lfs f11, 0x3f6c(r12)
+      - [ be32, 0x00000000, 0xED8B683A ] # fmadds f12, f11, f0, f13
+      - [ be32, 0x00000000, 0xC16C3F68 ] # lfs f11, 0x3f68(r12)
+      - [ be32, 0x00000000, 0xED6B0032 ] # fmuls f11, f11, f0
+      - [ be32, 0x00000000, 0xED8C6AFA ] # fmadds f12, f12, f11, f13
+      - [ be32, 0x00000000, 0xC16C3F64 ] # lfs f11, 0x3f64(r12)
+      - [ be32, 0x00000000, 0xED6B0032 ] # fmuls f11, f11, f0
+      - [ be32, 0x00000000, 0xED8C6AFA ] # fmadds f12, f12, f11, f13
+      - [ be32, 0x00000000, 0xC16C3F60 ] # lfs f11, 0x3f60(r12)
+      - [ be32, 0x00000000, 0xED6B0032 ] # fmuls f11, f11, f0
+      - [ be32, 0x00000000, 0xED8C6AFA ] # fmadds f12, f12, f11, f13
+      - [ be32, 0x00000000, 0xC16C3F5C ] # lfs f11, 0x3f5c(r12)
+      - [ be32, 0x00000000, 0xED6B0032 ] # fmuls f11, f11, f0
+      - [ be32, 0x00000000, 0xED8C6AFA ] # fmadds f12, f12, f11, f13
+      - [ be32, 0x00000000, 0xC16C3F58 ] # lfs f11, 0x3f58(r12)
+      - [ be32, 0x00000000, 0xED6B0032 ] # fmuls f11, f11, f0
+      - [ be32, 0x00000000, 0xED8C6AFA ] # fmadds f12, f12, f11, f13
+      - [ be32, 0x00000000, 0xED8D6028 ] # fsubs f12, f13, f12
+      - [ be32, 0x00000000, 0xD18C3F9C ] # stfs f12, 0x3f9c(r12)
+      - [ be32, 0x00000000, 0x807F0314 ] # lwz r3, 0x314(r31) // the instruction the hook took the place of (r3 was the camera, as r31 is)
+      - [ calloc, 0x0029622A, 2 ] # Hook 0x00296228 // Original lfs f13, 0x238(r31); returns to 0x0029622C
+      - [ be32, 0x00000000, 0x3D8001BD ] # lis r12, 0x1bd
+      - [ be32, 0x00000000, 0xC1AC3F70 ] # lfs f13, 0x3f70(r12)
+      - [ calloc, 0x002962E6, 2 ] # Hook 0x002962E4 // Original lfs f13, 0x238(r31); returns to 0x002962E8
+      - [ be32, 0x00000000, 0x3D8001BD ] # lis r12, 0x1bd
+      - [ be32, 0x00000000, 0xC1AC3F70 ] # lfs f13, 0x3f70(r12)
+      - [ calloc, 0x002977FE, 2 ] # Hook 0x002977FC // Original lfs f13, 0x1a0(r31); returns to 0x00297800
+      - [ be32, 0x00000000, 0x3D8001BD ] # lis r12, 0x1bd
+      - [ be32, 0x00000000, 0xC1AC3F74 ] # lfs f13, 0x3f74(r12)
+      - [ calloc, 0x00297952, 2 ] # Hook 0x00297950 // Original lfs f13, 0x1c0(r31); returns to 0x00297954
+      - [ be32, 0x00000000, 0x3D8001BD ] # lis r12, 0x1bd
+      - [ be32, 0x00000000, 0xC1AC3F78 ] # lfs f13, 0x3f78(r12)
+      - [ calloc, 0x00297956, 2 ] # Hook 0x00297954 // Original lfs f12, 0x1c4(r31); returns to 0x00297958
+      - [ be32, 0x00000000, 0x3D8001BD ] # lis r12, 0x1bd
+      - [ be32, 0x00000000, 0xC18C3F7C ] # lfs f12, 0x3f7c(r12)
+      - [ calloc, 0x00297B3A, 2 ] # Hook 0x00297B38 // Original lfs f10, 0x1bc(r31); returns to 0x00297B3C
+      - [ be32, 0x00000000, 0x3D8001BD ] # lis r12, 0x1bd
+      - [ be32, 0x00000000, 0xC14C3F80 ] # lfs f10, 0x3f80(r12)
+      - [ calloc, 0x002987FE, 2 ] # Hook 0x002987FC // Original lfs f11, 0x320(r31); returns to 0x00298800
+      - [ be32, 0x00000000, 0x3D8001BD ] # lis r12, 0x1bd
+      - [ be32, 0x00000000, 0xC16C3F84 ] # lfs f11, 0x3f84(r12)
+      - [ calloc, 0x002993E2, 2 ] # Hook 0x002993E0 // Original lfs f13, 0x1a4(r31); returns to 0x002993E4
+      - [ be32, 0x00000000, 0x3D8001BD ] # lis r12, 0x1bd
+      - [ be32, 0x00000000, 0xC1AC3F88 ] # lfs f13, 0x3f88(r12)
+      - [ calloc, 0x002993E6, 2 ] # Hook 0x002993E4 // Original lfs f12, 0x1b0(r31); returns to 0x002993E8
+      - [ be32, 0x00000000, 0x3D8001BD ] # lis r12, 0x1bd
+      - [ be32, 0x00000000, 0xC18C3F8C ] # lfs f12, 0x3f8c(r12)
+      - [ calloc, 0x0029941A, 2 ] # Hook 0x00299418 // Original lfs f12, 0x320(r31); returns to 0x0029941C
+      - [ be32, 0x00000000, 0x3D8001BD ] # lis r12, 0x1bd
+      - [ be32, 0x00000000, 0xC18C3F84 ] # lfs f12, 0x3f84(r12)
+      - [ calloc, 0x00299C92, 2 ] # Hook 0x00299C90 // Original lfs f13, 0x238(r31); returns to 0x00299C94
+      - [ be32, 0x00000000, 0x3D8001BD ] # lis r12, 0x1bd
+      - [ be32, 0x00000000, 0xC1AC3F70 ] # lfs f13, 0x3f70(r12)
+      - [ calloc, 0x00299CA6, 2 ] # Hook 0x00299CA4 // Original lfs f12, 0x238(r31); returns to 0x00299CA8
+      - [ be32, 0x00000000, 0x3D8001BD ] # lis r12, 0x1bd
+      - [ be32, 0x00000000, 0xC18C3F70 ] # lfs f12, 0x3f70(r12)
+      - [ calloc, 0x00299FDA, 2 ] # Hook 0x00299FD8 // Original lfs f11, 0x238(r31); returns to 0x00299FDC
+      - [ be32, 0x00000000, 0x3D8001BD ] # lis r12, 0x1bd
+      - [ be32, 0x00000000, 0xC16C3F70 ] # lfs f11, 0x3f70(r12)
+      - [ calloc, 0x0029A0FA, 2 ] # Hook 0x0029A0F8 // Original lfs f8, 0x288(r31); returns to 0x0029A0FC
+      - [ be32, 0x00000000, 0x3D8001BD ] # lis r12, 0x1bd
+      - [ be32, 0x00000000, 0xC10C3F90 ] # lfs f8, 0x3f90(r12)
+      - [ calloc, 0x0029A512, 2 ] # Hook 0x0029A510 // Original lfs f12, 0x234(r31); returns to 0x0029A514
+      - [ be32, 0x00000000, 0x3D8001BD ] # lis r12, 0x1bd
+      - [ be32, 0x00000000, 0xC18C3F94 ] # lfs f12, 0x3f94(r12)
+      - [ calloc, 0x0029A6D6, 2 ] # Hook 0x0029A6D4 // Original lfs f12, 0x234(r31); returns to 0x0029A6D8
+      - [ be32, 0x00000000, 0x3D8001BD ] # lis r12, 0x1bd
+      - [ be32, 0x00000000, 0xC18C3F94 ] # lfs f12, 0x3f94(r12)
+      - [ calloc, 0x00298F46, 2 ] # Hook 0x00298F44 // Original lfs f12, -0x7c8c(r30); returns to 0x00298F48
+      - [ be32, 0x00000000, 0x3D8001BD ] # lis r12, 0x1bd
+      - [ be32, 0x00000000, 0xC18C3F98 ] # lfs f12, 0x3f98(r12)
+      - [ calloc, 0x002952FE, 2 ] # Hook 0x002952FC // Original lfs f13, -0x7ee8(r30); returns to 0x00295300
+      - [ be32, 0x00000000, 0x3D8001BD ] # lis r12, 0x1bd
+      - [ be32, 0x00000000, 0xC1AC3F9C ] # lfs f13, 0x3f9c(r12)
       # Kick and jumping attack (forward with R1 or R2): the stick's flick (0x004B50A0). A flick starts when the stick is past
       # 0.3 and was neutral (within 0.2) on the frame before, so the stick must get from 0.2 to 0.3 between two frames: easy
       # in 1/30 s, and missed at a high frame rate whenever a frame lands in between. The "was neutral" byte (0x22d of the
