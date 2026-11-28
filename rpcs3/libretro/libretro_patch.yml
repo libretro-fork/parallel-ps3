@@ -376,7 +376,7 @@ PPU-d764d35ca136442f72228ab715a629f26994e641:
       The game runs at 60 frames a second and moves by the time each frame took. The same two changes as the
       Unlock FPS of the other build of this game, found again in this executable: the game's own 60FPS(NO SKIP)
       flip mode set as it starts, and the fixed 1/30 s step replaced by the time since the last frame (4 ms to
-      50 ms). Three numbers the movement code applies once a frame are set for 60 frames a second too: the
+      50 ms). Three numbers the movement code applies once a frame follow each frame's time too: the
       momentum kept in the air (so a roll or a walk off a ledge carries as far as at 30), ground friction and
       the pull down a slope. It also undoes the bonfire softlock, where after Reverse Hollowing or Kindle the
       character stays seated once the menu is closed: when the seated loop animation is still set a second
@@ -385,7 +385,7 @@ PPU-d764d35ca136442f72228ab715a629f26994e641:
       against a wall stayed slow until the stick was let go: the game's test for "stuck" counts a frame's move
       as if frames were 1/30 s, so the small moves of short frames at half speed never passed it. The test
       and the rates it slows and recovers at go by the real frame time now.
-    Patch Version: 1.5
+    Patch Version: 1.6
     Patch:
       # The frame's time: in place of the load of the constant 1/30 (0x01876870) into f31 at 0x00145A18
       - [ calloc, 0x00145A1A, 25 ] # Hook 0x00145A18 // Original lfs f31, -0x7f48(r30); returns to 0x00145A1C
@@ -414,10 +414,6 @@ PPU-d764d35ca136442f72228ab715a629f26994e641:
       - [ be32, 0x00000000, 0xC841FFF8 ] # lfd f2, -8(r1)
       - [ be32, 0x00000000, 0xFC40169C ] # fcfid f2, f2
       - [ be32, 0x00000000, 0xEFE01024 ] # fdivs f31, f0, f2 // f31 = the frame's time in seconds
-      # Three numbers the movement code applies once a frame, in the game's data, for half the time each
-      - [ bef32, 0x019F48C0, 0.5 ] # the pull down a slope // Original 1.0, read at 0x00351644
-      - [ be32, 0x019F48C4, 0x3F4E64D0 ] # ground friction, 0.65 ^ 0.5 // Original 0.65, read at 0x003517F8
-      - [ be32, 0x01886C30, 0x3F798497 ] # momentum kept in the air, 0.95 ^ 0.5 // Original 0.95, read at 0x00351988: at 0.95 sixty times a second a roll or a walk off a ledge fell short
       # The flip mode: in place of the last of the three stores that set it to 0 as its object is made
       - [ calloc, 0x00149CDE, 5 ] # Hook 0x00149CDC // Original stb r11, 0x71e(r31); returns to 0x00149CE0
       - [ be32, 0x00000000, 0x39600003 ] # li r11, 3 // FlipMode 3: 60FPS(NO SKIP)
@@ -427,7 +423,7 @@ PPU-d764d35ca136442f72228ab715a629f26994e641:
       - [ be32, 0x00000000, 0x997F071E ] # stb r11, 0x71e(r31)
       # Each frame, in place of the instruction after the frame time's load: the numbers of the movement code's stuck
       # test for this frame's time, then the bonfire softlock check
-      - [ calloc, 0x00145A1E, 87 ] # Hook 0x00145A1C // Original fmr f1, f31 (the cave's last instruction); returns to 0x00145A20
+      - [ calloc, 0x00145A1E, 122 ] # Hook 0x00145A1C // Original fmr f1, f31 (the cave's last instruction); returns to 0x00145A20
       - [ be32, 0x00000000, 0x3D6001BD ] # lis r11, 0x1bd // r11 = 0x01BD3F20, in the unused end of the executable's data: what the movement code's stuck test (0x004855F0) uses this frame (the word at 0xc is for making the numbers)
       - [ be32, 0x00000000, 0x616B3F20 ] # ori r11, r11, 0x3f20
       - [ be32, 0x00000000, 0x3C003F80 ] # lis r0, 0x3f80 // 1.0
@@ -471,47 +467,82 @@ PPU-d764d35ca136442f72228ab715a629f26994e641:
       - [ be32, 0x00000000, 0xED8C583A ] # fmadds f12, f12, f0, f11
       - [ be32, 0x00000000, 0xED8C683A ] # fmadds f12, f12, f0, f13
       - [ be32, 0x00000000, 0xD18B0008 ] # stfs f12, 8(r11) // 1.2 ^ x: the recovery
+      - [ be32, 0x00000000, 0x3D80019F ] # lis r12, 0x19f // three numbers the movement code applies once a frame, for this frame's time. The pull down a slope (0x019F48C0, read at 0x00351644; 1.0 in the game): x
+      - [ be32, 0x00000000, 0xD00C48C0 ] # stfs f0, 0x48c0(r12)
+      - [ be32, 0x00000000, 0x3C003ABC ] # lis r0, 0x3abc // ground friction (0x019F48C4, read at 0x003517F8; 0.65 in the game): 0.65 ^ x, by four terms of the same series
+      - [ be32, 0x00000000, 0x6000135E ] # ori r0, r0, 0x135e
+      - [ be32, 0x00000000, 0x900B000C ] # stw r0, 0xc(r11)
+      - [ be32, 0x00000000, 0xC18B000C ] # lfs f12, 0xc(r11)
+      - [ be32, 0x00000000, 0x3C00BC5A ] # lis r0, 0xbc5a
+      - [ be32, 0x00000000, 0x60004B90 ] # ori r0, r0, 0x4b90
+      - [ be32, 0x00000000, 0x900B000C ] # stw r0, 0xc(r11)
+      - [ be32, 0x00000000, 0xC16B000C ] # lfs f11, 0xc(r11)
+      - [ be32, 0x00000000, 0xED8C583A ] # fmadds f12, f12, f0, f11
+      - [ be32, 0x00000000, 0x3C003DBE ] # lis r0, 0x3dbe
+      - [ be32, 0x00000000, 0x60000717 ] # ori r0, r0, 0x717
+      - [ be32, 0x00000000, 0x900B000C ] # stw r0, 0xc(r11)
+      - [ be32, 0x00000000, 0xC16B000C ] # lfs f11, 0xc(r11)
+      - [ be32, 0x00000000, 0xED8C583A ] # fmadds f12, f12, f0, f11
+      - [ be32, 0x00000000, 0x3C00BEDC ] # lis r0, 0xbedc
+      - [ be32, 0x00000000, 0x60008F94 ] # ori r0, r0, 0x8f94
+      - [ be32, 0x00000000, 0x900B000C ] # stw r0, 0xc(r11)
+      - [ be32, 0x00000000, 0xC16B000C ] # lfs f11, 0xc(r11)
+      - [ be32, 0x00000000, 0xED8C583A ] # fmadds f12, f12, f0, f11
+      - [ be32, 0x00000000, 0xED8C683A ] # fmadds f12, f12, f0, f13
+      - [ be32, 0x00000000, 0xD18C48C4 ] # stfs f12, 0x48c4(r12)
+      - [ be32, 0x00000000, 0x3C003AAC ] # lis r0, 0x3aac // momentum kept in the air (0x01886C30, read at 0x00351988; 0.95 in the game): 0.95 ^ x. At 0.95 a frame a roll or a walk off a ledge fell short at a higher frame rate
+      - [ be32, 0x00000000, 0x60006CE4 ] # ori r0, r0, 0x6ce4
+      - [ be32, 0x00000000, 0x900B000C ] # stw r0, 0xc(r11)
+      - [ be32, 0x00000000, 0xC18B000C ] # lfs f12, 0xc(r11)
+      - [ be32, 0x00000000, 0x3C00BD52 ] # lis r0, 0xbd52
+      - [ be32, 0x00000000, 0x600018EB ] # ori r0, r0, 0x18eb
+      - [ be32, 0x00000000, 0x900B000C ] # stw r0, 0xc(r11)
+      - [ be32, 0x00000000, 0xC16B000C ] # lfs f11, 0xc(r11)
+      - [ be32, 0x00000000, 0xED8C583A ] # fmadds f12, f12, f0, f11
+      - [ be32, 0x00000000, 0xED8C683A ] # fmadds f12, f12, f0, f13
+      - [ be32, 0x00000000, 0x3D800188 ] # lis r12, 0x188
+      - [ be32, 0x00000000, 0xD18C6C30 ] # stfs f12, 0x6c30(r12)
       - [ be32, 0x00000000, 0x3D2001B4 ] # lis r9, 0x1b4 // the bonfire softlock. The world's characters (the pointer is at 0x01B43610); the player is at 0x30, as the script's StopLoopAnimation finds it (0x00666BF0)
       - [ be32, 0x00000000, 0x81293610 ] # lwz r9, 0x3610(r9)
       - [ be32, 0x00000000, 0x2B890000 ] # cmplwi cr7, r9, 0
-      - [ be32, 0x00000000, 0x419E00A0 ] # beq cr7, 0x158
+      - [ be32, 0x00000000, 0x419E00A0 ] # beq cr7, 0x1e4
       - [ be32, 0x00000000, 0x80690030 ] # lwz r3, 0x30(r9)
       - [ be32, 0x00000000, 0x2B830000 ] # cmplwi cr7, r3, 0
-      - [ be32, 0x00000000, 0x419E0094 ] # beq cr7, 0x158
+      - [ be32, 0x00000000, 0x419E0094 ] # beq cr7, 0x1e4
       - [ be32, 0x00000000, 0x81230010 ] # lwz r9, 0x10(r3) // the player's loop animation: its id is at 4 there (written at 0x003EF8A8, set to -1 by the stop at 0x003EF778)
       - [ be32, 0x00000000, 0x2B890000 ] # cmplwi cr7, r9, 0
-      - [ be32, 0x00000000, 0x419E0088 ] # beq cr7, 0x158
+      - [ be32, 0x00000000, 0x419E0088 ] # beq cr7, 0x1e4
       - [ be32, 0x00000000, 0x80090004 ] # lwz r0, 4(r9)
       - [ be32, 0x00000000, 0x3D6001BD ] # lis r11, 0x1bd // r11 = 0x01BD3F10: since when the character has been seated with the script gone
       - [ be32, 0x00000000, 0x616B3F10 ] # ori r11, r11, 0x3f10
       - [ be32, 0x00000000, 0x2F801E15 ] # cmpwi cr7, r0, 7701 // the three seated loops: 7701, 7711, 7721
-      - [ be32, 0x00000000, 0x419E0014 ] # beq cr7, 0xf8
+      - [ be32, 0x00000000, 0x419E0014 ] # beq cr7, 0x184
       - [ be32, 0x00000000, 0x2F801E1F ] # cmpwi cr7, r0, 7711
-      - [ be32, 0x00000000, 0x419E000C ] # beq cr7, 0xf8
+      - [ be32, 0x00000000, 0x419E000C ] # beq cr7, 0x184
       - [ be32, 0x00000000, 0x2F801E29 ] # cmpwi cr7, r0, 7721
-      - [ be32, 0x00000000, 0x409E005C ] # bne cr7, 0x150
+      - [ be32, 0x00000000, 0x409E005C ] # bne cr7, 0x1dc
       - [ be32, 0x00000000, 0x3D8001B5 ] # lis r12, 0x1b5 // the game's talk object (its pointer is at 0x01B48C4C)
       - [ be32, 0x00000000, 0x818C8C4C ] # lwz r12, -0x73b4(r12)
       - [ be32, 0x00000000, 0x2B8C0000 ] # cmplwi cr7, r12, 0
-      - [ be32, 0x00000000, 0x419E004C ] # beq cr7, 0x150
+      - [ be32, 0x00000000, 0x419E004C ] # beq cr7, 0x1dc
       - [ be32, 0x00000000, 0x880C07BC ] # lbz r0, 0x7bc(r12) // 1 from the bonfire's StartBonfireAnimLoop to its EndBonfireKindleAnimLoop (set at 0x006FD1C0, cleared at 0x006FD230): the bonfire's script has the character seated
       - [ be32, 0x00000000, 0x2F800000 ] # cmpwi cr7, r0, 0
-      - [ be32, 0x00000000, 0x409E0040 ] # bne cr7, 0x150
+      - [ be32, 0x00000000, 0x409E0040 ] # bne cr7, 0x1dc
       - [ be32, 0x00000000, 0x7D4C42E6 ] # mftb r10 // seated, and the script has let go: now, in 80,000,000ths of a second
       - [ be32, 0x00000000, 0xE88B0000 ] # ld r4, 0(r11)
       - [ be32, 0x00000000, 0x2FA40000 ] # cmpdi cr7, r4, 0
-      - [ be32, 0x00000000, 0x409E000C ] # bne cr7, 0x12c
+      - [ be32, 0x00000000, 0x409E000C ] # bne cr7, 0x1b8
       - [ be32, 0x00000000, 0xF94B0000 ] # std r10, 0(r11) // the count starts
-      - [ be32, 0x00000000, 0x48000030 ] # b 0x158
+      - [ be32, 0x00000000, 0x48000030 ] # b 0x1e4
       - [ be32, 0x00000000, 0x7C845050 ] # subf r4, r4, r10
       - [ be32, 0x00000000, 0x3CA004C4 ] # lis r5, 0x4c4 // 1 second
       - [ be32, 0x00000000, 0x60A5B400 ] # ori r5, r5, 0xb400
       - [ be32, 0x00000000, 0x7FA42840 ] # cmpld cr7, r4, r5
-      - [ be32, 0x00000000, 0x419C001C ] # blt cr7, 0x158
+      - [ be32, 0x00000000, 0x419C001C ] # blt cr7, 0x1e4
       - [ be32, 0x00000000, 0x38000000 ] # li r0, 0
       - [ be32, 0x00000000, 0xF80B0000 ] # std r0, 0(r11)
       - [ be32, 0x00000000, 0x483EF687 ] # bla 0x3ef684 // the character's own stop of its loop animation, what the script's StopLoopAnimation calls (r3 = the player)
-      - [ be32, 0x00000000, 0x4800000C ] # b 0x158
+      - [ be32, 0x00000000, 0x4800000C ] # b 0x1e4
       - [ be32, 0x00000000, 0x38000000 ] # li r0, 0
       - [ be32, 0x00000000, 0xF80B0000 ] # std r0, 0(r11)
       - [ be32, 0x00000000, 0xFC20F890 ] # fmr f1, f31 // the instruction the hook took the place of
