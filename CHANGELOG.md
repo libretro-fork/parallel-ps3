@@ -4,6 +4,12 @@ What changed in the libretro core of this fork, newest first. Changes that come 
 
 ## Unreleased
 
+- **Dark Souls: Prepare to Die Edition (EU): timers and the HUD's bars at high frame rates (Unlock FPS).** Not yet run on a game.
+  - **What was wrong:** some code adds or takes off a fixed 1/30 s every frame instead of the frame's time, so it ran twice as fast at 60 and four times at 120: two fades (one up, one down), a countdown and a time limit. The HUD's bars move toward the real value by half the gap a frame (by 1 a frame when the gap is 2 or less), so a drink of Estus filled the bar four times as fast at 120.
+  - **What changed:** "Unlock FPS" (version 1.11) keeps the frame's time, the least a bar moves in it and the share of the gap it closes (1 - 0.5 to the power of the frame time in 30ths of a second), and those six places load them in place of their constants. At 30 frames a second they are the game's numbers.
+    - The four timers were found by their shape (a field plus or minus the constant 1/30, then a limit), which is how the PC mods describe theirs; which fades and countdown they are in the game has not been seen.
+  - **Tests:** the patch applied to the decrypted executable and the new code read back through a disassembler; `test_game_patches` passes.
+
 - **Dark Souls: Prepare to Die Edition (EU): steering on a slide at high frame rates (Unlock FPS).** Not yet run on a game.
   - **What was wrong:** turning while sliding down a slope starts the turn's animation again every frame, so the only animation playing is one frame old. The animation library (Havok) scales a character's movement down when the animations' total blend weight is under 0.1, and a blend one frame old weighs about 0.104 after 1/30 s but about 0.012 after 1/144 s (the PC mods' figures): the legs play the turn and the body barely moves. The PC game has the same problem (fixed in DSfix 3.0 and the PC frame rate mods).
   - **What changed:** "Unlock FPS" (version 1.10) works out that mark each frame, 0.1 times the square of the frame time in 30ths of a second (never more than 0.1), and the two places the library's blended-movement function loads it (0x0121D9EC, 0x0121DE28) take that. At 30 frames a second it is the library's 0.1.
