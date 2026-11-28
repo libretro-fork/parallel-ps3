@@ -4,7 +4,12 @@ What changed in the libretro core of this fork, newest first. Changes that come 
 
 ## Unreleased
 
-- **Dark Souls: Prepare to Die Edition (EU): sliding off a ladder into the void at high frame rates (Unlock FPS).** Not yet run on a game.
+- **Dark Souls: Prepare to Die Edition (EU): riding a rounded edge down at high frame rates (Unlock FPS).** Not yet run on a game.
+  - **Why:** after each physics step the character is put down on the ground found below, at most its reach (0.4 for the player) under where the step left it. That is a limit per step, so 0.4 in 1/30 s; with four steps in that time the ground could fall away four times as fast and still hold the character, which kept it glued to rounded edges and carried it down them.
+  - **What changed:** "Unlock FPS" (version 1.20) sets each step's reach to 1.2 times the body's own, less what the steps of the last 1/30 s already pulled it down, between a 20th of its own and all of it (the rule of the PC frame-rate mod, with the last 1/30 s kept as two sums in place of a list of frames). The body's own value is put back as soon as the ground has been found. At 30 frames a second and below nothing changes.
+  - **Tests:** the patch applied to the decrypted executable; `test_game_patches` passes. The four code pieces were run in a CPU emulator at 30, 60, 120, 144 and 240 frames a second: ground falling away at 0.45 per 1/30 s holds the body, at 0.6 it lets go within 1/30 s at every rate, a stair of 0.2 every 0.2 s is never lost, and the ladder limit of 0682 still holds.
+
+- **Dark Souls: Prepare to Die Edition (EU): sliding off a ladder into the void at high frame rates (Unlock FPS).** Confirmed fixed on a game.
   - **Why:** each physics step of a character's body lifts it by its step height, moves it, then pulls it back down 0.3. At the bottom of a ladder slide the lift is left out but the pull is still made on every frame until the body finds ground: once at 30 frames a second, four times as often at 120, which took the character through the floor.
   - **What changed:** "Unlock FPS" (version 1.19) notes at the lift whose body was raised. A step without the lift pulls by the frame's share of 0.3, and by no more than 0.3 in all until a lifted step, or a quarter of a second without such steps, starts the count again (the rule of the PC frame-rate mod). At 30 frames a second and below the game's own pull is left alone.
   - **Tests:** the patch applied to the decrypted executable; `test_game_patches` passes. The two code pieces were run in a CPU emulator: twelve steps without the lift pull 3.6 in all at 30 frames a second (the game's own) and 0.3 at 60, 120 and 240.

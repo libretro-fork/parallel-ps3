@@ -402,7 +402,7 @@ PPU-d764d35ca136442f72228ab715a629f26994e641:
       the game, not once a frame. Effects that made a particle every frame (smoke, sparks, embers) make them
       30 times a second, as Dark Souls Remastered's effect files do, and swaying particles change direction as
       often as at 30.
-    Patch Version: 1.19
+    Patch Version: 1.20
     Patch:
       # The frame's time: in place of the load of the constant 1/30 (0x01876870) into f31 at 0x00145A18
       - [ calloc, 0x00145A1A, 25 ] # Hook 0x00145A18 // Original lfs f31, -0x7f48(r30); returns to 0x00145A1C
@@ -1368,49 +1368,109 @@ PPU-d764d35ca136442f72228ab715a629f26994e641:
       - [ be32, 0x00000000, 0x900B0000 ] # stw r0, 0(r11)
       - [ be32, 0x00000000, 0x4200FF44 ] # bdnz 0x18
       - [ be32, 0x00000000, 0x81450000 ] # lwz r10, 0(r5) // the instruction the hook took the place of
-      # Sliding off the bottom of a ladder into the void. Each physics step of a character's body (0x003536A0) lifts it by
-      # its step height, moves it, then puts it back down by the pull at 0xb4 of the body (-0.3). At the bottom of a ladder
-      # slide the lift is left out but the pull is still made, on every frame until the body finds ground: once at 30
-      # frames a second, four times as often at 120, which took the character through the floor. A step without the lift
-      # now pulls by the frame's share of 0.3 (0x01BD3F44 is the frame time times 30), and by no more than 0.3 in all
-      # until a step with the lift, or a quarter of a second without such steps, starts the count again. At 30 frames a
-      # second and below nothing changes. First, the lift notes whose body it raised (0x01BD3FB0)
-      - [ calloc, 0x003538DA, 3 ] # Hook 0x003538D8 // Original stfs f1, 0xc4(r1); returns to 0x003538DC
+      # The pull onto the ground. Each physics step of a character's body (0x003536A0) lifts it by its step height, moves
+      # it, then puts it down on the ground found below (0x00352CE8): by the offset at 0xb4 of the body, which is minus the
+      # lift on flat ground and reaches at most the body's reach (0x208, 0.4 for the player) further down. Two things in it
+      # go by the frame and not by time, and both are put right here.
+      # Sliding off the bottom of a ladder into the void: there the lift is left out but the offset is still applied, on
+      # every frame until the body finds ground: once at 30 frames a second, four times as often at 120, which took the
+      # character through the floor. A step without the lift now pulls by the frame's share of 0.3 (0x01BD3F44 is the
+      # frame time times 30), and by no more than 0.3 in all until a step with the lift, or a quarter of a second without
+      # such steps, starts the count again.
+      # Riding a lip down: the reach is the most the ground may fall away under one step, so 0.4 in 1/30 s; with four
+      # steps in that time the ground could fall away four times as fast and still hold the character, which glued it to
+      # rounded edges and carried it down them. The reach of a step is now 1.2 times the body's own, less what the steps
+      # of the last 1/30 s already pulled down beyond their lift, and between a 20th of the body's own and all of it. The
+      # body's own value is put back as soon as the ground has been found. What was pulled is kept per body in the unused
+      # end of the executable's data (0x01BD3500, 128 places of 16 bytes: the body, the pull in this 30th of a second and
+      # in the one before, the next step's reach).
+      # At 30 frames a second and below nothing changes.
+      # First, the lift notes whose body it raised (0x01BD3FB0) and how far (0x01BD3FC0)
+      - [ calloc, 0x003538DA, 4 ] # Hook 0x003538D8 // Original stfs f1, 0xc4(r1); returns to 0x003538DC
       - [ be32, 0x00000000, 0x3D8001BD ] # lis r12, 0x1bd
       - [ be32, 0x00000000, 0x93EC3FB0 ] # stw r31, 0x3fb0(r12)
+      - [ be32, 0x00000000, 0xD02C3FC0 ] # stfs f1, 0x3fc0(r12)
       - [ be32, 0x00000000, 0xD02100C4 ] # stfs f1, 0xc4(r1) // the instruction the hook took the place of
-      # Then where the pull is read: 0x01BD3FB4 is the body being counted, 0x01BD3FB8 how far it was pulled, 0x01BD3FBC the
-      # clock at its last step without the lift
-      - [ calloc, 0x0035376E, 47 ] # Hook 0x0035376C // Original lfs f0, 0x84(r1); returns to 0x00353770
-      - [ be32, 0x00000000, 0xC0010084 ] # lfs f0, 0x84(r1) // the pull (the instruction the hook took the place of)
+      # Before the ground is looked for: the body's place in the list (kept at 0x01BD3FC8 for the rest of the step) and,
+      # if it has a reach for this step, that reach in place of its own (kept at 0x01BD3FC4)
+      - [ calloc, 0x00353722, 30 ] # Hook 0x00353720 // Original mr r3, r26; returns to 0x00353724
       - [ be32, 0x00000000, 0x3D8001BD ] # lis r12, 0x1bd
+      - [ be32, 0x00000000, 0x38000000 ] # li r0, 0
+      - [ be32, 0x00000000, 0x900C3FC8 ] # stw r0, 0x3fc8(r12)
+      - [ be32, 0x00000000, 0x816C3F44 ] # lwz r11, 0x3f44(r12) // the frame time times 30, as a whole number: above 0 and below 1.0, or the game is left alone
+      - [ be32, 0x00000000, 0x2F8B0000 ] # cmpwi cr7, r11, 0
+      - [ be32, 0x00000000, 0x409D0060 ] # ble cr7, 0x74
+      - [ be32, 0x00000000, 0x3C003F80 ] # lis r0, 0x3f80
+      - [ be32, 0x00000000, 0x7F8B0000 ] # cmpw cr7, r11, r0
+      - [ be32, 0x00000000, 0x409C0054 ] # bge cr7, 0x74
+      - [ be32, 0x00000000, 0x57EB0576 ] # rlwinm r11, r31, 0, 21, 27 // the place: bits 4 to 10 of the body's address, times 16
+      - [ be32, 0x00000000, 0x7D6B6214 ] # add r11, r11, r12
+      - [ be32, 0x00000000, 0x396B3500 ] # addi r11, r11, 0x3500
+      - [ be32, 0x00000000, 0x916C3FC8 ] # stw r11, 0x3fc8(r12)
+      - [ be32, 0x00000000, 0x800B0000 ] # lwz r0, 0(r11)
+      - [ be32, 0x00000000, 0x7F80F800 ] # cmpw cr7, r0, r31
+      - [ be32, 0x00000000, 0x419E001C ] # beq cr7, 0x58
+      - [ be32, 0x00000000, 0x93EB0000 ] # stw r31, 0(r11) // another body's place, or an empty one: start again
+      - [ be32, 0x00000000, 0x38000000 ] # li r0, 0
+      - [ be32, 0x00000000, 0x900B0004 ] # stw r0, 4(r11)
+      - [ be32, 0x00000000, 0x900B0008 ] # stw r0, 8(r11)
+      - [ be32, 0x00000000, 0x900B000C ] # stw r0, 0xc(r11)
+      - [ be32, 0x00000000, 0x48000020 ] # b 0x74
+      - [ be32, 0x00000000, 0x800B000C ] # lwz r0, 0xc(r11)
+      - [ be32, 0x00000000, 0x2F800000 ] # cmpwi cr7, r0, 0
+      - [ be32, 0x00000000, 0x409D0014 ] # ble cr7, 0x74
+      - [ be32, 0x00000000, 0x801F0208 ] # lwz r0, 0x208(r31)
+      - [ be32, 0x00000000, 0x900C3FC4 ] # stw r0, 0x3fc4(r12)
+      - [ be32, 0x00000000, 0x800B000C ] # lwz r0, 0xc(r11)
+      - [ be32, 0x00000000, 0x901F0208 ] # stw r0, 0x208(r31)
+      - [ be32, 0x00000000, 0x7F43D378 ] # mr r3, r26 // the instruction the hook took the place of
+      # After it: the body's own reach back
+      - [ calloc, 0x0035372A, 8 ] # Hook 0x00353728 // Original lbz r0, 0x1d4(r31); returns to 0x0035372C
+      - [ be32, 0x00000000, 0x3D8001BD ] # lis r12, 0x1bd
+      - [ be32, 0x00000000, 0x816C3FC4 ] # lwz r11, 0x3fc4(r12)
+      - [ be32, 0x00000000, 0x2F8B0000 ] # cmpwi cr7, r11, 0
+      - [ be32, 0x00000000, 0x419E0010 ] # beq cr7, 0x1c
+      - [ be32, 0x00000000, 0x917F0208 ] # stw r11, 0x208(r31)
+      - [ be32, 0x00000000, 0x39600000 ] # li r11, 0
+      - [ be32, 0x00000000, 0x916C3FC4 ] # stw r11, 0x3fc4(r12)
+      - [ be32, 0x00000000, 0x881F01D4 ] # lbz r0, 0x1d4(r31) // the instruction the hook took the place of
+      # Then where the offset is read. For the ladder: 0x01BD3FB4 is the body being counted, 0x01BD3FB8 how far it was
+      # pulled, 0x01BD3FBC the clock at its last step without the lift. For the reach: what this step pulled beyond its
+      # lift goes into this 30th of a second's sum (0x01BD3FA8 says how many of those ended in this frame, 0x01BD3FAC how
+      # far into the current one the frame ends), and the next step's reach is made from the sums
+      - [ calloc, 0x0035376E, 107 ] # Hook 0x0035376C // Original lfs f0, 0x84(r1); returns to 0x00353770
+      - [ be32, 0x00000000, 0xC0010084 ] # lfs f0, 0x84(r1) // the offset (the instruction the hook took the place of)
+      - [ be32, 0x00000000, 0x3D8001BD ] # lis r12, 0x1bd
+      - [ be32, 0x00000000, 0xC12C3FC0 ] # lfs f9, 0x3fc0(r12) // this step's lift, 0 without one
       - [ be32, 0x00000000, 0x80AC3FB0 ] # lwz r5, 0x3fb0(r12) // the body the lift raised, read once
       - [ be32, 0x00000000, 0x38C00000 ] # li r6, 0
       - [ be32, 0x00000000, 0x90CC3FB0 ] # stw r6, 0x3fb0(r12)
+      - [ be32, 0x00000000, 0x90CC3FC0 ] # stw r6, 0x3fc0(r12)
       - [ be32, 0x00000000, 0x80EC3FB4 ] # lwz r7, 0x3fb4(r12)
       - [ be32, 0x00000000, 0x7F85F800 ] # cmpw cr7, r5, r31
-      - [ be32, 0x00000000, 0x409E0014 ] # bne cr7, 0x30
+      - [ be32, 0x00000000, 0x409E0014 ] # bne cr7, 0x38
       - [ be32, 0x00000000, 0x7F87F800 ] # cmpw cr7, r7, r31 // lifted: this body starts counting again
-      - [ be32, 0x00000000, 0x409E0098 ] # bne cr7, 0xbc
+      - [ be32, 0x00000000, 0x409E009C ] # bne cr7, 0xc8
       - [ be32, 0x00000000, 0x90CC3FB8 ] # stw r6, 0x3fb8(r12)
-      - [ be32, 0x00000000, 0x48000090 ] # b 0xbc
+      - [ be32, 0x00000000, 0x48000094 ] # b 0xc8
+      - [ be32, 0x00000000, 0xED294828 ] # fsubs f9, f9, f9 // no lift for this body
       - [ be32, 0x00000000, 0xC02C3F44 ] # lfs f1, 0x3f44(r12) // the frame time times 30
       - [ be32, 0x00000000, 0x3CA03F80 ] # lis r5, 0x3f80 // 1.0
       - [ be32, 0x00000000, 0x90AC3F2C ] # stw r5, 0x3f2c(r12)
       - [ be32, 0x00000000, 0xC04C3F2C ] # lfs f2, 0x3f2c(r12)
       - [ be32, 0x00000000, 0xED021028 ] # fsubs f8, f2, f2 // 0
-      - [ be32, 0x00000000, 0xFF814000 ] # fcmpu cr7, f1, f8 // not set yet (the first frame): the game's own pull
-      - [ be32, 0x00000000, 0x409D0074 ] # ble cr7, 0xbc
-      - [ be32, 0x00000000, 0xFF811000 ] # fcmpu cr7, f1, f2 // 30 frames a second or fewer: the game's own pull
-      - [ be32, 0x00000000, 0x409C006C ] # bge cr7, 0xbc
+      - [ be32, 0x00000000, 0xFF814000 ] # fcmpu cr7, f1, f8 // not set yet (the first frame): the game's own offset
+      - [ be32, 0x00000000, 0x409D0074 ] # ble cr7, 0xc8
+      - [ be32, 0x00000000, 0xFF811000 ] # fcmpu cr7, f1, f2 // 30 frames a second or fewer: the game's own offset
+      - [ be32, 0x00000000, 0x409C006C ] # bge cr7, 0xc8
       - [ be32, 0x00000000, 0x80CC3F04 ] # lwz r6, 0x3f04(r12) // this frame's clock (80,000,000 ticks a second)
       - [ be32, 0x00000000, 0x7F87F800 ] # cmpw cr7, r7, r31
-      - [ be32, 0x00000000, 0x409E0018 ] # bne cr7, 0x74
+      - [ be32, 0x00000000, 0x409E0018 ] # bne cr7, 0x80
       - [ be32, 0x00000000, 0x80EC3FBC ] # lwz r7, 0x3fbc(r12)
       - [ be32, 0x00000000, 0x7CE73050 ] # subf r7, r7, r6
       - [ be32, 0x00000000, 0x3CA00131 ] # lis r5, 0x131 // a quarter of a second
       - [ be32, 0x00000000, 0x7F872840 ] # cmplw cr7, r7, r5
-      - [ be32, 0x00000000, 0x409D0010 ] # ble cr7, 0x80
+      - [ be32, 0x00000000, 0x409D0010 ] # ble cr7, 0x8c
       - [ be32, 0x00000000, 0x93EC3FB4 ] # stw r31, 0x3fb4(r12)
       - [ be32, 0x00000000, 0x38A00000 ] # li r5, 0
       - [ be32, 0x00000000, 0x90AC3FB8 ] # stw r5, 0x3fb8(r12)
@@ -1428,7 +1488,64 @@ PPU-d764d35ca136442f72228ab715a629f26994e641:
       - [ be32, 0x00000000, 0xEC63382A ] # fadds f3, f3, f7
       - [ be32, 0x00000000, 0xD06C3FB8 ] # stfs f3, 0x3fb8(r12)
       - [ be32, 0x00000000, 0xECE72024 ] # fdivs f7, f7, f4
-      - [ be32, 0x00000000, 0xEC0001F2 ] # fmuls f0, f0, f7 // the pull, cut to that part
+      - [ be32, 0x00000000, 0xEC0001F2 ] # fmuls f0, f0, f7 // the offset, cut to that part
+      - [ be32, 0x00000000, 0x80AC3FC8 ] # lwz r5, 0x3fc8(r12) // the body's place in the list, if it has one this step
+      - [ be32, 0x00000000, 0x2F850000 ] # cmpwi cr7, r5, 0
+      - [ be32, 0x00000000, 0x419E00DC ] # beq cr7, 0x1ac
+      - [ be32, 0x00000000, 0x38C00000 ] # li r6, 0
+      - [ be32, 0x00000000, 0x90CC3FC8 ] # stw r6, 0x3fc8(r12)
+      - [ be32, 0x00000000, 0xED094828 ] # fsubs f8, f9, f9 // 0
+      - [ be32, 0x00000000, 0xED40482A ] # fadds f10, f0, f9
+      - [ be32, 0x00000000, 0xFD405050 ] # fneg f10, f10
+      - [ be32, 0x00000000, 0xFD4A42AE ] # fsel f10, f10, f10, f8 // how far below where the move left it the body is put: the pull
+      - [ be32, 0x00000000, 0xC0650004 ] # lfs f3, 4(r5) // the sum of this 30th of a second
+      - [ be32, 0x00000000, 0xC0850008 ] # lfs f4, 8(r5) // and of the one before
+      - [ be32, 0x00000000, 0x80CC3FA8 ] # lwz r6, 0x3fa8(r12)
+      - [ be32, 0x00000000, 0x2F860000 ] # cmpwi cr7, r6, 0
+      - [ be32, 0x00000000, 0x419E0018 ] # beq cr7, 0x114
+      - [ be32, 0x00000000, 0xFC801890 ] # fmr f4, f3 // one ended in this frame: its sum becomes the one before
+      - [ be32, 0x00000000, 0x2F860001 ] # cmpwi cr7, r6, 1
+      - [ be32, 0x00000000, 0x419E0008 ] # beq cr7, 0x110
+      - [ be32, 0x00000000, 0xFC804090 ] # fmr f4, f8 // more than one ended: nothing was pulled in the one before
+      - [ be32, 0x00000000, 0xFC604090 ] # fmr f3, f8
+      - [ be32, 0x00000000, 0xEC63502A ] # fadds f3, f3, f10
+      - [ be32, 0x00000000, 0xD0650004 ] # stfs f3, 4(r5)
+      - [ be32, 0x00000000, 0xD0850008 ] # stfs f4, 8(r5)
+      - [ be32, 0x00000000, 0xC02C3F44 ] # lfs f1, 0x3f44(r12) // x: the frame time times 30
+      - [ be32, 0x00000000, 0xC0AC3FAC ] # lfs f5, 0x3fac(r12) // how far into this 30th of a second the frame ends, in seconds
+      - [ be32, 0x00000000, 0x3CC041F0 ] # lis r6, 0x41f0 // 30
+      - [ be32, 0x00000000, 0x90CC3F2C ] # stw r6, 0x3f2c(r12)
+      - [ be32, 0x00000000, 0xC0CC3F2C ] # lfs f6, 0x3f2c(r12)
+      - [ be32, 0x00000000, 0xECA501B2 ] # fmuls f5, f5, f6 // r: the same in 30ths of a second
+      - [ be32, 0x00000000, 0x3CC03F80 ] # lis r6, 0x3f80 // 1.0
+      - [ be32, 0x00000000, 0x90CC3F2C ] # stw r6, 0x3f2c(r12)
+      - [ be32, 0x00000000, 0xC04C3F2C ] # lfs f2, 0x3f2c(r12)
+      - [ be32, 0x00000000, 0xECE20828 ] # fsubs f7, f2, f1 // 1 - x: the time before the next step that counts, 1/30 s less that step
+      - [ be32, 0x00000000, 0xED61282A ] # fadds f11, f1, f5 // x + r: the time this sum covers
+      - [ be32, 0x00000000, 0xED675824 ] # fdivs f11, f7, f11
+      - [ be32, 0x00000000, 0xED8B1028 ] # fsubs f12, f11, f2
+      - [ be32, 0x00000000, 0xFD6C58AE ] # fsel f11, f12, f2, f11 // the part of this sum that counts: (1 - x) / (x + r), at most all of it
+      - [ be32, 0x00000000, 0xECE70828 ] # fsubs f7, f7, f1
+      - [ be32, 0x00000000, 0xECE72828 ] # fsubs f7, f7, f5
+      - [ be32, 0x00000000, 0xFCE741EE ] # fsel f7, f7, f7, f8 // the part of the sum before: 1 - 2 x - r, not below 0
+      - [ be32, 0x00000000, 0xEC6302F2 ] # fmuls f3, f3, f11
+      - [ be32, 0x00000000, 0xEC8419FA ] # fmadds f4, f4, f7, f3 // pulled in the last 1/30 s
+      - [ be32, 0x00000000, 0xC17F0208 ] # lfs f11, 0x208(r31) // the body's own reach
+      - [ be32, 0x00000000, 0x3CC03F99 ] # lis r6, 0x3f99 // 1.2
+      - [ be32, 0x00000000, 0x60C6999A ] # ori r6, r6, 0x999a
+      - [ be32, 0x00000000, 0x90CC3F2C ] # stw r6, 0x3f2c(r12)
+      - [ be32, 0x00000000, 0xC0CC3F2C ] # lfs f6, 0x3f2c(r12)
+      - [ be32, 0x00000000, 0xED8B21B8 ] # fmsubs f12, f11, f6, f4 // the next step's reach: 1.2 times its own less that
+      - [ be32, 0x00000000, 0xEDAC5828 ] # fsubs f13, f12, f11
+      - [ be32, 0x00000000, 0xFD8D62EE ] # fsel f12, f13, f11, f12 // at most its own
+      - [ be32, 0x00000000, 0x3CC03D4C ] # lis r6, 0x3d4c // 0.05
+      - [ be32, 0x00000000, 0x60C6CCCD ] # ori r6, r6, 0xcccd
+      - [ be32, 0x00000000, 0x90CC3F2C ] # stw r6, 0x3f2c(r12)
+      - [ be32, 0x00000000, 0xC0CC3F2C ] # lfs f6, 0x3f2c(r12)
+      - [ be32, 0x00000000, 0xECCB01B2 ] # fmuls f6, f11, f6
+      - [ be32, 0x00000000, 0xEDAC3028 ] # fsubs f13, f12, f6
+      - [ be32, 0x00000000, 0xFD8D332E ] # fsel f12, f13, f12, f6 // at least a 20th of it
+      - [ be32, 0x00000000, 0xD185000C ] # stfs f12, 0xc(r5)
   "LOD/Texture Detail":
     Games:
       "Dark Souls: Prepare to Die Edition":
