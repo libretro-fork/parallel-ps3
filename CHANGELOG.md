@@ -4,6 +4,12 @@ What changed in the libretro core of this fork, newest first. Changes that come 
 
 ## Unreleased
 
+- **Dark Souls: Prepare to Die Edition (EU): ragdolls and the glow of items at high frame rates (Unlock FPS).** Not yet run on a game.
+  - **What was wrong:** every frame the ragdoll code adds 30 times the gap between a body's root and its pose to the body's speed (an impulse of mass x 30 x the gap, 0x00347100), a spring that was four times as stiff at 120 frames a second; on PC that pulled bodies to their pose instead of letting them drop and flung characters standing on or against them. The glow of an item on the ground fades in and out by its length / 60 every frame, so it took a quarter of its time at 120.
+  - **What changed:** "Unlock FPS" (version 1.12) works out the pull for the frame (30 times the frame time in 30ths of a second; or 1 / the frame time when that is less, so a long frame does not pass the pose, as the PC mods do) and the glow's divisor (2 / the frame time), and the three places load them in place of 30, 60 and -60. At 30 frames a second they are the game's numbers.
+    - Looked at and left: a ground-crawling projectile (the undead dragon's acid) loses 0.4 of a factor every frame (0x005B0540), but it lands again every frame at any frame rate, so changing that number alone would make it behave less like 30, not more; the PC mods change three places together and the other two were not found.
+  - **Tests:** the patch applied to the decrypted executable and the new code read back through a disassembler; `test_game_patches` passes.
+
 - **Dark Souls: Prepare to Die Edition (EU): timers and the HUD's bars at high frame rates (Unlock FPS).** Not yet run on a game.
   - **What was wrong:** some code adds or takes off a fixed 1/30 s every frame instead of the frame's time, so it ran twice as fast at 60 and four times at 120: two fades (one up, one down), a countdown and a time limit. The HUD's bars move toward the real value by half the gap a frame (by 1 a frame when the gap is 2 or less), so a drink of Estus filled the bar four times as fast at 120.
   - **What changed:** "Unlock FPS" (version 1.11) keeps the frame's time, the least a bar moves in it and the share of the gap it closes (1 - 0.5 to the power of the frame time in 30ths of a second), and those six places load them in place of their constants. At 30 frames a second they are the game's numbers.
